@@ -1,0 +1,46 @@
+# =============================================================================
+# Equal-mass King model merger (q = 1)
+# =============================================================================
+# Two identical globular clusters on an eccentric bound orbit.
+# Typical setup for studying core merger dynamics and IMBH formation.
+#
+# Usage (one-liner):
+#   using Nbody6Setup
+#   result = run_merger_pipeline("input_files/merger_equal_mass.toml")
+#
+# Or via the main pipeline (set merger.config_file in config.toml):
+#   cfg = load_config("config.toml")  # with [merger] enabled=true
+#   results = run_pipeline(cfg)
+
+[merger]
+n_clusters = 2
+orbit_mode = "kepler"            # auto-compute positions from Kepler orbit
+
+[merger.cluster1]
+model = "king"
+N = 50000
+W0 = 6.0                        # King concentration (moderate)
+mass_total = 1e5                 # 10^5 M☉
+rbar = 2.0                      # Half-mass radius [pc]
+imf = "kroupa"
+body1 = 100.0                   # Upper mass limit [M☉]
+bodyn = 0.08                    # Lower mass limit [M☉]
+
+[merger.cluster2]
+model = "king"
+N = 50000
+W0 = 6.0
+mass_total = 1e5
+rbar = 2.0
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+
+[merger.orbit]
+apocentre = 15.0                 # pc — ~7.5 half-mass radii separation
+eccentricity = 0.7               # Moderately eccentric
+
+[merger.output]
+format = "nbody"                 # N-body units (KZ(22)=2)
+truncate_jacobi = true           # Truncate at mutual Jacobi radius
+output_dir = "."

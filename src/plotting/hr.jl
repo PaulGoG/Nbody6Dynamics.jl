@@ -1,0 +1,197 @@
+# =============================================================================
+# HR diagram (Hertzsprung-Russell) from stellar evolution data
+# =============================================================================
+
+# Colour palette for stellar types (up to K*=15)
+# Unphysical values used by SSE/BSE as placeholders for undefined luminosity/
+# temperature (e.g. massless remnants, stars past the end of the grid). Points
+# at these values would otherwise force the axes to extend into empty regions
+# and visually compress the true stellar distribution.
+const _HR_MIN_LOG_L    = -5.0
+const _HR_MIN_LOG_TEFF =  3.0
+
+"""
+    _hr_valid_records(records)
+
+Return the subset of stellar records whose `log_luminosity` and `log_teff` are
+within physically meaningful ranges for an HR diagram. Placeholders such as
+`log_L = -10` are discarded.
+"""
+@inline function _hr_valid_records(records)
+    return [r for r in records
+            if r.log_luminosity > _HR_MIN_LOG_L &&
+               r.log_teff      > _HR_MIN_LOG_TEFF]
+end
+
+const _HR_COLORS = Dict{Int,Symbol}(
+    0  => :royalblue,    # MS
+    1  => :dodgerblue,   # HG
+    2  => :orange,       # GB
+    3  => :gold,         # CHeB
+    4  => :orangered,    # AGB
+    5  => :red,          # EAGB
+    6  => :cyan,         # HeStar
+    7  => :teal,         # HeHG
+    8  => :olive,        # HeGB
+    9  => :lightgray,    # HeWD
+    10 => :silver,       # COWD
+    11 => :gray,         # ONeWD
+    12 => :purple,       # NS
+    13 => :black,        # BH
+)
+
+"""
+    plot_hr(sev::StellarEvolutionSnapshot, cfg::VisualizationConfig;
+            filename = "hr_diagram") -> String
+
+Plot a Hertzsprung-Russell diagram (log Teff vs log L) from a single stellar
+evolution snapshot, coloured by stellar type K*.
+
+Returns the output file path.
+"""
+function plot_hr(
+    sev::StellarEvolutionSnapshot,
+    cfg::VisualizationConfig;
+    filename::AbstractString = "hr_diagram",
+)::String
+    isempty(sev.records) && error("No stellar records to plot")
+
+    valid = _hr_valid_records(sev.records)
+    isempty(valid) && error("No stellar records pass HR validity filter")
+
+    t_val = @sprintf("%.4f", sev.time_myr)
+
+    # Compute data ranges for tick placement
+    all_teff = [r.log_teff for r in valid]
+    all_lum  = [r.log_luminosity for r in valid]
+    teff_min, teff_max = extrema(all_teff)
+    lum_min, lum_max   = extrema(all_lum)
+    dt = (teff_max - teff_min) * 0.06
+    dl = (lum_max - lum_min) * 0.06
+
+    fig = Figure(; size = _figsize_px(cfg))
+    ax = Axis(
+        fig[1, 1];
+        xlabel = L"\log_{10}(\mathrm{T}_\mathrm{eff} \, / \, \mathrm{K})",
+        ylabel = L"\log_{10}(\mathrm{L} \, / \, \mathrm{L}_\odot)",
+        title  = latexstring("\\mathrm{t}_\\mathrm{NB} = $(t_val), \\;\\; \\mathrm{N}_\\star = $(sev.n_stars)"),
+        xreversed = true,   # hot → cool from left to right
+        xticks = _logval_ticks(teff_min - dt, teff_max + dt),
+        yticks = _logval_ticks(lum_min - dl, lum_max + dl),
+    )
+
+    # Group by stellar type for legend
+    types_present = sort(unique(r.stellar_type for r in valid))
+
+    for kt in types_present
+        mask = [r for r in valid if r.stellar_type == kt]
+        teff = [r.log_teff for r in mask]
+        lum  = [r.log_luminosity for r in mask]
+        col  = get(_HR_COLORS, Int(kt), :gray50)
+        label = get(STELLAR_TYPE_LABELS, Int(kt), "K*=$kt")
+        scatter!(ax, teff, lum; color = col, markersize = 14, label = label)
+    end
+
+    if length(types_present) ≤ 12
+        axislegend(ax; position = :cb, nbanks = 2,
+                   backgroundcolor = (:white, 0.7), framevisible = true)
+    end
+
+    outpath = _output_path(cfg, filename)
+    save(outpath, fig; px_per_unit = cfg.dpi / 72)
+    @info "HR diagram saved: $outpath"
+    return outpath
+end
+
+"""
+    plot_hr_evolution(sevs::Vector{StellarEvolutionSnapshot},
+                      cfg::VisualizationConfig;
+                      filename = "hr_evolution",
+                      max_panels = 6) -> String
+
+Plot an HR diagram panel grid showing evolution over multiple epochs.
+Selects up to `max_panels` snapshots spaced evenly in time.
+
+Returns the output file path.
+"""
+function plot_hr_evolution(
+    sevs::Vector{StellarEvolutionSnapshot},
+    cfg::VisualizationConfig;
+    filename::AbstractString = "hr_evolution",
+    max_panels::Int = 6,
+)::String
+    isempty(sevs) && error("No stellar evolution snapshots to plot")
+
+    # Select snapshots evenly spaced in time
+    n = length(sevs)
+    indices = if n ≤ max_panels
+        collect(1:n)
+    else
+        unique(round.(Int, range(1, n; length = max_panels)))
+    end
+
+    ncols = min(length(indices), 3)
+    nrows = cld(length(indices), ncols)
+
+    fig = Figure(; size = _fig_multipanel(cfg, nrows, ncols))
+
+    # Precompute the valid-record subset for each panel once
+    valid_per_panel = [_hr_valid_records(sevs[i].records) for i in indices]
+
+    # Consistent axis limits across panels (using valid records only)
+    all_teff = reduce(vcat, [[r.log_teff for r in v] for v in valid_per_panel]; init = Float64[])
+    all_lum  = reduce(vcat, [[r.log_luminosity for r in v] for v in valid_per_panel]; init = Float64[])
+    isempty(all_teff) && error("No valid HR records across any panel")
+    tmin, tmax = extrema(all_teff)
+    lmin, lmax = extrema(all_lum)
+    dt = (tmax - tmin) * 0.06
+    dl = (lmax - lmin) * 0.06
+    # Normal order for limits; xreversed handles the flip
+    tlims = (tmin - dt, tmax + dt)
+    llims = (lmin - dl, lmax + dl)
+    xtk_hr = _logval_ticks(tlims[1], tlims[2]; target_n = 5)
+    ytk_hr = _logval_ticks(llims[1], llims[2]; target_n = 5)
+
+    for (panel_idx, si) in enumerate(indices)
+        row = cld(panel_idx, ncols)
+        col = mod1(panel_idx, ncols)
+        sev = sevs[si]
+
+        # Only show axis labels on border panels
+        show_xlab = row == nrows
+        show_ylab = col == 1
+
+        t_val = @sprintf("%.4f", sev.time_myr)
+        ax = Axis(
+            fig[row, col];
+            xlabel = show_xlab ? L"\log_{10}(\mathrm{T}_\mathrm{eff} \, / \, \mathrm{K})" : "",
+            ylabel = show_ylab ? L"\log_{10}(\mathrm{L} \, / \, \mathrm{L}_\odot)" : "",
+            title  = latexstring("\\mathrm{t}_\\mathrm{NB} = $(t_val) \\;\\; (\\mathrm{N}_\\star = $(sev.n_stars))"),
+            titlesize = 22,
+            xlabelsize = 22,
+            ylabelsize = 22,
+            xticklabelsize = 18,
+            yticklabelsize = 18,
+            xreversed = true,
+            limits = (tlims..., llims...),
+            xticks = xtk_hr,
+            yticks = ytk_hr,
+            xticklabelsvisible = show_xlab,
+            yticklabelsvisible = show_ylab,
+        )
+
+        for r in valid_per_panel[panel_idx]
+            col_sym = get(_HR_COLORS, Int(r.stellar_type), :gray50)
+            scatter!(ax, [r.log_teff], [r.log_luminosity];
+                color = col_sym, markersize = 14, strokewidth = 0)
+        end
+    end
+
+    colgap!(fig.layout, _MULTIPANEL_HGAP)
+    rowgap!(fig.layout, _MULTIPANEL_VGAP)
+
+    outpath = _output_path(cfg, filename)
+    save(outpath, fig; px_per_unit = cfg.dpi / 72)
+    @info "HR evolution saved: $outpath"
+    return outpath
+end

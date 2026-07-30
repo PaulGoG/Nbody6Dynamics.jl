@@ -1,0 +1,31 @@
+name = "Nbody6Setup"
+uuid = "7d8e9f0a-1b2c-4d3e-8f6a-7b8c9d0e1f2a"
+version = "0.1.0"
+authors = ["paulgog"]
+license = "MIT"
+
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
+ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
+TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+
+[compat]
+CairoMakie = "0.12, 0.13"
+HDF5 = "0.17, 0.18"
+LaTeXStrings = "1"
+ProgressMeter = "1"
+SpecialFunctions = "2"
+julia = "1.10"
+
+[extras]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]

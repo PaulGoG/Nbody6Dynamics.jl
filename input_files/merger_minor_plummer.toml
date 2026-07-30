@@ -1,0 +1,40 @@
+# =============================================================================
+# Minor merger with Plummer profiles (q = 0.1)
+# =============================================================================
+# A massive cluster accreting a smaller satellite — models dynamical
+# friction-dominated inspiral relevant to nuclear star cluster assembly.
+#
+# Usage (one-liner):
+#   using Nbody6Setup
+#   result = run_merger_pipeline("input_files/merger_minor_plummer.toml")
+
+[merger]
+n_clusters = 2
+orbit_mode = "kepler"
+
+[merger.cluster1]
+model = "plummer"
+N = 100000
+mass_total = 5e5                 # 5 × 10^5 M☉ (massive primary)
+rbar = 3.0                      # Half-mass radius [pc]
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+
+[merger.cluster2]
+model = "plummer"
+N = 10000
+mass_total = 5e4                 # 5 × 10^4 M☉ (satellite, q=0.1)
+rbar = 1.5                      # Compact satellite
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+
+[merger.orbit]
+apocentre = 20.0                 # pc — well separated
+eccentricity = 0.5               # Moderate eccentricity
+
+[merger.output]
+format = "nbody"
+truncate_jacobi = true
+output_dir = "."

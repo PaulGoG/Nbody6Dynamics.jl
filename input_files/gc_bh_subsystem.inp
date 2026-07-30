@@ -1,0 +1,73 @@
+! =============================================================================
+! Globular Cluster with Black Hole Subsystem
+! =============================================================================
+! Physically motivated by: Kamlah et al. (2022, MNRAS 511) DRAGON-II,
+!                          Banerjee (2022, A&A 665)
+!
+! Science case:
+!   Metal-poor globular clusters retain a population of stellar-mass black
+!   holes (10-50 Msun) that mass-segregate to the core and form a dynamically
+!   decoupled BH subsystem.  This BH subsystem:
+!     - delays core collapse by acting as a central energy source
+!     - produces BH-BH mergers detectable by LIGO/Virgo/KAGRA
+!     - gradually depletes via GW recoil kicks and three-body ejections
+!   Once the BH subsystem is depleted, the cluster undergoes delayed
+!   core collapse (observable as a cuspy surface brightness profile).
+!
+! Expected phenomena:
+!   - Mass segregation: BHs sink to center within ~100 Myr
+!   - BH-BH binary hardening via Heggie-Hills encounters
+!   - Ejected BH-BH mergers (GW sources)
+!   - Gradual BH depletion over 1-5 Gyr
+!   - Late core collapse after BH exhaustion
+!   - Tidal stripping producing tidal tails
+!
+! Setup:  N=100k, King W0=6, Z=0.0002 (metal-poor like NGC 4372),
+!         5% hard primordial binaries, Kroupa IMF 0.08-100 Msun,
+!         circular orbit at 8 kpc in point-mass galaxy.
+!         TCRIT=2000 NB-units (~2 Gyr physical).
+!
+! Note:  A full 12 Gyr integration at N=100k would take weeks.
+!        TCRIT=2000 captures the BH subsystem formation and early
+!        depletion phase — the most dynamically interesting epoch.
+!
+! Compute cost:  ~2-4 days on 16-24 cores.
+! =============================================================================
+
+&INNBODY6
+KSTART=1,TCOMP=1.0E8,TCRTP0=259200,isernb=40,iserreg=40,iserks=0 /
+
+&ININPUT
+N=100000,NFIX=1,NCRIT=10,NRAND=41827,NNBOPT=80,NRUN=1,NCOMM=10,
+ETAI=0.01,ETAR=0.01,RS0=0.12,DTADJ=2.0,DELTAT=20.0,TCRIT=2000.0,QE=1.0,RBAR=3.00,ZMBAR=0.7,
+KZ(1:10)= 1 1 1 0 1 0 3 2 3 2
+KZ(11:20)=0 1 0 2 2 0 0 0 3 6
+KZ(21:30)=1 1 2 0 2 2 3 2 0 2
+KZ(31:40)=1 0 2 2 1 0 1 1 2 1
+KZ(41:50)=0 0 0 0 0 4 3 0 3 0 ,
+DTMIN=2.5E-6,RMIN=8.E-5,ETAU=0.1,ECLOSE=1.0,GMIN=1.0E-06,GMAX=0.01,SMAX=1.0,
+Level='C' /
+
+&INSSE /
+
+&INBSE /
+
+&INCOLL /
+
+&INDATA
+ALPHAS=2.35,BODY1=100.0,BODYN=0.08,NBIN0=2500,NHI0=0,ZMET=0.0002,EPOCH0=0,DTPLOT=20.0 /
+
+&INSETUP SEMI=,ECC=,APO=,N2=,SCALE=,ZM1=,ZM2,ZMH,RCUT= /
+
+&INSCALE
+Q=0.5,VXROT=0.0,VZROT=0.0,RTIDE=0.0 /
+
+&INXTRNL0
+GMG=1.0E11,RG0=8.0,DISK=,A=,B=,VCIRC=,RCIRC=,GMB=,AR=,GAM=,RG=,,,VG=,,,MP=,AP2=,MPDOT=,TDELAY= /
+
+&INBINPOP
+SEMI0=0.001,ECC0=-1.0,RATIO=1.0,RANGE=5.0,NSKIP=3,IDORM=0 /
+
+&INHIPOP
+SEMI0=,ECC0=,RATIO=,RANGE= /
+

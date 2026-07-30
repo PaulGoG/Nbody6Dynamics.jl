@@ -1,0 +1,81 @@
+# =============================================================================
+# 5-cluster merger — medium run (explicit positions)
+# =============================================================================
+# Pentagon layout: 5 clusters on a circle of radius 10 pc, all moving inward.
+# Mixed models: 3 King + 2 Plummer, varying masses.
+# N~12000 total, TCRIT=10 NB units.
+
+[merger]
+n_clusters = 5
+orbit_mode = "explicit"
+
+# Cluster 1: top vertex (12 o'clock)
+[merger.cluster1]
+model = "king"
+N = 2500
+W0 = 5.0
+mass_total = 3e4
+rbar = 1.5
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+position = [0.0, 10.0, 0.0]
+velocity = [0.0, -1.5, 0.0]
+
+# Cluster 2: upper-right (1:12 o'clock)
+[merger.cluster2]
+model = "king"
+N = 2500
+W0 = 6.0
+mass_total = 3e4
+rbar = 1.5
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+position = [9.51, 3.09, 0.0]
+velocity = [-1.43, -0.46, 0.0]
+
+# Cluster 3: lower-right (4:48 o'clock)
+[merger.cluster3]
+model = "plummer"
+N = 2000
+mass_total = 2e4
+rbar = 1.2
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+position = [5.88, -8.09, 0.0]
+velocity = [-0.88, 1.21, 0.0]
+
+# Cluster 4: lower-left (7:12 o'clock)
+[merger.cluster4]
+model = "plummer"
+N = 2000
+mass_total = 2e4
+rbar = 1.2
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+position = [-5.88, -8.09, 0.0]
+velocity = [0.88, 1.21, 0.0]
+
+# Cluster 5: upper-left (10:48 o'clock)
+[merger.cluster5]
+model = "king"
+N = 2500
+W0 = 5.5
+mass_total = 2.5e4
+rbar = 1.3
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+position = [-9.51, 3.09, 0.0]
+velocity = [1.43, -0.46, 0.0]
+
+[merger.output]
+format = "nbody"
+truncate_jacobi = true
+output_dir = "."
+tcrit = 10.0
+dtadj = 0.5
+deltat = 0.5

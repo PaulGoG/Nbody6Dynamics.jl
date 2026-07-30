@@ -1,0 +1,41 @@
+# =============================================================================
+# 2-cluster King merger — medium run
+# =============================================================================
+# Two equal-mass King clusters on an eccentric Kepler orbit.
+# N=5000 per cluster, TCRIT=10 NB units.
+
+[merger]
+n_clusters = 2
+orbit_mode = "kepler"
+
+[merger.cluster1]
+model = "king"
+N = 5000
+W0 = 6.0
+mass_total = 5e4
+rbar = 2.0
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+
+[merger.cluster2]
+model = "king"
+N = 5000
+W0 = 6.0
+mass_total = 5e4
+rbar = 2.0
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+
+[merger.orbit]
+apocentre = 12.0
+eccentricity = 0.6
+
+[merger.output]
+format = "nbody"
+truncate_jacobi = true
+output_dir = "."
+tcrit = 10.0
+dtadj = 0.5
+deltat = 0.5

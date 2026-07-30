@@ -1,0 +1,69 @@
+! =============================================================================
+! Tidal Tail Formation in a Galactic Center Cluster
+! =============================================================================
+! Physically motivated by: Wang et al. (2024, MNRAS), Gieles et al. (2023)
+!   Observational analogues: Palomar 5, Arches cluster, NGC 5466
+!
+! Science case:
+!   Star clusters in strong tidal fields develop prominent S-shaped tidal
+!   tails as stars escape through the Lagrange points L1/L2.  The tail
+!   morphology encodes the cluster's orbit, mass loss history, and the
+!   host galaxy's potential.  Clusters near the Galactic center dissolve
+!   fastest — the Arches cluster (Rgc ~ 30 pc) will dissolve within
+!   ~20 Myr.  This simulation places a moderately massive cluster at
+!   2 kpc from the Galactic center to produce dramatic tails within
+!   a feasible compute time.
+!
+! Expected phenomena:
+!   - Rapid tidal stripping from the onset
+!   - S-shaped tidal tails developing within ~50 Myr
+!   - Preferential loss of low-mass stars (mass function flattening)
+!   - Cluster mass decreasing by >50% over the integration
+!   - Core contraction as the tidal boundary shrinks
+!   - Leading tail slightly denser than trailing (asymmetric tails)
+!
+! Setup:  N=50k (smaller for fast dissolution), King W0=5 (moderate
+!         concentration), Z=0.02 (solar, disk cluster), 10% binaries,
+!         Kroupa IMF 0.08-100 Msun, strong point-mass tidal field
+!         at Rgc=2 kpc, circular orbit.  TCRIT=500 (~1 Gyr physical).
+!
+! Compute cost:  ~1-2 days on 16-24 cores.
+! =============================================================================
+
+&INNBODY6
+KSTART=1,TCOMP=1.0E8,TCRTP0=172800,isernb=40,iserreg=40,iserks=0 /
+
+&ININPUT
+N=50000,NFIX=1,NCRIT=10,NRAND=66503,NNBOPT=80,NRUN=1,NCOMM=10,
+ETAI=0.01,ETAR=0.01,RS0=0.12,DTADJ=1.0,DELTAT=5.0,TCRIT=500.0,QE=1.0,RBAR=2.00,ZMBAR=0.6,
+KZ(1:10)= 1 1 1 0 1 0 3 2 3 2
+KZ(11:20)=0 1 0 2 2 0 0 0 3 6
+KZ(21:30)=1 1 2 0 2 2 3 2 0 2
+KZ(31:40)=1 0 2 2 1 0 1 1 2 1
+KZ(41:50)=0 0 0 0 0 4 3 0 3 0 ,
+DTMIN=2.5E-6,RMIN=8.E-5,ETAU=0.1,ECLOSE=1.0,GMIN=1.0E-06,GMAX=0.01,SMAX=1.0,
+Level='C' /
+
+&INSSE /
+
+&INBSE /
+
+&INCOLL /
+
+&INDATA
+ALPHAS=2.35,BODY1=100.0,BODYN=0.08,NBIN0=2500,NHI0=0,ZMET=0.02,EPOCH0=0,DTPLOT=5.0 /
+
+&INSETUP SEMI=,ECC=,APO=,N2=,SCALE=,ZM1=,ZM2,ZMH,RCUT= /
+
+&INSCALE
+Q=0.5,VXROT=0.0,VZROT=0.0,RTIDE=0.0 /
+
+&INXTRNL0
+GMG=1.78E11,RG0=2.0,DISK=,A=,B=,VCIRC=,RCIRC=,GMB=,AR=,GAM=,RG=,,,VG=,,,MP=,AP2=,MPDOT=,TDELAY= /
+
+&INBINPOP
+SEMI0=0.001,ECC0=-1.0,RATIO=1.0,RANGE=5.0,NSKIP=3,IDORM=0 /
+
+&INHIPOP
+SEMI0=,ECC0=,RATIO=,RANGE= /
+

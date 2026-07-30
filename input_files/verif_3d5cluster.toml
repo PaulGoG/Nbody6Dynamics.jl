@@ -1,0 +1,77 @@
+# =============================================================================
+# Verification run — 5 clusters distributed in 3D
+# =============================================================================
+# Exercises xz- and yz-projection panels + 3D COM tracking by placing clusters
+# well out of the z = 0 plane. Clusters have mild inward radial velocities so
+# some interaction occurs over TCRIT without full infall.
+
+[merger]
+n_clusters = 5
+orbit_mode = "explicit"
+seed       = 13
+
+[merger.cluster1]
+model      = "king"
+N          = 800
+W0         = 5.0
+mass_total = 6000.0
+rbar       = 0.9
+imf        = "kroupa"
+body1      = 50.0
+bodyn      = 0.1
+position   = [5.0, 0.0, 3.5]
+velocity   = [-0.7, 0.0, -0.5]
+
+[merger.cluster2]
+model      = "plummer"
+N          = 800
+mass_total = 6000.0
+rbar       = 0.9
+imf        = "kroupa"
+body1      = 50.0
+bodyn      = 0.1
+position   = [-3.0, 4.0, 0.0]
+velocity   = [0.45, -0.6, 0.0]
+
+[merger.cluster3]
+model      = "king"
+N          = 800
+W0         = 6.0
+mass_total = 6000.0
+rbar       = 0.9
+imf        = "kroupa"
+body1      = 50.0
+bodyn      = 0.1
+position   = [-3.0, -4.0, 0.0]
+velocity   = [0.45, 0.6, 0.0]
+
+[merger.cluster4]
+model      = "plummer"
+N          = 800
+mass_total = 5000.0
+rbar       = 0.9
+imf        = "kroupa"
+body1      = 50.0
+bodyn      = 0.1
+position   = [0.0, 0.0, -5.5]
+velocity   = [0.0, 0.0, 0.7]
+
+[merger.cluster5]
+model      = "king"
+N          = 800
+W0         = 5.0
+mass_total = 5000.0
+rbar       = 0.9
+imf        = "kroupa"
+body1      = 50.0
+bodyn      = 0.1
+position   = [2.5, 2.5, 4.5]
+velocity   = [-0.35, -0.35, -0.6]
+
+[merger.output]
+format          = "nbody"
+truncate_jacobi = true
+output_dir      = "."
+tcrit           = 10.0
+dtadj           = 0.5
+deltat          = 0.5

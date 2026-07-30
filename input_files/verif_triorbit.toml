@@ -1,0 +1,66 @@
+# =============================================================================
+# Verification run — tri-cluster bound Lagrange triangle
+# =============================================================================
+# Three equal-mass clusters on an equilateral triangle at r = 6 pc from COM,
+# rotating tangentially (CCW) with Lagrange-equilibrium velocities so the
+# configuration is bound and persistent (no radial infall).
+#
+#   ω² = G m / (√3 r³)
+#   with G = 1, m = 1.5e4 M☉, r = 6 pc  →  ω ≈ 2.635,  |v| ≈ 15.81 code units
+#   (≈ 1.04 km/s per cluster).
+#
+# Expected behaviour: the three cluster COMs trace a slowly rotating triangle
+# while each cluster relaxes internally. Good test of `_cluster_com_trajectories`
+# and the virial snapshot for *separated* stable clusters.
+
+[merger]
+n_clusters = 3
+orbit_mode = "explicit"
+seed       = 7
+
+# Cluster 1 — at (+r, 0, 0), v tangential (+y)
+[merger.cluster1]
+model      = "king"
+N          = 1500
+W0         = 6.0
+mass_total = 1.5e4
+rbar       = 1.0
+imf        = "kroupa"
+body1      = 100.0
+bodyn      = 0.08
+position   = [6.0, 0.0, 0.0]
+velocity   = [0.0, 15.81, 0.0]
+
+# Cluster 2 — at (-3, +5.196, 0), v = (-13.69, -7.905, 0)
+[merger.cluster2]
+model      = "king"
+N          = 1500
+W0         = 6.0
+mass_total = 1.5e4
+rbar       = 1.0
+imf        = "kroupa"
+body1      = 100.0
+bodyn      = 0.08
+position   = [-3.0, 5.196, 0.0]
+velocity   = [-13.69, -7.905, 0.0]
+
+# Cluster 3 — at (-3, -5.196, 0), v = (+13.69, -7.905, 0)
+[merger.cluster3]
+model      = "king"
+N          = 1500
+W0         = 6.0
+mass_total = 1.5e4
+rbar       = 1.0
+imf        = "kroupa"
+body1      = 100.0
+bodyn      = 0.08
+position   = [-3.0, -5.196, 0.0]
+velocity   = [13.69, -7.905, 0.0]
+
+[merger.output]
+format          = "nbody"
+truncate_jacobi = true
+output_dir      = "."
+tcrit           = 20.0
+dtadj           = 0.5
+deltat          = 0.5

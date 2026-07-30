@@ -1,0 +1,1081 @@
+using Test
+using Nbody6Setup
+
+# Temporary directory for test artifacts
+const TESTDIR = mktempdir()
+
+# ---------------------------------------------------------------------------
+# Helper: write a Fortran binary record (for test data generation)
+# ---------------------------------------------------------------------------
+function _write_fortran_record(io::IO, data::Vector{T}) where {T}
+    bytes = reinterpret(UInt8, data)
+    marker = Int32(length(bytes))
+    write(io, marker)
+    write(io, bytes)
+    write(io, marker)
+end
+
+function _write_fortran_record(io::IO, data::Vector{UInt8})
+    marker = Int32(length(data))
+    write(io, marker)
+    write(io, data)
+    write(io, marker)
+end
+
+@testset "Nbody6Setup.jl" begin
+
+    # =====================================================================
+    @testset "Configuration" begin
+        # Write a minimal config
+        cfg_path = joinpath(TESTDIR, "test_config.toml")
+        write(cfg_path, """
+        [install]
+        enabled = false
+        install_dir = "test-nbody"
+
+        [build]
+        enable_mpi = false
+        enable_hdf5 = false
+        enable_gpu = false
+        cuda_path = "/usr/local/cuda"
+
+        [simulation]
+        run_test = false
+        runs_dir = "test-runs"
+        run_id_prefix = "test"
+
+        [postprocess]
+        enabled = false
+        read_escapers = true
+        escapers_file = "esc.11"
+        read_stellar_evo = true
+        stellar_evo_pattern = "sev*.83"
+
+        [visualization]
+        enabled = false
+        dpi = 150
+        figsize = [10, 8]
+        """)
+
+        cfg = load_config(cfg_path)
+
+        @test cfg.install.enabled == false
+        @test cfg.install.install_dir == "test-nbody"
+        @test cfg.build.enable_mpi == false
+        @test cfg.build.cuda_path == "/usr/local/cuda"
+        @test cfg.simulation.run_test == false
+        @test cfg.simulation.run_id_prefix == "test"
+        @test cfg.postprocess.read_escapers == true
+        @test cfg.postprocess.escapers_file == "esc.11"
+        @test cfg.postprocess.read_stellar_evo == true
+        @test cfg.postprocess.stellar_evo_pattern == "sev*.83"
+        @test cfg.visualization.dpi == 150
+        @test cfg.visualization.figsize == (10, 8)
+        @test cfg.install.source_url == "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
+    end
+
+    # =====================================================================
+    @testset "Config round-trip (save/load)" begin
+        cfg_path = joinpath(TESTDIR, "test_config_rt.toml")
+        write(cfg_path, """
+        [install]
+        enabled = true
+
+        [build]
+        enable_gpu = true
+        cuda_path = "/opt/cuda"
+
+        [simulation]
+        run_id_prefix = "bench"
+
+        [postprocess]
+        enabled = true
+
+        [visualization]
+        dpi = 300
+        figsize = [12, 9]
+        """)
+
+        cfg = load_config(cfg_path)
+        save_path = joinpath(TESTDIR, "test_config_saved.toml")
+        save_config(cfg, save_path)
+
+        cfg2 = load_config(save_path)
+        @test cfg2.build.enable_gpu == cfg.build.enable_gpu
+        @test cfg2.build.cuda_path == cfg.build.cuda_path
+        @test cfg2.simulation.run_id_prefix == cfg.simulation.run_id_prefix
+        @test cfg2.visualization.dpi == cfg.visualization.dpi
+        @test cfg2.visualization.figsize == cfg.visualization.figsize
+    end
+
+    # =====================================================================
+    @testset "Platform detection" begin
+        platform = detect_platform()
+        @test platform isa Symbol
+        @test platform in [:fedora, :ubuntu, :debian, :unknown]
+
+        # check_command should find basic tools
+        @test Nbody6Setup.check_command("ls") == true
+        @test Nbody6Setup.check_command("nonexistent_tool_xyz") == false
+    end
+
+    # =====================================================================
+    @testset "CUDA detection" begin
+        # detect_cuda_path returns a string (may be empty if no CUDA)
+        cuda = detect_cuda_path()
+        @test cuda isa String
+
+        # cuda_env_vars returns a dict
+        env = Nbody6Setup.cuda_env_vars("/usr/local/cuda")
+        @test haskey(env, "CUDA_HOME")
+        @test env["CUDA_HOME"] == "/usr/local/cuda"
+        @test occursin("/usr/local/cuda/bin", env["PATH"])
+
+        # Empty path returns empty dict
+        env_empty = Nbody6Setup.cuda_env_vars("")
+        @test isempty(env_empty)
+    end
+
+    # =====================================================================
+    @testset "Run ID generation" begin
+        id1 = generate_run_id()
+        @test startswith(id1, "run_")
+        @test length(id1) > 15
+
+        id2 = generate_run_id("bench")
+        @test startswith(id2, "bench_")
+
+        # Two successive IDs should differ (hex suffix)
+        id3 = generate_run_id()
+        @test id1 != id3
+    end
+
+    # =====================================================================
+    @testset "Fortran binary I/O" begin
+        # Create a synthetic Fortran binary file
+        fpath = joinpath(TESTDIR, "test_fortran.bin")
+        open(fpath, "w") do io
+            # Write a record: 3 Float32 values
+            data = Float32[1.0, 2.0, 3.0]
+            marker = Int32(sizeof(data))
+            write(io, marker)
+            write(io, data)
+            write(io, marker)
+
+            # Write a second record: 2 Int32 values
+            idata = Int32[42, 99]
+            marker2 = Int32(sizeof(idata))
+            write(io, marker2)
+            write(io, idata)
+            write(io, marker2)
+        end
+
+        open(fpath, "r") do io
+            rec1 = Nbody6Setup.read_fortran_record(io, Float32, 3)
+            @test rec1 ≈ Float32[1.0, 2.0, 3.0]
+
+            rec2 = Nbody6Setup.read_fortran_record(io, Int32, 2)
+            @test rec2 == Int32[42, 99]
+        end
+
+        # peek_record_size
+        open(fpath, "r") do io
+            sz = Nbody6Setup.peek_record_size(io)
+            @test sz == Int32(12)  # 3 × 4 bytes
+        end
+    end
+
+    # =====================================================================
+    @testset "conf.3 reader" begin
+        # Create a synthetic conf.3 file in standard format
+        fpath = joinpath(TESTDIR, "conf.3_test")
+        n_particles = 5
+
+        open(fpath, "w") do io
+            # Record 1: header integers
+            hdr = Int32[n_particles, 1, 1, 20]
+            _write_fortran_record(io, hdr)
+
+            # Record 2: AS(1:20) parameters
+            params = zeros(Float32, 20)
+            params[1] = 0.5f0    # time
+            params[3] = 1.0f0    # rbar
+            params[4] = 0.5f0    # zmbar
+            params[11] = 10.0f0  # tscale
+            params[12] = 5.0f0   # vstar
+            params[18] = 2.0f0   # rscale
+            _write_fortran_record(io, params)
+
+            # Particle records (standard: M, X, Y, Z, VX, VY, VZ, NAME)
+            for i in 1:n_particles
+                m = Float32(1.0 / n_particles)
+                x, y, z = Float32.(randn(3))
+                vx, vy, vz = Float32.(0.1 .* randn(3))
+                name = Int32(i)
+                buf = IOBuffer()
+                write(buf, m, x, y, z, vx, vy, vz, name)
+                _write_fortran_record(io, take!(buf))
+            end
+        end
+
+        snap = read_conf3(fpath)
+        @test nparticles(snap) == n_particles
+        @test time_nb(snap.header) ≈ 0.5
+        @test tscale(snap.header) ≈ 10.0
+        @test rscale(snap.header) ≈ 2.0
+        @test length(snap.mass) == n_particles
+        @test size(snap.pos) == (3, n_particles)
+        @test size(snap.vel) == (3, n_particles)
+        @test snap.name == Int32.(1:n_particles)
+        @test isempty(snap.rho)  # standard format has no density
+
+        # Test read_all_conf3
+        snaps = read_all_conf3(TESTDIR, "conf.3_")
+        @test length(snaps) >= 1
+    end
+
+    # =====================================================================
+    @testset "conf.3 reader — extended format" begin
+        fpath = joinpath(TESTDIR, "conf.3_ext")
+        n_particles = 3
+
+        open(fpath, "w") do io
+            hdr = Int32[n_particles, 1, 1, 20]
+            _write_fortran_record(io, hdr)
+
+            params = zeros(Float32, 20)
+            params[1] = 1.0f0
+            _write_fortran_record(io, params)
+
+            # Extended: M, RHO, XNS, X, Y, Z, VX, VY, VZ, PHI, NAME
+            for i in 1:n_particles
+                buf = IOBuffer()
+                write(buf, Float32(0.1 * i))   # mass
+                write(buf, Float32(100.0))      # rho
+                write(buf, Float32(0.01))       # xns
+                write(buf, Float32.(randn(3))...)  # pos
+                write(buf, Float32.(0.1 .* randn(3))...)  # vel
+                write(buf, Float32(-0.5))       # phi
+                write(buf, Int32(i))            # name
+                _write_fortran_record(io, take!(buf))
+            end
+        end
+
+        snap = read_conf3(fpath)
+        @test nparticles(snap) == n_particles
+        @test length(snap.rho) == n_particles
+        @test length(snap.phi) == n_particles
+        @test all(snap.rho .≈ 100.0f0)
+        @test all(snap.phi .≈ -0.5f0)
+    end
+
+    # =====================================================================
+    @testset "Diagnostics parser" begin
+        diag_path = joinpath(TESTDIR, "out1000")
+        write(diag_path, """
+ Some header text...
+
+ PHYSICAL SCALING:  R* = 1.234  M* = 5678.0  V* = 3.456  T* = 7.890
+                    <M> = 0.567  SU = 1.0  AU = 1.0
+
+ ADJUST:    0.0000      0.00  1.000  0.00E+00 -0.2500  10000    500   1.234
+ ADJUST:    0.5000     50.00  0.987  1.23E-06 -0.2499   9998    498   1.245
+ ADJUST:    1.0000    100.00  0.995  2.45E-06 -0.2498   9990    495   1.267
+
+ END RUN
+""")
+
+        diag = read_diagnostics(diag_path)
+
+        @test length(diag.adjust) == 3
+        @test diag.adjust[1].time_nb ≈ 0.0
+        @test diag.adjust[2].time_myr ≈ 50.0
+        @test diag.adjust[3].n == 9990
+        @test diag.adjust[2].npairs == 498
+
+        # Physical scaling
+        @test haskey(diag.physical_scaling, "R*")
+        @test diag.physical_scaling["R*"] ≈ 1.234
+        @test diag.physical_scaling["V*"] ≈ 3.456
+
+        # Unit extraction
+        units = extract_scaling(diag)
+        @test units.rbar ≈ 1.234
+        @test units.tscale ≈ 7.890
+    end
+
+    # =====================================================================
+    @testset "Lagrangian radii reader" begin
+        lagr_path = joinpath(TESTDIR, "lagr.7")
+
+        # Synthetic lagr.7: 3 time epochs, 5 radii columns, block_size=1 (simplified)
+        write(lagr_path, """
+0.0  0.01  0.05  0.20  0.50  1.00
+0.5  0.012 0.055 0.22  0.52  1.05
+1.0  0.015 0.060 0.25  0.55  1.10
+""")
+
+        lagr = read_lagr(lagr_path; rows_per_block = 1)
+
+        @test length(lagr.time) == 3
+        @test lagr.time ≈ [0.0, 0.5, 1.0]
+        @test size(lagr.radii) == (5, 3)
+        @test lagr.radii[1, 1] ≈ 0.01
+        @test lagr.radii[5, 3] ≈ 1.10
+    end
+
+    # =====================================================================
+    @testset "Escaper reader" begin
+        esc_path = joinpath(TESTDIR, "esc.11")
+        write(esc_path, """
+  1.234  0.500  -0.123  15.6  0  101
+  2.567  0.300   0.456  22.3  1  202
+  3.890  1.200  -0.789  10.1  13  303
+""")
+
+        escs = read_escapers(esc_path)
+        @test length(escs) == 3
+
+        @test escs[1].time_myr ≈ 1.234
+        @test escs[1].mass_solar ≈ 0.500
+        @test escs[1].escape_energy ≈ -0.123
+        @test escs[1].velocity_kms ≈ 15.6
+        @test escs[1].stellar_type == 0
+        @test escs[1].name == 101
+
+        @test escs[3].stellar_type == 13   # BH
+        @test escs[3].name == 303
+
+        # Empty file
+        empty_path = joinpath(TESTDIR, "esc_empty.11")
+        write(empty_path, "")
+        @test isempty(read_escapers(empty_path))
+    end
+
+    # =====================================================================
+    @testset "Stellar evolution reader" begin
+        sev_path = joinpath(TESTDIR, "sev.83_0")
+        write(sev_path, """
+  3  0.5000
+   0.5000   1   101  0  1.20  0.800   0.123  -0.456  3.750  0.0  0.0
+   0.5000   2   202  1  0.80  1.200   1.500   0.200  4.100  0.0  0.0
+   0.5000   3   303  13 2.50  10.00   5.000   1.500  4.500  0.0  0.0
+""")
+
+        sev = read_stellar_evolution(sev_path)
+        @test sev.n_stars == 3
+        @test sev.time_myr ≈ 0.5
+        @test length(sev.records) == 3
+
+        r1 = sev.records[1]
+        @test r1.time_nb ≈ 0.5
+        @test r1.index == Int32(1)
+        @test r1.name == Int32(101)
+        @test r1.stellar_type == Int32(0)  # MS
+        @test r1.ri_rc ≈ 1.20
+        @test r1.mass_solar ≈ 0.800
+        @test r1.log_luminosity ≈ 0.123
+        @test r1.log_radius ≈ -0.456
+        @test r1.log_teff ≈ 3.750
+
+        r3 = sev.records[3]
+        @test r3.stellar_type == Int32(13)  # BH
+
+        # Test read_all_stellar_evolution
+        sev2_path = joinpath(TESTDIR, "sev.83_1")
+        write(sev2_path, """
+  2  1.0000
+   1.0000   1   101  2  1.50  0.750   0.500  -0.200  3.600  0.0  0.0
+   1.0000   2   202  4  0.90  1.100   2.000   0.400  3.900  0.0  0.0
+""")
+
+        sevs = read_all_stellar_evolution(TESTDIR, "sev.83_*")
+        @test length(sevs) == 2
+        @test sevs[1].time_myr < sevs[2].time_myr
+    end
+
+    # =====================================================================
+    @testset "Stellar type labels" begin
+        @test startswith(STELLAR_TYPE_LABELS[0], "MS")
+        @test startswith(STELLAR_TYPE_LABELS[13], "BH")
+        @test haskey(STELLAR_TYPE_LABELS, 6)   # HeStar
+    end
+
+    # =====================================================================
+    @testset "Types and accessors" begin
+        params = zeros(Float32, 20)
+        params[1] = 1.5f0   # time
+        params[3] = 2.0f0   # rbar
+        params[4] = 0.6f0   # zmbar
+        params[11] = 8.0f0  # tscale
+        params[12] = 4.0f0  # vstar
+
+        hdr = SnapshotHeader(Int32(100), Int32(1), Int32(1), Int32(20), params)
+
+        @test time_nb(hdr) ≈ 1.5
+        @test rbar(hdr) ≈ 2.0
+        @test tscale(hdr) ≈ 8.0
+        @test time_myr(hdr) ≈ 12.0   # 1.5 * 8.0
+
+        u = UnitScaling(2.0, 0.6, 8.0, 4.0)
+        @test Nbody6Setup.to_pc(u, 1.0) ≈ 2.0
+        @test Nbody6Setup.to_myr(u, 1.0) ≈ 8.0
+        @test Nbody6Setup.to_kms(u, 1.0) ≈ 4.0
+    end
+
+    # =====================================================================
+    @testset "Plotting (smoke tests)" begin
+        Nbody6Setup.set_publication_theme!()
+
+        vis = VisualizationConfig(;
+            output_dir = joinpath(TESTDIR, "test_plots"),
+            format = "png",
+            dpi = 72,
+            figsize = (6, 4),
+        )
+
+        # --- Snapshot plots ---
+        n = 50
+        params = zeros(Float32, 20)
+        params[1] = 1.0f0
+        hdr = SnapshotHeader(Int32(n), Int32(1), Int32(1), Int32(20), params)
+        snap = Snapshot(
+            hdr,
+            Int32.(1:n),
+            Float32.(rand(n)),
+            Float32.(randn(3, n)),
+            Float32.(0.1 .* randn(3, n)),
+            Float32[],
+            Float32[],
+        )
+
+        plot_snapshot(snap, vis; filename = "test_snap")
+        @test isfile(joinpath(TESTDIR, "test_plots", "test_snap_xy.png"))
+        @test isfile(joinpath(TESTDIR, "test_plots", "test_snap_xz.png"))
+
+        # --- Energy plot ---
+        adj = [
+            AdjustRecord(0.0, 0.0, 1.0, 0.0, -0.25, 100, 10, 1.0),
+            AdjustRecord(0.5, 50.0, 0.98, 1e-6, -0.249, 99, 9, 1.1),
+            AdjustRecord(1.0, 100.0, 0.99, 2e-6, -0.248, 98, 8, 1.2),
+        ]
+        diag = DiagnosticsData(adj, Dict{String,Float64}())
+        plot_energy(diag, vis; filename = "test_energy")
+        @test isfile(joinpath(TESTDIR, "test_plots", "test_energy.png"))
+
+        # --- Lagrangian plot ---
+        lagr = LagrangianData(
+            [0.0, 0.5, 1.0],
+            [0.1, 0.5, 1.0],
+            [0.05 0.06 0.07; 0.2 0.22 0.25; 1.0 1.05 1.1],
+        )
+        plot_lagrangian(lagr, vis; filename = "test_lagr",
+                        selected_fractions = [0.1, 0.5, 1.0])
+        @test isfile(joinpath(TESTDIR, "test_plots", "test_lagr.png"))
+
+        # --- HR diagram ---
+        sev = StellarEvolutionSnapshot(
+            0.5, 4,
+            [
+                StellarRecord(0.5, Int32(1), Int32(101), Int32(0),  1.0, 0.8,  0.1, -0.5, 3.75),
+                StellarRecord(0.5, Int32(2), Int32(102), Int32(1),  0.8, 1.2,  1.5,  0.2, 4.10),
+                StellarRecord(0.5, Int32(3), Int32(103), Int32(2),  1.5, 0.7,  2.0,  0.8, 3.60),
+                StellarRecord(0.5, Int32(4), Int32(104), Int32(13), 2.0, 10.0, 5.0,  1.5, 4.50),
+            ],
+        )
+        plot_hr(sev, vis; filename = "test_hr")
+        @test isfile(joinpath(TESTDIR, "test_plots", "test_hr.png"))
+
+        # --- HR evolution ---
+        sev2 = StellarEvolutionSnapshot(
+            1.0, 2,
+            [
+                StellarRecord(1.0, Int32(1), Int32(101), Int32(2), 1.5, 0.75, 0.5, -0.2, 3.60),
+                StellarRecord(1.0, Int32(2), Int32(102), Int32(4), 0.9, 1.10, 2.0,  0.4, 3.90),
+            ],
+        )
+        plot_hr_evolution([sev, sev2], vis; filename = "test_hr_evo")
+        @test isfile(joinpath(TESTDIR, "test_plots", "test_hr_evo.png"))
+    end
+
+    # =====================================================================
+    @testset "Elapsed time formatting" begin
+        fmt = Nbody6Setup._format_elapsed
+
+        # Sub-minute
+        @test fmt(0.0)  == "0.0 s"
+        @test fmt(1.5)  == "1.5 s"
+        @test fmt(59.4) == "59.4 s"
+
+        # Minutes
+        @test fmt(60.0)  == "1m 00s"
+        @test fmt(122.0) == "2m 02s"
+        @test fmt(3599.0) == "59m 59s"
+
+        # Hours
+        @test fmt(3600.0)  == "1h 00m 00s"
+        @test fmt(3661.0)  == "1h 01m 01s"
+        @test fmt(7384.0)  == "2h 03m 04s"
+    end
+
+    # =====================================================================
+    @testset "Diagnostics — key-value ADJUST format" begin
+        diag_path = joinpath(TESTDIR, "out1000_kv")
+        write(diag_path, """
+ PHYSICAL SCALING:  R* = 2.500  M* = 1000.0  V* = 4.200  T* = 12.00
+                    <M> = 0.500  SU = 1.0  AU = 1.0
+
+ ADJUST:  TIME   0.0000  T[Myr]      0.00  Q  1.000  DE  0.00E+00  ETOT  -0.2500
+ RMIN =    0.001 RSCALE =    1.234
+ TIME[NB]    0.0000 N    10000 <NB>      0 NPAIRS    500
+
+ ADJUST:  TIME   0.5000  T[Myr]     50.00  Q  0.987  DE  1.23E-06  ETOT  -0.2499
+ RMIN =    0.002 RSCALE =    1.300
+ TIME[NB]    0.5000 N     9990 <NB>      0 NPAIRS    495
+
+ END RUN
+""")
+
+        diag = read_diagnostics(diag_path)
+
+        @test length(diag.adjust) == 2
+        # First epoch
+        @test diag.adjust[1].time_nb ≈ 0.0
+        @test diag.adjust[1].time_myr ≈ 0.0
+        @test diag.adjust[1].qvir ≈ 1.0
+        @test diag.adjust[1].n == 10000
+        @test diag.adjust[1].npairs == 500
+        @test diag.adjust[1].rscale ≈ 1.234
+
+        # Second epoch — TIME[NB] values override ADJUST defaults
+        @test diag.adjust[2].time_nb ≈ 0.5
+        @test diag.adjust[2].n == 9990
+        @test diag.adjust[2].npairs == 495
+        @test diag.adjust[2].rscale ≈ 1.300
+
+        # Physical scaling
+        @test diag.physical_scaling["R*"] ≈ 2.5
+        @test diag.physical_scaling["T*"] ≈ 12.0
+    end
+
+    # =====================================================================
+    @testset "Diagnostics — mixed format with partial epochs" begin
+        diag_path = joinpath(TESTDIR, "out1000_mixed")
+        write(diag_path, """
+ ADJUST:    0.0000      0.00  1.000  0.00E+00 -0.2500  10000    500   1.234
+ ADJUST:  TIME   1.0000  T[Myr]    100.00  Q  0.990  DE  5.00E-06  ETOT  -0.2480
+ TIME[NB]    1.0000 N     9500 <NB>      0 NPAIRS    450
+""")
+        diag = read_diagnostics(diag_path)
+        @test length(diag.adjust) == 2
+
+        # First: positional format
+        @test diag.adjust[1].time_nb ≈ 0.0
+        @test diag.adjust[1].n == 10000
+        @test diag.adjust[1].rscale ≈ 1.234
+
+        # Second: key-value + TIME[NB] merge
+        @test diag.adjust[2].time_nb ≈ 1.0
+        @test diag.adjust[2].n == 9500
+        @test diag.adjust[2].npairs == 450
+    end
+
+    # =====================================================================
+    @testset "Auto FPS calculation" begin
+        _auto_fps = Nbody6Setup._auto_fps
+
+        # Few frames → clamped to min
+        @test _auto_fps(5; target_duration = 12.0, min_fps = 1, max_fps = 10) == 1
+        # Many frames → clamped to max
+        @test _auto_fps(500; target_duration = 12.0, min_fps = 2, max_fps = 30) == 30
+        # Medium range → computed value
+        fps = _auto_fps(120; target_duration = 12.0, min_fps = 2, max_fps = 30)
+        @test fps == 10
+        # Exact target
+        @test _auto_fps(24; target_duration = 12.0, min_fps = 1, max_fps = 30) == 2
+    end
+
+    # =====================================================================
+    @testset "Animations (smoke tests)" begin
+        Nbody6Setup.set_publication_theme!()
+
+        vis = VisualizationConfig(;
+            output_dir = joinpath(TESTDIR, "test_anims"),
+            format = "png",
+            dpi = 72,
+            figsize = (4, 3),
+        )
+
+        # Build two simple test snapshots
+        n = 30
+        params1 = zeros(Float32, 20); params1[1] = 0.0f0
+        params2 = zeros(Float32, 20); params2[1] = 1.0f0
+        hdr1 = SnapshotHeader(Int32(n), Int32(1), Int32(1), Int32(20), params1)
+        hdr2 = SnapshotHeader(Int32(n), Int32(2), Int32(1), Int32(20), params2)
+        snap1 = Snapshot(hdr1, Int32.(1:n), Float32.(rand(n)),
+                         Float32.(randn(3, n)), Float32.(0.1 .* randn(3, n)),
+                         Float32[], Float32[])
+        snap2 = Snapshot(hdr2, Int32.(1:n), Float32.(rand(n)),
+                         Float32.(randn(3, n) .+ 0.5), Float32.(0.1 .* randn(3, n)),
+                         Float32[], Float32[])
+
+        # --- Cluster animation (explicit fps) ---
+        outpaths = animate_cluster([snap1, snap2], vis;
+            filename = "test_cluster_anim", fps = 2)
+        @test all(isfile, outpaths)
+        @test all(p -> endswith(p, ".gif"), outpaths)
+
+        # --- Cluster animation (auto fps) ---
+        outpaths = animate_cluster([snap1, snap2], vis;
+            filename = "test_cluster_anim_auto")
+        @test all(isfile, outpaths)
+        @test all(p -> endswith(p, ".gif"), outpaths)
+
+        # --- Lagrangian animation ---
+        lagr = LagrangianData(
+            [0.0, 0.5, 1.0],
+            [0.1, 0.5, 1.0],
+            [0.05 0.06 0.07; 0.2 0.22 0.25; 1.0 1.05 1.1],
+        )
+        outpath = animate_lagrangian(lagr, vis;
+            filename = "test_lagr_anim", fps = 2,
+            selected_fractions = [0.1, 0.5, 1.0])
+        @test isfile(outpath)
+        @test endswith(outpath, ".gif")
+
+        # --- Lagrangian animation (auto fps) ---
+        outpath = animate_lagrangian(lagr, vis;
+            filename = "test_lagr_anim_auto",
+            selected_fractions = [0.1, 0.5, 1.0])
+        @test isfile(outpath)
+        @test endswith(outpath, ".gif")
+
+        # --- HR animation ---
+        sev1 = StellarEvolutionSnapshot(0.5, 2, [
+            StellarRecord(0.5, Int32(1), Int32(101), Int32(0), 1.0, 0.8, 0.1, -0.5, 3.75),
+            StellarRecord(0.5, Int32(2), Int32(102), Int32(1), 0.8, 1.2, 1.5,  0.2, 4.10),
+        ])
+        sev2 = StellarEvolutionSnapshot(1.0, 2, [
+            StellarRecord(1.0, Int32(1), Int32(101), Int32(2), 1.5, 0.75, 0.5, -0.2, 3.60),
+            StellarRecord(1.0, Int32(2), Int32(102), Int32(4), 0.9, 1.10, 2.0,  0.4, 3.90),
+        ])
+        outpath = animate_hr([sev1, sev2], vis;
+            filename = "test_hr_anim", fps = 2)
+        @test isfile(outpath)
+        @test endswith(outpath, ".gif")
+
+        # --- HR animation (auto fps) ---
+        outpath = animate_hr([sev1, sev2], vis;
+            filename = "test_hr_anim_auto")
+        @test isfile(outpath)
+        @test endswith(outpath, ".gif")
+    end
+
+    # =====================================================================
+    @testset "External post-processing" begin
+        # Create a fake output directory with some recognisable files
+        ext_dir = joinpath(TESTDIR, "external_output")
+        mkpath(ext_dir)
+
+        # --- scan_output on empty directory ---
+        scan_empty = scan_output(ext_dir)
+        @test scan_empty.dir == abspath(ext_dir)
+        @test scan_empty.available[:snapshots_conf3] == false
+        @test scan_empty.available[:diagnostics] == false
+        @test scan_empty.available[:lagr] == false
+        @test scan_empty.available[:escapers] == false
+        @test scan_empty.available[:stellar_evo] == false
+        @test scan_empty.available[:snapshots_hdf5] == false
+
+        # --- Populate with dummy files ---
+        # Write a minimal valid out1000
+        open(joinpath(ext_dir, "out1000"), "w") do io
+            println(io, " ADJUST: TIME  1.0  T[MYR]  0.5  Q  0.5  DE  1e-8  E  -0.25")
+        end
+        # Write a dummy lagr.7
+        open(joinpath(ext_dir, "lagr.7"), "w") do io
+            println(io, "# TIME  0.01  0.10  0.50  1.00")
+            println(io, "0.0  0.1  0.3  1.0  5.0")
+            println(io, "1.0  0.1  0.3  1.1  5.2")
+        end
+        # Write a dummy esc.11
+        open(joinpath(ext_dir, "esc.11"), "w") do io
+            println(io, "# escaper data")
+            println(io, "1  1.0  0.5  1.0 2.0 3.0  0.1 0.2 0.3")
+        end
+
+        # --- scan_output with partial data ---
+        scan = scan_output(ext_dir)
+        @test scan.available[:diagnostics] == true
+        @test scan.available[:lagr] == true
+        @test scan.available[:escapers] == true
+        @test scan.available[:snapshots_conf3] == false
+        @test scan.available[:stellar_evo] == false
+
+        # --- OutputScan display ---
+        buf = IOBuffer()
+        show(buf, MIME("text/plain"), scan)
+        output_str = String(take!(buf))
+        @test occursin("Diagnostics", output_str)
+        @test occursin("out1000", output_str)
+        @test occursin("not found", output_str)  # for missing categories
+
+        # --- scan_output error on non-existent directory ---
+        @test_throws ErrorException scan_output("/nonexistent/path")
+
+        # --- postprocess_external (data only, no plots) ---
+        results = postprocess_external(ext_dir;
+            generate_plots = false,
+        )
+        @test haskey(results, :scan)
+        @test results[:scan] isa OutputScan
+        @test haskey(results, :diagnostics)
+        @test haskey(results, :lagr)
+    end
+
+    # =====================================================================
+    # Adversarial external post-processing tests (included from separate file)
+    # =====================================================================
+    include("test_external_adversarial_inner.jl")
+
+    # =====================================================================
+    @testset "Initial Conditions — Merger IC Generator" begin
+        using Random
+        rng = MersenneTwister(12345)
+
+        # --- Plummer sampler ---
+        @testset "Plummer sampler" begin
+            N = 1000
+            a = 1.0
+            pos, vel = sample_plummer(N, a; rng = rng)
+            @test size(pos) == (3, N)
+            @test size(vel) == (3, N)
+            # Particles should be centred near origin
+            cm = vec(sum(pos, dims=2)) ./ N
+            @test all(abs.(cm) .< 0.5)
+            # Radii should be finite and positive
+            radii = [sqrt(sum(pos[:, i].^2)) for i in 1:N]
+            @test all(radii .> 0)
+            @test all(isfinite.(radii))
+            # Half-mass radius should be roughly 1.305 × a for Plummer
+            r_sorted = sort(radii)
+            r_hm = r_sorted[N ÷ 2]
+            @test 0.5 * a < r_hm < 3.0 * a
+        end
+
+        # --- King sampler ---
+        @testset "King sampler" begin
+            N = 1000
+            W0 = 6.0
+            rt = 10.0
+            pos, vel = sample_king(N, W0, rt; rng = rng)
+            @test size(pos) == (3, N)
+            @test size(vel) == (3, N)
+            # All particles should be within the tidal radius (with some tolerance
+            # from the sampling/scaling)
+            radii = [sqrt(sum(pos[:, i].^2)) for i in 1:N]
+            @test all(isfinite.(radii))
+            # Invalid W0
+            @test_throws ArgumentError sample_king(10, -1.0, 5.0)
+            @test_throws ArgumentError sample_king(10, 6.0, -1.0)
+        end
+
+        # --- King ODE solver ---
+        @testset "King ODE solver" begin
+            rhat, What, rho = Nbody6Setup._solve_king(6.0)
+            @test length(rhat) == length(What) == length(rho)
+            @test What[1] ≈ 6.0
+            @test What[end] ≈ 0.0 atol = 0.01
+            @test rhat[1] ≈ 0.0
+            @test rhat[end] > 0.0
+            # Density should be monotonically decreasing
+            @test all(diff(rho[1:end-1]) .≤ 0.01)
+        end
+
+        # --- Kroupa IMF ---
+        @testset "Kroupa IMF" begin
+            masses = sample_kroupa(5000; m_low = 0.08, m_up = 100.0, rng = rng)
+            @test length(masses) == 5000
+            @test all(masses .≥ 0.08)
+            @test all(masses .≤ 100.0)
+            # Most stars should be low-mass (IMF is bottom-heavy)
+            @test count(m -> m < 1.0, masses) > 3000
+            # Custom mass limits
+            masses_narrow = sample_kroupa(500; m_low = 1.0, m_up = 10.0, rng = rng)
+            @test all(1.0 .≤ masses_narrow .≤ 10.0)
+        end
+
+        # --- Virialisation ---
+        @testset "Virialise" begin
+            N = 200
+            mass = ones(N) ./ N
+            pos = randn(rng, 3, N)
+            vel = randn(rng, 3, N) .* 0.1
+            virialise!(mass, pos, vel)
+            # CM should be at origin
+            cm_pos = vec(sum(mass' .* pos, dims=2))
+            cm_vel = vec(sum(mass' .* vel, dims=2))
+            @test all(abs.(cm_pos) .< 1e-10)
+            @test all(abs.(cm_vel) .< 1e-10)
+            # Virial ratio should be ~0.5
+            T = 0.5 * sum(mass[i] * sum(vel[:, i].^2) for i in 1:N)
+            W = 0.0
+            for i in 1:N, j in (i+1):N
+                dr = pos[:, i] .- pos[:, j]
+                W -= mass[i] * mass[j] / sqrt(sum(dr.^2))
+            end
+            Q = T / abs(W)
+            @test Q ≈ 0.5 atol = 0.01
+        end
+
+        # --- Kepler velocity ---
+        @testset "Kepler velocity" begin
+            # Equal mass, circular orbit
+            v1, v2 = kepler_velocity(1.0, 1.0, 10.0, 0.0)
+            @test v1 ≈ v2  # symmetric
+            @test v1 > 0
+            # Eccentric orbit has lower apocentre velocity
+            v1e, v2e = kepler_velocity(1.0, 1.0, 10.0, 0.9)
+            @test v1e < v1
+            # Invalid inputs
+            @test_throws ArgumentError kepler_velocity(1.0, 1.0, 10.0, 1.0)
+            @test_throws ArgumentError kepler_velocity(1.0, 1.0, -1.0, 0.5)
+        end
+
+        # --- Jacobi radius ---
+        @testset "Jacobi radius" begin
+            rj = jacobi_radius(10.0, 1.0, 3.0)
+            @test rj ≈ 10.0 * (1.0 / 9.0)^(1/3)
+            # Equal mass: rJ = d × (1/3)^{1/3}
+            rj_eq = jacobi_radius(10.0, 1.0, 1.0)
+            @test rj_eq ≈ 10.0 * (1/3)^(1/3) atol = 1e-10
+        end
+
+        # --- Two-cluster orbit setup ---
+        @testset "Two-cluster orbit" begin
+            N1, N2 = 100, 100
+            pos1 = randn(rng, 3, N1) .* 0.5
+            vel1 = randn(rng, 3, N1) .* 0.01
+            mass1 = ones(N1) ./ N1
+            pos2 = randn(rng, 3, N2) .* 0.5
+            vel2 = randn(rng, 3, N2) .* 0.01
+            mass2 = ones(N2) ./ N2
+
+            pos, vel, mass = Nbody6Setup.setup_two_cluster_orbit(
+                pos1, vel1, mass1, pos2, vel2, mass2,
+                20.0, 0.5; truncate_jacobi_flag = false
+            )
+            @test length(mass) == N1 + N2
+            @test size(pos, 2) == N1 + N2
+            # Combined CM should be near origin
+            M = sum(mass)
+            cm = vec(sum(mass' .* pos, dims=2)) ./ M
+            @test all(abs.(cm) .< 0.1)
+        end
+
+        # --- dat.10 writer ---
+        @testset "dat.10 writer" begin
+            N = 50
+            mass = ones(N) ./ N
+            pos = randn(rng, 3, N)
+            vel = randn(rng, 3, N)
+            dat10_path = joinpath(TESTDIR, "test_dat10.dat")
+            write_dat10(dat10_path, mass, pos, vel)
+            lines = readlines(dat10_path)
+            @test length(lines) == N
+            # Each line should have 7 columns
+            cols = split(lines[1])
+            @test length(cols) == 7
+            # First column should be mass
+            @test parse(Float64, cols[1]) ≈ 1.0 / N
+        end
+
+        # --- N-body unit conversion ---
+        @testset "N-body unit conversion" begin
+            mass = [0.5, 0.5]
+            pos = [1.0 -1.0; 0.0 0.0; 0.0 0.0]
+            vel = [0.0 0.0; 1.0 -1.0; 0.0 0.0]
+            M_tot = 1e5  # M☉
+            rbar = 2.0   # pc
+            to_nbody_units!(mass, pos, vel, M_tot, rbar)
+            @test sum(mass) ≈ 1e-5  # each mass = 0.5/1e5
+            @test pos[1, 1] ≈ 0.5   # 1.0 / 2.0
+        end
+
+        # --- TOML config loading (kepler mode) ---
+        @testset "Merger config TOML — kepler" begin
+            cfg_path = joinpath(TESTDIR, "test_merger.toml")
+            write(cfg_path, """
+            [merger]
+            n_clusters = 2
+            orbit_mode = "kepler"
+
+            [merger.cluster1]
+            model = "plummer"
+            N = 100
+            mass_total = 1000.0
+            rbar = 1.0
+
+            [merger.cluster2]
+            model = "king"
+            N = 100
+            W0 = 5.0
+            mass_total = 1000.0
+            rbar = 1.0
+
+            [merger.orbit]
+            apocentre = 10.0
+            eccentricity = 0.5
+
+            [merger.output]
+            format = "nbody"
+            truncate_jacobi = false
+            """)
+            cfg = load_merger_config(cfg_path)
+            @test length(cfg.clusters) == 2
+            @test cfg.orbit_mode == "kepler"
+            @test cfg.clusters[1].profile isa PlummerProfile
+            @test cfg.clusters[2].profile isa KingProfile
+            @test cfg.clusters[2].profile.W0 == 5.0
+            @test cfg.orbit.apocentre == 10.0
+            @test cfg.orbit.eccentricity == 0.5
+            @test cfg.output.format == "nbody"
+            @test cfg.output.truncate_jacobi == false
+        end
+
+        # --- TOML config loading (explicit mode) ---
+        @testset "Merger config TOML — explicit" begin
+            cfg_path = joinpath(TESTDIR, "test_merger_explicit.toml")
+            write(cfg_path, """
+            [merger]
+            n_clusters = 3
+            orbit_mode = "explicit"
+
+            [merger.cluster1]
+            model = "plummer"
+            N = 50
+            mass_total = 500.0
+            rbar = 1.0
+            position = [-5.0, 0.0, 0.0]
+            velocity = [1.0, 0.0, 0.0]
+
+            [merger.cluster2]
+            model = "king"
+            N = 50
+            W0 = 4.0
+            mass_total = 500.0
+            rbar = 1.0
+            position = [2.5, 4.33, 0.0]
+            velocity = [-0.5, -0.87, 0.0]
+
+            [merger.cluster3]
+            model = "plummer"
+            N = 50
+            mass_total = 300.0
+            rbar = 0.8
+            position = [2.5, -4.33, 0.0]
+            velocity = [-0.5, 0.87, 0.0]
+
+            [merger.output]
+            format = "nbody"
+            truncate_jacobi = false
+            """)
+            cfg = load_merger_config(cfg_path)
+            @test length(cfg.clusters) == 3
+            @test cfg.orbit_mode == "explicit"
+            @test cfg.clusters[1].position == [-5.0, 0.0, 0.0]
+            @test cfg.clusters[3].velocity == [-0.5, 0.87, 0.0]
+        end
+
+        # --- Full pipeline — kepler mode (small N) ---
+        @testset "Full merger IC pipeline — kepler" begin
+            out_dir = mktempdir()
+            cfg = MergerConfig(
+                [
+                    ClusterSpec(model="plummer", N=100, mass_total=1e3, rbar=1.0,
+                                imf_kind_kind="kroupa", body1=50.0, bodyn=0.1),
+                    ClusterSpec(model="king", N=100, W0=5.0, mass_total=1e3, rbar=1.0,
+                                imf_kind_kind="kroupa", body1=50.0, bodyn=0.1),
+                ],
+                "kepler",
+                OrbitSpec(apocentre=10.0, eccentricity=0.5),
+                MergerOutputSpec(format="nbody", truncate_jacobi=true, output_dir=out_dir)
+            )
+            result = generate_merger_ic(cfg; rng = rng)
+            @test result isa MergerICResult
+            @test isdir(result.output_dir)
+            @test isfile(joinpath(result.output_dir, "dat.10"))
+            @test isfile(joinpath(result.output_dir, "merger.inp"))
+            @test isfile(joinpath(result.output_dir, "merger_summary.txt"))
+            @test result.N_total > 0
+            @test result.M_total > 0
+            @test result.orbit_mode == "kepler"
+            @test length(result.cluster_ranges) == 2
+
+            # Verify dat.10 mass normalisation
+            lines = readlines(joinpath(result.output_dir, "dat.10"))
+            masses = [parse(Float64, split(l)[1]) for l in lines]
+            @test sum(masses) ≈ 1.0 atol = 1e-10
+
+            # Verify .inp has KZ(22)=2
+            inp_text = read(joinpath(result.output_dir, "merger.inp"), String)
+            @test occursin("KZ(21:30)", inp_text)
+        end
+
+        # --- Full pipeline — explicit mode (3 clusters) ---
+        @testset "Full merger IC pipeline — explicit 3-cluster" begin
+            out_dir = mktempdir()
+            cfg = MergerConfig(
+                [
+                    ClusterSpec(model="plummer", N=80, mass_total=800.0, rbar=1.0,
+                                imf_kind="kroupa", body1=50.0, bodyn=0.1,
+                                position=[-5.0, 0.0, 0.0], velocity=[1.0, 0.0, 0.0]),
+                    ClusterSpec(model="king", N=80, W0=5.0, mass_total=800.0, rbar=1.0,
+                                imf_kind="kroupa", body1=50.0, bodyn=0.1,
+                                position=[2.5, 4.33, 0.0], velocity=[-0.5, -0.87, 0.0]),
+                    ClusterSpec(model="plummer", N=60, mass_total=400.0, rbar=0.8,
+                                imf_kind="equal", body1=50.0, bodyn=0.1,
+                                position=[2.5, -4.33, 0.0], velocity=[-0.5, 0.87, 0.0]),
+                ],
+                "explicit",
+                OrbitSpec(),  # ignored in explicit mode
+                MergerOutputSpec(format="nbody", truncate_jacobi=false, output_dir=out_dir)
+            )
+            result = generate_merger_ic(cfg; rng = rng)
+            @test result isa MergerICResult
+            @test result.orbit_mode == "explicit"
+            @test length(result.cluster_ranges) == 3
+            @test result.N_total == 80 + 80 + 60
+            # Total mass should sum to 1 in N-body units
+            lines = readlines(joinpath(result.output_dir, "dat.10"))
+            @test sum(parse(Float64, split(l)[1]) for l in lines) ≈ 1.0 atol = 1e-10
+        end
+
+        # --- Equal-mass IMF ---
+        @testset "Equal mass IMF" begin
+            out_dir = mktempdir()
+            cfg = MergerConfig(
+                [
+                    ClusterSpec(model="plummer", N=50, mass_total=500.0, rbar=1.0,
+                                imf_kind="equal", body1=50.0, bodyn=0.1),
+                    ClusterSpec(model="plummer", N=50, mass_total=500.0, rbar=1.0,
+                                imf_kind="equal", body1=50.0, bodyn=0.1),
+                ],
+                "kepler",
+                OrbitSpec(apocentre=8.0, eccentricity=0.3),
+                MergerOutputSpec(format="nbody", truncate_jacobi=false, output_dir=out_dir)
+            )
+            generate_merger_ic(cfg; rng = rng)
+            lines = readlines(joinpath(out_dir, "dat.10"))
+            @test length(lines) == 100
+        end
+
+        # --- MergerPipelineConfig in Nbody6Config ---
+        @testset "MergerPipelineConfig in load_config" begin
+            cfg = load_config(joinpath(TESTDIR, "test_config.toml"))
+            @test cfg.merger.enabled == false
+            @test cfg.merger.config_file == ""
+        end
+    end
+
+end  # top-level testset

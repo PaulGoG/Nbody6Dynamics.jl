@@ -1,0 +1,16 @@
+# Backend (cloned N-body source + build artefacts)
+backend/
+
+# Run outputs (simulation data, plots, animations)
+runs/
+
+# Legacy layout (safe to remove)
+Nbody6PPGPU-beijing/
+simulation-output/
+plots/
+
+*.h5part
+*.hdf5
+
+# Documenter.jl build output
+docs/build/
