@@ -309,6 +309,8 @@ function _write_run_summary(run_dir::String, run_id::String, stdout_path::String
         println(io, "Date:      $(Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"))")
         println(io, "Host:      $(gethostname())")
         println(io, "Julia:     $(VERSION)")
+        println(io, "Commit:    $(_git_commit(_PROJECT_ROOT))")
+        println(io, "Backend:   $(_git_commit(joinpath(_PROJECT_ROOT, "backend", "Nbody6PPGPU-beijing")))")
         println(io, "Elapsed:   $(_format_elapsed(elapsed))")
         if isfile(stdout_path)
             println(io, "Stdout:    $(countlines(stdout_path)) lines")

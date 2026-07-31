@@ -36,7 +36,7 @@ function plot_snapshot(
         xtk = _nice_ticks(xlo, xhi)
         ytk = _nice_ticks(ylo, yhi)
 
-        t_str = @sprintf("%.4f", t_nb)
+        t_str = @sprintf("%.3g", t_nb)
         ax = Axis(fig[1, 1];
             xlabel = xlabel,
             ylabel = ylabel,
@@ -142,7 +142,7 @@ function plot_snapshot_evolution(
             xtk = _nice_ticks(xlo, xhi)
             ytk = _nice_ticks(ylo, yhi)
 
-            t_str = @sprintf("%.3f", time_nb(snap.header))
+            t_str = @sprintf("%.3g", time_nb(snap.header))
 
             ax = Axis(fig[row, col];
                 xlabel = show_xlab ? xlab : "",

@@ -42,9 +42,9 @@ const _CM_FONT = let
 end
 
 const PUBLICATION_THEME = Theme(
-    fontsize = 18,
+    fontsize = 22,
     fonts    = _CM_FONT,
-    figure_padding = (12, 14, 10, 8),   # left, right, bottom, top
+    figure_padding = 16,
     Axis = (
         xlabelsize         = 20,
         ylabelsize         = 20,

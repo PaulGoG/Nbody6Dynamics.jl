@@ -88,7 +88,7 @@ function animate_cluster(
         frame_idx = Observable(1)
 
         time_text = @lift begin
-            t_str = @sprintf("%.4f", time_nb(snaps[$frame_idx].header))
+            t_str = @sprintf("%.3g", time_nb(snaps[$frame_idx].header))
             latexstring("\\mathrm{t} = $(t_str) \\; \\mathrm{[NB]}")
         end
 

@@ -321,6 +321,7 @@ function _write_merger_ic_metadata(path::AbstractString, cfg::MergerConfig,
         "meta" => Dict{String,Any}(
             "generated_at" => Dates.format(now(), "yyyy-mm-dd HH:MM:SS"),
             "schema_version" => 2,
+            "commit"       => _git_commit(_PROJECT_ROOT),
             "seed"         => seed,
             "external_rng" => external_rng,
             "N_total" => N_total,
