@@ -1212,6 +1212,27 @@ end
             @test length(lines) == 100
         end
 
+        # --- Summary write→parse round-trip (guards the format/regex coupling) ---
+        @testset "Merger summary round-trip" begin
+            out_dir = mktempdir()
+            cfg = MergerConfig(
+                [
+                    ClusterSpec(model = "king", N = 150, W0 = 5.0, mass_total = 1e3,
+                                rbar = 1.0, imf_kind = "kroupa", body1 = 50.0, bodyn = 0.1),
+                    ClusterSpec(model = "plummer", N = 100, mass_total = 8e2,
+                                rbar = 1.0, imf_kind = "equal"),
+                ],
+                "kepler",
+                OrbitSpec(apocentre = 10.0, eccentricity = 0.4),
+                MergerOutputSpec(format = "nbody", truncate_jacobi = true,
+                                 output_dir = out_dir),
+            )
+            result = generate_merger_ic(cfg; rng = rng)
+            ranges = parse_merger_summary(joinpath(out_dir, "merger_summary.txt"))
+            @test ranges == result.cluster_ranges
+            @test sum(length, ranges) == result.N_total
+        end
+
         # --- MergerPipelineConfig in Nbody6Config ---
         @testset "MergerPipelineConfig in load_config" begin
             cfg = load_config(joinpath(TESTDIR, "test_config.toml"))

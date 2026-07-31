@@ -1,13 +1,17 @@
 # Nbody6Setup.jl
 
-A Julia package for automated setup, execution, post-processing, and visualisation of the [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) N-body astrophysical simulation code.
+A Julia package for automated setup, execution, post-processing, and visualisation of the [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) N-body astrophysical simulation code, plus a validated multi-cluster merger initial-condition generator.
 
 ## Features
 
-- **Install & Build** -- Clone, configure, patch (HDF5), and compile Nbody6++GPU with auto-detected CUDA/MPI
-- **Simulate** -- Launch simulations with unique run IDs, frozen configs, and real-time ADJUST monitoring
-- **Post-process** -- Read all Nbody6++ output formats (conf.3, H5Part, out1000, lagr.7, esc.11, sev*.83)
-- **Visualise** -- Generate 18 publication-quality plots and GIF animations with CairoMakie
+- **Merger IC generation** — Multi-cluster initial conditions with validated King (1966) and Plummer samplers (King concentration `c(W0)` matches published values to <1%), Kroupa (2001) IMF in natural / rescaled / equal-mass modes, per-cluster virialisation to `Q = 0.5`, Jacobi truncation, Kepler or explicit orbit placement, and `dat.10` + `merger.inp` output for `KZ(22)=2`
+- **Pipeline orchestration** — Single `run_pipeline(cfg)` entry point driven by `config.toml`: install/build → merger ICs → simulation → post-processing → plots, each phase independently switchable
+- **Install & build** — Clone, configure, patch (HDF5 build flags), and compile Nbody6++GPU with auto-detected CUDA/MPI
+- **Simulate** — Unique run IDs, frozen config snapshots, isolated `runs/<run_id>/` directories, real-time ADJUST monitoring
+- **Post-process** — Readers for `conf.3_*` snapshots (Fortran binary), stdout diagnostics (`out1000`), Lagrangian radii (`lagr.7`), escapers (`esc.11`), and stellar evolution (`sev.83_*`)
+- **Visualise** — Publication-quality static plots and GIF animations with CairoMakie, including merger-specific diagnostics (inter-cluster separation, per-cluster virial ratio, IC overview plots)
+- **External post-processing** — Config-free `postprocess_external(dir)` for arbitrary Nbody6++ output directories, with automatic file discovery via `scan_output`
+- **Tests** — Unit tests against real output fixtures (`out1000`, `lagr.7`, `esc.11`, `sev.83`) plus physics validation (King concentration, Plummer `r_hm = 1.305a`, Kroupa mean mass, virialisation, Kepler/Jacobi relations)
 
 ## Quick Start
 
@@ -26,12 +30,14 @@ julia --project=. -e 'using Nbody6Setup; run_pipeline(load_config("config.toml")
 
 ## Usage Modes
 
-| Mode              | Settings                                                      |
-|:------------------|:--------------------------------------------------------------|
-| Full pipeline     | `install.enabled=true`, `simulation.run_test=true`            |
-| Simulate only     | `install.enabled=false`, `simulation.run_test=true`           |
-| Postprocess only  | `simulation.run_test=false`, `postprocess.data_dir="..."`     |
-| Re-plot latest    | `simulation.run_test=false`, `postprocess.data_dir=""`        |
+| Mode                | Settings                                                        |
+|:--------------------|:----------------------------------------------------------------|
+| Full pipeline       | `install.enabled=true`, `simulation.run_test=true`              |
+| Simulate only       | `install.enabled=false`, `simulation.run_test=true`             |
+| Postprocess only    | `simulation.run_test=false`, `postprocess.data_dir="..."`       |
+| Re-plot latest run  | `simulation.run_test=false`, `postprocess.data_dir=""`          |
+| Merger ICs only     | `merger.enabled=true`, `simulation.run_test=false`              |
+| Merger + simulate   | `merger.enabled=true`, `simulation.run_test=true`               |
 
 ## Programmatic API
 
@@ -42,12 +48,18 @@ using Nbody6Setup
 cfg = load_config("config.toml")
 results = run_pipeline(cfg)
 
+# One-call merger IC generation (no config.toml needed)
+result = run_merger_pipeline("input_files/merger_demo_small.toml")
+
 # Post-process an external output directory directly
 results = postprocess_external("/path/to/output")
 
 # Quick scan of available output files
 scan = scan_output("/path/to/output")
 println(scan)
+
+# Reload a previously generated merger IC (no re-sampling)
+result = load_merger_ic_result("runs/merger_run_.../output")
 ```
 
 See the [API Reference](@ref) for the complete public interface.
@@ -55,6 +67,6 @@ See the [API Reference](@ref) for the complete public interface.
 ## Contents
 
 ```@contents
-Pages = ["manual.md", "input_files.md", "api.md"]
+Pages = ["manual.md", "input_files.md", "multi_cluster_mergers.md", "api.md"]
 Depth = 2
 ```

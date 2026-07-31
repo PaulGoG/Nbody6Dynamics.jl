@@ -35,6 +35,8 @@ BuildConfig
 SimulationConfig
 PostprocessConfig
 VisualizationConfig
+Nbody6Setup.PlotStyle
+MergerPipelineConfig
 ```
 
 ## Data Types
@@ -71,9 +73,6 @@ rc
 ```@docs
 read_conf3
 read_all_conf3
-read_hdf5_snapshot
-read_hdf5_snapshots
-list_hdf5_steps
 read_diagnostics
 extract_scaling
 read_lagr
@@ -113,10 +112,31 @@ detect_cuda_path
 
 ## Merger Initial Conditions
 
+### Density Profiles
+
+```@docs
+DensityProfile
+KingProfile
+PlummerProfile
+profile_name
+```
+
+### Initial Mass Functions
+
+```@docs
+IMFSpec
+KroupaIMF
+RescaledKroupaIMF
+EqualMassIMF
+imf_name
+expected_mass
+sample_masses
+kroupa_mean_mass
+```
+
 ### Configuration
 
 ```@docs
-MergerPipelineConfig
 ClusterSpec
 OrbitSpec
 MergerOutputSpec
@@ -130,6 +150,7 @@ load_merger_config
 ```@docs
 run_merger_pipeline
 generate_merger_ic
+load_merger_ic_result
 plot_merger_ic
 sample_plummer
 sample_king
@@ -150,4 +171,13 @@ jacobi_radius
 write_dat10
 generate_merger_inp
 to_nbody_units!
+```
+
+### Merger Run Diagnostics
+
+```@docs
+parse_merger_summary
+per_cluster_virial
+plot_cluster_separation
+plot_cluster_virial
 ```

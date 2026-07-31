@@ -205,7 +205,7 @@ function animate_hr(
 
     # sev.time_myr is in Myr, not NB units
     time_text = @lift begin
-        t_str = @sprintf("%.4f", sevs[$frame_idx].time_myr)
+        t_str = @sprintf("%.3g", sevs[$frame_idx].time_myr)
         latexstring("\\mathrm{t} = $(t_str)\\;\\mathrm{Myr}")
     end
 

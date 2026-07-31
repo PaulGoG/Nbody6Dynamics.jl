@@ -1,291 +1,148 @@
 # Nbody6Setup.jl
 
-A Julia project for automated setup, execution, post-processing, and visualisation of the [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) N-body astrophysical simulation code.
+A Julia package that automates the full lifecycle of [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations: install/build of the Fortran code, multi-cluster merger initial-condition generation, simulation execution, post-processing of all standard output files, and publication-quality visualization. Every phase is driven by a single TOML configuration and orchestrated through one entry point, `run_pipeline`.
 
 ## Project Structure
 
 ```
 Nbody6Setup/
-├── Project.toml                     # Julia package metadata & dependencies
-├── LICENSE                          # MIT license
-├── config.toml                      # User configuration (edit this)
-├── .gitignore
 ├── README.md
+├── LICENSE                          # MIT
+├── Project.toml                     # Package metadata & dependencies
+├── Manifest.toml                    # Version-controlled — exact dependency versions
+├── config.toml                      # Main pipeline configuration (edit this)
 ├── src/
-│   ├── Nbody6Setup.jl               # Main module & orchestration
-│   ├── types.jl                     # Core type definitions
-│   ├── config.jl                    # TOML configuration loader & serialiser
-│   ├── platform.jl                  # Platform detection, CUDA, HDF5, dependencies
-│   ├── install.jl                   # Git clone, configure, HDF5 patch, build
-│   ├── run.jl                       # Simulation execution with run ID & monitoring
-│   ├── external.jl                  # scan_output, postprocess_external entry points
+│   ├── Nbody6Setup.jl               # Module root; run_pipeline orchestrator; exports
+│   ├── types.jl                     # Config structs (incl. PlotStyle), Snapshot, records, UnitScaling
+│   ├── config.jl                    # TOML loader/serialiser for Nbody6Config
+│   ├── util.jl                      # safesave-style never-overwrite backups
+│   ├── platform.jl                  # OS/CUDA/dependency detection
+│   ├── install.jl                   # Clone, configure, HDF5 Makefile patch, build
+│   ├── run.jl                       # Simulation launcher: run dirs, launch script, live monitoring
+│   ├── external.jl                  # scan_output + postprocess_external for arbitrary output dirs
 │   ├── io/
 │   │   ├── io.jl                    # I/O submodule includes
-│   │   ├── fortran_binary.jl        # Fortran unformatted binary record reader
-│   │   ├── conf3.jl                 # conf.3 snapshot reader (standard + extended)
-│   │   ├── hdf5_reader.jl           # HDF5/H5Part snapshot reader
-│   │   ├── diagnostics.jl           # stdout (out1000) parser — ADJUST lines
+│   │   ├── fortran_binary.jl        # Fortran unformatted record reader
+│   │   ├── conf3.jl                 # conf.3 snapshot reader (standard + extended layout)
+│   │   ├── diagnostics.jl           # out1000 parser: ADJUST lines + PHYSICAL SCALING
 │   │   ├── lagr.jl                  # lagr.7 Lagrangian radii reader
-│   │   ├── esc.jl                   # esc.11 escaper reader
-│   │   └── stellar_evolution.jl     # sev*.83 stellar evolution reader
+│   │   ├── esc.jl                   # esc.11 escaper reader (fork's real column format)
+│   │   └── stellar_evolution.jl     # sev.83_* single-star evolution reader
 │   ├── ic/
-│   │   ├── ic.jl                    # IC submodule includes
-│   │   ├── config.jl                # MergerConfig types & TOML parser
-│   │   ├── models.jl                # Plummer & King model samplers
-│   │   ├── imf.jl                   # Kroupa (2001) broken power-law IMF
-│   │   ├── orbits.jl                # Kepler orbits, Jacobi truncation
-│   │   └── output.jl               # dat.10 writer & .inp generator
+│   │   ├── ic.jl                    # run_merger_pipeline / generate_merger_ic entry points
+│   │   ├── config.jl                # Merger TOML parser: ClusterSpec, OrbitSpec, seed
+│   │   ├── models.jl                # Plummer & King (ODE-solved) density samplers
+│   │   ├── imf.jl                   # Kroupa (2001) IMF, rescaled & equal-mass variants
+│   │   ├── orbits.jl                # Kepler two-body + explicit N-cluster orbits, Jacobi radius, virialise!
+│   │   ├── output.jl                # dat.10 writer, merger.inp generator (seed → NRAND)
+│   │   └── plotting.jl              # Merger IC diagnostic plots
 │   └── plotting/
-│       ├── plotting.jl              # Publication theme (CM fonts) & helpers
-│       ├── snapshots.jl             # 2D projection scatter plots
+│       ├── plotting.jl              # Publication theme (Computer Modern fonts)
+│       ├── snapshots.jl             # Projection scatter plots, cluster separation & per-cluster virial
+│       ├── energy.jl                # Energy error & particle count from diagnostics
 │       ├── lagrangian.jl            # Lagrangian radii evolution
-│       ├── energy.jl                # Energy error & virial ratio plots
-│       ├── hr.jl                    # Hertzsprung-Russell diagram
+│       ├── hr.jl                    # HR diagrams colour-coded by stellar type
+│       ├── merger.jl                # Merger IC overview figures
 │       └── animation.jl             # GIF animations (cluster, HR, Lagrangian)
 ├── scripts/
-│   └── run_setup.jl                 # Main entry-point script
+│   ├── run_setup.jl                 # CLI wrapper: load config → run_pipeline
+│   └── run_verif_suite.jl           # Three-target verification suite
 ├── test/
-│   ├── runtests.jl                  # Full test suite (311 tests)
-│   └── test_external_adversarial_inner.jl  # Adversarial edge-case tests
+│   ├── runtests.jl                  # Full unit + physics-validation suite
+│   ├── test_external_adversarial_inner.jl  # Adversarial external post-processing tests
+│   └── fixtures/                    # Real Nbody6++ output excerpts (esc.11, lagr.7, out1000, sev.83_0)
 ├── benchmark/
-│   └── benchmarks.jl                # I/O performance benchmarks
+│   └── benchmarks.jl                # BenchmarkTools suite (kept out of tests)
 ├── docs/
 │   ├── make.jl                      # Documenter.jl build script
-│   ├── Project.toml                 # Docs environment dependencies
-│   └── src/                         # Documenter source pages
-│       ├── index.md                 # Landing page
-│       ├── api.md                   # API reference (autodocs)
-│       ├── manual.md                # User manual
-│       └── input_files.md           # .inp file format reference & design guide
-├── input_files/                     # Custom simulation input files
-│   ├── N25k_production.inp          #   25k particles, standard King model
-│   ├── N100k_production.inp         #   100k particles, production run
-│   ├── imbh_runaway.inp             #   IMBH formation via runaway collisions
-│   ├── gc_bh_subsystem.inp          #   Globular cluster with BH subsystem
-│   ├── tidal_tails.inp              #   Tidal stripping in Milky Way potential
-│   ├── young_massive_binaries.inp   #   Binary-rich young massive cluster
-│   ├── pop3_cluster.inp             #   Population III near-zero metallicity
-│   ├── merger_equal_mass.toml       #   Equal-mass King merger, kepler mode (q=1)
-│   ├── merger_minor_plummer.toml    #   Minor Plummer merger, kepler mode (q=0.1)
-│   └── merger_triple_cluster.toml   #   3-cluster triangular merger, explicit mode
-├── backend/                         # ← cloned N-body source code (black-box)
-│   └── Nbody6PPGPU-beijing/         #   upstream Fortran/C++ simulation code
-└── runs/                            # ← simulation outputs, grouped by run ID
-    └── run_YYYYMMDD_HHMMSS_XXXX/    #   one directory per run
-        ├── config.toml              #   frozen config snapshot
-        ├── RUN_INFO.txt             #   run metadata summary
-        ├── output/                  #   simulation output files
-        │   ├── nbody6++             #   binary copy (reproducibility)
-        │   ├── _launch.sh           #   generated launch script
-        │   ├── out1000              #   captured stdout
-        │   ├── err1000              #   captured stderr
-        │   ├── conf.3_*             #   particle snapshots
-        │   ├── lagr.7               #   Lagrangian radii
-        │   ├── esc.11               #   escaper events
-        │   └── sev*.83              #   stellar evolution snapshots
-        └── plots/                   #   post-processing plots & GIFs (18 files)
+│   └── src/                         # index, manual, input_files, multi_cluster_mergers, api
+├── input_files/
+│   ├── N1k_quick.inp                # N=1000 smoke test (seconds)
+│   ├── N5k_medium.inp               # N=5000 medium verification run
+│   ├── N25k_production.inp          # N=25000 production run
+│   ├── N100k_production.inp         # N=100000 production run
+│   ├── gc_bh_subsystem.inp          # Globular cluster with BH subsystem
+│   ├── imbh_runaway.inp             # IMBH formation via runaway collisions
+│   ├── pop3_cluster.inp             # Population III near-zero-metallicity cluster
+│   ├── tidal_tails.inp              # Tidal-tail formation, Galactic-centre cluster
+│   ├── young_massive_binaries.inp   # Young massive cluster, high binary fraction
+│   ├── merger_demo_small.toml       # Quick equal-mass King merger demo (N=1000/cluster)
+│   ├── merger_equal_mass.toml       # Equal-mass King merger (q=1), eccentric orbit
+│   ├── merger_minor_plummer.toml    # Minor Plummer merger (q=0.1), inspiral setup
+│   ├── merger_triple_cluster.toml   # Triple cluster, explicit-position orbit mode
+│   ├── merger_2cluster_medium.toml  # Two King clusters on eccentric Kepler orbit
+│   ├── merger_3cluster_small.toml   # 3-cluster equilateral triangle, small
+│   ├── merger_3cluster_medium.toml  # 3-cluster equilateral triangle, medium
+│   ├── merger_5cluster_small.toml   # 5-cluster pentagon, small
+│   ├── merger_5cluster_medium.toml  # 5-cluster pentagon, medium
+│   ├── merger_27cluster_cubic.toml  # 27 clusters on a 3×3×3 cubic grid
+│   ├── verif_triorbit.toml          # Bound Lagrange-triangle verification target
+│   └── verif_3d5cluster.toml        # 5 clusters distributed in 3D (projection/COM verification)
+├── backend/                         # (gitignored) cloned Nbody6PPGPU-beijing source + build
+└── runs/                            # (gitignored) per-run output/, plots/, frozen config.toml
 ```
 
-## Quick Start
+## Environment Setup
+
+Requires Julia ≥ 1.10.
 
 ```bash
-cd Nbody6Setup
-
-# Install dependencies
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
-
-# Edit configuration
-$EDITOR config.toml
-
-# Run the full pipeline (install → build → simulate → postprocess → plot)
-julia --project=. -e 'using Nbody6Setup; run_pipeline(load_config("config.toml"))'
-
-# Or run with a custom config
-julia --project=. -e 'using Nbody6Setup; run_pipeline(load_config("/path/to/my_config.toml"))'
 ```
 
-### Usage Modes
+`Manifest.toml` is version-controlled, so `instantiate` reproduces the exact dependency set on any machine. Building the Fortran backend additionally needs `git`, `gfortran`/`make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
 
-The pipeline supports four modes, controlled by `config.toml`:
+## Usage
 
-| Mode              | Settings                                                      |
-|-------------------|---------------------------------------------------------------|
-| Full pipeline     | `install.enabled=true`, `simulation.run_test=true`            |
-| Simulate only     | `install.enabled=false`, `simulation.run_test=true`           |
-| Postprocess only  | `simulation.run_test=false`, `postprocess.data_dir="..."`     |
-| Re-plot latest    | `simulation.run_test=false`, `postprocess.data_dir=""`        |
+`run_pipeline(cfg)` is the single entry point; `config.toml` flags select which phases run. Six modes:
 
-### Programmatic API
+| # | Mode | Config flags |
+|---|------|--------------|
+| 1 | Full pipeline | `install.enabled=true`, `simulation.run_test=true` |
+| 2 | Simulate only | `install.enabled=false`, `simulation.run_test=true` |
+| 3 | Postprocess only | `simulation.run_test=false`, `postprocess.data_dir="/path/to/output"` |
+| 4 | Re-plot latest run | `simulation.run_test=false`, `postprocess.data_dir=""` |
+| 5 | Merger ICs only | `merger.enabled=true`, `merger.config_file="input_files/..."` |
+| 6 | Merger + simulate | `merger.enabled=true`, `simulation.run_test=true` |
 
 ```julia
 using Nbody6Setup
-
-# Full pipeline from config
 cfg = load_config("config.toml")
-results = run_pipeline(cfg)
-
-# Post-process an external output directory directly
-results = postprocess_external("/path/to/output")
-
-# Quick scan of available output files
-scan = scan_output("/path/to/output")
-println(scan)
-
-# Generate multi-cluster merger initial conditions
-cfg = load_merger_config("input_files/merger_equal_mass.toml")
-generate_merger_ic(cfg)  # → dat.10 + merger.inp
+results = run_pipeline(cfg)   # Dict with :snapshots, :diagnostics, :lagr, :escapers, :stellar_evo
 ```
 
-## Merger Initial Conditions
+Or via the CLI wrapper:
 
-Generate initial conditions for multi-cluster merger simulations.
+```bash
+julia --project=. scripts/run_setup.jl [config.toml]
+```
 
-### Two orbit modes
-
-| Mode | Clusters | Positions | Use case |
-|------|----------|-----------|----------|
-| `"kepler"` | Exactly 2 | Auto-computed from apocentre + eccentricity | Binary cluster mergers |
-| `"explicit"` | Any N ≥ 2 | User-specified per-cluster `position`/`velocity` | Hierarchical or multi-body encounters |
-
-### Standalone usage
+Standalone merger IC generation (no main config needed):
 
 ```julia
-using Nbody6Setup
-
-# One-liner (loads TOML, generates ICs + plots)
 result = run_merger_pipeline("input_files/merger_equal_mass.toml")
-
-# 3-cluster explicit mode
-result = run_merger_pipeline("input_files/merger_triple_cluster.toml")
+# writes dat.10, merger.inp, merger_summary.txt + diagnostic plots
 ```
 
-### Integrated via config.toml
-
-```toml
-# In config.toml:
-[merger]
-enabled     = true
-config_file = "input_files/merger_equal_mass.toml"
-```
-```julia
-cfg = load_config("config.toml")
-results = run_pipeline(cfg)  # Phase 1.5 generates ICs, Phase 4 plots them
-```
-
-### Programmatic API
+Post-process any directory containing Nbody6++ output, config-free:
 
 ```julia
-cfg = MergerConfig(
-    [
-        ClusterSpec(model="king", N=50000, W0=6.0, mass_total=1e5, rbar=2.0),
-        ClusterSpec(model="king", N=50000, W0=4.0, mass_total=5e4, rbar=3.0),
-    ],
-    "kepler",
-    OrbitSpec(apocentre=15.0, eccentricity=0.7),
-    MergerOutputSpec(format="nbody", truncate_jacobi=true)
-)
-result = generate_merger_ic(cfg)
+scan = scan_output("/scratch/sim42/output")     # report available files
+results = postprocess_external("/scratch/sim42/output")
 ```
 
-Supported density profiles: **King** (recommended, finite tidal radius) and **Plummer**. Masses drawn from a Kroupa (2001) IMF. Optional nearest-neighbour Jacobi truncation. Output: `dat.10` + `.inp` for Nbody6++ with `KZ(22)=2`.
+Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, frozen `config.toml`). Run IDs come from `generate_run_id` (prefix + timestamp + 4-hex uniqueness suffix); merger runs prepend `merger_` to the configured prefix.
 
-See [docs/src/multi_cluster_mergers.md](docs/src/multi_cluster_mergers.md) for the full physics background and parameter guide.
+## Component Status
 
-## Configuration
-
-All behaviour is controlled by `config.toml`.  Key sections:
-
-| Section           | Purpose                                                    |
-|-------------------|------------------------------------------------------------|
-| `[install]`       | Source URL, backend install directory, reinstall toggle     |
-| `[build]`         | Configure flags, MPI/GPU/HDF5 toggles, CUDA path, nproc   |
-| `[simulation]`    | Input file, runs directory, MPI ranks, run ID prefix       |
-| `[postprocess]`   | Output readers: conf.3, HDF5, stdout, lagr, escapers, sev  |
-| `[visualization]` | Plot format (png/pdf/svg), DPI, figure size                |
-
-Set `enabled = false` or `run_test = false` in any section to skip that phase.
-
-## Phases
-
-### 1. Install & Build
-
-- Clones the repository into `backend/` (or skips if already present)
-- Checks all build dependencies (compilers, MPI, CUDA)
-- Runs `./configure` with user-specified flags
-- Patches `build/Makefile` for HDF5 via a robust `-include` mechanism that survives `./configure` reruns
-- Auto-detects CUDA installation path from environment variables and standard locations
-- Detects and warns about the Fedora `h5pfc` broken includedir bug
-- Compiles with `make -j$(nproc)`
-
-### 2. Simulation
-
-- Creates an isolated run directory: `runs/<run_id>/output/`
-- Saves a frozen copy of `config.toml` and the binary for reproducibility
-- Generates a bash launch script with `ulimit -s unlimited`, `OMP_STACKSIZE=4096M`, and CUDA environment
-- Uses `stdbuf -oL` for line-buffered output when available
-- Monitors stdout in real-time, printing ADJUST summaries to the terminal
-- Writes `RUN_INFO.txt` with run metadata after completion
-
-### 3. Post-processing
-
-Reads simulation output files:
-
-| Reader                      | File             | Format                                        |
-|-----------------------------|------------------|-----------------------------------------------|
-| `read_conf3`                | `conf.3_*`       | Fortran unformatted binary (standard/extended) |
-| `read_hdf5_snapshot`        | `data.40.h5part`  | HDF5/H5Part                                  |
-| `read_diagnostics`          | `out1000`        | ASCII (ADJUST lines, PHYSICAL SCALING)         |
-| `read_lagr`                 | `lagr.7`         | ASCII (block-structured Lagrangian radii)      |
-| `read_escapers`             | `esc.11`         | ASCII (escaper events)                         |
-| `read_stellar_evolution`    | `sev*.83`        | ASCII (stellar properties per epoch)           |
-
-### 4. Visualisation
-
-Publication-quality plots generated with CairoMakie, using **Computer Modern (LaTeX) fonts** via `LaTeXStrings.jl` and the `NewComputerModern` OTF family bundled with MathTeXEngine:
-
-**Static plots (PNG/PDF/SVG):**
-
-- **Snapshot projections** (×3) — XY/XZ/YZ scatter plots coloured by mass with colorbar
-- **Snapshot evolution** (×3) — Multi-panel time sequence with mass colormap and shared colorbar (XY/XZ/YZ)
-- **Energy diagnostics** — Relative energy error |ΔE/E| and virial ratio vs time
-- **Particle count** — N(t) and N_pairs(t) evolution with integer ticks
-- **Lagrangian radii** — Selected mass-fraction radii vs time (log scale)
-- **HR diagrams** (×3) — Hertzsprung-Russell diagram at early, mid, and final epochs, coloured by stellar type
-- **HR evolution** — Multi-panel HR diagram across 6 epochs
-
-**Animations (GIF):**
-
-- **Cluster evolution** (×3) — Animated scatter plot in XY/XZ/YZ with consistent axis limits and colour scale
-- **Lagrangian radii** — Progressive line drawing with time cursor over ghost background
-- **HR evolution** — Animated HR diagram with per-frame stellar type colouring
-
-Total: **18 output files** per run (13 static + 5 GIF animations).
-
-All plots use a fully-boxed publication theme with Computer Modern fonts, minor ticks, and LaTeX-rendered axis labels.
-
-**Legend and colour encoding summary:**
-- **Snapshot scatter**: viridis colormap → `log₁₀(m/M_tot)` (particle mass)
-- **Energy plot**: blue line = `|ΔE/E|`, red line = `Q = T/|W|`, dashed grey = virial equilibrium (Q=0.5)
-- **Particle count**: blue = `N` (bound particles), orange = `N_pairs` (KS binaries)
-- **Lagrangian radii**: coloured lines labelled `M(r)/M_tot = X%` (1%, 10%, 50%, 90%, 100%)
-- **HR diagrams**: colour-coded by BSE stellar type K* (MS=royal blue, GB=orange, BH=black, etc.)
-
-For detailed legend documentation and colour tables, see [docs/src/manual.md § 9](docs/src/manual.md).
-
-## N-body Units
-
-The simulation uses Heggie & Mathieu (1986) N-body units:
-
-| Quantity  | N-body unit      | Physical conversion         |
-|-----------|------------------|-----------------------------|
-| G         | 1                | —                           |
-| M_total   | 1                | `ZMBAR × N` M☉             |
-| E_total   | −1/4             | —                           |
-| Length    | 1 (virial radius) | `RBAR` pc                  |
-| Time      | 1                | `TSCALE` Myr               |
-| Velocity  | 1                | `VSTAR` km/s               |
-
-Use `extract_scaling(diagnostics)` to get a `UnitScaling` struct for conversions.
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Install / build | Working | Clone, `configure`, HDF5 Makefile patch, parallel make; CUDA path auto-detection |
+| Merger IC generator | Working | Plummer + King samplers (King c(W0) validated against published concentrations); Kroupa (2001) IMF; Kepler two-body and explicit N-cluster orbit modes; Jacobi truncation; seeded reproducibility — the TOML `seed` drives the sampler RNG and propagates to Nbody6's `NRAND` |
+| Simulation runner | Working | Launch script, live stdout monitoring, run summary; merger runs execute inside the IC output dir so `dat.10` is found |
+| I/O readers | Working | `conf.3` (standard + extended), `out1000` diagnostics (ADJUST + physical scaling; virial ratio Q = T/\|W\|, equilibrium at 0.5), `lagr.7`, and `esc.11` / `sev.83_*` in the fork's real formats; `STELLAR_TYPE_LABELS` follow the Hurley convention (13 = NS, 14 = BH); `UnitScaling.zmbar` is the total-mass scale factor M*, not the mean stellar mass. HDF5 reader removed — the fork's KZ(46) H5Part layout was never supported; `.h5part` files are detected and warned about |
+| Plotting / animation | Working | Publication theme: no titles, no minor ticks, Computer Modern fonts, dashed grey low-opacity grid on line plots; presentation knobs config-driven via `[visualization.style]` (`PlotStyle`); existing figures are never overwritten (safesave-style `#1`, `#2`, … backups) |
+| Tests | Passing | 364/364 as of this commit, incl. physics validation and adversarial external-input tests |
 
 ## Testing
 
@@ -293,52 +150,24 @@ Use `extract_scaling(diagnostics)` to get a `UnitScaling` struct for conversions
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-## Benchmarks
+The suite covers config round-trips, all I/O readers (synthetic binaries plus real fork output fixtures under `test/fixtures/`), plotting/animation smoke tests, external post-processing (including adversarial malformed inputs), and the merger IC generator. Physics-validation tests check King concentration c(W0) against published values, the Plummer half-mass relation r_hm = 1.305 a, the Kroupa mean mass, virial equilibrium Q = T/|W| = 0.5 after `virialise!`, and the Keplerian orbital energy of generated two-cluster orbits.
+
+## Verification Suite
 
 ```bash
-julia --project=. benchmark/benchmarks.jl
+julia --project=. scripts/run_verif_suite.jl
 ```
 
-## Dependencies
+Runs three end-to-end targets through `run_pipeline` (requires a built binary in `backend/`):
 
-| Package        | Purpose                              |
-|----------------|--------------------------------------|
-| CairoMakie     | Publication-quality plotting & GIFs  |
-| LaTeXStrings   | LaTeX-rendered axis labels & titles  |
-| HDF5           | H5Part snapshot reading              |
-| ProgressMeter  | Progress bars for batch reads        |
-| SpecialFunctions | Error function for King model       |
-| TOML           | Configuration parsing (stdlib)       |
-
-## Platform Support
-
-Tested on:
-- **Fedora 42+** (DNF 5, environment modules for MPI)
-- **Ubuntu 20.04+** (apt, standard MPI/HDF5 packages)
-
-The install phase auto-detects the platform and adjusts HDF5 linking flags accordingly.
-
-## Input Files
-
-Custom simulation input files live in `input_files/` at the project root (separate from the backend's `examples/` directory). These use the Nbody6++GPU Fortran NAMELIST format with blocks `&INNBODY6`, `&ININPUT`, `&INDATA`, `&INSTAR`.
-
-See [docs/src/input_files.md](docs/src/input_files.md) for a comprehensive reference on the `.inp` file format, KZ option flags, physical scaling, and a guide for designing new simulations.
+1. `single` — plain N=5000 run (`N5k_medium.inp`)
+2. `triorbit` — bound three-cluster Lagrange triangle (`verif_triorbit.toml`)
+3. `3d5cluster` — five clusters distributed in 3D (`verif_3d5cluster.toml`)
 
 ## Documentation
 
-Built with [Documenter.jl](https://documenter.juliadocs.org/). To build locally:
+Documenter.jl docs live under `docs/` (Manual, Input Files, Cluster Mergers, API Reference):
 
 ```bash
-julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=".")); Pkg.instantiate(io=devnull)'
-julia --project=docs docs/make.jl
+julia --project=docs docs/make.jl   # builds to docs/build/
 ```
-
-Output: `docs/build/index.html`
-
-Source documents:
-- [docs/src/manual.md](docs/src/manual.md) — Full user manual
-- [docs/src/input_files.md](docs/src/input_files.md) — Input file format reference & simulation design guide
-
-## License
-
-[MIT](LICENSE)

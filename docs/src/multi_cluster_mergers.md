@@ -1,206 +1,145 @@
 # Multi-Cluster Merger Simulations
 
-## Background
+Nbody6Setup ships a merger initial-condition generator (`src/ic/`) that produces `dat.10` particle files and matching `.inp` files for Nbody6++ external-IC runs (`KZ(22)=2`). It supports any number of clusters ≥ 2, King or Plummer density profiles per cluster, three IMF modes, automatic Kepler placement for cluster pairs, and Jacobi truncation.
 
-Cluster merger simulations model the gravitational encounter and coalescence of two or more star clusters. This is relevant to:
+## Entry points
 
-- **Nuclear star cluster formation** via inspiral of globular clusters toward a galactic centre
-- **Hierarchical cluster assembly** in young massive cluster complexes (e.g. R136, Westerlund 1)
-- **Merger remnant identification** (e.g. NGC 1851, Terzan 5 -- suspected merger products with multiple stellar populations)
-- **Intermediate-mass black hole (IMBH) formation** via runaway collisions during core mergers
+```julia
+# One-call: TOML → dat.10 + merger.inp + summary + metadata + diagnostic plots
+result = run_merger_pipeline("input_files/merger_demo_small.toml")
 
-## Physics of Cluster Mergers
+# Config-driven: generate ICs, run the simulation, post-process, plot
+# (config.toml: merger.enabled = true, merger.config_file = "input_files/...")
+results = run_pipeline(load_config("config.toml"))
 
-### Orbital parameters
+# Programmatic
+cfg    = load_merger_config("input_files/merger_demo_small.toml")
+result = generate_merger_ic(cfg; output_dir = "my_ics")
 
-Two clusters on a Keplerian orbit are characterised by:
+# Reload a previously generated IC from disk (no re-sampling)
+result = load_merger_ic_result("runs/merger_run_.../output")
+```
 
-| Parameter | Symbol | Meaning |
-|:----------|:-------|:--------|
-| Apocentre distance | ``d_{\rm apo}`` | Maximum separation |
-| Eccentricity | ``e`` | Orbital shape (0 = circular, 1 = parabolic) |
-| Semi-major axis | ``a = d_{\rm apo}/(1+e)`` | Orbit size |
-| Mass ratio | ``q = M_2/M_1 \leq 1`` | Relative cluster masses |
+The TOML schema (flat legacy and structured forms) is documented in [Input File Reference](@ref).
 
-The **mutual escape velocity** at separation ``d`` is:
+## Scientific context
+
+Cluster merger simulations model the gravitational encounter and coalescence of star clusters, relevant to nuclear star cluster assembly, hierarchical formation of young massive clusters (R136, Westerlund 1), suspected merger remnants (NGC 1851, Terzan 5), and IMBH formation via runaway collisions during core mergers.
+
+## Density profile samplers
+
+Each cluster's spatial sampler is selected by its `DensityProfile` tag: `KingProfile(W0)` or `PlummerProfile()`.
+
+### King (1966) — `sample_king`
+
+The King model is solved from its Poisson equation in standard dimensionless form, `r̂ = r/r₀` with King radius `r₀² = 9σ²/(4πGρ₀)`:
 
 ```math
-v_{\rm esc} = \sqrt{\frac{2G(M_1 + M_2)}{d}}
+\frac{d^2\hat{W}}{d\hat{r}^2} + \frac{2}{\hat{r}}\frac{d\hat{W}}{d\hat{r}}
+    = -9\,\frac{\hat{\rho}(\hat{W})}{\hat{\rho}(W_0)},
+\qquad
+\hat{\rho}(\hat{W}) = e^{\hat{W}} \operatorname{erf}\!\big(\sqrt{\hat{W}}\big)
+    - \sqrt{\tfrac{4\hat{W}}{\pi}} \left(1 + \tfrac{2\hat{W}}{3}\right)
 ```
 
-- ``v_{\rm rel} < v_{\rm esc}``: bound orbit, merger inevitable (sub-virial)
-- ``v_{\rm rel} = v_{\rm esc}``: parabolic, merger likely for close passages
-- ``v_{\rm rel} > v_{\rm esc}``: hyperbolic fly-by, merger only via strong dissipation
+The density on the right-hand side is **normalised to the central value** — with the unnormalised density the radial unit is compressed by `√ρ̂₀` and the concentration comes out wrong (a bug fixed in the current rewrite). The ODE is integrated with `Tsit5` from OrdinaryDiffEqTsit5 at `abstol = reltol = 1e-12`, starting slightly off-centre with the Taylor expansion `Ŵ ≈ W0 − (3/2) r̂²`, and terminated exactly at the tidal radius by a continuous callback on the `Ŵ = 0` crossing. The solution is evaluated on a log-spaced grid (dense in the core, resolved out to the edge for any concentration).
 
-### Typical physical scales
+**Validation:** the concentration `c = log₁₀(r̂_t)` of the solved profile matches published King-model values (e.g. `c ≈ 1.25` for `W0 = 6`) to better than 1%; this is asserted in the test suite across several `W0`.
 
-| Quantity | Typical range | Notes |
-|:---------|:-------------|:------|
-| Initial separation | 5--20 ``r_{\rm hm}`` | Must exceed tidal radii of both clusters |
-| Relative velocity | 1--10 km/s | Sub-virial to mildly parabolic in young complexes |
-| Merger timescale (``q \sim 1``) | 50--200 Myr | 2--5 orbital periods from first pericentre |
-| Merger timescale (``q \sim 0.1``) | 500 Myr -- several Gyr | Dynamical friction dominated |
-| "Independent" separation | ``> 10\, r_{\rm hm}`` | Tidal perturbation negligible |
+Particle positions are drawn by inverse-CDF sampling of `ρ(r̂) r̂²`; at each radius, speeds are rejection-sampled from the lowered Maxwellian `f(v) ∝ v² [e^{Ŵ − v²/2} − 1]` for `v < v_esc = √(2Ŵ)`.
 
-### Density profiles
+### Plummer (1911) — `sample_plummer`
 
-| Model | Properties | Use case |
-|:------|:-----------|:---------|
-| **King** (recommended) | Finite tidal radius, flat core, concentration ``c = \log_{10}(r_t/r_c)`` | Realistic GC mergers; natural truncation prevents density overlap |
-| **Plummer** | Infinite extent (truncated in practice), single scale radius | Quick parameter surveys, analytically tractable |
-| **Wilson** | Like King but with different outer profile | Alternative when King truncation is too sharp |
-| **limepy family** | Generalises King (``g=1``), Wilson (``g=2``), Woolley (``g=0``) | Gold standard for modern IC generation |
+Inverse-CDF sampling for radius (`r = a/√(X^{-2/3} − 1)`) and von Neumann rejection for the velocity distribution `f(q) ∝ q²(1−q²)^{7/2}` (Aarseth, Hénon & Wielen 1974). Useful relations: half-mass radius `r_hm ≈ 1.305 a`, virial radius `r_v ≈ 1.70 a`. The generator converts the requested half-mass radius to the scale radius via `a = rbar/1.305`.
 
-**King models are preferred** for merger simulations because their finite tidal radius prevents artificial density overlap between subclusters at the initial separation.
+## IMF sampling
 
-### Known issues with merger ICs
+Masses are drawn from the Kroupa (2001) continuous broken power law (`ξ(m) ∝ m^{-α}` with `α = 0.3, 1.3, 2.3` across breaks at 0.01, 0.08, 0.5 M☉) by exact inverse-CDF sampling over the segments overlapping the requested `[bodyn, body1]` window — O(N), no rejection. `kroupa_mean_mass(m_low, m_up)` gives the analytic mean (`≈ 0.58` M☉ for [0.08, 100]).
 
-**1. Virial ratio**: Two independently virialised clusters (``Q = 0.5`` each) are NOT in virial equilibrium as a combined system. The mutual gravitational potential energy must be accounted for. The Nbody6++ `SCALE` subroutine must NOT rescale velocities for the combined system.
+Three modes, selected by the `IMFSpec` tag on each cluster:
 
-**Solution**: Use `KZ(22)=2` (external particle input), which sets `LSCALE=.FALSE.` -- no centre-of-mass correction or velocity rescaling is applied.
+- **`KroupaIMF`** — natural sampling in `[bodyn, body1]`. The total cluster mass is an *output* (the sum of the N samples), not a parameter. Use this when the scientific intent is a realistic stellar population: Nbody6++'s stellar-evolution prescriptions are well-defined here.
+- **`RescaledKroupaIMF`** — "super-particle" mode: sample from Kroupa, then apply a uniform linear rescale so the sum equals `target_mass`. The IMF *shape* is preserved but the effective mass range shifts by the rescale factor. A warning is emitted at sample time when the factor falls outside ×[0.7, 1.4]: in that regime individual body masses no longer correspond to real stars and downstream stellar-evolution output (SEV/BEV files, HR diagrams) is non-physical. This is the legacy behaviour of the pre-v2 API (flat `imf = "kroupa"` + `mass_total`); use `imf = "kroupa_rescaled"` to document intent.
+- **`EqualMassIMF`** — every body gets the same `particle_mass`.
 
-**2. Tidal truncation at initial separation**: Each cluster feels the tidal field of the other. Stars beyond the instantaneous Jacobi radius:
+`expected_mass(imf, N)` returns the expected total per cluster — exact for the rescaled/equal modes, the analytic expectation `N⟨m⟩` for natural Kroupa.
+
+## Per-cluster scaling and virialisation
+
+For each cluster the generator:
+
+1. Samples `N` masses from the IMF and positions/velocities from the profile
+2. Rescales positions so the **mass-weighted half-mass radius** equals the target `rbar` (not the count-median radius — with an IMF the two differ by sampling noise, and only the mass-based definition matches RBAR semantics)
+3. Calls `virialise!`: shifts to the centre-of-mass frame and scales velocities so `Q = T/|W| = 0.5` exactly, using the exact O(N²) pairwise potential (threaded over strided rows). A guard refuses above `nmax = 200_000` particles per cluster unless raised explicitly.
+
+Two independently virialised clusters are *not* in virial equilibrium as a combined system (the mutual potential is unaccounted), which is precisely why the output targets `KZ(22)=2`: that path sets `LSCALE=.FALSE.` in Nbody6++, so no centre-of-mass correction or velocity rescaling is applied to the combined ICs.
+
+## Orbit placement
+
+### Kepler mode (2 clusters)
+
+`setup_two_cluster_orbit` places the pair at apocentre on the x-axis. With semi-major axis `a = d_apo/(1+e)`, the vis-viva relation at `r = d_apo` gives the purely tangential apocentre speed
 
 ```math
-r_J \approx d \left(\frac{M_{\rm self}}{3\,M_{\rm other}}\right)^{1/3}
+v_{\rm apo} = \sqrt{\frac{G\,(M_1+M_2)\,(1-e)}{a\,(1+e)}},
 ```
 
-will be immediately unbound. Best practice: truncate each King model at ``\min(r_t, r_J)`` to avoid transient mass loss and energy errors.
+decomposed into centre-of-mass frame speeds `v₁ = (M₂/M) v_apo`, `v₂ = (M₁/M) v_apo` (`kepler_velocity`). Cluster 1 sits at `(−d₁, 0, 0)` with velocity `(0, +v₁, 0)` and cluster 2 at `(+d₂, 0, 0)` with `(0, −v₂, 0)`, where `d₁ = (M₂/M) d_apo`, `d₂ = (M₁/M) d_apo`.
 
-**3. Mass segregation**: Primordial mass segregation in each subcluster is disrupted during the merger. The merged remnant re-establishes mass segregation on its own (longer) half-mass relaxation timescale.
+### Explicit mode (N ≥ 2 clusters)
 
-## Nbody6++ Support
+Each cluster specifies its own COM `position` [pc] and `velocity` (code units, `G = 1` with M☉/pc bases; 1 unit ≈ 0.0656 km/s). `combine_clusters_explicit` applies the offsets and shifts the combined system to its centre-of-mass frame.
 
-### Built-in: Two Plummers (`KZ(5)=2`)
+## Jacobi truncation
 
-Nbody6++GPU has native support for binary Plummer encounters via `KZ(5)=2` in `setup.F`. Parameters are read from the `&INSETUP` block:
+With `output.truncate_jacobi = true` (default), each cluster is truncated **before combining** at its instantaneous Jacobi radius with respect to its nearest neighbour at separation `d`:
 
-| Parameter | Meaning | Constraints |
-|:----------|:--------|:------------|
-| `APO` | Apocentre distance [NB units] | Semi = APO/(1+ECC), clamped to [2, 50] |
-| `ECC` | Eccentricity | [0, 0.999] |
-| `N2` | Particle count in second cluster | ``\leq N`` |
-| `SCALE` | Size ratio of second cluster | [0.2, 5.0] |
-
-**Limitations**:
-- Only 2 clusters
-- Both are Plummer profiles (no King model option)
-- Second cluster is subsampled from the first (same mass function realisation)
-- No independent density profiles or concentrations
-
-### External particle input (`KZ(22)=2`)
-
-The recommended approach for custom merger ICs. Write a `dat.10` file with one line per particle:
-
-```
-MASS  X  Y  Z  VX  VY  VZ
+```math
+r_J = d \left(\frac{M_{\rm self}}{3\,M_{\rm other}}\right)^{1/3}
 ```
 
-All values in N-body units (``G=1``, ``M_{\rm total}=1``). Set `KZ(22)=2` in the `.inp` file. With `KZ(22)=2`:
-- `LSCALE=.FALSE.`: no velocity rescaling, no CM correction
-- Masses are normalised to sum to 1
-- Positions and velocities are used as-is
+(`jacobi_radius`). Stars beyond `r_J` would be immediately unbound at the initial separation; removing them avoids transient mass loss and energy errors at simulation start. The number removed per cluster is logged, and the post-truncation counts are recorded in `merger_summary.txt` and `merger_ic.toml`.
 
-For astrophysical units (``M_\odot``, pc, km/s), use `KZ(22)=10` instead.
+## Units and output files
 
-### Tidal field options (`KZ(14)`)
+Sampling and orbit placement happen in internal code units: `G = 1` with masses in M☉ and lengths in pc, so one code velocity unit is `√(G M☉/pc) = 0.06557` km/s.
 
-| `KZ(14)` | Field type | Parameters |
-|:----------|:-----------|:-----------|
-| 0 | Isolated (no tidal field) | -- |
-| 1 | Oort constants (solar neighbourhood) | built-in |
-| 2 | Point-mass galaxy | `GMG` [``M_\odot``], `RG0` [kpc] |
-| 3 | Disk + halo | `GMG`, `DISK`, `VCIRC`, etc. |
-| 5 | Milky Way potential (Bovy 2015) | `RG(1:3)`, `VG(1:3)` |
+`generate_merger_ic` writes four files (all protected by the never-overwrite `name#k.ext` backup policy):
 
-## Proposed Implementation in Nbody6Setup.jl
+- **`dat.10`** — one line per particle, `MASS X Y Z VX VY VZ` at full precision. For `format = "nbody"` the arrays are converted with `to_nbody_units!` to Hénon units (`G = 1`, `M_total = 1`); for `format = "astro"` they stay in M☉ / pc / km/s.
+- **`merger.inp`** — matching NAMELIST input file: `N` = post-truncation total, `KZ(22) = 2` (nbody) or `10` (astro), `KZ(14) = 0` (isolated), `NRAND` = effective seed, `NNBOPT = clamp(round(√N), 20, 300)`, `TCRIT`/`DTADJ`/`DELTAT` from `[merger.output]`, and:
+  - **`RBAR` = the combined system's mass-weighted half-mass radius [pc]** — this is the NB length unit used for the `dat.10` conversion, so the physical scaling in Nbody6++ is self-consistent
+  - **`ZMBAR` = mean particle mass `M_total/N_total` [M☉]**
+- **`merger_summary.txt`** — human-readable summary: per-cluster profile/IMF/N (before and after truncation)/mass/`r_hm`/`W0`/COM state, orbit parameters, combined totals, output format. Parsed later by `parse_merger_summary` to recover the per-cluster particle index ranges.
+- **`merger_ic.toml`** — machine-readable metadata (schema v2): generation timestamp, effective seed, `external_rng` flag, combined totals (`N_total`, `M_total`, `rbar`, `zmbar`), orbit mode and parameters, output spec, cluster index ranges, and one structured table per cluster (`profile = {type = ...}`, `imf = {type = ...}`, position/velocity, `N_after_trunc`). The cluster tables use the same structured schema the config parser accepts, so the file round-trips.
 
-### New module: `InitialConditions`
+The returned `MergerICResult` carries everything downstream plotting needs without re-reading files: output dir, totals, cluster ranges and specs, orbit info, and **physical-unit** copies of the particle arrays (M☉, pc, km/s).
 
-A Julia-native initial condition generator that produces `dat.10` files for Nbody6++ with `KZ(22)=2`. This fills a gap -- no existing tool provides a turnkey multi-cluster merger IC generator.
+## Reloading ICs — `load_merger_ic_result`
 
-### Cluster models to implement
+`load_merger_ic_result(dir)` reconstructs a `MergerICResult` from `dat.10` + `merger_ic.toml` without re-sampling — e.g. to regenerate `plot_merger_ic` output after a plotting fix without touching the particle data. NB-unit files are converted back to physical units using the stored `rbar` and mass scale (`vstar = 0.06557 √(M_total/rbar)` km/s); `"astro"` files are read as-is. Schema v1 metadata (flat legacy cluster keys) is also accepted.
 
-1. **Plummer model**: Inverse CDF sampling (analytic). Single parameter: scale radius ``a``.
-2. **King model**: Eddington inversion of the lowered isothermal distribution function. Parameters: central potential ``W_0`` (or concentration ``c``), tidal radius ``r_t``.
-3. **IMF sampling**: Kroupa (2001) broken power law as default, with configurable slopes and mass limits.
+## Running and diagnosing merger simulations
 
-### Orbital setup
+When `run_pipeline` runs with `merger.enabled = true` and `simulation.run_test = true`, the binary executes *inside* the merger output directory so `dat.10` is found in its working directory, using `merger.inp` as input.
 
-Given ``N_{\rm clusters} \geq 2`` clusters with masses ``M_i``, positions ``\mathbf{r}_i``, and velocities ``\mathbf{v}_i``:
+Post-processing then adds two merger-specific plots whenever `merger_summary.txt` sits next to the snapshots (this also works in `postprocess_external`):
 
-1. Generate each cluster independently in its own centre-of-mass frame
-2. Optionally apply Jacobi truncation at the mutual tidal radius
-3. Compute two-body orbital velocities from Kepler's equation (for 2-cluster case)
-4. For ``N > 2`` clusters: user specifies positions and velocities directly, or places them on a hierarchical (nested two-body) orbital configuration
-5. Apply CM offsets to each cluster's particles
-6. Combine into a single particle array, normalise to N-body units
-7. Write `dat.10` + generate matching `.inp` file with `KZ(22)=2`
+- **`plot_cluster_separation`** — pairwise COM separations of the initial clusters over time (tracked by particle NAME ranges). For > 5 clusters: min/max envelope + mean, a union-find staircase counting spatially distinct surviving clusters, and a heuristic coalescence-time marker.
+- **`plot_cluster_virial`** — internal virial ratio `Q_i(t)` of each initial cluster (COM-velocity subtracted, self-gravity only; `per_cluster_virial` for the raw matrix). Meaningful *before* coalescence; after merging, an ID-group's self-gravity `Q` diverges by construction, which itself serves as a rough coalescence proxy.
 
-### Configuration
+`plot_merger_ic` documents the ICs themselves: spatial projections and a 3-panel overview (viridis mass colouring, orbit annotation), a velocity quiver coloured by cluster membership, the sampled IMF histogram against the Kroupa reference slopes (`α = 1.3`, `2.3`), and per-cluster radial density profiles.
 
-A new TOML section `[merger]` or a standalone merger config:
+## Verification configs
 
-```toml
-[merger]
-n_clusters = 2
-
-[merger.cluster1]
-model = "king"          # "king", "plummer"
-N = 50000
-W0 = 6.0               # King concentration (W0), ignored for Plummer
-mass_total = 1e5        # Solar masses
-rbar = 2.0              # Half-mass radius [pc]
-imf = "kroupa"
-body1 = 100.0           # Upper mass limit
-bodyn = 0.08            # Lower mass limit
-metallicity = 0.001
-
-[merger.cluster2]
-model = "king"
-N = 50000
-W0 = 4.0
-mass_total = 5e4
-rbar = 3.0
-imf = "kroupa"
-body1 = 100.0
-bodyn = 0.08
-metallicity = 0.001
-
-[merger.orbit]
-apocentre = 15.0        # pc (physical units)
-eccentricity = 0.7
-# OR for N>2 clusters, specify positions/velocities directly:
-# positions = [[0,0,0], [15,0,0], [-10,5,0]]
-# velocities = [[0,0,0], [0,-2,0], [0,1,0]]  # km/s
-
-[merger.output]
-format = "nbody"        # "nbody" (KZ22=2) or "astro" (KZ22=10)
-truncate_jacobi = true  # Truncate at mutual Jacobi radius
-```
-
-### Output
-
-1. `dat.10` -- particle data file for Nbody6++
-2. `.inp` -- matching input file with `KZ(22)=2`, correct `N`, `RBAR`, `ZMBAR`
-3. Summary log with physical parameters, expected merger timescale, virial ratios of each subcluster
-
-### Diagnostics and post-processing extensions
-
-The existing post-processing pipeline handles merger simulations without modification -- energy, snapshots, HR diagrams, and animations all work on the combined particle set. However, useful additions would include:
-
-- **Subcluster identification**: Track which particles belong to which original cluster (via particle NAME ranges) and plot their spatial separation over time
-- **Merger detection**: Identify the merger epoch as the time when the two density peaks merge into one
-- **Lagrangian radii per subcluster**: Track half-mass radii of each original cluster component separately
+Two configs in `input_files/` exercise the machinery end-to-end: `verif_triorbit.toml` (three clusters on a rotating Lagrange-equilibrium triangle, `ω² = Gm/(√3 r³)` — see [Input File Reference](@ref) for the derivation) and `verif_3d5cluster.toml` (five clusters distributed in 3D). The test suite additionally validates the King concentration `c(W0)`, the Plummer `r_hm = 1.305 a` relation, the Kroupa mean mass, `virialise!` reaching `Q = 0.5`, and the Kepler/Jacobi relations.
 
 ## References
 
 - Aarseth, S.J. (2003). *Gravitational N-Body Simulations*. Cambridge University Press.
-- Fujii, M.S. et al. (2012). "The formation of young dense star clusters through mergers." ApJ, 753, 85.
-- Gieles, M. & Zocchi, A. (2015). "A family of lowered isothermal models." MNRAS, 454, 576.
-- Kuepper, A.H.W. et al. (2011). "McLuster -- A tool to make star clusters." MNRAS, 417, 2300.
-- Livernois, A.R. et al. (2022). "Modelling star cluster formation: Mergers." MNRAS, 513, 6095.
-- de Oliveira, M.R. et al. (2000). "Final stages of N-body star cluster encounters." MNRAS, 311, 589.
-- Kroupa, P. (2001). "On the variation of the initial mass function." MNRAS, 322, 231.
-- King, I.R. (1966). "The structure of star clusters. III." AJ, 71, 64.
-- Bovy, J. (2015). "galpy: A Python library for galactic dynamics." ApJS, 216, 29.
+- Aarseth, S.J., Hénon, M. & Wielen, R. (1974). A&A 37, 183. — Plummer sampling recipe.
+- King, I.R. (1966). AJ 71, 64. — King models.
+- Kroupa, P. (2001). MNRAS 322, 231. — IMF.
+- Fujii, M.S. et al. (2012). ApJ 753, 85. — Cluster formation through mergers.
+- Küpper, A.H.W. et al. (2011). MNRAS 417, 2300. — McLuster IC generator.
+- Wang, L. et al. (2015). MNRAS 450, 4070. — Nbody6++GPU code paper.

@@ -59,7 +59,7 @@ function plot_hr(
     valid = _hr_valid_records(sev.records)
     isempty(valid) && error("No stellar records pass HR validity filter")
 
-    t_val = @sprintf("%.4f", sev.time_myr)
+    t_val = @sprintf("%.3g", sev.time_myr)
 
     # Compute data ranges for tick placement
     all_teff = [r.log_teff for r in valid]
@@ -98,7 +98,9 @@ function plot_hr(
     end
 
     if 2 ≤ length(types_present) ≤ 12
-        axislegend(ax; position = :cb, nbanks = 2,
+        # Bottom-left is the empty corner of an HR diagram (the sequence runs
+        # top-left → bottom-right); :cb overlapped the lower MS ribbon.
+        axislegend(ax; position = :lb, nbanks = 2,
                    backgroundcolor = (:white, 0.7), framevisible = true)
     end
 
@@ -163,7 +165,7 @@ function plot_hr_evolution(
         show_xlab = row == nrows
         show_ylab = col == 1
 
-        t_val = @sprintf("%.4f", sev.time_myr)
+        t_val = @sprintf("%.3g", sev.time_myr)
         ax = Axis(
             fig[row, col];
             xlabel = show_xlab ? L"\log_{10}(\mathrm{T}_\mathrm{eff} \, / \, \mathrm{K})" : "",

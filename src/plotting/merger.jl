@@ -25,8 +25,11 @@ function parse_merger_summary(path::AbstractString)::Vector{UnitRange{Int}}
     isfile(path) || return UnitRange{Int}[]
 
     trunc_counts = Int[]
-    # Match e.g. "Cluster 5: plummer, N=1000 (after trunc: 966),"
-    pattern = r"Cluster\s+\d+:\s+\w+,\s+N=\d+\s+\(after trunc:\s+(\d+)\)"
+    # Match e.g. "Cluster 5: plummer, imf=kroupa, N=1000 (after trunc: 966),"
+    # Tolerant of extra comma-separated fields between the profile name and
+    # the N=… count (the summary format has grown fields before; the
+    # write→parse round-trip test in runtests.jl guards this coupling).
+    pattern = r"Cluster\s+\d+:\s+.*?\bN=\d+\s+\(after trunc:\s+(\d+)\)"
     for line in eachline(path)
         m = match(pattern, line)
         m === nothing && continue
