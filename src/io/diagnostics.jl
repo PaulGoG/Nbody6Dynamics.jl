@@ -247,12 +247,17 @@ end
 
 Build a `UnitScaling` from parsed physical scaling data.
 Falls back to unit values if keys are missing.
+
+The mass scale is `M*` (ZMBAR, the NB→M☉ conversion factor for the *total*
+mass) — NOT `<M>`, which is the mean stellar mass. Nbody6++ prints both in
+the PHYSICAL SCALING line; `start.F` redefines ZMBAR as the mass scale
+factor at startup, and `units.f` converts masses as `ZMBAR*M`.
 """
 function extract_scaling(diag::DiagnosticsData)::UnitScaling
     s = diag.physical_scaling
     UnitScaling(
         get(s, "R*", 1.0),
-        get(s, "<M>", 1.0),
+        get(s, "M*", 1.0),
         get(s, "T*", 1.0),
         get(s, "V*", 1.0),
     )

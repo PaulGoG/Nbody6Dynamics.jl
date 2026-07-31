@@ -46,7 +46,10 @@ function plot_lagrangian(
         pct = isinteger(pct_val) ? @sprintf("%d", Int(pct_val)) : @sprintf("%.1f", pct_val)
         label = latexstring("\\mathrm{M}(\\mathrm{r})/\\mathrm{M}_\\mathrm{tot} = $(pct)\\%")
 
-        lines!(ax, lagr.time, lagr.radii[idx, :];
+        # Mask non-positive radii (empty shells at early times) — they are
+        # invalid on the log axis; NaN points are skipped by Makie.
+        ys = [r > 0 ? r : NaN for r in @view lagr.radii[idx, :]]
+        lines!(ax, lagr.time, ys;
             label = label,
             color = colors[mod1(ci, length(colors))],
         )

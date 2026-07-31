@@ -3,12 +3,12 @@ module Nbody6Setup
 using TOML
 using Dates
 using Printf
-using HDF5
 using CairoMakie
 using LaTeXStrings
 using ProgressMeter
 using Random
 using SpecialFunctions
+using OrdinaryDiffEqTsit5
 
 # Package root directory — all relative config paths resolve against this.
 # Computed at precompile time: @__DIR__ = src/, dirname = Nbody6Setup/.
@@ -69,9 +69,10 @@ include("ic/ic.jl")
 Run all enabled post-processing steps and return collected results.
 
 Data directory resolution (in priority order):
-1. `cfg.postprocess.data_dir` — explicit external directory from config.toml
-2. `run_dir` keyword — `run_dir/output/` (from a simulation run)
-3. Falls back to `base_dir/runs/` for the most recent run
+1. `run_dir` keyword — `run_dir/output/` (from a simulation run)
+2. `cfg.postprocess.data_dir` — explicit external directory from config.toml
+3. Falls back to the most recent run under `base_dir/runs/`
+   (via `_find_latest_run`); errors if none exists.
 
 `base_dir` defaults to the package root directory, making the pipeline path-agnostic.
 """
@@ -89,7 +90,13 @@ function postprocess(cfg::Nbody6Config; run_dir::AbstractString = "",
         # Explicit external directory from config
         abspath(pp.data_dir)
     else
-        joinpath(base_dir, cfg.simulation.runs_dir)
+        latest = _find_latest_run(cfg, base_dir)
+        isempty(latest) &&
+            error("No run_dir/data_dir given and no matching run found under " *
+                  joinpath(base_dir, cfg.simulation.runs_dir))
+        @info "Post-processing most recent run: $(basename(latest))"
+        out = joinpath(latest, "output")
+        isdir(out) ? out : latest
     end
 
     isdir(sim_dir) || error("Data directory does not exist: $sim_dir")
@@ -101,12 +108,12 @@ function postprocess(cfg::Nbody6Config; run_dir::AbstractString = "",
         snaps = read_all_conf3(sim_dir, pp.snapshot_pattern)
         isempty(snaps) || (results[:snapshots] = snaps)
     elseif pp.snapshot_format == "hdf5"
-        h5path = joinpath(sim_dir, pp.hdf5_file)
-        if isfile(h5path)
-            results[:snapshots] = read_hdf5_snapshots(h5path)
-        else
-            @warn "HDF5 file not found: $h5path"
-        end
+        # The HDF5 reader was removed: it targeted dataset names this fork
+        # never writes (the KZ(46) writer produces snap.40_*.h5part with
+        # 'Step#i' groups and numbered datasets). Re-adding support means
+        # porting to that layout — see git history for the old reader.
+        error("snapshot_format=\"hdf5\" is no longer supported; use \"conf3\". " *
+              "The fork's KZ(46) H5Part layout was never readable by the old code.")
     end
 
     # Diagnostics from stdout
@@ -343,8 +350,11 @@ function run_pipeline(cfg::Nbody6Config;
 
         merger_cfg = load_merger_config(merger_cfg_path)
 
-        # Create a run directory for this merger
-        run_id = "merger_" * Dates.format(now(), "yyyymmdd_HHMMSS")
+        # Create a run directory for this merger. generate_run_id adds the
+        # timestamp + a 4-hex uniqueness suffix, so two merger pipelines
+        # started in the same second cannot collide; the configured prefix
+        # is preserved so _find_latest_run can locate merger runs.
+        run_id = generate_run_id("merger_" * cfg.simulation.run_id_prefix)
         run_dir = joinpath(base_dir, cfg.simulation.runs_dir, run_id)
         ic_dir = joinpath(run_dir, "output")
         mkpath(ic_dir)
@@ -466,17 +476,29 @@ function _run_merger_simulation(cfg::Nbody6Config, merger_result::MergerICResult
     return run_dir
 end
 
-"""Find the most recent run directory under `base_dir/runs_dir/`."""
+"""Find the most recent run directory under `base_dir/runs_dir/`.
+
+Matches both plain runs (`<prefix>_*`) and merger runs
+(`merger_<prefix>_*`), which share the timestamp-based naming from
+`generate_run_id` so a lexicographic sort on the timestamp part yields
+the most recent run.
+"""
 function _find_latest_run(cfg::Nbody6Config, base_dir::AbstractString)::String
     runs_base = joinpath(base_dir, cfg.simulation.runs_dir)
     isdir(runs_base) || return ""
     prefix = cfg.simulation.run_id_prefix * "_"
+    merger_prefix = "merger_" * prefix
     dirs = filter(readdir(runs_base; join = true)) do p
-        isdir(p) && startswith(basename(p), prefix)
+        isdir(p) && (startswith(basename(p), prefix) ||
+                     startswith(basename(p), merger_prefix))
     end
     isempty(dirs) && return ""
-    # Sort by name (timestamp-based) and return the latest
-    return sort(dirs)[end]
+    # Sort by the timestamp part of the run ID and return the latest
+    timestamp_key(p) = begin
+        b = basename(p)
+        startswith(b, merger_prefix) ? b[length("merger_")+1:end] : b
+    end
+    return sort(dirs; by = timestamp_key)[end]
 end
 
 # ---------------------------------------------------------------------------
@@ -492,7 +514,6 @@ export load_config, save_config, setup_nbody6, run_simulation,
        postprocess, generate_plots, run_pipeline
 export scan_output, postprocess_external, OutputScan
 export read_conf3, read_all_conf3
-export read_hdf5_snapshot, read_hdf5_snapshots, list_hdf5_steps
 export read_diagnostics, extract_scaling
 export read_lagr
 export read_escapers

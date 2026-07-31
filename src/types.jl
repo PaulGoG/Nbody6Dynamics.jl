@@ -146,7 +146,10 @@ Length scaling factor: 1 NB length unit = `rbar` pc."""
 rbar(h::SnapshotHeader)     = Float64(h.params[3])
 
 """    zmbar(h::SnapshotHeader) -> Float64
-Mean stellar mass in solar masses."""
+Mass scaling factor: 1 NB mass unit (the total cluster mass) = `zmbar` M☉.
+NOT the mean stellar mass — Nbody6++ redefines ZMBAR as the total-mass
+scale factor at startup (`start.F`); the mean mass is printed separately
+as `<M>` in the PHYSICAL SCALING line."""
 zmbar(h::SnapshotHeader)    = Float64(h.params[4])
 
 rtide(h::SnapshotHeader)    = Float64(h.params[5])
@@ -218,7 +221,7 @@ Single ADJUST output line from the simulation log.
 struct AdjustRecord
     time_nb::Float64
     time_myr::Float64
-    qvir::Float64            # virial ratio 2T/|W|
+    qvir::Float64            # virial ratio Q = T/|W| (equilibrium at 0.5)
     de_rel::Float64          # relative energy error
     e_tot::Float64           # total energy
     n::Int
@@ -279,10 +282,10 @@ end
 One star's properties from a single-star evolution snapshot (sev*.83).
 """
 struct StellarRecord
-    time_nb::Float64          # NB time
+    time_nb::Float64          # NB time (TTOT, first token of each data line)
     index::Int32              # internal index
     name::Int32               # particle identifier
-    stellar_type::Int32       # K* (0=MS, 1=HG, …, 13=BH)
+    stellar_type::Int32       # K* (Hurley: 0/1=MS, 2=HG, …, 13=NS, 14=BH)
     ri_rc::Float64            # distance / core radius
     mass_solar::Float64       # mass [M☉]
     log_luminosity::Float64   # log10(L/L☉)
@@ -304,26 +307,28 @@ end
 """
     STELLAR_TYPE_LABELS
 
-`Dict{Int,String}` mapping BSE stellar type codes (K*) to human-readable labels
-used in HR diagram legends. Covers types 0 (MS) through 15 (Unknown).
+`Dict{Int,String}` mapping SSE/BSE stellar type codes (K*) to human-readable
+labels used in HR diagram legends. Follows the standard Hurley et al. (2000)
+convention used by this fork (`global_output.F`): 0/1 = low-/high-mass MS,
+2 = HG, …, 13 = NS, 14 = BH, 15 = massless supernova remnant.
 """
 const STELLAR_TYPE_LABELS = Dict{Int,String}(
-    0  => "MS (Main Seq.)",
-    1  => "HG (Hertzsprung Gap)",
-    2  => "GB (Giant Branch)",
-    3  => "CHeB (Core He Burn.)",
-    4  => "AGB (Asymp. Giant)",
+    0  => "MS (low-mass, M < 0.7)",
+    1  => "MS (Main Seq.)",
+    2  => "HG (Hertzsprung Gap)",
+    3  => "GB (Giant Branch)",
+    4  => "CHeB (Core He Burn.)",
     5  => "EAGB (Early AGB)",
-    6  => "HeStar (He Star)",
-    7  => "HeHG (He Hertzsp.)",
-    8  => "HeGB (He Giant)",
-    9  => "HeWD (He White Dwarf)",
-    10 => "COWD (CO White Dwarf)",
-    11 => "ONeWD (ONe White Dwarf)",
-    12 => "NS (Neutron Star)",
-    13 => "BH (Black Hole)",
-    14 => "MSn (Naked He MS)",
-    15 => "Unknown",
+    6  => "TPAGB (Therm. Puls. AGB)",
+    7  => "HeMS (Naked He MS)",
+    8  => "HeHG (He Hertzsp. Gap)",
+    9  => "HeGB (He Giant Branch)",
+    10 => "HeWD (He White Dwarf)",
+    11 => "COWD (CO White Dwarf)",
+    12 => "ONeWD (ONe White Dwarf)",
+    13 => "NS (Neutron Star)",
+    14 => "BH (Black Hole)",
+    15 => "SNR (Massless Remnant)",
 )
 
 # ---------------------------------------------------------------------------
@@ -336,10 +341,10 @@ const STELLAR_TYPE_LABELS = Dict{Int,String}(
 Physical unit conversion factors extracted from simulation output.
 """
 struct UnitScaling
-    rbar::Float64      # NB length  → pc
-    zmbar::Float64     # average particle mass → M☉
-    tscale::Float64    # NB time    → Myr
-    vstar::Float64     # NB velocity → km/s
+    rbar::Float64      # NB length → pc (R*)
+    zmbar::Float64     # NB mass → M☉ (M*, the total-mass scale factor)
+    tscale::Float64    # NB time → Myr (T*)
+    vstar::Float64     # NB velocity → km/s (V*)
 end
 
 to_pc(u::UnitScaling, r_nb)    = r_nb * u.rbar

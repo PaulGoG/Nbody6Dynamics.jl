@@ -326,11 +326,14 @@ end
 
     # =====================================================================
     @testset "Escaper reader" begin
+        # Real esc.11 shape (escape.F): 5 NB-unit diagnostics, then the
+        # physical-unit block T[Myr] M[M*] EESC VI[km/s] K* NAME, then extras.
         esc_path = joinpath(TESTDIR, "esc.11")
         write(esc_path, """
-  1.234  0.500  -0.123  15.6  0  101
-  2.567  0.300   0.456  22.3  1  202
-  3.890  1.200  -0.789  10.1  13  303
+         TTOT         BODY         RI           VI           STEP         T[Myr]       M[M*]      EESC      VI[km/s]     K*  NAME
+   1.00000E+00  5.00000E-04  2.00000E+01  4.00000E+01  1.95312E-03  1.23400E+00  5.00000E-01 -1.23000E-01  1.56000E+01   0       101  1.0  2.0
+   2.00000E+00  3.00000E-04  2.50000E+01  4.20000E+01  1.95312E-03  2.56700E+00  3.00000E-01  4.56000E-01  2.23000E+01   1       202  1.0  2.0
+   3.00000E+00  1.20000E-03  3.00000E+01  4.40000E+01  1.95312E-03  3.89000E+00  1.20000E+00 -7.89000E-01  1.01000E+01  14       303  1.0  2.0
 """)
 
         escs = read_escapers(esc_path)
@@ -343,7 +346,7 @@ end
         @test escs[1].stellar_type == 0
         @test escs[1].name == 101
 
-        @test escs[3].stellar_type == 13   # BH
+        @test escs[3].stellar_type == 14   # BH (Hurley convention)
         @test escs[3].name == 303
 
         # Empty file
@@ -354,12 +357,14 @@ end
 
     # =====================================================================
     @testset "Stellar evolution reader" begin
+        # Header time is TPHYS [Myr]; data-line token 1 is TTOT [NB] —
+        # different clocks, both kept.
         sev_path = joinpath(TESTDIR, "sev.83_0")
         write(sev_path, """
   3  0.5000
-   0.5000   1   101  0  1.20  0.800   0.123  -0.456  3.750  0.0  0.0
-   0.5000   2   202  1  0.80  1.200   1.500   0.200  4.100  0.0  0.0
-   0.5000   3   303  13 2.50  10.00   5.000   1.500  4.500  0.0  0.0
+   0.4315   1   101  0  1.20  0.800   0.123  -0.456  3.750  0.0  0.0
+   0.4315   2   202  1  0.80  1.200   1.500   0.200  4.100  0.0  0.0
+   0.4315   3   303  13 2.50  10.00   5.000   1.500  4.500  0.0  0.0
 """)
 
         sev = read_stellar_evolution(sev_path)
@@ -368,7 +373,7 @@ end
         @test length(sev.records) == 3
 
         r1 = sev.records[1]
-        @test r1.time_nb ≈ 0.5
+        @test r1.time_nb ≈ 0.4315   # per-line TTOT [NB], not the Myr header
         @test r1.index == Int32(1)
         @test r1.name == Int32(101)
         @test r1.stellar_type == Int32(0)  # MS
@@ -396,9 +401,70 @@ end
 
     # =====================================================================
     @testset "Stellar type labels" begin
+        # Standard Hurley et al. (2000) SSE/BSE table used by this fork
         @test startswith(STELLAR_TYPE_LABELS[0], "MS")
-        @test startswith(STELLAR_TYPE_LABELS[13], "BH")
-        @test haskey(STELLAR_TYPE_LABELS, 6)   # HeStar
+        @test startswith(STELLAR_TYPE_LABELS[1], "MS")
+        @test startswith(STELLAR_TYPE_LABELS[10], "HeWD")
+        @test startswith(STELLAR_TYPE_LABELS[12], "ONeWD")
+        @test startswith(STELLAR_TYPE_LABELS[13], "NS")
+        @test startswith(STELLAR_TYPE_LABELS[14], "BH")
+        @test length(STELLAR_TYPE_LABELS) == 16   # K* = 0..15 complete
+    end
+
+    # =====================================================================
+    # Regression tests against verbatim Nbody6PPGPU-beijing output.
+    # The synthetic fixtures above mirror the readers' assumptions by
+    # construction; these fixtures were copied from a real run and would
+    # have caught the esc.11 column-map, M*-vs-<M>, and K*-label bugs.
+    @testset "Real-output fixtures" begin
+        FIXDIR = joinpath(@__DIR__, "fixtures")
+
+        @testset "esc.11" begin
+            escs = read_escapers(joinpath(FIXDIR, "esc.11"))
+            @test length(escs) == 88          # every data line parses
+            e1 = escs[1]
+            @test e1.time_myr ≈ 8.11195 rtol = 1e-5     # T[Myr], not TTOT
+            @test e1.mass_solar ≈ 18.1687 rtol = 1e-5   # M[M*], not NB mass
+            @test e1.escape_energy ≈ 1017.22 rtol = 1e-5
+            @test e1.velocity_kms ≈ 209.841 rtol = 1e-5
+            @test e1.stellar_type == 14                 # BH escaper
+            @test e1.name == 2248
+        end
+
+        @testset "out1000 scaling + ADJUST" begin
+            diag = read_diagnostics(joinpath(FIXDIR, "out1000"))
+            u = extract_scaling(diag)
+            @test u.rbar   ≈ 5.503639     rtol = 1e-6
+            @test u.zmbar  ≈ 27695.934588 rtol = 1e-6   # M* (scale), not <M>
+            @test u.tscale ≈ 1.15885054   rtol = 1e-6
+            @test u.vstar  ≈ 4.65224425   rtol = 1e-6
+            @test length(diag.adjust) ≥ 6
+            a0 = diag.adjust[1]
+            @test a0.time_nb == 0.0
+            @test a0.qvir ≈ 0.321 atol = 1e-3           # Q = T/|W|
+            @test a0.e_tot ≈ -0.5408 atol = 1e-4
+        end
+
+        @testset "lagr.7" begin
+            lagr = read_lagr(joinpath(FIXDIR, "lagr.7"))
+            @test length(lagr.mass_fractions) == 18
+            @test lagr.time[1] == 0.0
+            i50 = argmin(abs.(lagr.mass_fractions .- 0.5))
+            @test lagr.radii[i50, 1] ≈ 1.2442064 rtol = 1e-6
+        end
+
+        @testset "sev.83" begin
+            sev = read_stellar_evolution(joinpath(FIXDIR, "sev.83_0"))
+            @test sev.n_stars == 50
+            @test sev.time_myr == 0.0
+            @test length(sev.records) == 50
+            r1 = sev.records[1]
+            @test r1.time_nb == 0.0
+            @test r1.name == Int32(1)
+            @test r1.stellar_type == Int32(1)   # 1 M☉+ MS star, Hurley K*=1
+            @test r1.mass_solar ≈ 1.68436 rtol = 1e-5
+            @test r1.log_teff ≈ 4.03269 rtol = 1e-5
+        end
     end
 
     # =====================================================================
@@ -790,6 +856,18 @@ end
             @test rhat[end] > 0.0
             # Density should be monotonically decreasing
             @test all(diff(rho[1:end-1]) .≤ 0.01)
+        end
+
+        # --- King concentration vs published values (physics validation) ---
+        @testset "King concentration c(W0)" begin
+            # c = log10(r_t/r_0) for the standard dimensionless King equation;
+            # reference values from the King (1966) model tables.
+            for (W0, c_ref) in [(3.0, 0.672), (5.0, 1.029), (6.0, 1.255),
+                                (7.0, 1.528), (9.0, 2.119), (12.0, 2.739)]
+                rhat, _, _ = Nbody6Setup._solve_king(W0)
+                c = log10(rhat[end])
+                @test isapprox(c, c_ref; rtol = 0.01)
+            end
         end
 
         # --- Kroupa IMF ---

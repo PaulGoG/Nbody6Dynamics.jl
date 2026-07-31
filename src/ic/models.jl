@@ -9,7 +9,9 @@ Generate `N` particles from a Plummer model with scale radius `a` using
 inverse CDF sampling (Aarseth, Hénon & Wielen 1974).
 
 Returns `(pos::Matrix{Float64}, vel::Matrix{Float64})` each `3 × N`,
-in internal units where `G = M_total = 1` and virial radius `r_v = (3π/16) a`.
+in internal units where `G = M_total = 1`. Useful Plummer relations:
+virial radius `r_v = 16a/(3π) ≈ 1.70 a`, half-mass radius
+`r_hm = a/√(2^{2/3} − 1) ≈ 1.305 a`.
 """
 function sample_plummer(N::Int, a::Float64; rng::AbstractRNG = Random.default_rng())
     pos = zeros(Float64, 3, N)
@@ -36,7 +38,8 @@ function sample_plummer(N::Int, a::Float64; rng::AbstractRNG = Random.default_rn
         while true
             q = rand(rng)
             g = rand(rng)
-            # f(q) ∝ q^2 (1 - q^2)^{7/2}, max at q = sqrt(1/9) → f_max = 0.0920
+            # f(q) ∝ q² (1 − q²)^{7/2}, max f ≈ 0.0922 at q = √(2/9) ≈ 0.471;
+            # a unit envelope is valid (if loose) since f < 1 everywhere
             if g ≤ q^2 * (1.0 - q^2)^3.5
                 v = q * v_esc
                 # Isotropic velocity direction
@@ -59,17 +62,17 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    _king_ode!(du, u, p, ρ̂)
+    _king_density(W) -> Float64
 
-Right-hand side for the King model ODE in dimensionless form.
-`u = [Ŵ, dŴ/dρ̂]` where `Ŵ = (ψ - ψ_t) / σ²` is the lowered potential and
-`ρ̂ = r / r_0` is the dimensionless radius.
+Unnormalised King (1966) model density as a function of the lowered
+potential `Ŵ = (ψ − ψ_t)/σ²`:
 
-The King density is:
 ```math
 \\hat{\\rho}(\\hat{W}) = e^{\\hat{W}} \\operatorname{erf}(\\sqrt{\\hat{W}})
     - \\sqrt{\\frac{4\\hat{W}}{\\pi}} \\left(1 + \\frac{2\\hat{W}}{3}\\right)
 ```
+
+Zero for `W ≤ 0` (beyond the tidal radius).
 """
 function _king_density(W::Float64)::Float64
     W ≤ 0.0 && return 0.0
@@ -78,72 +81,68 @@ function _king_density(W::Float64)::Float64
 end
 
 """
-    _solve_king(W0; N_radial=10000) -> (r̂, Ŵ, ρ̂_king)
+    _king_ode!(du, u, ρ̂₀, r̂)
+
+Right-hand side of the King (1966) Poisson equation in standard
+dimensionless form, `u = [Ŵ, dŴ/dr̂]` with `r̂ = r/r₀` and
+`r₀² = 9σ²/(4πGρ₀)` (the King radius):
+
+```math
+\\frac{d^2\\hat{W}}{d\\hat{r}^2} + \\frac{2}{\\hat{r}}\\frac{d\\hat{W}}{d\\hat{r}}
+    = -9\\,\\frac{\\hat{\\rho}(\\hat{W})}{\\hat{\\rho}(W_0)}
+```
+
+The density on the RHS **must** be normalised to the central value — with
+the unnormalised density the radial unit is compressed by `√ρ̂₀` and the
+concentration comes out wrong (the pre-rewrite bug).
+"""
+function _king_ode!(du, u, ρ̂₀::Float64, r::Float64)
+    du[1] = u[2]
+    du[2] = -9.0 * _king_density(u[1]) / ρ̂₀ - 2.0 / r * u[2]
+    return nothing
+end
+
+"""
+    _solve_king(W0; n_grid=2000) -> (r̂, Ŵ, ρ̂)
 
 Integrate the King model ODE from the centre (`Ŵ(0) = W0`) outward until
-`Ŵ → 0` (the tidal radius). Returns dimensionless radius, potential, and
-density arrays.
+`Ŵ → 0` (the tidal radius), using an adaptive Tsit5 integration with a
+terminating callback on the `Ŵ = 0` crossing. Returns dimensionless radius
+(in King radii r₀), potential, and *unnormalised* density `ρ̂(Ŵ)` arrays on
+a log-spaced grid (dense in the core, resolved out to the tidal radius).
+
+The concentration `c = log₁₀(r̂_t)` of the returned profile matches the
+published King-model values (e.g. c ≈ 1.25 for W0 = 6) to the integration
+tolerance.
 """
-function _solve_king(W0::Float64; N_radial::Int = 10000)
-    # Poisson equation in spherical symmetry:
-    #   d²Ŵ/dρ̂² + (2/ρ̂) dŴ/dρ̂ = -9 ρ̂_king(Ŵ)
-    # where the factor 9 comes from 4πGρ₀ / (9σ²/4πGρ₀r₀²) normalisation.
+function _solve_king(W0::Float64; n_grid::Int = 2000)
+    W0 > 0.0 || throw(ArgumentError("W0 must be positive, got $W0"))
+    ρ̂₀ = _king_density(W0)
 
-    # Central boundary: Ŵ(0) = W0, dŴ/dρ̂(0) = 0
-    # Near origin: Ŵ ≈ W0 - (3/2) ρ̂_king(W0) ρ̂²
+    # Start slightly off-centre to avoid the 2/r singularity, with the
+    # Taylor expansion Ŵ ≈ W0 − (3/2) r̂² (ρ̂/ρ̂₀ → 1 at the centre).
+    r_start = 1e-6
+    u0 = [W0 - 1.5 * r_start^2, -3.0 * r_start]
 
-    ρ0_king = _king_density(W0)
+    # Terminate exactly at the tidal radius (Ŵ crossing zero from above).
+    cb = ContinuousCallback((u, r, integrator) -> u[1], terminate!)
+    prob = ODEProblem(_king_ode!, u0, (r_start, 1.0e4), ρ̂₀)
+    sol = solve(prob, Tsit5(); callback = cb, abstol = 1e-12, reltol = 1e-12)
 
-    # Adaptive step: estimate tidal radius from concentration
-    # For W0 ~ 1-12, r_t/r_0 ranges from ~2 to ~1000+
-    rhat_max = 3.0 * 10.0^(0.6 * W0 / 3.0)  # generous upper bound
-    dr = rhat_max / N_radial
+    rhat_t = sol.t[end]
 
-    rhat = zeros(Float64, N_radial + 1)
-    What = zeros(Float64, N_radial + 1)
-    ρ_arr = zeros(Float64, N_radial + 1)
-
+    # Evaluate the dense solution on a log-spaced grid: resolves the core
+    # (r ≪ r₀) and the edge for any concentration, unlike a uniform grid.
+    rhat = vcat(0.0, 10.0 .^ range(log10(r_start), log10(rhat_t); length = n_grid))
+    What = similar(rhat)
     What[1] = W0
-    ρ_arr[1] = ρ0_king
-
-    # Start slightly off centre to avoid 2/r singularity
-    rhat[1] = 0.0
-    # Use Taylor expansion for the first step
-    What[2] = W0 - 1.5 * ρ0_king * dr^2
-    rhat[2] = dr
-
-    i_tidal = N_radial + 1  # index of tidal radius
-
-    for i in 2:N_radial
-        r = rhat[i]
-        W = What[i]
-        if W ≤ 0.0
-            i_tidal = i
-            What[i] = 0.0
-            break
-        end
-        ρ_arr[i] = _king_density(W)
-
-        # Finite difference for 2nd order ODE (Störmer-Verlet like)
-        # Ŵ_{i+1} = 2Ŵ_i - Ŵ_{i-1} + dr² [-9 ρ_king(Ŵ_i) - (2/r_i)(Ŵ_i - Ŵ_{i-1})/dr]
-        dWdr = (What[i] - What[i-1]) / dr
-        d2Wdr2 = -9.0 * ρ_arr[i] - 2.0 / r * dWdr
-
-        What[i+1] = What[i] + dWdr * dr + 0.5 * d2Wdr2 * dr^2
-        rhat[i+1] = r + dr
-
-        if What[i+1] ≤ 0.0
-            # Linear interpolation for tidal radius
-            frac = What[i] / (What[i] - What[i+1])
-            rhat[i+1] = rhat[i] + frac * dr
-            What[i+1] = 0.0
-            ρ_arr[i+1] = 0.0
-            i_tidal = i + 1
-            break
-        end
+    for i in 2:length(rhat)
+        What[i] = max(sol(rhat[i])[1], 0.0)
     end
+    What[end] = 0.0
+    ρ_arr = _king_density.(What)
 
-    return rhat[1:i_tidal], What[1:i_tidal], ρ_arr[1:i_tidal]
+    return rhat, What, ρ_arr
 end
 
 """

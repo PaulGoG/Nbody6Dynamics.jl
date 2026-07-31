@@ -148,7 +148,6 @@ function Base.show(io::IO, ::MIME"text/plain", s::OutputScan)
     # Determine which plots can be generated
     plots = String[]
     s.available[:snapshots_conf3] && push!(plots, "snapshot", "snapshot_evolution", "cluster_anim")
-    s.available[:snapshots_hdf5]  && push!(plots, "snapshot (HDF5)", "snapshot_evolution (HDF5)")
     s.available[:diagnostics]     && push!(plots, "energy", "particle_count")
     s.available[:lagr]            && push!(plots, "lagrangian_radii", "lagrangian_anim")
     s.available[:stellar_evo]     && push!(plots, "hr_diagram", "hr_evolution", "hr_anim")
@@ -173,11 +172,10 @@ end
 
 """
     postprocess_external(dir::AbstractString;
-                         output_dir::AbstractString = joinpath(dir, "..", "plots"),
+                         output_dir::AbstractString = "",   # default: <dir>/../plots
                          format::AbstractString = "png",
                          dpi::Int = 300,
                          figsize::Tuple{Int,Int} = (10, 8),
-                         prefer_hdf5::Bool = false,
                          generate_plots::Bool = true,
                          generate_animations::Bool = true) -> Dict{Symbol,Any}
 
@@ -194,7 +192,6 @@ and animations.
 - `format`: plot format — `"png"`, `"pdf"`, `"svg"`
 - `dpi`: output resolution
 - `figsize`: figure size in inches `(width, height)`
-- `prefer_hdf5`: when both conf.3 and HDF5 snapshots exist, prefer HDF5
 - `generate_plots`: set `false` to skip plot generation (returns data only)
 - `generate_animations`: set `false` to skip GIF animations (faster)
 
@@ -222,7 +219,6 @@ function postprocess_external(
     format::AbstractString = "png",
     dpi::Int = 300,
     figsize::Tuple{Int,Int} = (10, 8),
-    prefer_hdf5::Bool = false,
     generate_plots::Bool = true,
     generate_animations::Bool = true,
 )::Dict{Symbol,Any}
@@ -234,20 +230,15 @@ function postprocess_external(
     results = Dict{Symbol,Any}(:scan => scan)
 
     # ── Read snapshots ──
-    use_hdf5 = prefer_hdf5 ? scan.available[:snapshots_hdf5] :
-               (!scan.available[:snapshots_conf3] && scan.available[:snapshots_hdf5])
+    # HDF5/H5Part snapshots are detected but not readable: the fork's KZ(46)
+    # writer uses a layout (Step#i groups, numbered datasets) the removed
+    # reader never supported. conf.3 is the supported snapshot source.
+    if scan.available[:snapshots_hdf5]
+        @warn "Found $(length(scan.hdf5_files)) HDF5 snapshot file(s) — the " *
+              "KZ(46) H5Part layout is not supported; using conf.3 snapshots instead."
+    end
 
-    if use_hdf5
-        @info "Reading HDF5 snapshots ($(length(scan.hdf5_files)) files)..."
-        for h5f in scan.hdf5_files
-            snaps = read_hdf5_snapshots(h5f)
-            if !isempty(snaps)
-                existing = get(results, :snapshots, Snapshot[])
-                results[:snapshots] = vcat(existing, snaps)
-            end
-        end
-        _sanity_snapshots(results)
-    elseif scan.available[:snapshots_conf3]
+    if scan.available[:snapshots_conf3]
         @info "Reading conf.3 snapshots ($(length(scan.conf3_files)) files)..."
         snaps = read_all_conf3(scan.dir, "conf.3_*")
         if !isempty(snaps)
@@ -444,10 +435,10 @@ function _sanity_lagr(lagr::LagrangianData)
 
     if nt > 1
         @info @sprintf("  Time range: %.4f → %.4f [NB]", lagr.time[1], lagr.time[end])
-        # Check for non-positive radii (would break log-scale plot)
+        # Check for non-positive radii (invalid on log-scale plots)
         n_neg = count(lagr.radii .<= 0)
         if n_neg > 0
-            @warn "  $n_neg non-positive radius values detected (will be clamped for log-scale plots)"
+            @warn "  $n_neg non-positive radius values detected (masked as NaN in log-scale plots)"
         end
     end
 end
