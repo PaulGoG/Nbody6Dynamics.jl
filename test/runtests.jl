@@ -993,9 +993,9 @@ end
             cfg = MergerConfig(
                 [
                     ClusterSpec(model="plummer", N=100, mass_total=1e3, rbar=1.0,
-                                imf_kind_kind="kroupa", body1=50.0, bodyn=0.1),
+                                imf_kind="kroupa", body1=50.0, bodyn=0.1),
                     ClusterSpec(model="king", N=100, W0=5.0, mass_total=1e3, rbar=1.0,
-                                imf_kind_kind="kroupa", body1=50.0, bodyn=0.1),
+                                imf_kind="kroupa", body1=50.0, bodyn=0.1),
                 ],
                 "kepler",
                 OrbitSpec(apocentre=10.0, eccentricity=0.5),

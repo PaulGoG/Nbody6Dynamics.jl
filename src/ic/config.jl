@@ -152,14 +152,17 @@ struct ClusterSpec
     velocity::Vector{Float64}
 end
 
-# Structured kwarg constructor. The legacy `imf::String` form dispatches
-# through the fallback below so the structured `imf::IMFSpec` stays
-# type-stable.
+# Single keyword constructor covering both the structured form
+# (`profile = KingProfile(...)`, `imf = KroupaIMF(...)`) and the legacy flat
+# form (`model = "king"`, `imf = "kroupa"`, `mass_total`, `bodyn`, `body1`).
+# Keyword arguments do not participate in dispatch in Julia, so a second
+# kwarg-only method would silently replace this one — the legacy String
+# `imf` is therefore accepted here and routed to `imf_kind` internally.
 function ClusterSpec(;
     N::Int                   = 50000,
-    rbar::Float64            = 2.0,
+    rbar::Real               = 2.0,
     profile::Union{DensityProfile,Nothing} = nothing,
-    imf::Union{IMFSpec,Nothing}            = nothing,
+    imf::Union{IMFSpec,AbstractString,Nothing} = nothing,
     position::AbstractVector = Float64[],
     velocity::AbstractVector = Float64[],
     # legacy flat kwargs
@@ -170,6 +173,13 @@ function ClusterSpec(;
     body1::Union{Real,Nothing}             = nothing,
     imf_kind::Union{AbstractString,Nothing} = nothing,
 )
+    # Route the legacy String `imf` through `imf_kind`.
+    if imf isa AbstractString
+        imf_kind === nothing ||
+            error("ClusterSpec: pass either `imf=\"...\"` or `imf_kind=\"...\"`, not both.")
+        imf_kind = String(imf)
+        imf = nothing
+    end
     resolved_profile = if profile !== nothing
         model === nothing || error("ClusterSpec: pass either `profile=...` (new) or `model=...` (legacy), not both.")
         profile
@@ -213,11 +223,42 @@ function ClusterSpec(;
                        Float64.(position), Float64.(velocity))
 end
 
-# Legacy path: `imf = "kroupa"` as a String keyword. Route it through
-# `imf_kind` to keep the structured field strictly typed.
-function ClusterSpec(; imf::AbstractString, kwargs...)
-    return ClusterSpec(; imf_kind = String(imf), kwargs...)
-end
+# -----------------------------------------------------------------------------
+# Tag-type serialisation (metadata TOML round-trip)
+# -----------------------------------------------------------------------------
+
+"""
+    _profile_table(p::DensityProfile) -> Dict{String,Any}
+
+Serialise a density-profile tag to the structured TOML table form parsed by
+[`_parse_profile_table`](@ref), so metadata files round-trip losslessly.
+"""
+_profile_table(p::KingProfile)   = Dict{String,Any}("type" => "king", "W0" => p.W0)
+_profile_table(::PlummerProfile) = Dict{String,Any}("type" => "plummer")
+
+"""
+    _imf_table(imf::IMFSpec) -> Dict{String,Any}
+
+Serialise an IMF tag to the structured TOML table form parsed by
+[`_parse_imf_table`](@ref), so metadata files round-trip losslessly.
+"""
+_imf_table(i::KroupaIMF) =
+    Dict{String,Any}("type" => "kroupa", "bodyn" => i.bodyn, "body1" => i.body1)
+_imf_table(i::RescaledKroupaIMF) =
+    Dict{String,Any}("type" => "kroupa_rescaled", "bodyn" => i.bodyn,
+                     "body1" => i.body1, "target_mass" => i.target_mass)
+_imf_table(i::EqualMassIMF) =
+    Dict{String,Any}("type" => "equal", "particle_mass" => i.particle_mass)
+
+"""
+    expected_mass(imf::IMFSpec, N::Int) -> Float64
+
+Expected total cluster mass [M☉] for `N` bodies drawn from `imf` — exact for
+`RescaledKroupaIMF`/`EqualMassIMF`, the analytic expectation for `KroupaIMF`.
+"""
+expected_mass(imf::KroupaIMF, N::Int)         = N * kroupa_mean_mass(imf.bodyn, imf.body1)
+expected_mass(imf::RescaledKroupaIMF, N::Int) = imf.target_mass
+expected_mass(imf::EqualMassIMF, N::Int)      = N * imf.particle_mass
 
 # -----------------------------------------------------------------------------
 # Orbit and output specs

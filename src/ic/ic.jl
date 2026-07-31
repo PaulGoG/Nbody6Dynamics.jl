@@ -19,7 +19,7 @@ include("plotting.jl")
 # ---------------------------------------------------------------------------
 
 """
-    run_merger_pipeline(config_path::AbstractString; rng=Random.default_rng(),
+    run_merger_pipeline(config_path::AbstractString; rng=nothing,
                         output_dir="", generate_plots=true) -> MergerICResult
 
 One-call entry point for multi-cluster merger IC generation.
@@ -38,7 +38,7 @@ result = run_merger_pipeline("input_files/merger_equal_mass.toml")
 ```
 """
 function run_merger_pipeline(config_path::AbstractString;
-                             rng::AbstractRNG = Random.default_rng(),
+                             rng::Union{AbstractRNG,Nothing} = nothing,
                              output_dir::AbstractString = "",
                              generate_plots::Bool = true)
     @info "═══ Merger IC Pipeline ═══"
@@ -51,10 +51,10 @@ function run_merger_pipeline(config_path::AbstractString;
     elseif cfg.output.output_dir != "."
         cfg.output.output_dir
     else
-        # Auto-generate a timestamped directory under runs/
-        run_id = "merger_" * Dates.format(now(), "yyyymmdd_HHMMSS") * "_" *
-                 string(rand(rng, 1000:9999))
-        joinpath("runs", run_id)
+        # Auto-generate a unique run directory under the project's runs/.
+        # The suffix RNG is cosmetic (directory uniqueness), so the global
+        # RNG is fine here; the physics RNG is resolved in generate_merger_ic.
+        joinpath(_PROJECT_ROOT, "runs", generate_run_id("merger"))
     end
 
     @info "Output directory: $out"

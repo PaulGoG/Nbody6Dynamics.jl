@@ -273,6 +273,40 @@ function sample_king(N::Int, W0::Float64, rt::Float64;
 end
 
 """
+    half_mass_radius(mass, pos; centre = nothing) -> Float64
+
+Mass-weighted half-mass radius: the radius of the particle at which the
+cumulative mass (sorted by distance from `centre`) first reaches half the
+total. `centre` defaults to the mass-weighted centre of mass.
+
+Note this is *not* the count-median radius — with an IMF the two differ by
+sampling noise, and only the mass-based definition matches RBAR semantics.
+"""
+function half_mass_radius(mass::Vector{Float64}, pos::Matrix{Float64};
+                          centre::Union{Nothing,Vector{Float64}} = nothing)
+    N = length(mass)
+    M_total = sum(mass)
+    c = if centre === nothing
+        cm = zeros(Float64, 3)
+        for i in 1:N, k in 1:3
+            cm[k] += mass[i] * pos[k, i]
+        end
+        cm ./ M_total
+    else
+        centre
+    end
+    r = [sqrt((pos[1, i] - c[1])^2 + (pos[2, i] - c[2])^2 + (pos[3, i] - c[3])^2)
+         for i in 1:N]
+    order = sortperm(r)
+    m_cum = 0.0
+    for idx in order
+        m_cum += mass[idx]
+        m_cum ≥ 0.5 * M_total && return r[idx]
+    end
+    return r[order[end]]
+end
+
+"""
     virialise!(mass, pos, vel)
 
 Shift to centre-of-mass frame and scale velocities so that the virial

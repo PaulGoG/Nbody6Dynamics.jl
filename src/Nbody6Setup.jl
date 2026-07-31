@@ -508,6 +508,9 @@ export generate_run_id
 export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 export detect_platform, check_dependencies, detect_cuda_path
 export ClusterSpec, OrbitSpec, MergerOutputSpec, MergerConfig, MergerICResult
+export DensityProfile, KingProfile, PlummerProfile,
+       IMFSpec, KroupaIMF, RescaledKroupaIMF, EqualMassIMF,
+       profile_name, imf_name, expected_mass, sample_masses, kroupa_mean_mass
 export load_merger_config, generate_merger_ic, run_merger_pipeline,
        load_merger_ic_result
 export plot_merger_ic

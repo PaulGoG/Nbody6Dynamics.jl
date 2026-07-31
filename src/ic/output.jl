@@ -70,7 +70,8 @@ function generate_merger_inp(path::AbstractString, N_total::Int,
                              kz22::Int = 2, kz14::Int = 0,
                              tcrit::Float64 = 100.0,
                              dtadj::Float64 = 1.0,
-                             deltat::Float64 = 1.0)
+                             deltat::Float64 = 1.0,
+                             nrand::Int = 10000)
     kz = zeros(Int, 50)
     kz[1]  = 1;  kz[2]  = -1; kz[3]  = 2;  kz[7]  = 3
     kz[12] = 1;  kz[14] = kz14; kz[19] = 3; kz[22] = kz22
@@ -95,7 +96,7 @@ function generate_merger_inp(path::AbstractString, N_total::Int,
         # --- 2. &ININPUT: main simulation parameters + KZ options ---
         println(io, "&ININPUT")
         @printf(io, "N=%d,NFIX=1,NCRIT=10,NRAND=%d,NNBOPT=%d,NRUN=1,NCOMM=10,\n",
-                N_total, N_total, nnbopt)
+                N_total, abs(nrand) % typemax(Int32), nnbopt)
         @printf(io, "ETAI=0.02,ETAR=0.02,RS0=0.5,DTADJ=%.4f,DELTAT=%.4f,TCRIT=%.2f,QE=1.0,RBAR=%.6f,ZMBAR=%.6f,\n",
                 dtadj, deltat, tcrit, rbar, zmbar)
         println(io, join(kz_strs, "\n"))
@@ -143,29 +144,22 @@ end
 # Internal: sample a single cluster from its spec
 # ---------------------------------------------------------------------------
 function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rng())
+    # Total-mass handling is delegated to the IMFSpec subtype (natural Kroupa
+    # keeps the sampled sum; rescaled/equal enforce their targets).
     masses = sample_masses(spec.imf, spec.N, rng)
 
-    # For KroupaIMF, the mass is an output, not an input, so we don't scale it.
-    # For RescaledKroupaIMF and EqualMassIMF, sample_masses already handles the total mass.
-    # Actually wait, EqualMassIMF uses particle_mass directly.
-    # RescaledKroupaIMF scales internally to target_mass.
-    # But wait, looking at _sample_cluster, it used to rescale:
-    # masses .*= spec.mass_total / sum(masses)
-    # The new IMF hierarchy delegates this to the IMFSpec.
-    # Let's ensure the return value is just the mass vector directly from sample_masses.
-
     pos, vel = if spec.profile isa PlummerProfile
+        # r_hm = 1.305 a for a Plummer sphere → scale radius from target r_hm
         sample_plummer(spec.N, spec.rbar / 1.305; rng = rng)
     elseif spec.profile isa KingProfile
-        _solve_king(spec.profile.W0)  # just to verify W0 is valid
-        sample_king(spec.N, spec.profile.W0, 5.0 * spec.rbar; rng = rng)
+        # Sampled with unit tidal radius; the empirical rescale below sets r_hm
+        sample_king(spec.N, spec.profile.W0, 1.0; rng = rng)
     else
-        error("Unknown model: $(typeof(spec.profile))")
+        error("Unknown profile: $(typeof(spec.profile))")
     end
 
-    # Scale positions to desired half-mass radius
-    r_arr = [sqrt(pos[1, j]^2 + pos[2, j]^2 + pos[3, j]^2) for j in 1:spec.N]
-    r_hm = sort(r_arr)[max(1, spec.N ÷ 2)]
+    # Scale positions so the mass-based half-mass radius equals the target
+    r_hm = half_mass_radius(masses, pos; centre = zeros(3))
     if r_hm > 0
         pos .*= spec.rbar / r_hm
     end
@@ -196,21 +190,21 @@ function generate_merger_ic(cfg::MergerConfig;
     n_clusters = length(cfg.clusters)
     n_clusters ≥ 2 || error("Need at least 2 clusters, got $n_clusters")
 
-    # Resolve RNG and effective seed. The seed is always recorded in the
-    # metadata so the run can be reproduced later, even when the user did
-    # not pass an explicit seed.
-    effective_seed::Int = if cfg.seed != 0
-        cfg.seed
-    else
-        rand(UInt32) % typemax(Int32)
-    end
-    use_rng = isnothing(rng) ? Random.MersenneTwister(effective_seed) : rng
+    # Resolve RNG and effective seed. When the caller supplies an RNG the
+    # sampling is NOT reproducible from `effective_seed`; the metadata records
+    # this honestly via `external_rng` (the seed still feeds Nbody6's NRAND).
+    external_rng = rng !== nothing
+    effective_seed::Int = cfg.seed === nothing ? Int(rand(UInt32) % typemax(Int32)) :
+                                                 cfg.seed
+    use_rng = external_rng ? rng : Random.MersenneTwister(effective_seed)
 
-    @info "Generating merger ICs for $n_clusters clusters ($(cfg.orbit_mode) mode, seed=$effective_seed)..."
+    seed_note = external_rng ? "external RNG (seed not reproducible)" : "seed=$effective_seed"
+    @info "Generating merger ICs for $n_clusters clusters ($(cfg.orbit_mode) mode, $seed_note)..."
 
     # Sample each cluster independently
     cluster_data = [begin
-        @info "  Cluster $i: $(spec.model) model, N=$(spec.N), M=$(spec.mass_total) M☉"
+        @info "  Cluster $i: $(profile_name(spec.profile)) profile, N=$(spec.N), " *
+              "imf=$(imf_name(spec.imf)), M≈$(round(expected_mass(spec.imf, spec.N); digits=1)) M☉"
         _sample_cluster(spec; rng = use_rng)
     end for (i, spec) in enumerate(cfg.clusters)]
 
@@ -255,14 +249,9 @@ function generate_merger_ic(cfg::MergerConfig;
     M_total = sum(mass_combined)
     zmbar = M_total / N_total
 
-    # Half-mass radius of the combined system
-    cm = zeros(3)
-    for i in 1:N_total, k in 1:3
-        cm[k] += mass_combined[i] * pos_combined[k, i]
-    end
-    cm ./= M_total
-    r_all = [sqrt(sum((pos_combined[k, i] - cm[k])^2 for k in 1:3)) for i in 1:N_total]
-    rbar = sort(r_all)[max(1, N_total ÷ 2)]
+    # Half-mass radius of the combined system — this is the RBAR length unit
+    # written to the .inp file and used for the NB-unit conversion of dat.10.
+    rbar = half_mass_radius(mass_combined, pos_combined)
 
     # Keep physical-unit copies before conversion.
     # All sampled & Kepler velocities are in "code units" where G=1 with
@@ -290,7 +279,8 @@ function generate_merger_ic(cfg::MergerConfig;
     write_dat10(joinpath(out_dir, "dat.10"), mass_combined, pos_combined, vel_combined)
     generate_merger_inp(joinpath(out_dir, "merger.inp"), N_total, rbar, zmbar;
                         kz22 = kz22, tcrit = cfg.output.tcrit,
-                        dtadj = cfg.output.dtadj, deltat = cfg.output.deltat)
+                        dtadj = cfg.output.dtadj, deltat = cfg.output.deltat,
+                        nrand = effective_seed)
 
     # Summary log
     _write_merger_summary(joinpath(out_dir, "merger_summary.txt"),
@@ -299,7 +289,7 @@ function generate_merger_ic(cfg::MergerConfig;
 
     # Structured metadata for post-hoc regeneration of IC plots
     _write_merger_ic_metadata(joinpath(out_dir, "merger_ic.toml"),
-                               cfg, cluster_ranges, effective_seed,
+                               cfg, cluster_ranges, effective_seed, external_rng,
                                N_total, M_total, rbar, zmbar)
 
     return MergerICResult(
@@ -310,22 +300,27 @@ function generate_merger_ic(cfg::MergerConfig;
 end
 
 """
-    _write_merger_ic_metadata(path, cfg, cluster_ranges, seed,
+    _write_merger_ic_metadata(path, cfg, cluster_ranges, seed, external_rng,
                               N_total, M_total, rbar, zmbar)
 
-Write a machine-readable TOML snapshot of the IC generation, sufficient to
-reconstruct a [`MergerICResult`](@ref) from the `dat.10` file later (so
-`plot_merger_ic` can be re-run after code fixes without re-sampling).
+Write a machine-readable TOML snapshot of the IC generation (schema v2),
+sufficient to reconstruct a [`MergerICResult`](@ref) from the `dat.10` file
+later (so `plot_merger_ic` can be re-run after code fixes without
+re-sampling). Cluster specs are stored in the structured form
+(`profile = {type=...}`, `imf = {type=...}`) that
+[`_parse_cluster_table`](@ref) also accepts, so the file round-trips.
 """
 function _write_merger_ic_metadata(path::AbstractString, cfg::MergerConfig,
                                     cluster_ranges::Vector{UnitRange{Int}},
-                                    seed::Int, N_total::Int, M_total::Float64,
+                                    seed::Int, external_rng::Bool,
+                                    N_total::Int, M_total::Float64,
                                     rbar::Float64, zmbar::Float64)
     d = Dict{String,Any}(
         "meta" => Dict{String,Any}(
             "generated_at" => Dates.format(now(), "yyyy-mm-dd HH:MM:SS"),
-            "nbody6setup_version" => "1.0",
-            "seed"    => seed,
+            "schema_version" => 2,
+            "seed"         => seed,
+            "external_rng" => external_rng,
             "N_total" => N_total,
             "M_total" => M_total,
             "rbar"    => rbar,
@@ -349,16 +344,12 @@ function _write_merger_ic_metadata(path::AbstractString, cfg::MergerConfig,
     # One table per cluster so spec + post-truncation count are co-located
     for (i, spec) in enumerate(cfg.clusters)
         d["cluster$i"] = Dict{String,Any}(
-            "model"      => spec.model,
-            "N"          => spec.N,
-            "W0"         => spec.W0,
-            "mass_total" => spec.mass_total,
-            "rbar"       => spec.rbar,
-            "imf"        => spec.imf,
-            "body1"      => spec.body1,
-            "bodyn"      => spec.bodyn,
-            "position"   => spec.position,
-            "velocity"   => spec.velocity,
+            "N"        => spec.N,
+            "rbar"     => spec.rbar,
+            "profile"  => _profile_table(spec.profile),
+            "imf"      => _imf_table(spec.imf),
+            "position" => spec.position,
+            "velocity" => spec.velocity,
             "N_after_trunc" => length(cluster_ranges[i]),
         )
     end
@@ -395,31 +386,24 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
     zmbar   = Float64(meta["zmbar"])
     N_total = Int(meta["N_total"])
 
-    # Read cluster specs and ranges
+    orbit_mode = String(raw["orbit_mode"])
+
+    # Read cluster specs and ranges. Schema v2 stores the structured form
+    # that `_parse_cluster_table` accepts directly; v1 files (flat legacy
+    # keys) are also handled by the same parser. Parse with orbit_mode
+    # "kepler" semantics to skip position/velocity validation — metadata
+    # always records them explicitly (possibly empty for kepler mode).
     cluster_specs = ClusterSpec[]
     cluster_ranges = UnitRange{Int}[]
     i = 1
     while haskey(raw, "cluster$i")
         c = raw["cluster$i"]::Dict
-        push!(cluster_specs, ClusterSpec(;
-            model      = c["model"],
-            N          = Int(c["N"]),
-            W0         = Float64(c["W0"]),
-            mass_total = Float64(c["mass_total"]),
-            rbar       = Float64(c["rbar"]),
-            imf        = c["imf"],
-            body1      = Float64(c["body1"]),
-            bodyn      = Float64(c["bodyn"]),
-            position   = Float64.(c["position"]),
-            velocity   = Float64.(c["velocity"]),
-        ))
+        push!(cluster_specs, _parse_cluster_table(c, i, "kepler"))
         i += 1
     end
     for pair in raw["cluster_ranges"]
         push!(cluster_ranges, Int(pair[1]):Int(pair[2]))
     end
-
-    orbit_mode = String(raw["orbit_mode"])
     orbit_raw  = raw["orbit"]::Dict
     orbit = OrbitSpec(;
         apocentre    = Float64(orbit_raw["apocentre"]),
@@ -482,10 +466,12 @@ function _write_merger_summary(path, cfg, cluster_data, cluster_ranges,
         println(io)
         for (i, spec) in enumerate(cfg.clusters)
             Ni = length(cluster_ranges[i])
-            @printf(io, "  Cluster %d: %s, N=%d (after trunc: %d), M=%.1f M☉, r_hm=%.2f pc",
-                    i, spec.model, spec.N, Ni, spec.mass_total, spec.rbar)
-            if spec.model == "king"
-                @printf(io, ", W0=%.1f", spec.W0)
+            M_sampled = sum(cluster_data[i].mass)  # pre-truncation sampled mass
+            @printf(io, "  Cluster %d: %s, imf=%s, N=%d (after trunc: %d), M=%.1f M☉, r_hm=%.2f pc",
+                    i, profile_name(spec.profile), imf_name(spec.imf),
+                    spec.N, Ni, M_sampled, spec.rbar)
+            if spec.profile isa KingProfile
+                @printf(io, ", W0=%.1f", spec.profile.W0)
             end
             if !isempty(spec.position)
                 @printf(io, "\n             pos=[%.2f, %.2f, %.2f] pc",

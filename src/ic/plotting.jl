@@ -38,7 +38,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     ms = clamp(18000 / N, 4.0, 20.0)
 
     # ── Single-projection plots ──────────────────────────────────
-    model_str = join(unique(r.model for r in result.cluster_specs), "/")
+    model_str = join(unique(profile_name(r.profile) for r in result.cluster_specs), "/")
     N_str = _format_thousands(N)
 
     ic_projections = [
@@ -154,7 +154,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     seen_models = Set{String}()
 
     for (ci, rng) in enumerate(result.cluster_ranges)
-        model = result.cluster_specs[ci].model
+        model = profile_name(result.cluster_specs[ci].profile)
         col = per_cluster_legend ?
               cluster_colors[mod1(ci, length(cluster_colors))] :
               get(model_colors, model, cluster_colors[mod1(ci, length(cluster_colors))])
@@ -168,7 +168,8 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         elseif !(model in seen_models)
             push!(seen_models, model)
             push!(legend_elems, [PolyElement(color = col)])
-            push!(legend_labels, "$(titlecase(model)) ($(count(s -> s.model == model, result.cluster_specs)))")
+            n_same = count(s -> profile_name(s.profile) == model, result.cluster_specs)
+            push!(legend_labels, "$(titlecase(model)) ($n_same)")
         end
     end
     Legend(fig_v[1, 2], legend_elems, legend_labels; framevisible = true)
@@ -254,7 +255,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     line_alpha = per_cluster_density ? 1.0 : 0.55
 
     for (ci, rng) in enumerate(result.cluster_ranges)
-        model = result.cluster_specs[ci].model
+        model = profile_name(result.cluster_specs[ci].profile)
         col = per_cluster_density ?
               cluster_colors[mod1(ci, length(cluster_colors))] :
               get(model_colors, model, :gray50)
@@ -280,7 +281,8 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             "Cluster $ci"
         elseif !(model in labelled_models)
             push!(labelled_models, model)
-            "$(titlecase(model)) ($(count(s -> s.model == model, result.cluster_specs)))"
+            n_same = count(s -> profile_name(s.profile) == model, result.cluster_specs)
+            "$(titlecase(model)) ($n_same)"
         else
             nothing  # no legend entry for subsequent lines of same model
         end
