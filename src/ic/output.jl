@@ -17,6 +17,7 @@ function write_dat10(path::AbstractString, mass::Vector{Float64},
     size(pos) == (3, N) || error("pos must be 3×$N, got $(size(pos))")
     size(vel) == (3, N) || error("vel must be 3×$N, got $(size(vel))")
 
+    _backup_existing(path)
     open(path, "w") do io
         for i in 1:N
             @printf(io, "%.15e  %.15e  %.15e  %.15e  %.15e  %.15e  %.15e\n",
@@ -87,6 +88,7 @@ function generate_merger_inp(path::AbstractString, N_total::Int,
     # Neighbour number: ~sqrt(N), clamped to [20, 300]
     nnbopt = clamp(round(Int, sqrt(N_total)), 20, 300)
 
+    _backup_existing(path)
     open(path, "w") do io
         # --- 1. &INNBODY6: start/restart, CPU time, checkpointing ---
         println(io, "&INNBODY6")
@@ -354,6 +356,7 @@ function _write_merger_ic_metadata(path::AbstractString, cfg::MergerConfig,
         )
     end
 
+    _backup_existing(path)
     open(path, "w") do io
         TOML.print(io, d)
     end
@@ -455,6 +458,7 @@ end
 function _write_merger_summary(path, cfg, cluster_data, cluster_ranges,
                                N_total, M_total, rbar, zmbar, kz22)
     n_clusters = length(cfg.clusters)
+    _backup_existing(path)
     open(path, "w") do io
         println(io, "=" ^ 60)
         println(io, "  Multi-Cluster Merger IC Summary")

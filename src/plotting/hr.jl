@@ -74,11 +74,16 @@ function plot_hr(
         fig[1, 1];
         xlabel = L"\log_{10}(\mathrm{T}_\mathrm{eff} \, / \, \mathrm{K})",
         ylabel = L"\log_{10}(\mathrm{L} \, / \, \mathrm{L}_\odot)",
-        title  = latexstring("\\mathrm{t}_\\mathrm{NB} = $(t_val), \\;\\; \\mathrm{N}_\\star = $(sev.n_stars)"),
         xreversed = true,   # hot → cool from left to right
         xticks = _logval_ticks(teff_min - dt, teff_max + dt),
         yticks = _logval_ticks(lum_min - dl, lum_max + dl),
+        xgridvisible = false,
+        ygridvisible = false,
     )
+    # sev.time_myr is in Myr, not NB units
+    text!(ax, 0.03, 0.97;
+        text = latexstring("\\mathrm{t} = $(t_val)\\;\\mathrm{Myr}"),
+        space = :relative, align = (:left, :top), fontsize = 16)
 
     # Group by stellar type for legend
     types_present = sort(unique(r.stellar_type for r in valid))
@@ -92,15 +97,12 @@ function plot_hr(
         scatter!(ax, teff, lum; color = col, markersize = 14, label = label)
     end
 
-    if length(types_present) ≤ 12
+    if 2 ≤ length(types_present) ≤ 12
         axislegend(ax; position = :cb, nbanks = 2,
                    backgroundcolor = (:white, 0.7), framevisible = true)
     end
 
-    outpath = _output_path(cfg, filename)
-    save(outpath, fig; px_per_unit = cfg.dpi / 72)
-    @info "HR diagram saved: $outpath"
-    return outpath
+    return _save_fig(cfg, filename, fig)
 end
 
 """
@@ -166,8 +168,6 @@ function plot_hr_evolution(
             fig[row, col];
             xlabel = show_xlab ? L"\log_{10}(\mathrm{T}_\mathrm{eff} \, / \, \mathrm{K})" : "",
             ylabel = show_ylab ? L"\log_{10}(\mathrm{L} \, / \, \mathrm{L}_\odot)" : "",
-            title  = latexstring("\\mathrm{t}_\\mathrm{NB} = $(t_val) \\;\\; (\\mathrm{N}_\\star = $(sev.n_stars))"),
-            titlesize = 22,
             xlabelsize = 22,
             ylabelsize = 22,
             xticklabelsize = 18,
@@ -178,7 +178,13 @@ function plot_hr_evolution(
             yticks = ytk_hr,
             xticklabelsvisible = show_xlab,
             yticklabelsvisible = show_ylab,
+            xgridvisible = false,
+            ygridvisible = false,
         )
+        # sev.time_myr is in Myr, not NB units
+        text!(ax, 0.03, 0.97;
+            text = latexstring("\\mathrm{t} = $(t_val)\\;\\mathrm{Myr}"),
+            space = :relative, align = (:left, :top), fontsize = 16)
 
         for r in valid_per_panel[panel_idx]
             col_sym = get(_HR_COLORS, Int(r.stellar_type), :gray50)
@@ -190,8 +196,5 @@ function plot_hr_evolution(
     colgap!(fig.layout, _MULTIPANEL_HGAP)
     rowgap!(fig.layout, _MULTIPANEL_VGAP)
 
-    outpath = _output_path(cfg, filename)
-    save(outpath, fig; px_per_unit = cfg.dpi / 72)
-    @info "HR evolution saved: $outpath"
-    return outpath
+    return _save_fig(cfg, filename, fig)
 end

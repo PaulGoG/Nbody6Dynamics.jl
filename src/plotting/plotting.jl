@@ -60,16 +60,19 @@ const PUBLICATION_THEME = Theme(
         yminortickwidth    = 0.8,
         xtickalign         = 1.0,     # ticks face inward
         ytickalign         = 1.0,
-        xminortickalign    = 1.0,
-        yminortickalign    = 1.0,
         xticksize          = 8,
         yticksize          = 8,
-        xminorticksize     = 5,
-        yminorticksize     = 5,
-        xminorticksvisible = true,
-        yminorticksvisible = true,
-        xgridvisible       = false,
-        ygridvisible       = false,
+        # No minor ticks; grey dashed major grid at very low opacity.
+        # Dense scatter plots (cluster projections, HR) disable the grid
+        # locally via x/ygridvisible = false.
+        xminorticksvisible = false,
+        yminorticksvisible = false,
+        xgridvisible       = true,
+        ygridvisible       = true,
+        xgridstyle         = :dash,
+        ygridstyle         = :dash,
+        xgridcolor         = (:grey, 0.12),
+        ygridcolor         = (:grey, 0.12),
         topspinevisible    = true,
         rightspinevisible  = true,
     ),
@@ -242,6 +245,30 @@ function _anim_output_path(cfg::VisualizationConfig, basename::AbstractString)::
     mkpath(cfg.output_dir)
     return joinpath(cfg.output_dir, basename * ".gif")
 end
+
+"""
+    _save_fig(cfg, basename, fig) -> String
+
+Resolve the output path, back up any existing file (never-overwrite policy),
+save `fig` at the configured DPI, and log the location. Returns the path.
+"""
+function _save_fig(cfg::VisualizationConfig, basename::AbstractString, fig)::String
+    path = _output_path(cfg, basename)
+    _backup_existing(path)
+    save(path, fig; px_per_unit = cfg.dpi / 72)
+    @info "Saved: $path"
+    return path
+end
+
+"""
+    _marker_size(cfg, n) -> Float64
+
+Scatter marker size for `n` particles: `marker_budget / n` clamped to
+`[marker_min, marker_max]` (all from `cfg.style`).
+"""
+_marker_size(cfg::VisualizationConfig, n::Integer) =
+    clamp(cfg.style.marker_budget / max(n, 1), cfg.style.marker_min, cfg.style.marker_max)
+
 
 # ---------------------------------------------------------------------------
 # Include plot source files

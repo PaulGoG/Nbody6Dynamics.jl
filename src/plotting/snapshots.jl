@@ -18,8 +18,7 @@ function plot_snapshot(
     t_nb = time_nb(snap.header)
     n = nparticles(snap)
 
-    # Particle size: visible but not overlapping
-    ms = clamp(18000 / n, 4.0, 20.0)
+    ms = _marker_size(cfg, n)
 
     # Colour by mass (log scale for visual contrast)
     m = Float64.(snap.mass)
@@ -41,12 +40,16 @@ function plot_snapshot(
         ax = Axis(fig[1, 1];
             xlabel = xlabel,
             ylabel = ylabel,
-            title  = latexstring("\\mathrm{N} = $(n), \\;\\; \\mathrm{t} = $(t_str) \\; \\mathrm{[NB]}"),
             aspect = DataAspect(),
             limits = (xlo, xhi, ylo, yhi),
             xticks = xtk,
             yticks = ytk,
+            xgridvisible = false,
+            ygridvisible = false,
         )
+        text!(ax, 0.03, 0.97;
+            text = latexstring("\\mathrm{t} = $(t_str) \\; \\mathrm{[NB]}"),
+            space = :relative, align = (:left, :top), fontsize = 16)
 
         sc = scatter!(ax, snap.pos[ix, :], snap.pos[iy, :];
             color      = log_m,
@@ -63,7 +66,7 @@ function plot_snapshot(
 
         colgap!(fig.layout, 10)
 
-        save(_output_path(cfg, "$(filename)_$(proj)"), fig; px_per_unit = cfg.dpi / 72)
+        _save_fig(cfg, "$(filename)_$(proj)", fig)
     end
 
     return nothing
@@ -109,7 +112,7 @@ function plot_snapshot_evolution(
         ix, iy, xlab, ylab = _proj_indices(projection)
 
         # Check if adaptive zoom is needed
-        use_adaptive = _needs_adaptive_zoom(snaps, indices, ix, iy)
+        use_adaptive = _needs_adaptive_zoom(snaps, indices, ix, iy, cfg.style.zoom_frac)
 
         # Global limits (used when adaptive is off)
         all_x = reduce(vcat, [snaps[i].pos[ix, :] for i in indices])
@@ -140,13 +143,10 @@ function plot_snapshot_evolution(
             ytk = _nice_ticks(ylo, yhi)
 
             t_str = @sprintf("%.3f", time_nb(snap.header))
-            panel_title = latexstring("\\mathrm{t} = $(t_str) \\; \\mathrm{[NB]}")
 
             ax = Axis(fig[row, col];
                 xlabel = show_xlab ? xlab : "",
                 ylabel = show_ylab ? ylab : "",
-                title  = panel_title,
-                titlesize = 22,
                 xlabelsize = 22,
                 ylabelsize = 22,
                 xticklabelsize = use_adaptive ? 15 : 18,
@@ -157,10 +157,15 @@ function plot_snapshot_evolution(
                 yticks = ytk,
                 xticklabelsvisible = show_xtick,
                 yticklabelsvisible = show_ytick,
+                xgridvisible = false,
+                ygridvisible = false,
             )
+            text!(ax, 0.03, 0.97;
+                text = latexstring("\\mathrm{t} = $(t_str) \\; \\mathrm{[NB]}"),
+                space = :relative, align = (:left, :top), fontsize = 16)
 
             log_m = log10.(max.(Float64.(snap.mass), 1e-30))
-            ms = clamp(18000 / nparticles(snap), 4.0, 18.0)
+            ms = _marker_size(cfg, nparticles(snap))
             scatter!(ax, snap.pos[ix, :], snap.pos[iy, :];
                 color      = log_m,
                 colormap   = :viridis,
@@ -181,7 +186,7 @@ function plot_snapshot_evolution(
         colgap!(fig.layout, _MULTIPANEL_HGAP)
         rowgap!(fig.layout, _MULTIPANEL_VGAP)
 
-        save(_output_path(cfg, "$(filename)_$(projection)"), fig; px_per_unit = cfg.dpi / 72)
+        _save_fig(cfg, "$(filename)_$(projection)", fig)
     end
     return nothing
 end
@@ -198,17 +203,18 @@ function _proj_indices(proj::Symbol)
 end
 
 """
-    _needs_adaptive_zoom(snaps, indices, ix, iy) -> Bool
+    _needs_adaptive_zoom(snaps, indices, ix, iy, zoom_frac) -> Bool
 
-Return `true` if the spatial extent varies by more than ~7× across the
-selected snapshots, meaning per-panel adaptive zoom should be used.
+Return `true` if the spatial extent varies by more than `1/zoom_frac` across
+the selected snapshots, meaning per-panel adaptive zoom should be used.
 """
-function _needs_adaptive_zoom(snaps::Vector{Snapshot}, indices, ix::Int, iy::Int)::Bool
+function _needs_adaptive_zoom(snaps::Vector{Snapshot}, indices, ix::Int, iy::Int,
+                              zoom_frac::Real)::Bool
     extents = Float64[]
     for idx in indices
         snap = snaps[idx]
         sx = snap.pos[ix, :]; sy = snap.pos[iy, :]
         push!(extents, max(maximum(abs, sx), maximum(abs, sy), 0.1))
     end
-    return (minimum(extents) / maximum(extents)) < 0.15
+    return (minimum(extents) / maximum(extents)) < zoom_frac
 end

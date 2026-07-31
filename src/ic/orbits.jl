@@ -53,14 +53,14 @@ function jacobi_radius(d::Float64, M_self::Float64, M_other::Float64)
 end
 
 """
-    truncate_jacobi!(pos, vel, mass, r_trunc) -> (pos_t, vel_t, mass_t)
+    truncate_jacobi(pos, vel, mass, r_trunc) -> (pos_t, vel_t, mass_t)
 
-Remove particles beyond `r_trunc` from the centre of mass.
-Returns new arrays (does not modify originals in-place despite the `!` name —
-the `!` signals that this is a destructive operation on the data set).
+Return copies of `(pos, vel, mass)` with particles beyond `r_trunc` from the
+coordinate origin removed. Non-mutating (the inputs are left untouched), so
+no `!` — the cluster is assumed centred at the origin (pre-offset).
 """
-function truncate_jacobi!(pos::Matrix{Float64}, vel::Matrix{Float64},
-                          mass::Vector{Float64}, r_trunc::Float64)
+function truncate_jacobi(pos::Matrix{Float64}, vel::Matrix{Float64},
+                         mass::Vector{Float64}, r_trunc::Float64)
     N = length(mass)
     keep = Bool[]
     sizehint!(keep, N)
@@ -104,8 +104,8 @@ function setup_two_cluster_orbit(
     if truncate_jacobi_flag
         rJ1 = jacobi_radius(d_apo, M1, M2)
         rJ2 = jacobi_radius(d_apo, M2, M1)
-        pos1, vel1, mass1 = truncate_jacobi!(pos1, vel1, mass1, rJ1)
-        pos2, vel2, mass2 = truncate_jacobi!(pos2, vel2, mass2, rJ2)
+        pos1, vel1, mass1 = truncate_jacobi(pos1, vel1, mass1, rJ1)
+        pos2, vel2, mass2 = truncate_jacobi(pos2, vel2, mass2, rJ2)
         # Update totals after truncation
         M1 = sum(mass1)
         M2 = sum(mass2)
@@ -198,7 +198,7 @@ function combine_clusters_explicit(
             end
 
             rJ = jacobi_radius(d_min, M_self, M_nearest)
-            pos_t, vel_t, mass_t = truncate_jacobi!(cd.pos, cd.vel, cd.mass, rJ)
+            pos_t, vel_t, mass_t = truncate_jacobi(cd.pos, cd.vel, cd.mass, rJ)
             push!(truncated, (pos = pos_t, vel = vel_t, mass = mass_t))
         else
             push!(truncated, cd)

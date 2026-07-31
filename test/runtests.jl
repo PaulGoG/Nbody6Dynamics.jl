@@ -938,6 +938,12 @@ end
             pos2 = randn(rng, 3, N2) .* 0.5
             vel2 = randn(rng, 3, N2) .* 0.01
             mass2 = ones(N2) ./ N2
+            # Centre each cluster exactly (as virialise! does in the real
+            # pipeline) so the COM/momentum/energy identities below are exact.
+            for (p, v, m) in ((pos1, vel1, mass1), (pos2, vel2, mass2))
+                p .-= sum(m' .* p, dims = 2) ./ sum(m)
+                v .-= sum(m' .* v, dims = 2) ./ sum(m)
+            end
 
             pos, vel, mass = Nbody6Setup.setup_two_cluster_orbit(
                 pos1, vel1, mass1, pos2, vel2, mass2,
@@ -949,6 +955,64 @@ end
             M = sum(mass)
             cm = vec(sum(mass' .* pos, dims=2)) ./ M
             @test all(abs.(cm) .< 0.1)
+
+            # Total momentum must vanish and the two-COM orbit must have the
+            # Keplerian energy of the requested (d_apo, e) orbit.
+            p = vec(sum(mass' .* vel, dims = 2))
+            @test all(abs.(p) .< 1e-10)
+            r1 = 1:N1; r2 = (N1+1):(N1+N2)
+            M1 = sum(mass[r1]); M2 = sum(mass[r2])
+            com1 = vec(sum(mass[r1]' .* pos[:, r1], dims = 2)) ./ M1
+            com2 = vec(sum(mass[r2]' .* pos[:, r2], dims = 2)) ./ M2
+            vcom1 = vec(sum(mass[r1]' .* vel[:, r1], dims = 2)) ./ M1
+            vcom2 = vec(sum(mass[r2]' .* vel[:, r2], dims = 2)) ./ M2
+            d = sqrt(sum((com1 .- com2) .^ 2))
+            @test d ≈ 20.0 rtol = 1e-10
+            v_rel2 = sum((vcom1 .- vcom2) .^ 2)
+            a_orb = 20.0 / (1.0 + 0.5)
+            ε = 0.5 * v_rel2 - (M1 + M2) / d          # specific orbital energy, G = 1
+            @test ε ≈ -(M1 + M2) / (2a_orb) rtol = 1e-10
+        end
+
+        # --- Plummer half-mass relation (physics validation) ---
+        @testset "Plummer r_hm = 1.305 a" begin
+            N = 20_000
+            a = 1.0
+            pos, _ = sample_plummer(N, a; rng = rng)
+            mass = fill(1.0 / N, N)
+            r_hm = Nbody6Setup.half_mass_radius(mass, pos; centre = zeros(3))
+            @test r_hm ≈ 1.3048 rtol = 0.05    # statistical tolerance
+        end
+
+        # --- Kroupa mean mass vs analytic (physics validation) ---
+        @testset "Kroupa mean mass" begin
+            @test kroupa_mean_mass(0.08, 100.0) ≈ 0.58 rtol = 0.05
+            N = 50_000
+            m = sample_kroupa(N; m_low = 0.08, m_up = 100.0, rng = rng)
+            μ = kroupa_mean_mass(0.08, 100.0)
+            # Sample mean within a generous statistical band of the analytic mean
+            @test abs(sum(m) / N - μ) / μ < 0.1
+        end
+
+        # --- verif_triorbit.toml Lagrange equilibrium (config regression) ---
+        @testset "verif_triorbit config equilibrium" begin
+            path = joinpath(@__DIR__, "..", "input_files", "verif_triorbit.toml")
+            cfg = load_merger_config(path)
+            @test length(cfg.clusters) == 3
+            m = 1.5e4
+            rc = 6.0
+            ω = sqrt(m / (sqrt(3) * rc^3))
+            for spec in cfg.clusters
+                r⃗ = spec.position
+                v⃗ = spec.velocity
+                @test sqrt(sum(r⃗ .^ 2)) ≈ rc rtol = 1e-3
+                # Speed = ω r and velocity ⟂ radius (circular Lagrange orbit)
+                @test sqrt(sum(v⃗ .^ 2)) ≈ ω * rc rtol = 1e-3
+                @test abs(sum(r⃗ .* v⃗)) / (rc * ω * rc) < 1e-3
+            end
+            # Zero net momentum for equal-mass clusters
+            vsum = sum(spec.velocity for spec in cfg.clusters)
+            @test all(abs.(vsum) .< 0.05 * ω * rc)
         end
 
         # --- dat.10 writer ---

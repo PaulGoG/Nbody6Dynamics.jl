@@ -25,6 +25,11 @@ include("types.jl")
 include("config.jl")
 
 # ---------------------------------------------------------------------------
+# Shared utilities (safesave-style backups, …)
+# ---------------------------------------------------------------------------
+include("util.jl")
+
+# ---------------------------------------------------------------------------
 # Platform detection & dependency checking
 # ---------------------------------------------------------------------------
 include("platform.jl")
@@ -404,7 +409,8 @@ function run_pipeline(cfg::Nbody6Config;
     if cfg.visualization.enabled && !isempty(results)
         @info "Phase 4: Generating plots..."
         plot_run_dir = if !isempty(cfg.postprocess.data_dir)
-            dirname(abspath(cfg.postprocess.data_dir))
+            # normpath strips any trailing slash so dirname yields the parent
+            dirname(abspath(normpath(cfg.postprocess.data_dir)))
         elseif !isempty(run_dir)
             run_dir
         else

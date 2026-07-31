@@ -60,9 +60,9 @@ escapers, stellar evolution) and their file patterns.
 Base.@kwdef struct PostprocessConfig
     enabled::Bool              = true
     data_dir::String           = ""
-    snapshot_format::String    = "conf3"
+    snapshot_format::String    = "conf3"   # "hdf5" is no longer supported
     snapshot_pattern::String   = "conf.3_*"
-    hdf5_file::String          = "data.40.h5part"
+    hdf5_file::String          = ""        # deprecated; kept for TOML compat
     parse_stdout::Bool         = true
     stdout_file::String        = "out1000"
     read_lagr::Bool            = true
@@ -74,17 +74,46 @@ Base.@kwdef struct PostprocessConfig
 end
 
 """
+    PlotStyle
+
+Stylistic plotting parameters, configurable via `[visualization.style]` in
+`config.toml`. These are presentation knobs only — data-validity cutoffs
+(e.g. BSE placeholder filtering) remain named constants in the plot code.
+
+# Fields
+- `marker_budget`: scatter marker size is `clamp(marker_budget/N, marker_min, marker_max)`
+- `marker_min`, `marker_max`: clamp bounds for the scatter marker size [pt]
+- `q_log_threshold`: switch virial-ratio axes to log scale when max(Q) exceeds this
+- `q_floor`: clamp floor for the virial ratio on *log-scale* axes only
+- `zoom_frac`: fraction of particles defining the adaptive zoom-in radius
+- `anim_fps`: animation frame rate; `0` selects automatically from frame count
+- `anim_target_seconds`: target duration used by the automatic FPS selection
+"""
+Base.@kwdef struct PlotStyle
+    marker_budget::Float64       = 18000.0
+    marker_min::Float64          = 4.0
+    marker_max::Float64          = 20.0
+    q_log_threshold::Float64     = 10.0
+    q_floor::Float64             = 1e-3
+    zoom_frac::Float64           = 0.15
+    anim_fps::Int                = 0
+    anim_target_seconds::Float64 = 12.0
+end
+
+"""
     VisualizationConfig
 
 Configuration for the plotting and animation phase.
-Controls output format (png/pdf/svg), DPI, figure size, and output directory.
+Controls output format (png/pdf/svg), DPI, figure size, output directory,
+and the [`PlotStyle`](@ref) presentation knobs.
 """
 Base.@kwdef struct VisualizationConfig
-    enabled::Bool          = true
-    format::String         = "png"
-    dpi::Int               = 300
-    figsize::Tuple{Int,Int} = (8, 6)
-    output_dir::String     = "plots"
+    enabled::Bool               = true
+    format::String              = "png"
+    dpi::Int                    = 300
+    figsize::Tuple{Float64,Float64} = (8.0, 6.0)
+    output_dir::String          = "plots"
+    style::PlotStyle            = PlotStyle()
 end
 
 """

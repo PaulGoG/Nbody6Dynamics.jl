@@ -3,13 +3,14 @@
 # =============================================================================
 
 """
-    _auto_fps(nframes; target_duration, min_fps, max_fps) -> Int
+    _auto_fps(nframes; target_duration = 12.0, min_fps = 1, max_fps = 30) -> Int
 
 Compute a frame rate so the animation lasts approximately `target_duration`
 seconds, clamped to `[min_fps, max_fps]`.
 """
 function _auto_fps(nframes::Int;
-                   target_duration::Float64, min_fps::Int, max_fps::Int)::Int
+                   target_duration::Float64 = 12.0,
+                   min_fps::Int = 1, max_fps::Int = 30)::Int
     return clamp(round(Int, nframes / target_duration), min_fps, max_fps)
 end
 
@@ -17,8 +18,7 @@ end
     animate_cluster(snaps::Vector{Snapshot}, cfg::VisualizationConfig;
                     filename::AbstractString = "cluster_evolution",
                     projections::Vector{Symbol} = [:xy, :xz, :yz],
-                    fps::Union{Int,Nothing} = nothing,
-                    trail_frac::Float64 = 0.0) -> Vector{String}
+                    fps::Union{Int,Nothing} = nothing) -> Vector{String}
 
 Create animated GIFs of the cluster's spatial evolution across snapshots,
 one per projection.
@@ -28,10 +28,8 @@ one per projection.
 - `cfg`: visualisation configuration (figsize, dpi, output_dir)
 - `filename`: output filename stem (`.gif` appended automatically)
 - `projections`: spatial projections to animate (any of :xy, :xz, :yz)
-- `fps`: frames per second (`nothing` = auto-calculate for ~12 s total duration,
-  clamped to 1–10 fps; manual `Int` overrides)
-- `trail_frac`: fraction of previous positions to overlay as a fading trail
-  (0.0 = no trail, 0.3 = overlay last 30% of elapsed frames)
+- `fps`: frames per second (`nothing` = use `cfg.style.anim_fps`; `0` there
+  auto-calculates for ~`cfg.style.anim_target_seconds` s, clamped to 1–10 fps)
 
 Returns a vector of output file paths.
 """
@@ -40,19 +38,17 @@ function animate_cluster(
     filename::AbstractString = "cluster_evolution",
     projections::Vector{Symbol} = [:xy, :xz, :yz],
     fps::Union{Int,Nothing} = nothing,
-    trail_frac::Float64 = 0.0,
 )::Vector{String}
     isempty(snaps) && error("No snapshots to animate")
 
     nframes = length(snaps)
-    # Cluster snapshots are discrete, each worth studying individually.
-    # Target ~12 s total; fewer snapshots → slower pace, many → speed up.
-    fps = something(fps,
-        _auto_fps(nframes; target_duration = 12.0, min_fps = 1, max_fps = 10))
+    # Cluster snapshots are discrete, each worth studying individually:
+    # fewer snapshots → slower pace, many → speed up.
+    fps = something(fps, cfg.style.anim_fps)
+    fps > 0 || (fps = _auto_fps(nframes;
+        target_duration = cfg.style.anim_target_seconds, min_fps = 1, max_fps = 10))
 
-    # Marker size: visible but not overlapping
-    n_typical = nparticles(snaps[1])
-    ms = clamp(18000 / n_typical, 4.0, 20.0)
+    ms = _marker_size(cfg, nparticles(snaps[1]))
 
     # Mass colour scale — global across all frames for consistency
     all_m = reduce(vcat, [Float64.(snap.mass) for snap in snaps])
@@ -70,7 +66,7 @@ function animate_cluster(
 
         # Check if adaptive zoom is needed
         all_indices = collect(1:nframes)
-        use_adaptive = _needs_adaptive_zoom(snaps, all_indices, ix, iy)
+        use_adaptive = _needs_adaptive_zoom(snaps, all_indices, ix, iy, cfg.style.zoom_frac)
 
         # Pre-compute per-frame limits for adaptive mode
         frame_limits = if use_adaptive
@@ -91,12 +87,9 @@ function animate_cluster(
         # Observable for the frame index
         frame_idx = Observable(1)
 
-        # Title as observable
-        title_text = @lift begin
-            snap = snaps[$frame_idx]
-            n = nparticles(snap)
-            t_str = @sprintf("%.4f", time_nb(snap.header))
-            latexstring("\\mathrm{N} = $(n), \\;\\; \\mathrm{t} = $(t_str) \\; \\mathrm{[NB]}")
+        time_text = @lift begin
+            t_str = @sprintf("%.4f", time_nb(snaps[$frame_idx].header))
+            latexstring("\\mathrm{t} = $(t_str) \\; \\mathrm{[NB]}")
         end
 
         # Initial limits
@@ -106,16 +99,26 @@ function animate_cluster(
         ax = Axis(fig[1, 1];
             xlabel = xlab,
             ylabel = ylab,
-            title  = title_text,
             aspect = DataAspect(),
             limits = (xlo0, xhi0, ylo0, yhi0),
             xticks = _nice_ticks(xlo0, xhi0),
             yticks = _nice_ticks(ylo0, yhi0),
+            xgridvisible = false,
+            ygridvisible = false,
         )
+        text!(ax, 0.03, 0.97; text = time_text,
+            space = :relative, align = (:left, :top), fontsize = 16)
 
-        # Use Point2f observable to handle varying particle counts across frames
-        pts = @lift(Point2f.(snaps[$frame_idx].pos[ix, :], snaps[$frame_idx].pos[iy, :]))
-        colors = @lift(log10.(max.(Float64.(snaps[$frame_idx].mass), 1e-30)))
+        # Single source observable so positions and colours update atomically
+        # even when the particle count changes between frames (Point2f handles
+        # the varying length).
+        frame_data = @lift begin
+            snap = snaps[$frame_idx]
+            (points = Point2f.(snap.pos[ix, :], snap.pos[iy, :]),
+             colors = log10.(max.(Float64.(snap.mass), 1e-30)))
+        end
+        pts    = @lift($frame_data.points)
+        colors = @lift($frame_data.colors)
 
         scatter!(ax, pts;
             color      = colors,
@@ -131,6 +134,7 @@ function animate_cluster(
                  ticks = _nice_colorbar_ticks(cmin, cmax))
         colgap!(fig.layout, 10)
 
+        _backup_existing(outpath)
         record(fig, outpath, 1:nframes; framerate = fps) do i
             frame_idx[] = i
             if use_adaptive
@@ -157,9 +161,10 @@ end
 Animate HR diagram evolution across stellar evolution snapshots.
 
 # Arguments
-- `fps`: frames per second (`nothing` = auto-calculate for ~15 s total duration,
-  clamped to 1–8 fps; manual `Int` overrides). HR frames are information-dense,
-  so the auto rate favours a slower pace than cluster animations.
+- `fps`: frames per second (`nothing` = use `cfg.style.anim_fps`; `0` there
+  auto-calculates for ~`cfg.style.anim_target_seconds` s, clamped to 1–8 fps).
+  HR frames are information-dense, so the auto rate favours a slower pace
+  than cluster animations.
 
 Returns the output file path.
 """
@@ -186,10 +191,11 @@ function animate_hr(
     ylims = (lmin - dl, lmax + dl)
 
     nframes = length(sevs)
-    # HR frames are information-dense (stellar types, population structure).
-    # Target ~15 s; keep pace slow so each epoch is readable.
-    fps = something(fps,
-        _auto_fps(nframes; target_duration = 15.0, min_fps = 1, max_fps = 8))
+    # HR frames are information-dense (stellar types, population structure);
+    # keep pace slow so each epoch is readable.
+    fps = something(fps, cfg.style.anim_fps)
+    fps > 0 || (fps = _auto_fps(nframes;
+        target_duration = cfg.style.anim_target_seconds, min_fps = 1, max_fps = 8))
 
     outpath = _anim_output_path(cfg, filename)
 
@@ -197,33 +203,42 @@ function animate_hr(
 
     frame_idx = Observable(1)
 
-    title_text = @lift begin
-        sev = sevs[$frame_idx]
-        t_str = @sprintf("%.4f", sev.time_myr)
-        latexstring("\\mathrm{t}_\\mathrm{NB} = $(t_str), \\;\\; \\mathrm{N}_\\star = $(sev.n_stars)")
+    # sev.time_myr is in Myr, not NB units
+    time_text = @lift begin
+        t_str = @sprintf("%.4f", sevs[$frame_idx].time_myr)
+        latexstring("\\mathrm{t} = $(t_str)\\;\\mathrm{Myr}")
     end
 
     fig = Figure(; size = _figsize_px(cfg))
     ax = Axis(fig[1, 1];
         xlabel = L"\log_{10}(\mathrm{T}_\mathrm{eff} \, / \, \mathrm{K})",
         ylabel = L"\log_{10}(\mathrm{L} \, / \, \mathrm{L}_\odot)",
-        title  = title_text,
         limits = (xlims..., ylims...),
         xreversed = true,
         xticks = _logval_ticks(xlims[1], xlims[2]),
         yticks = _logval_ticks(ylims[1], ylims[2]),
+        xgridvisible = false,
+        ygridvisible = false,
     )
+    text!(ax, 0.03, 0.97; text = time_text,
+        space = :relative, align = (:left, :top), fontsize = 16)
 
-    # Use Point2f observable to handle varying star counts across epochs
-    pts = @lift(Point2f.(
-        [r.log_teff for r in valid_per_frame[$frame_idx]],
-        [r.log_luminosity for r in valid_per_frame[$frame_idx]]))
-    col_data = @lift([get(_HR_COLORS, Int(r.stellar_type), :gray50)
-                      for r in valid_per_frame[$frame_idx]])
+    # Single source observable so positions and colours update atomically
+    # even when the star count changes between epochs (Point2f handles the
+    # varying length).
+    frame_data = @lift begin
+        v = valid_per_frame[$frame_idx]
+        (points = Point2f.([r.log_teff for r in v],
+                           [r.log_luminosity for r in v]),
+         colors = [get(_HR_COLORS, Int(r.stellar_type), :gray50) for r in v])
+    end
+    pts      = @lift($frame_data.points)
+    col_data = @lift($frame_data.colors)
 
     scatter!(ax, pts;
         color = col_data, markersize = 14, strokewidth = 0)
 
+    _backup_existing(outpath)
     record(fig, outpath, 1:nframes; framerate = fps) do i
         frame_idx[] = i
     end
@@ -241,9 +256,10 @@ end
 Animate Lagrangian radii evolution with a sweeping time cursor.
 
 # Arguments
-- `fps`: frames per second (`nothing` = auto-calculate for ~12 s total duration,
-  clamped to 2–30 fps; manual `Int` overrides). Lagrangian data is a dense
-  time series so the auto rate allows smooth, fast playback.
+- `fps`: frames per second (`nothing` = use `cfg.style.anim_fps`; `0` there
+  auto-calculates for ~`cfg.style.anim_target_seconds` s, clamped to 2–30 fps).
+  Lagrangian data is a dense time series so the auto rate allows smooth,
+  fast playback.
 
 Returns the output file path.
 """
@@ -260,30 +276,30 @@ function animate_lagrangian(
     end
 
     nt = length(lagr.time)
-    # Lagrangian data is a dense time series (often hundreds of steps).
-    # Target ~12 s with smooth playback; allow up to 30 fps.
-    fps = something(fps,
-        _auto_fps(nt; target_duration = 12.0, min_fps = 2, max_fps = 30))
+    # Lagrangian data is a dense time series (often hundreds of steps)
+    # with smooth playback; allow up to 30 fps.
+    fps = something(fps, cfg.style.anim_fps)
+    fps > 0 || (fps = _auto_fps(nt;
+        target_duration = cfg.style.anim_target_seconds, min_fps = 2, max_fps = 30))
 
     fig = Figure(; size = _figsize_px(cfg))
     ttk = _time_ticks(first(lagr.time), last(lagr.time))
     ax = Axis(fig[1, 1];
         xlabel = L"\mathrm{t} \; \mathrm{[NB]}",
         ylabel = L"\mathrm{r}_\mathrm{L} \; \mathrm{[NB]}",
-        title  = L"\textbf{Lagrangian Radii Evolution}",
         yscale = log10,
-        yminorticksvisible = false,
         xticks = ttk,
     )
 
     colors = Makie.wong_colors()
 
-    # Pre-plot all lines (full data) in light gray as ghost background
+    # Pre-plot all lines (full data) in light gray as ghost background.
+    # Non-positive radii (empty shells) are invalid on the log axis → NaN.
     frac_indices = Int[]
     for frac in selected_fractions
         idx = argmin(abs.(lagr.mass_fractions .- frac))
         push!(frac_indices, idx)
-        lines!(ax, lagr.time, lagr.radii[idx, :];
+        lines!(ax, lagr.time, [r > 0 ? r : NaN for r in @view lagr.radii[idx, :]];
             color = :gray82, linewidth = 1.0)
     end
 
@@ -295,7 +311,8 @@ function animate_lagrangian(
         pct_val = actual_frac * 100
         pct = isinteger(pct_val) ? @sprintf("%d", Int(pct_val)) : @sprintf("%.1f", pct_val)
 
-        pts = @lift(Point2f.(lagr.time[1:$frame_idx], lagr.radii[fidx, 1:$frame_idx]))
+        ys = [r > 0 ? r : NaN for r in @view lagr.radii[fidx, :]]
+        pts = @lift(Point2f.(lagr.time[1:$frame_idx], ys[1:$frame_idx]))
 
         lines!(ax, pts;
             color = colors[mod1(ci, length(colors))],
@@ -307,13 +324,16 @@ function animate_lagrangian(
     vlines!(ax, @lift(lagr.time[$frame_idx]);
         color = :gray40, linestyle = :dash, linewidth = 1.0)
 
-    axislegend(ax; position = :rt, framevisible = true,
-               backgroundcolor = (:white, 0.7))
+    if length(selected_fractions) ≥ 2
+        axislegend(ax; position = :rt, framevisible = true,
+                   backgroundcolor = (:white, 0.7))
+    end
 
     outpath = _anim_output_path(cfg, filename)
 
     @info "Animating Lagrangian radii: $nt frames → $outpath  ($(fps) fps, ~$(round(Int, nt/fps)) s)"
 
+    _backup_existing(outpath)
     record(fig, outpath, 1:nt; framerate = fps) do i
         frame_idx[] = i
     end

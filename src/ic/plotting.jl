@@ -35,12 +35,9 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     if cmin ≈ cmax; cmin -= 0.5; cmax += 0.5; end
 
     # Marker size — same formula as snapshot plots
-    ms = clamp(18000 / N, 4.0, 20.0)
+    ms = _marker_size(vis, N)
 
     # ── Single-projection plots ──────────────────────────────────
-    model_str = join(unique(profile_name(r.profile) for r in result.cluster_specs), "/")
-    N_str = _format_thousands(N)
-
     ic_projections = [
         (:xy, x_pc, y_pc, L"\mathrm{X} \; \mathrm{[pc]}", L"\mathrm{Y} \; \mathrm{[pc]}"),
         (:xz, x_pc, z_pc, L"\mathrm{X} \; \mathrm{[pc]}", L"\mathrm{Z} \; \mathrm{[pc]}"),
@@ -57,11 +54,13 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
 
         ax = Axis(fig[1, 1];
             xlabel = xlab, ylabel = ylab,
-            title  = latexstring("\\textbf{Merger IC} — $(label_str) \\;\\; (N = $(N_str),\\; $(model_str))"),
             aspect = DataAspect(),
             limits = (xlo, xhi, ylo, yhi),
             xticks = xtk, yticks = ytk,
+            xgridvisible = false, ygridvisible = false,
         )
+        text!(ax, 0.03, 0.97; text = label_str,
+            space = :relative, align = (:left, :top), fontsize = 16)
         sc = scatter!(ax, px, py;
             color = log_m, colormap = :viridis, colorrange = (cmin, cmax),
             markersize = ms, strokewidth = 0, rasterize = true,
@@ -72,8 +71,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         )
         colgap!(fig.layout, 10)
 
-        save(_output_path(vis, "merger_ic_$(proj)"), fig; px_per_unit = vis.dpi / 72)
-        @info "Saved: $(_output_path(vis, "merger_ic_$(proj)"))"
+        _save_fig(vis, "merger_ic_$(proj)", fig)
     end
 
     # ── 3-panel overview ─────────────────────────────────────────
@@ -85,16 +83,32 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     xlo, xhi, _, _ = _square_limits(all_coords, all_coords)
     tk = _nice_ticks(xlo, xhi)
 
+    orbit_annot = if result.orbit_mode == "kepler"
+        d_apo = result.orbit_spec.apocentre
+        ecc   = result.orbit_spec.eccentricity
+        latexstring("d_\\mathrm{apo} = $(round(d_apo; digits=1))\\;\\mathrm{pc},\\; e = $(round(ecc; digits=2))")
+    else
+        nothing
+    end
+
     for (col, (proj, px, py, xlab, ylab)) in enumerate(ic_projections)
         label_str = uppercase(string(proj))
+        # Every panel carries its own ylabel — the y-quantities differ
+        # (Y, Z, Z); only the tick labels are shared/suppressed.
         ax = Axis(fig3[1, col];
-            xlabel = xlab, ylabel = col == 1 ? ylab : "",
-            title  = latexstring("\\textbf{$(label_str)}"),
+            xlabel = xlab, ylabel = ylab,
             aspect = DataAspect(),
             limits = (xlo, xhi, xlo, xhi),
             xticks = tk, yticks = tk,
             yticklabelsvisible = col == 1,
+            xgridvisible = false, ygridvisible = false,
         )
+        text!(ax, 0.03, 0.97; text = label_str,
+            space = :relative, align = (:left, :top), fontsize = 16)
+        if col == 1 && orbit_annot !== nothing
+            text!(ax, 0.03, 0.90; text = orbit_annot,
+                space = :relative, align = (:left, :top), fontsize = 16)
+        end
         sc = scatter!(ax, px, py;
             color = log_m, colormap = :viridis, colorrange = (cmin, cmax),
             markersize = ms * 0.7, strokewidth = 0, rasterize = true,
@@ -105,28 +119,20 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         )
     end
 
-    title_str = if result.orbit_mode == "kepler"
-        d_apo = result.orbit_spec.apocentre
-        ecc   = result.orbit_spec.eccentricity
-        latexstring("\\textbf{Merger IC} — d_\\mathrm{apo} = $(round(d_apo; digits=1))\\;\\mathrm{pc},\\; e = $(round(ecc; digits=2)),\\; N = $(N_str)")
-    else
-        latexstring("\\textbf{Merger IC} — $(n_cl)\\;\\mathrm{clusters\\;(explicit)},\\; N = $(N_str)")
-    end
-    Label(fig3[0, :], title_str; fontsize = 20)
-
     colgap!(fig3.layout, _MULTIPANEL_HGAP)
 
-    save(_output_path(vis, "merger_ic_overview"), fig3; px_per_unit = vis.dpi / 72)
-    @info "Saved: $(_output_path(vis, "merger_ic_overview"))"
+    _save_fig(vis, "merger_ic_overview", fig3)
 
     # ── Velocity field ───────────────────────────────────────────
     fig_v = Figure(; size = _fig_with_colorbar(vis))
     ax_v = Axis(fig_v[1, 1];
         xlabel = L"\mathrm{X} \; \mathrm{[pc]}",
         ylabel = L"\mathrm{Y} \; \mathrm{[pc]}",
-        title  = L"\textbf{Merger IC} — velocity field ($XY$)",
         aspect = DataAspect(),
+        xgridvisible = false, ygridvisible = false,
     )
+    text!(ax_v, 0.03, 0.97; text = "XY",
+        space = :relative, align = (:left, :top), fontsize = 16)
 
     vx_kms = result.vel_physical[1, :]
     vy_kms = result.vel_physical[2, :]
@@ -172,17 +178,16 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             push!(legend_labels, "$(titlecase(model)) ($n_same)")
         end
     end
-    Legend(fig_v[1, 2], legend_elems, legend_labels; framevisible = true)
+    length(legend_labels) ≥ 2 &&
+        Legend(fig_v[1, 2], legend_elems, legend_labels; framevisible = true)
 
-    save(_output_path(vis, "merger_ic_velocity"), fig_v; px_per_unit = vis.dpi / 72)
-    @info "Saved: $(_output_path(vis, "merger_ic_velocity"))"
+    _save_fig(vis, "merger_ic_velocity", fig_v)
 
     # ── IMF histogram ────────────────────────────────────────────
     fig_h = Figure(; size = _figsize_px(vis))
     ax_h = Axis(fig_h[1, 1];
         xlabel = L"\mathrm{m} \; [\mathrm{M}_\odot]",
         ylabel = L"\mathrm{d}N / \mathrm{d}\log m",
-        title  = latexstring("\\textbf{IMF} — merger IC \\;\\; (N = $(N_str))"),
         xscale = log10, yscale = log10,
     )
 
@@ -222,6 +227,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         norm_val = dn[i_ref]
         m_ref = m_centres[i_ref]
         x_ref = 10.0 .^ range(log10(m_min / 1.5), log10(m_max * 1.5); length = 200)
+        n_slopes = 0
         for (α, lbl, lo, hi, c) in [
             (1.3, L"\alpha = 1.3", 0.08, 0.5, :darkorange),
             (2.3, L"\alpha = 2.3", 0.5, 150.0, :firebrick),
@@ -230,20 +236,19 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             isempty(seg) && continue
             lines!(ax_h, seg, norm_val .* (seg ./ m_ref) .^ (1.0 - α);
                 color = c, linewidth = 2, linestyle = :dash, label = lbl)
+            n_slopes += 1
         end
         ylims!(ax_h, y_floor, dn_max * 2)
-        axislegend(ax_h; position = :rt)
+        n_slopes ≥ 2 && axislegend(ax_h; position = :rt)
     end
 
-    save(_output_path(vis, "merger_ic_imf"), fig_h; px_per_unit = vis.dpi / 72)
-    @info "Saved: $(_output_path(vis, "merger_ic_imf"))"
+    _save_fig(vis, "merger_ic_imf", fig_h)
 
     # ── Radial density per cluster ───────────────────────────────
     fig_r = Figure(; size = _figsize_px(vis))
     ax_r = Axis(fig_r[1, 1];
         xlabel = L"\mathrm{r} \; [\mathrm{pc}]",
         ylabel = L"\rho(\mathrm{r}) \; [\mathrm{arb.}]",
-        title  = L"\textbf{Radial Density} — per cluster",
         xscale = log10, yscale = log10,
     )
 
@@ -253,6 +258,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     per_cluster_density = n_cl ≤ 8
     labelled_models = Set{String}()
     line_alpha = per_cluster_density ? 1.0 : 0.55
+    n_labels = 0
 
     for (ci, rng) in enumerate(result.cluster_ranges)
         model = profile_name(result.cluster_specs[ci].profile)
@@ -290,25 +296,15 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         lines!(ax_r, r_mid[m_r], ρ[m_r];
             color = (col, line_alpha), linewidth = 2,
             label = isnothing(label) ? nothing : label)
+        isnothing(label) || (n_labels += 1)
     end
-    axislegend(ax_r; position = :lb, framevisible = true,
-               backgroundcolor = (:white, 0.7))
+    if n_labels ≥ 2
+        axislegend(ax_r; position = :lb, framevisible = true,
+                   backgroundcolor = (:white, 0.7))
+    end
 
-    save(_output_path(vis, "merger_ic_density"), fig_r; px_per_unit = vis.dpi / 72)
-    @info "Saved: $(_output_path(vis, "merger_ic_density"))"
+    _save_fig(vis, "merger_ic_density", fig_r)
 
     @info "All merger IC plots saved to: $(vis.output_dir)"
     return nothing
-end
-
-# Thousands separator for LaTeX labels
-function _format_thousands(n::Int)
-    s = string(n)
-    groups = String[]
-    while length(s) > 3
-        push!(groups, s[end-2:end])
-        s = s[1:end-3]
-    end
-    push!(groups, s)
-    return join(reverse(groups), "\\,")
 end

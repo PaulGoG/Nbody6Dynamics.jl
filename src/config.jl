@@ -34,8 +34,9 @@ function save_config(cfg::Nbody6Config, path::AbstractString)
         "visualization" => _struct_to_dict(cfg.visualization),
         "merger"        => _struct_to_dict(cfg.merger),
     )
-    # TOML cannot serialize Tuples — convert to Vector
+    # TOML cannot serialize Tuples or nested structs — convert explicitly
     d["visualization"]["figsize"] = collect(d["visualization"]["figsize"])
+    d["visualization"]["style"]   = _struct_to_dict(cfg.visualization.style)
     open(path, "w") do io
         TOML.print(io, d)
     end
@@ -84,7 +85,7 @@ function _parse_postprocess(d::Dict)
         data_dir             = get(d, "data_dir", ""),
         snapshot_format      = get(d, "snapshot_format", "conf3"),
         snapshot_pattern     = get(d, "snapshot_pattern", "conf.3_*"),
-        hdf5_file            = get(d, "hdf5_file", "data.40.h5part"),
+        hdf5_file            = get(d, "hdf5_file", ""),   # deprecated, ignored
         parse_stdout         = get(d, "parse_stdout", true),
         stdout_file          = get(d, "stdout_file", "out1000"),
         read_lagr            = get(d, "read_lagr", true),
@@ -104,13 +105,25 @@ function _parse_merger_pipeline(d::Dict)
 end
 
 function _parse_visualization(d::Dict)
-    fs = get(d, "figsize", [8, 6])
+    fs = get(d, "figsize", [8.0, 6.0])
+    st = get(d, "style", Dict{String,Any}())
+    style = PlotStyle(;
+        marker_budget       = Float64(get(st, "marker_budget", 18000.0)),
+        marker_min          = Float64(get(st, "marker_min", 4.0)),
+        marker_max          = Float64(get(st, "marker_max", 20.0)),
+        q_log_threshold     = Float64(get(st, "q_log_threshold", 10.0)),
+        q_floor             = Float64(get(st, "q_floor", 1e-3)),
+        zoom_frac           = Float64(get(st, "zoom_frac", 0.15)),
+        anim_fps            = Int(get(st, "anim_fps", 0)),
+        anim_target_seconds = Float64(get(st, "anim_target_seconds", 12.0)),
+    )
     VisualizationConfig(;
         enabled    = get(d, "enabled", true),
         format     = get(d, "format", "png"),
         dpi        = get(d, "dpi", 300),
-        figsize    = (Int(fs[1]), Int(fs[2])),
+        figsize    = (Float64(fs[1]), Float64(fs[2])),
         output_dir = get(d, "output_dir", "plots"),
+        style      = style,
     )
 end
 

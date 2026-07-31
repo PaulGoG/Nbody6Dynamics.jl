@@ -26,10 +26,8 @@ function plot_energy(
     # --- Panel 1: relative energy error (log scale) ---
     ax1 = Axis(fig[1, 1];
         ylabel = L"|\Delta \mathrm{E} \, / \, \mathrm{E}|",
-        title  = L"\textbf{Energy Conservation \& Virial Equilibrium}",
         yscale = log10,
         xticklabelsvisible = false,
-        yminorticksvisible = false,
         xticks = ttk,
     )
 
@@ -40,19 +38,20 @@ function plot_energy(
 
     # --- Panel 2: virial ratio ---
     # Nbody6++ reports Q = T/|W| (virial equilibrium at Q = 0.5)
-    # For merger systems Q can reach 10^4–10^5 — use log scale when Q > 10.
+    # For merger systems Q can reach 10^4–10^5 — use log scale for large Q.
     q_max = maximum(qvir)
-    use_log_q = q_max > 10.0
+    use_log_q = q_max > cfg.style.q_log_threshold
 
     ax2 = Axis(fig[2, 1];
         xlabel = L"\mathrm{t} \; \mathrm{[NB]}",
         ylabel = L"\mathrm{Q} = \mathrm{T}/|\mathrm{W}|",
         xticks = ttk,
         yscale = use_log_q ? log10 : identity,
-        yminorticksvisible = !use_log_q,
     )
 
-    lines!(ax2, t, max.(qvir, 1e-3); color = :firebrick,
+    # Floor only on the log axis (zero/tiny Q is invalid there); raw otherwise
+    q_plot = use_log_q ? max.(qvir, cfg.style.q_floor) : qvir
+    lines!(ax2, t, q_plot; color = :firebrick,
            label = L"\mathrm{Q} = \mathrm{T}/|\mathrm{W}|\;\mathrm{(virial\;ratio)}")
     hlines!(ax2, [0.5]; color = :gray50, linestyle = :dash, linewidth = 1.0,
             label = L"\mathrm{Q} = 0.5\;\mathrm{(virial\;equilibrium)}")
@@ -62,7 +61,7 @@ function plot_energy(
     linkxaxes!(ax1, ax2)
     rowgap!(fig.layout, 12)
 
-    save(_output_path(cfg, filename), fig; px_per_unit = cfg.dpi / 72)
+    _save_fig(cfg, filename, fig)
     return nothing
 end
 
@@ -106,7 +105,6 @@ function plot_particle_count(
 
     ax1 = Axis(fig[1, 1];
         ylabel = L"\mathrm{N}\;\mathrm{(bound\;particles)}",
-        title  = L"\textbf{Particle \& Binary Evolution}",
         xticklabelsvisible = false,
         xticks = ttk,
         limits = (nothing, ylims_n),
@@ -138,6 +136,6 @@ function plot_particle_count(
     linkxaxes!(ax1, ax2)
     rowgap!(fig.layout, 12)
 
-    save(_output_path(cfg, filename), fig; px_per_unit = cfg.dpi / 72)
+    _save_fig(cfg, filename, fig)
     return nothing
 end

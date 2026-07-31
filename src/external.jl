@@ -218,7 +218,7 @@ function postprocess_external(
     output_dir::AbstractString = "",
     format::AbstractString = "png",
     dpi::Int = 300,
-    figsize::Tuple{Int,Int} = (10, 8),
+    figsize::Tuple{Real,Real} = (10, 8),
     generate_plots::Bool = true,
     generate_animations::Bool = true,
 )::Dict{Symbol,Any}

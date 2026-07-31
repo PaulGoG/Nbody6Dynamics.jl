@@ -306,16 +306,22 @@ function half_mass_radius(mass::Vector{Float64}, pos::Matrix{Float64};
 end
 
 """
-    virialise!(mass, pos, vel)
+    virialise!(mass, pos, vel; nmax = 200_000)
 
 Shift to centre-of-mass frame and scale velocities so that the virial
 ratio `Q = T/|W| = 0.5` (virial equilibrium). Operates in-place.
 
-Assumes `G = 1`. Uses the exact N-body potential energy (O(N²) — fine for
-IC generation with N ≤ 10⁶).
+Assumes `G = 1`. Uses the exact N-body potential energy — O(N²), threaded
+over strided rows. Refuses (with a clear error) above `nmax` particles
+rather than silently burning hours; raise `nmax` deliberately for large ICs.
 """
-function virialise!(mass::Vector{Float64}, pos::Matrix{Float64}, vel::Matrix{Float64})
+function virialise!(mass::Vector{Float64}, pos::Matrix{Float64}, vel::Matrix{Float64};
+                    nmax::Int = 200_000)
     N = length(mass)
+    N ≤ nmax || error(
+        "virialise!: N = $N exceeds nmax = $nmax. The exact potential is O(N²) " *
+        "(≈ $(round(N^2 / 2e9; digits = 1))×10⁹ pair evaluations); pass a larger " *
+        "`nmax` explicitly if this is intended.")
     M_total = sum(mass)
 
     # Centre of mass correction
@@ -344,17 +350,26 @@ function virialise!(mass::Vector{Float64}, pos::Matrix{Float64}, vel::Matrix{Flo
         T += 0.5 * mass[i] * v2
     end
 
-    # Potential energy (O(N²))
-    W = 0.0
-    for i in 1:N
-        for j in (i+1):N
-            dx = pos[1, i] - pos[1, j]
-            dy = pos[2, i] - pos[2, j]
-            dz = pos[3, i] - pos[3, j]
-            r = sqrt(dx^2 + dy^2 + dz^2)
-            W -= mass[i] * mass[j] / r
+    # Potential energy: O(N²) pair sum, threaded over strided rows so each
+    # task sees a balanced mix of long (small i) and short (large i) rows.
+    P = Threads.nthreads()
+    partials = zeros(Float64, P)
+    @sync for t in 1:P
+        Threads.@spawn begin
+            acc = 0.0
+            for i in t:P:N
+                @inbounds for j in (i+1):N
+                    dx = pos[1, i] - pos[1, j]
+                    dy = pos[2, i] - pos[2, j]
+                    dz = pos[3, i] - pos[3, j]
+                    r = sqrt(dx^2 + dy^2 + dz^2)
+                    acc -= mass[i] * mass[j] / r
+                end
+            end
+            partials[t] = acc
         end
     end
+    W = sum(partials)
 
     # Scale velocities: Q_target = 0.5 → T_new = 0.5 |W|
     # v_new = v_old × sqrt(0.5 |W| / T)

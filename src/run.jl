@@ -123,6 +123,11 @@ end
 """
 Write a self-contained bash launch script that sets `ulimit`, environment
 variables, and runs the simulation with proper I/O redirection.
+
+A runtime-generated shell script is the one sanctioned bash use in this
+package: `ulimit -s unlimited` (mandatory for the stack-heavy Fortran) can
+only be applied to the child process from a wrapping shell — Julia's `run`
+cannot set resource limits on the spawned binary.
 """
 function _write_launch_script(
     run_dir::AbstractString,

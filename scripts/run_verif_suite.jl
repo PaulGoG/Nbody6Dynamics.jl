@@ -38,8 +38,7 @@ function make_base_cfg()
             "stdout_file" => "out1000", "read_lagr" => true, "lagr_file" => "lagr.7",
             "read_escapers" => true, "escapers_file" => "esc.11",
             "read_stellar_evo" => true, "stellar_evo_pattern" => "sev.83_*",
-            "hdf5_file" => "data.40.h5part", "snapshot_format" => "conf3",
-            "snapshot_pattern" => "conf.3_*",
+            "snapshot_format" => "conf3", "snapshot_pattern" => "conf.3_*",
         ),
         "visualization" => Dict(
             "enabled" => true, "format" => "png", "dpi" => 300,
@@ -69,20 +68,26 @@ const SUITE = [
     (name = "3d5cluster",raw = cfg_for_merger("input_files/verif_3d5cluster.toml","verif_3d5")),
 ]
 
-for entry in SUITE
-    @info "─────────────────────────────────────────────────────"
-    @info "Running verification target: $(entry.name)"
-    cfg_path = joinpath(PROJ, "config.verif_$(entry.name).toml")
-    open(cfg_path, "w") do io
-        TOML.print(io, entry.raw)
-    end
-    t0 = time()
-    try
-        cfg = Nbody6Setup.load_config(cfg_path)
-        Nbody6Setup.run_pipeline(cfg; base_dir = PROJ)
-        @info "✓ $(entry.name) completed in $(round(time() - t0, digits=1))s"
-    catch e
-        @error "✗ $(entry.name) failed" exception = (e, catch_backtrace())
+# Intermediate configs go to a scratch dir (the TOML round-trip through
+# load_config is deliberate — it exercises the parser). The authoritative
+# frozen config for each run is written into its run directory by the
+# pipeline itself; nothing is written to the project root.
+mktempdir() do scratch
+    for entry in SUITE
+        @info "─────────────────────────────────────────────────────"
+        @info "Running verification target: $(entry.name)"
+        cfg_path = joinpath(scratch, "config.verif_$(entry.name).toml")
+        open(cfg_path, "w") do io
+            TOML.print(io, entry.raw)
+        end
+        t0 = time()
+        try
+            cfg = Nbody6Setup.load_config(cfg_path)
+            Nbody6Setup.run_pipeline(cfg; base_dir = PROJ)
+            @info "✓ $(entry.name) completed in $(round(time() - t0, digits=1))s"
+        catch e
+            @error "✗ $(entry.name) failed" exception = (e, catch_backtrace())
+        end
     end
 end
 

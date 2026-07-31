@@ -6,6 +6,12 @@
 # global Lagrangian radii measure cluster separation rather than internal
 # structure.
 
+"""Coalescence heuristic: max/mean pairwise-separation ratio below which the ensemble is considered merged."""
+const _COALESCENCE_RATIO_MAX = 2.0
+
+"""Coalescence heuristic: mean separation must also drop below this multiple of the initial minimum separation."""
+const _COALESCENCE_MEAN_SEP_FACTOR = 1.5
+
 """
     parse_merger_summary(path::AbstractString) -> Vector{UnitRange{Int}}
 
@@ -206,7 +212,6 @@ function plot_cluster_separation(
     ax = Axis(fig[1, 1];
         xlabel = L"\mathrm{t} \; \mathrm{[NB]}",
         ylabel = L"\mathrm{d}_{ij} \; \mathrm{[NB]}",
-        title  = latexstring("\\textbf{Inter-cluster Separation} \\;\\; ($(n_cl)\\;\\mathrm{initial\\;clusters})"),
         xticks = _time_ticks(first(t), last(t)),
     )
 
@@ -215,6 +220,7 @@ function plot_cluster_separation(
         # One line per pair, labelled
         palette = [:royalblue, :crimson, :forestgreen, :darkorange, :purple,
                    :deeppink, :teal, :gold, :slateblue, :sienna]
+        n_lines = 0
         for (p, (i, j)) in enumerate(pairs)
             valid = .!isnan.(seps[p, :])
             any(valid) || continue
@@ -222,9 +228,12 @@ function plot_cluster_separation(
                 color = palette[mod1(p, length(palette))],
                 linewidth = 1.8,
                 label = "$(i)–$(j)")
+            n_lines += 1
         end
-        axislegend(ax; position = :rt, framevisible = true,
-                   backgroundcolor = (:white, 0.75), nbanks = min(3, cld(n_pairs, 4)))
+        if n_lines ≥ 2
+            axislegend(ax; position = :rt, framevisible = true,
+                       backgroundcolor = (:white, 0.75), nbanks = min(3, cld(n_pairs, 4)))
+        end
     else
         # Envelope: show min/max band plus mean line
         d_min  = fill(NaN, n_t)
@@ -248,12 +257,12 @@ function plot_cluster_separation(
         mean_plot = lines!(ax, t[valid], d_mean[valid];
                            color = :steelblue, linewidth = 2.4)
 
-        # Mark estimated coalescence: max / mean drops below 2×
-        # (with a further check that mean itself dropped below the initial min)
+        # Mark estimated coalescence: max/mean ratio and mean separation both
+        # drop below their heuristic thresholds (consts at top of file)
         d_init_min = minimum(filter(!isnan, d_min))
         ratio = [isnan(d_mean[k]) ? NaN : d_max[k] / d_mean[k] for k in 1:n_t]
-        idx_merge = findfirst(k -> !isnan(ratio[k]) && ratio[k] < 2.0 &&
-                                    d_mean[k] < 1.5 * d_init_min, 1:n_t)
+        idx_merge = findfirst(k -> !isnan(ratio[k]) && ratio[k] < _COALESCENCE_RATIO_MAX &&
+                                    d_mean[k] < _COALESCENCE_MEAN_SEP_FACTOR * d_init_min, 1:n_t)
 
         merge_plot = nothing
         merge_label = ""
@@ -275,6 +284,7 @@ function plot_cluster_separation(
             ylabelcolor = :darkorange,
             yticklabelcolor = :darkorange,
             ytickcolor = :darkorange,
+            # Overlay axis: grid off so it doesn't double-draw over ax
             ygridvisible = false,
             xgridvisible = false,
             xticklabelsvisible = false,
@@ -283,8 +293,6 @@ function plot_cluster_separation(
             bottomspinevisible = false,
             leftspinevisible = false,
             rightspinevisible = true,
-            xminorticksvisible = false,
-            yminorticksvisible = false,
             yticks = _integer_ticks(0, n_cl),
             limits = ((nothing, nothing), (0, n_cl + max(1, ceil(Int, 0.1 * n_cl)))),
         )
@@ -307,10 +315,7 @@ function plot_cluster_separation(
                    backgroundcolor = (:white, 0.75))
     end
 
-    outpath = _output_path(cfg, filename)
-    save(outpath, fig; px_per_unit = cfg.dpi / 72)
-    @info "Cluster separation saved: $outpath"
-    return outpath
+    return _save_fig(cfg, filename, fig)
 end
 
 # -----------------------------------------------------------------------------
@@ -440,21 +445,18 @@ function plot_cluster_virial(
 
     fig = Figure(; size = _figsize_px(cfg))
 
-    # Pick a log scale when any cluster Q spikes past 10 (mergers routinely do)
+    # Pick a log scale when any cluster Q spikes high (mergers routinely do)
     q_all = filter(!isnan, vec(Q))
-    use_log = !isempty(q_all) && maximum(q_all) > 10.0
+    use_log = !isempty(q_all) && maximum(q_all) > cfg.style.q_log_threshold
 
-    # Clamp tiny/zero values for log scale
-    q_floor = 1e-3
-    Q_plot = use_log ? max.(Q, q_floor) : copy(Q)
+    # Clamp tiny/zero values on the log scale only
+    Q_plot = use_log ? max.(Q, cfg.style.q_floor) : copy(Q)
 
     ax = Axis(fig[1, 1];
         xlabel = L"\mathrm{t} \; \mathrm{[NB]}",
         ylabel = L"\mathrm{Q}_i = \mathrm{T}_i / |\mathrm{W}_i|",
-        title  = latexstring("\\textbf{Per-cluster Virial Ratio} \\;\\; ($(n_cl)\\;\\mathrm{initial\\;clusters})"),
         xticks = _time_ticks(first(t), last(t)),
         yscale = use_log ? log10 : identity,
-        yminorticksvisible = !use_log,
     )
 
     detail = n_cl ≤ 5
@@ -502,8 +504,5 @@ function plot_cluster_virial(
                backgroundcolor = (:white, 0.75),
                nbanks = detail ? min(3, cld(n_cl + 1, 4)) : 1)
 
-    outpath = _output_path(cfg, filename)
-    save(outpath, fig; px_per_unit = cfg.dpi / 72)
-    @info "Per-cluster virial saved: $outpath"
-    return outpath
+    return _save_fig(cfg, filename, fig)
 end

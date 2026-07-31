@@ -54,9 +54,8 @@ data_dir             = ""
                                    #   empty  → use run_dir/output/ from simulation
                                    #   set    → read from this directory instead
                                    #   Tip: set simulation.run_test=false to skip sim
-snapshot_format      = "conf3"     # "conf3" or "hdf5"
+snapshot_format      = "conf3"     # conf.3 Fortran binaries (HDF5 not supported)
 snapshot_pattern     = "conf.3_*"
-hdf5_file            = "data.40.h5part"
 parse_stdout         = true
 stdout_file          = "out1000"
 read_lagr            = true
@@ -72,6 +71,17 @@ format     = "png"              # "png", "pdf", "svg"
 dpi        = 300
 figsize    = [10, 8]            # inches [width, height]
 output_dir = "plots"            # relative to each run directory
+
+[visualization.style]
+# Presentation knobs (defaults shown; all optional)
+marker_budget       = 18000.0   # scatter marker size = marker_budget/N …
+marker_min          = 4.0       # … clamped to [marker_min, marker_max] pt
+marker_max          = 20.0
+q_log_threshold     = 10.0      # log virial-ratio axis when max(Q) exceeds this
+q_floor             = 1e-3      # virial-ratio floor on log-scale axes only
+zoom_frac           = 0.15      # particle fraction defining the zoom-in radius
+anim_fps            = 0         # 0 = auto from frame count
+anim_target_seconds = 12.0      # target GIF duration for auto FPS
 
 [merger]
 enabled     = false             # true = generate merger ICs before simulation

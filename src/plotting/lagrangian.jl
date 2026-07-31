@@ -27,9 +27,7 @@ function plot_lagrangian(
     ax = Axis(fig[1, 1];
         xlabel = L"\mathrm{t} \; \mathrm{[NB]}",
         ylabel = L"\mathrm{r}_\mathrm{L} \; \mathrm{[NB]}",
-        title  = L"\textbf{Lagrangian Radii Evolution}",
         yscale = log10,
-        yminorticksvisible = false,
         xticks = ttk,
     )
 
@@ -56,9 +54,11 @@ function plot_lagrangian(
         ci += 1
     end
 
-    axislegend(ax; position = :rt, framevisible = true,
-               backgroundcolor = (:white, 0.7))
+    if length(selected_fractions) ≥ 2
+        axislegend(ax; position = :rt, framevisible = true,
+                   backgroundcolor = (:white, 0.7))
+    end
 
-    save(_output_path(cfg, filename), fig; px_per_unit = cfg.dpi / 72)
+    _save_fig(cfg, filename, fig)
     return nothing
 end
