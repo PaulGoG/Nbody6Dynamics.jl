@@ -333,16 +333,12 @@ struct MergerConfig
     seed::Union{Int, Nothing}
 end
 
-# 4-arg back-compat (pre-seed API).
+# Convenience form: seed defaults to nothing (non-deterministic; the drawn
+# seed is still recorded in the run metadata).
 MergerConfig(clusters::Vector{ClusterSpec}, orbit_mode::AbstractString,
-             orbit::OrbitSpec, output::MergerOutputSpec) =
-    MergerConfig(clusters, String(orbit_mode), orbit, output, nothing)
-
-# Legacy 5-arg form with integer seed (0 sentinel → non-deterministic).
-MergerConfig(clusters::Vector{ClusterSpec}, orbit_mode::AbstractString,
-             orbit::OrbitSpec, output::MergerOutputSpec, seed::Integer) =
-    MergerConfig(clusters, String(orbit_mode), orbit, output,
-                 seed == 0 ? nothing : Int(seed))
+             orbit::OrbitSpec, output::MergerOutputSpec;
+             seed::Union{Int,Nothing} = nothing) =
+    MergerConfig(clusters, String(orbit_mode), orbit, output, seed)
 
 # -----------------------------------------------------------------------------
 # MergerICResult
@@ -473,8 +469,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
     seed::Union{Int,Nothing} = if seed_raw === nothing
         nothing
     else
-        s = Int(seed_raw)
-        s == 0 ? nothing : s   # legacy sentinel
+        Int(seed_raw)   # any integer is a real seed, including 0
     end
 
     return MergerConfig(clusters, orbit_mode, orbit, output, seed)

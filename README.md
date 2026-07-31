@@ -70,11 +70,9 @@ Nbody6Setup/
 │   ├── merger_equal_mass.toml       # Equal-mass King merger (q=1), eccentric orbit
 │   ├── merger_minor_plummer.toml    # Minor Plummer merger (q=0.1), inspiral setup
 │   ├── merger_triple_cluster.toml   # Triple cluster, explicit-position orbit mode
-│   ├── merger_2cluster_medium.toml  # Two King clusters on eccentric Kepler orbit
 │   ├── merger_3cluster_small.toml   # 3-cluster equilateral triangle, small
-│   ├── merger_3cluster_medium.toml  # 3-cluster equilateral triangle, medium
 │   ├── merger_5cluster_small.toml   # 5-cluster pentagon, small
-│   ├── merger_5cluster_medium.toml  # 5-cluster pentagon, medium
+│   ├── N10k_long.inp                # 10k single cluster, extended TCRIT (long run)
 │   ├── merger_27cluster_cubic.toml  # 27 clusters on a 3×3×3 cubic grid
 │   ├── verif_triorbit.toml          # Bound Lagrange-triangle verification target
 │   └── verif_3d5cluster.toml        # 5 clusters distributed in 3D (projection/COM verification)

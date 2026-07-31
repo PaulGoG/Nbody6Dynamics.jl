@@ -391,11 +391,11 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
 
     orbit_mode = String(raw["orbit_mode"])
 
-    # Read cluster specs and ranges. Schema v2 stores the structured form
-    # that `_parse_cluster_table` accepts directly; v1 files (flat legacy
-    # keys) are also handled by the same parser. Parse with orbit_mode
-    # "kepler" semantics to skip position/velocity validation — metadata
-    # always records them explicitly (possibly empty for kepler mode).
+    # Read cluster specs and ranges — the metadata stores the structured
+    # profile/imf tables that `_parse_cluster_table` accepts directly.
+    # Parse with orbit_mode "kepler" semantics to skip position/velocity
+    # validation — metadata always records them explicitly (possibly empty
+    # for kepler mode).
     cluster_specs = ClusterSpec[]
     cluster_ranges = UnitRange{Int}[]
     i = 1

@@ -49,7 +49,7 @@ end
         read_escapers = true
         escapers_file = "esc.11"
         read_stellar_evo = true
-        stellar_evo_pattern = "sev*.83"
+        stellar_evo_pattern = "sev.83_*"
 
         [visualization]
         enabled = false
@@ -68,7 +68,7 @@ end
         @test cfg.postprocess.read_escapers == true
         @test cfg.postprocess.escapers_file == "esc.11"
         @test cfg.postprocess.read_stellar_evo == true
-        @test cfg.postprocess.stellar_evo_pattern == "sev*.83"
+        @test cfg.postprocess.stellar_evo_pattern == "sev.83_*"
         @test cfg.visualization.dpi == 150
         @test cfg.visualization.figsize == (10, 8)
         @test cfg.install.source_url == "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
@@ -358,13 +358,13 @@ end
     # =====================================================================
     @testset "Stellar evolution reader" begin
         # Header time is TPHYS [Myr]; data-line token 1 is TTOT [NB] —
-        # different clocks, both kept.
+        # different clocks, both kept. 15-token v2026.07+ layout.
         sev_path = joinpath(TESTDIR, "sev.83_0")
         write(sev_path, """
   3  0.5000
-   0.4315   1   101  0  1.20  0.800   0.123  -0.456  3.750  0.0  0.0
-   0.4315   2   202  1  0.80  1.200   1.500   0.200  4.100  0.0  0.0
-   0.4315   3   303  13 2.50  10.00   5.000   1.500  4.500  0.0  0.0
+   0.4315   1   101  0  1.20  0.800   0.123  -0.456  3.750  0.0  0.0  90.0  0.0  0.0  1.0e-10
+   0.4315   2   202  1  0.80  1.200   1.500   0.200  4.100  0.0  0.0  5.20  0.0  0.0  1.0e-10
+   0.4315   3   303  13 2.50  10.00   5.000   1.500  4.500  0.0  0.0  4.10  1.4  1.0e-5  1.0e-10
 """)
 
         sev = read_stellar_evolution(sev_path)
@@ -377,21 +377,23 @@ end
         @test r1.index == Int32(1)
         @test r1.name == Int32(101)
         @test r1.stellar_type == Int32(0)  # MS
-        @test r1.ri_rc ≈ 1.20
+        @test r1.ri ≈ 1.20
         @test r1.mass_solar ≈ 0.800
         @test r1.log_luminosity ≈ 0.123
         @test r1.log_radius ≈ -0.456
         @test r1.log_teff ≈ 3.750
+        @test r1.ms_lifetime_myr ≈ 90.0    # TM
 
         r3 = sev.records[3]
-        @test r3.stellar_type == Int32(13)  # BH
+        @test r3.stellar_type == Int32(13)  # NS
+        @test r3.mass_core ≈ 1.4
 
         # Test read_all_stellar_evolution
         sev2_path = joinpath(TESTDIR, "sev.83_1")
         write(sev2_path, """
   2  1.0000
-   1.0000   1   101  2  1.50  0.750   0.500  -0.200  3.600  0.0  0.0
-   1.0000   2   202  4  0.90  1.100   2.000   0.400  3.900  0.0  0.0
+   1.0000   1   101  2  1.50  0.750   0.500  -0.200  3.600  0.0  0.0  8.0  0.2  0.01  2.0
+   1.0000   2   202  4  0.90  1.100   2.000   0.400  3.900  0.0  0.0  6.5  0.4  0.02  4.0
 """)
 
         sevs = read_all_stellar_evolution(TESTDIR, "sev.83_*")
@@ -455,15 +457,19 @@ end
 
         @testset "sev.83" begin
             sev = read_stellar_evolution(joinpath(FIXDIR, "sev.83_0"))
-            @test sev.n_stars == 50
+            @test sev.n_stars == 40
             @test sev.time_myr == 0.0
-            @test length(sev.records) == 50
+            @test length(sev.records) == 40
             r1 = sev.records[1]
             @test r1.time_nb == 0.0
             @test r1.name == Int32(1)
-            @test r1.stellar_type == Int32(1)   # 1 M☉+ MS star, Hurley K*=1
-            @test r1.mass_solar ≈ 1.68436 rtol = 1e-5
-            @test r1.log_teff ≈ 4.03269 rtol = 1e-5
+            @test r1.stellar_type == Int32(1)            # massive MS star, Hurley K*=1
+            @test r1.ri ≈ 0.694596 rtol = 1e-5           # RI [pc]
+            @test r1.mass_solar ≈ 52.5373 rtol = 1e-5
+            @test r1.log_teff ≈ 4.71026 rtol = 1e-5
+            @test r1.ms_lifetime_myr ≈ 4.46907 rtol = 1e-5   # TM
+            @test r1.mass_core == 0.0                    # MC (MS star)
+            @test r1.radius_envelope ≈ 1e-10 rtol = 1e-3 # RE placeholder on MS
         end
     end
 

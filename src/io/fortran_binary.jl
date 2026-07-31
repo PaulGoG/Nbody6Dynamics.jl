@@ -38,17 +38,6 @@ function read_fortran_record(io::IO, ::Type{T}, n::Int) where {T}
 end
 
 """
-    skip_fortran_record(io::IO)
-
-Skip one Fortran record without allocating data.
-"""
-function skip_fortran_record(io::IO)
-    marker = read(io, Int32)
-    skip(io, marker + 4)   # data + trailing marker
-    return nothing
-end
-
-"""
     peek_record_size(io::IO) -> Int32
 
 Read the next record's byte length without consuming the record.

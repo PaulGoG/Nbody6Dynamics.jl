@@ -108,12 +108,10 @@ Read legacy block format: rows_per_block rows per epoch,
 first row of each block is TIME followed by radii values.
 """
 function _read_lagr_legacy(lines::Vector{String}, rows_per_block::Int)::LagrangianData
+    rows_per_block > 0 ||
+        throw(ArgumentError("rows_per_block must be positive, got $rows_per_block"))
     times = Float64[]
     radii_rows = Vector{Vector{Float64}}()
-
-    if rows_per_block <= 0
-        rows_per_block = _detect_block_size(lines)
-    end
 
     for block_start in 1:rows_per_block:length(lines)
         line = strip(lines[block_start])

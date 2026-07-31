@@ -118,9 +118,6 @@ _figsize_px(cfg::VisualizationConfig) = (cfg.figsize[1] * 72, cfg.figsize[2] * 7
 # elements (colorbar, second panel) get a wider or taller canvas so the
 # primary axis box remains the same physical size.
 
-"""Standard single-panel figure size (no colorbar)."""
-_fig_single(cfg::VisualizationConfig) = _figsize_px(cfg)
-
 """Single-panel with a right-side colorbar — extra width keeps axis box size."""
 _fig_with_colorbar(cfg::VisualizationConfig) =
     (_figsize_px(cfg)[1] + 110, _figsize_px(cfg)[2])

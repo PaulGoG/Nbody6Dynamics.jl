@@ -19,14 +19,12 @@ The project's input files live in `input_files/` at the package root. Two kinds 
 | `young_massive_binaries.inp` | Binary-rich young massive cluster; 50k, 50% binaries (NBIN0=12500), isolated, TCRIT=100 NB |
 | `pop3_cluster.inp` | Population III cluster; 50k, Z=1e-8, top-heavy IMF (ALPHAS=1.0, 8–300 M☉), TCRIT=200 NB |
 | `merger_demo_small.toml` | 2×1000 King clusters, Kepler orbit; runs in seconds — full-pipeline demo, TCRIT=5 NB |
-| `merger_2cluster_medium.toml` | 2×5000 equal-mass King clusters, eccentric Kepler orbit, TCRIT=10 NB |
 | `merger_equal_mass.toml` | 2×50000 King clusters, q=1 production merger (core-merger / IMBH science case) |
 | `merger_minor_plummer.toml` | Plummer minor merger, q=0.1 (100k primary + 10k satellite); dynamical-friction inspiral |
 | `merger_triple_cluster.toml` | 3×30000 King clusters, explicit triangular infall configuration |
 | `merger_3cluster_small.toml` | 3×800 clusters (2 King + 1 Plummer), explicit triangle — small demo |
-| `merger_3cluster_medium.toml` | 3×4000 clusters, explicit triangle, TCRIT=10 NB |
 | `merger_5cluster_small.toml` | 5×500 clusters, pentagon layout with inward velocities — small demo |
-| `merger_5cluster_medium.toml` | 5×2500 clusters, pentagon layout, mixed King/Plummer, TCRIT=10 NB |
+| `N10k_long.inp` | 10k-body single cluster, extended TCRIT (long-run variant of the upstream example) |
 | `merger_27cluster_cubic.toml` | 27×1000 clusters on a 3×3×3 cubic grid, inward velocities; stress test for the many-cluster plot paths |
 | `verif_triorbit.toml` | Verification: 3 equal clusters on a rotating Lagrange-equilibrium triangle (seed 7; see below) |
 | `verif_3d5cluster.toml` | Verification: 5 clusters distributed out of the z=0 plane; exercises xz/yz projections and 3D COM tracking (seed 13) |

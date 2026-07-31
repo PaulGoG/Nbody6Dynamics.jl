@@ -85,7 +85,6 @@ function _parse_postprocess(d::Dict)
         data_dir             = get(d, "data_dir", ""),
         snapshot_format      = get(d, "snapshot_format", "conf3"),
         snapshot_pattern     = get(d, "snapshot_pattern", "conf.3_*"),
-        hdf5_file            = get(d, "hdf5_file", ""),   # deprecated, ignored
         parse_stdout         = get(d, "parse_stdout", true),
         stdout_file          = get(d, "stdout_file", "out1000"),
         read_lagr            = get(d, "read_lagr", true),

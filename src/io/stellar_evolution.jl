@@ -3,14 +3,13 @@
 # =============================================================================
 #
 # Each sev.83_<t> file is an ASCII snapshot of stellar properties at one
-# epoch, written by `hrplot.F`:
+# epoch, written by `hrplot.F` (upstream v2026.07+, 15 tokens per line):
 #   Header line:  "NS  TPHYS"        — star count and physical time [Myr]
-#   Data lines:   TTOT  I  NAME  K*  RI/RC  M[M☉]  LOG10(L)  LOG10(R)
-#                 LOG10(Teff)  AGE  EPOCH
+#   Data lines:   TTOT  I  NAME  K*  RI[pc]  M[M☉]  LOG10(L)  LOG10(R)
+#                 LOG10(Teff)  AGE  EPOCH  TM[Myr]  MC[M☉]  RCC[R☉]  RE[R☉]
 #
-# Note the header time is TPHYS in **Myr**, while token 1 of every data line
-# is TTOT in **NB units** — the two carry different clocks and both are kept
-# (`StellarEvolutionSnapshot.time_myr` and `StellarRecord.time_nb`).
+# Header time is TPHYS in **Myr**, while token 1 of every data line is TTOT
+# in **NB units** — both clocks are kept.
 
 """
     read_stellar_evolution(path::AbstractString) -> StellarEvolutionSnapshot
@@ -38,20 +37,24 @@ function read_stellar_evolution(path::AbstractString)::StellarEvolutionSnapshot
         isempty(stripped) && continue
 
         tokens = split(stripped)
-        length(tokens) < 9 && continue
+        length(tokens) < 15 && continue
 
         try
-            # Format: TTOT[NB]  INDEX  NAME  K*  RI/RC  MASS  LOGL  LOGR  LOGT  [extras...]
             t_nb  = parse(Float64, tokens[1])
             idx   = parse(Int32, tokens[2])
             name  = parse(Int32, tokens[3])
             kstar = parse(Int32, tokens[4])
-            ri_rc = parse(Float64, tokens[5])
+            ri    = parse(Float64, tokens[5])
             mass  = parse(Float64, tokens[6])
             logl  = parse(Float64, tokens[7])
             logr  = parse(Float64, tokens[8])
             logt  = parse(Float64, tokens[9])
-            push!(records, StellarRecord(t_nb, idx, name, kstar, ri_rc, mass, logl, logr, logt))
+            tm    = parse(Float64, tokens[12])
+            mc    = parse(Float64, tokens[13])
+            rcc   = parse(Float64, tokens[14])
+            re    = parse(Float64, tokens[15])
+            push!(records, StellarRecord(t_nb, idx, name, kstar, ri, mass,
+                                         logl, logr, logt, tm, mc, rcc, re))
         catch e
             @debug "Skipping unparseable stellar line" line = stripped exception = e
         end
@@ -99,7 +102,7 @@ function read_all_stellar_evolution(
 end
 
 """
-Simple glob matching for patterns like `sev*.83` (only supports a single `*`).
+Simple glob matching for patterns like `sev.83_*` (only supports a single `*`).
 """
 function _glob_match(filename::AbstractString, pattern::AbstractString)::Bool
     if !occursin('*', pattern)

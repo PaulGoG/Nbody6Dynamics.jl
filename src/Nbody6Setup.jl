@@ -181,6 +181,8 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
             dpi        = cfg.visualization.dpi,
             figsize    = cfg.visualization.figsize,
             output_dir = plots_dir,
+            style      = cfg.visualization.style,   # must forward, or the
+            # user's [visualization.style] is silently dropped on run dirs
         )
     else
         cfg.visualization

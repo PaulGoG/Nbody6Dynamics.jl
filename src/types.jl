@@ -62,7 +62,6 @@ Base.@kwdef struct PostprocessConfig
     data_dir::String           = ""
     snapshot_format::String    = "conf3"   # "hdf5" is no longer supported
     snapshot_pattern::String   = "conf.3_*"
-    hdf5_file::String          = ""        # deprecated; kept for TOML compat
     parse_stdout::Bool         = true
     stdout_file::String        = "out1000"
     read_lagr::Bool            = true
@@ -302,30 +301,41 @@ struct EscaperRecord
 end
 
 # ---------------------------------------------------------------------------
-# Stellar evolution records from sev*.83
+# Stellar evolution records from sev.83_*
 # ---------------------------------------------------------------------------
 
 """
     StellarRecord
 
-One star's properties from a single-star evolution snapshot (sev*.83).
+One star's properties from a single-star evolution snapshot (sev.83_*),
+matching the upstream v2026.07+ `hrplot.F` output.
 """
 struct StellarRecord
     time_nb::Float64          # NB time (TTOT, first token of each data line)
     index::Int32              # internal index
     name::Int32               # particle identifier
     stellar_type::Int32       # K* (Hurley: 0/1=MS, 2=HG, …, 13=NS, 14=BH)
-    ri_rc::Float64            # distance / core radius
+    ri::Float64               # RI, distance from density centre [pc]
     mass_solar::Float64       # mass [M☉]
     log_luminosity::Float64   # log10(L/L☉)
     log_radius::Float64       # log10(R/R☉)
     log_teff::Float64         # log10(Teff/K)
+    ms_lifetime_myr::Float64  # TM, main-sequence lifetime [Myr]
+    mass_core::Float64        # MC, core mass [M☉]
+    radius_core::Float64      # RCC, core radius [R☉]
+    radius_envelope::Float64  # RE, envelope radius [R☉]
 end
+
+# Convenience constructor for synthetic records (SSE fields default to NaN).
+StellarRecord(time_nb, index, name, stellar_type, ri, mass_solar,
+              log_luminosity, log_radius, log_teff) =
+    StellarRecord(time_nb, index, name, stellar_type, ri, mass_solar,
+                  log_luminosity, log_radius, log_teff, NaN, NaN, NaN, NaN)
 
 """
     StellarEvolutionSnapshot
 
-All single-star data from one sev*.83 file.
+All single-star data from one sev.83_* file.
 """
 struct StellarEvolutionSnapshot
     time_myr::Float64

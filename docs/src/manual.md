@@ -102,7 +102,6 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `data_dir`            | String | `""`    | External data directory. Empty → use `run_dir/output/` from the simulation, or the most recent run under `runs/`. Set → read from this directory instead (any dir with Nbody6++ output) |
 | `snapshot_format`     | String | `"conf3"` | Snapshot source. **Only `"conf3"` is supported** (see note below) |
 | `snapshot_pattern`    | String | `"conf.3_*"` | Glob pattern for conf.3 files |
-| `hdf5_file`           | String | `""`    | **Deprecated, ignored** — kept only so old TOML files still parse |
 | `parse_stdout`        | Bool   | `true`  | Parse simulation stdout for ADJUST diagnostics |
 | `stdout_file`         | String | `"out1000"` | Name of the stdout capture file |
 | `read_lagr`           | Bool   | `true`  | Read Lagrangian radii |
