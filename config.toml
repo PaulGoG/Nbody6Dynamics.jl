@@ -67,9 +67,11 @@ stellar_evo_pattern  = "sev.83_*"
 
 [visualization]
 enabled    = true
-format     = "png"              # "png", "pdf", "svg"
-dpi        = 300
-figsize    = [10, 8]            # inches [width, height]
+format     = "pdf"              # "pdf" | "svg" (vector) | "png" (raster)
+dpi        = 300                # raster resolution at final printed size
+column     = "single"           # "single" | "double" journal width; "" = use figsize
+figsize    = [10, 8]            # inches [width, height]; only when column = ""
+units      = "physical"         # "physical" (pc, Myr, km/s, M☉) | "nbody"
 output_dir = "plots"            # relative to each run directory
 
 [visualization.style]

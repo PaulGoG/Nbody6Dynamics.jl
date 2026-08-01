@@ -106,7 +106,7 @@ Sampling and orbit placement happen in internal code units: `G = 1` with masses 
 
 `generate_merger_ic` writes four files (all protected by the never-overwrite `name#k.ext` backup policy):
 
-- **`dat.10`** — one line per particle, `MASS X Y Z VX VY VZ` at full precision. For `format = "nbody"` the arrays are converted with `to_nbody_units!` to Hénon units (`G = 1`, `M_total = 1`); for `format = "astro"` they stay in M☉ / pc / km/s.
+- **`dat.10`** — one line per particle, `MASS X Y Z VX VY VZ` at full precision. The arrays are converted with `to_nbody_units!` to Hénon units (`G = 1`, `M_total = 1`).
 - **`merger.inp`** — matching NAMELIST input file: `N` = post-truncation total, `KZ(22) = 2` (nbody) or `10` (astro), `KZ(14) = 0` (isolated), `NRAND` = effective seed, `NNBOPT = clamp(round(√N), 20, 300)`, `TCRIT`/`DTADJ`/`DELTAT` from `[merger.output]`, and:
   - **`RBAR` = the combined system's mass-weighted half-mass radius [pc]** — this is the NB length unit used for the `dat.10` conversion, so the physical scaling in Nbody6++ is self-consistent
   - **`ZMBAR` = mean particle mass `M_total/N_total` [M☉]**
@@ -117,7 +117,7 @@ The returned `MergerICResult` carries everything downstream plotting needs witho
 
 ## Reloading ICs — `load_merger_ic_result`
 
-`load_merger_ic_result(dir)` reconstructs a `MergerICResult` from `dat.10` + `merger_ic.toml` without re-sampling — e.g. to regenerate `plot_merger_ic` output after a plotting fix without touching the particle data. NB-unit files are converted back to physical units using the stored `rbar` and mass scale (`vstar = 0.06557 √(M_total/rbar)` km/s); `"astro"` files are read as-is. Schema v1 metadata (flat legacy cluster keys) is also accepted.
+`load_merger_ic_result(dir)` reconstructs a `MergerICResult` from `dat.10` + `merger_ic.toml` without re-sampling — e.g. to regenerate `plot_merger_ic` output after a plotting fix without touching the particle data. NB-unit files are converted back to physical units using the stored `rbar` and mass scale (`vstar = 0.06557 √(M_total/rbar)` km/s).
 
 ## Running and diagnosing merger simulations
 

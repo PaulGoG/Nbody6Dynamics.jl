@@ -118,9 +118,11 @@ function _parse_visualization(d::Dict)
     )
     VisualizationConfig(;
         enabled    = get(d, "enabled", true),
-        format     = get(d, "format", "png"),
+        format     = get(d, "format", "pdf"),
         dpi        = get(d, "dpi", 300),
+        column     = get(d, "column", "single"),
         figsize    = (Float64(fs[1]), Float64(fs[2])),
+        units      = get(d, "units", "physical"),
         output_dir = get(d, "output_dir", "plots"),
         style      = style,
     )

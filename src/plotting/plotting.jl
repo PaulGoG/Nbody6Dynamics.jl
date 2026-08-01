@@ -108,8 +108,30 @@ end
 # Common helpers
 # ---------------------------------------------------------------------------
 
-"""Convert (width_in, height_in) → Makie screen units (1 unit = 1/72 inch)."""
-_figsize_px(cfg::VisualizationConfig) = (cfg.figsize[1] * 72, cfg.figsize[2] * 72)
+# Journal column-width presets (final printed size, inches) and the internal
+# render scale: figures are designed at final×_PRINT_SCALE canvas units so
+# the 22 pt theme text lands at 22/_PRINT_SCALE ≈ 8.8 pt and 2.2-unit lines
+# at ≈ 0.9 pt when the export is reduced to the true column width.
+const _PRINT_SCALE = 2.5
+const _COLUMN_PRESETS = Dict(
+    "single" => (3.4, 2.6),    # ≈ 86–90 mm single column
+    "double" => (7.05, 4.35),  # ≈ 178–183 mm double column
+)
+
+"""Render scale of the canvas relative to the final printed size (1.0 for
+free-form `figsize` canvases, `_PRINT_SCALE` for column presets)."""
+_render_scale(cfg::VisualizationConfig) =
+    haskey(_COLUMN_PRESETS, cfg.column) ? _PRINT_SCALE : 1.0
+
+"""Canvas size in Makie units (1 unit = 1 pt): column preset × render scale,
+or the free-form `figsize` inches when `column` is empty/unknown."""
+function _figsize_px(cfg::VisualizationConfig)
+    if haskey(_COLUMN_PRESETS, cfg.column)
+        w, h = _COLUMN_PRESETS[cfg.column]
+        return (w * _PRINT_SCALE * 72, h * _PRINT_SCALE * 72)
+    end
+    return (cfg.figsize[1] * 72, cfg.figsize[2] * 72)
+end
 
 # ---------------------------------------------------------------------------
 # Standardised figure sizes for publication-consistent box dimensions
@@ -163,21 +185,13 @@ function _nice_ticks(lo::Real, hi::Real; target_n::Int = 8)
 end
 
 """
-Compute square (equal-span) axis limits centered on the origin (0,0),
-snapped outward to a nice round value with a visual buffer.
-Returns `(lo, hi, lo, hi)` — symmetric on both axes so ticks land on
-clean multiples and the outermost tick never overlaps the spine.
+Compute square (equal-span) axis limits centered on the origin (0,0):
+data extent plus a small margin (tight limits per the economy-of-space
+standard). Returns `(lo, hi, lo, hi)` — symmetric on both axes.
 """
-function _square_limits(xs, ys; pad_frac::Float64 = 0.08)
-    # Maximum absolute extent across both coordinates
+function _square_limits(xs, ys; pad_frac::Float64 = 0.03)
     r = max(maximum(abs, xs), maximum(abs, ys))
-    # Snap outward to a nice round value: 10, 20, 25, 50, 100, 200, ...
-    pow = 10.0^floor(log10(max(r, 1.0)))
-    candidates = [1.0, 2.0, 2.5, 5.0, 10.0]
-    # Find the smallest nice value ≥ r
-    hs = pow * candidates[findfirst(c -> c * pow >= r, candidates)]
-    # Add visual buffer so the outermost tick sits inside the axis
-    hs += hs * pad_frac
+    hs = r * (1 + pad_frac)
     return (-hs, hs, -hs, hs)
 end
 
@@ -247,14 +261,81 @@ end
     _save_fig(cfg, basename, fig) -> String
 
 Resolve the output path, back up any existing file (never-overwrite policy),
-save `fig` at the configured DPI, and log the location. Returns the path.
+save `fig` sized for print, and log the location. Vector formats (pdf/svg)
+are scaled so the document width equals the true column width; raster
+output gets `cfg.dpi` at that final size. Returns the path.
 """
 function _save_fig(cfg::VisualizationConfig, basename::AbstractString, fig)::String
     path = _output_path(cfg, basename)
     _backup_existing(path)
-    save(path, fig; px_per_unit = cfg.dpi / 72)
+    s = _render_scale(cfg)
+    if cfg.format in ("pdf", "svg")
+        save(path, fig; pt_per_unit = 1 / s)
+    else
+        save(path, fig; px_per_unit = cfg.dpi / 72 / s)
+    end
     @info "Saved: $path"
     return path
+end
+
+"""
+    _top_legend!(fig, ax; title = nothing, nbanks = 1, kwargs...)
+    _top_legend!(fig, elements, labels; title = nothing, nbanks = 1, kwargs...)
+
+Standard legend placement: horizontal, above the axes, outside the plot
+area (`fig[0, :]`), optional bold family header via `title` shown to the
+left. Callers must still guard against single-entry legends.
+"""
+function _top_legend!(fig::Figure, ax::Axis; title = nothing, nbanks::Int = 1, kwargs...)
+    # The family title must be passed positionally — Legend's convenience
+    # constructors take (layout, ax, title); a `title` kwarg is ignored.
+    args = title === nothing ? (ax,) : (ax, title)
+    Legend(fig[0, :], args...;
+        orientation = :horizontal, nbanks = nbanks, framevisible = false,
+        titleposition = :left, tellheight = true,
+        padding = (0, 0, 0, 0), kwargs...)
+    return nothing
+end
+
+function _top_legend!(fig::Figure, elements::AbstractVector, labels::AbstractVector;
+                      title = nothing, nbanks::Int = 1, kwargs...)
+    args = title === nothing ? (elements, labels) : (elements, labels, title)
+    Legend(fig[0, :], args...;
+        orientation = :horizontal, nbanks = nbanks, framevisible = false,
+        titleposition = :left, tellheight = true,
+        padding = (0, 0, 0, 0), kwargs...)
+    return nothing
+end
+
+"""
+    _log_ticks(lo, hi) -> (values, labels)
+
+Decade-anchored ticks for `log10`-scaled axes: `10^n` at every decade in
+range, with 2× and 5× intermediates when the range spans ≤ 2 decades.
+`10^0` renders as `1`, per the axis-typography standard.
+"""
+function _log_ticks(lo::Real, hi::Real)
+    lo, hi = min(lo, hi), max(lo, hi)
+    lo > 0 || (lo = hi / 1e3)          # guard: log axes need positive range
+    e_lo = floor(Int, log10(lo) + 1e-12)
+    e_hi = ceil(Int, log10(hi) - 1e-12)
+    mults = (e_hi - e_lo) ≤ 2 ? (1.0, 2.0, 5.0) : (1.0,)
+    vals = Float64[]
+    for e in e_lo:e_hi, m in mults
+        v = m * 10.0^e
+        lo * (1 - 1e-9) ≤ v ≤ hi * (1 + 1e-9) && push!(vals, v)
+    end
+    length(vals) < 2 && (vals = [10.0^e_lo, 10.0^e_hi])
+    labels = map(vals) do v
+        e = floor(Int, log10(v) + 1e-9)
+        m = round(Int, v / 10.0^e)
+        if m == 1
+            e == 0 ? L"1" : latexstring("10^{$(e)}")
+        else
+            e == 0 ? latexstring("$(m)") : latexstring("$(m)\\times 10^{$(e)}")
+        end
+    end
+    return (vals, labels)
 end
 
 """
@@ -266,6 +347,31 @@ Scatter marker size for `n` particles: `marker_budget / n` clamped to
 _marker_size(cfg::VisualizationConfig, n::Integer) =
     clamp(cfg.style.marker_budget / max(n, 1), cfg.style.marker_min, cfg.style.marker_max)
 
+
+# ---------------------------------------------------------------------------
+# Semantic colour table
+# ---------------------------------------------------------------------------
+# NOTE: must precede the includes below — hr.jl builds its stellar-type
+# colour map from _OKABE_ITO at include time.
+
+# Okabe–Ito colourblind-safe palette: Makie's Wong colours (7 entries) plus
+# black, completing the 8-colour Okabe–Ito set.  Order:
+# 1 blue, 2 orange, 3 bluish green, 4 reddish purple, 5 sky blue,
+# 6 vermillion, 7 yellow, 8 black.
+const _OKABE_ITO = vcat(Makie.wong_colors(), Makie.RGBAf(0, 0, 0, 1))
+
+"""One consistent colour per physical quantity across every figure of the
+project (series family encoded by colour, role by line style)."""
+const _SEMANTIC_COLORS = Dict{Symbol,Makie.RGBAf}(
+    :energy_error => _OKABE_ITO[1],  # blue          |ΔE/E|
+    :virial       => _OKABE_ITO[6],  # vermillion    Q = T/|W|
+    :n_particles  => _OKABE_ITO[3],  # bluish green  N (counts)
+    :n_pairs      => _OKABE_ITO[2],  # orange        N_pairs
+    :separation   => _OKABE_ITO[5],  # sky blue      pairwise separations
+)
+
+"""Darkened same-hue edge colour for `band!` fills (edge at full opacity)."""
+_band_edge(c::Makie.RGBAf) = Makie.RGBAf(0.7 * c.r, 0.7 * c.g, 0.7 * c.b, 1.0)
 
 # ---------------------------------------------------------------------------
 # Include plot source files

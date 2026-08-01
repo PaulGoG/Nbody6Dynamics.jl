@@ -95,7 +95,7 @@ In `"explicit"` mode this section is ignored (a warning is emitted if present).
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `format` | String | `"nbody"` | `"nbody"` → `dat.10` in N-body units, `KZ(22)=2`; `"astro"` → physical units (M☉, pc, km/s), `KZ(22)=10` |
+| `format` | String | `"nbody"` | `dat.10` in N-body units, `KZ(22)=2` (only supported value) |
 | `truncate_jacobi` | Bool | `true` | Truncate each cluster at its nearest-neighbour Jacobi radius before combining |
 | `output_dir` | String | `"."` | Output directory (overridden by the pipeline, which writes into `runs/merger_.../output/`) |
 | `tcrit` | Float | `100.0` | Simulation end time (NB units for `"nbody"`) |

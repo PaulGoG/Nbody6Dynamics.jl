@@ -2,7 +2,6 @@
 # HR diagram (Hertzsprung-Russell) from stellar evolution data
 # =============================================================================
 
-# Colour palette for stellar types (up to K*=15)
 # Unphysical values used by SSE/BSE as placeholders for undefined luminosity/
 # temperature (e.g. massless remnants, stars past the end of the grid). Points
 # at these values would otherwise force the axes to extend into empty regions
@@ -23,22 +22,18 @@ within physically meaningful ranges for an HR diagram. Placeholders such as
                r.log_teff      > _HR_MIN_LOG_TEFF]
 end
 
-const _HR_COLORS = Dict{Int,Symbol}(
-    0  => :royalblue,    # MS
-    1  => :dodgerblue,   # HG
-    2  => :orange,       # GB
-    3  => :gold,         # CHeB
-    4  => :orangered,    # AGB
-    5  => :red,          # EAGB
-    6  => :cyan,         # HeStar
-    7  => :teal,         # HeHG
-    8  => :olive,        # HeGB
-    9  => :lightgray,    # HeWD
-    10 => :silver,       # COWD
-    11 => :gray,         # ONeWD
-    12 => :purple,       # NS
-    13 => :black,        # BH
-)
+# Okabe–Ito colour + marker encoding for stellar types K* ∈ 0:15: the eight
+# palette colours cover one cycle (K* 0–7); the second cycle (K* ≥ 8, white
+# dwarfs and compact objects) repeats the colours with a distinct marker so
+# the two cycles remain separable (and survive grayscale).
+const _HR_COLORS = Dict{Int,Makie.RGBAf}(
+    k => _OKABE_ITO[mod1(k + 1, length(_OKABE_ITO))] for k in 0:15)
+
+"""Colour for stellar type `kt` from the Okabe–Ito cycle (grey fallback)."""
+_hr_color(kt::Integer) = get(_HR_COLORS, Int(kt), Makie.RGBAf(0.5, 0.5, 0.5, 1))
+
+"""Marker class for stellar type `kt`: circles for K* < 8, triangles for K* ≥ 8."""
+_hr_marker(kt::Integer)::Symbol = Int(kt) < 8 ? :circle : :utriangle
 
 """
     plot_hr(sev::StellarEvolutionSnapshot, cfg::VisualizationConfig;
@@ -72,18 +67,19 @@ function plot_hr(
     fig = Figure(; size = _figsize_px(cfg))
     ax = Axis(
         fig[1, 1];
-        xlabel = L"\log_{10}(\mathrm{T}_\mathrm{eff} \, / \, \mathrm{K})",
-        ylabel = L"\log_{10}(\mathrm{L} \, / \, \mathrm{L}_\odot)",
+        xlabel = L"\log_{10}(T_\mathrm{eff} \, / \, \mathrm{K})",
+        ylabel = L"\log_{10}(L \, / \, L_\odot)",
         xreversed = true,   # hot → cool from left to right
         xticks = _logval_ticks(teff_min - dt, teff_max + dt),
         yticks = _logval_ticks(lum_min - dl, lum_max + dl),
         xgridvisible = false,
         ygridvisible = false,
     )
-    # sev.time_myr is in Myr, not NB units
-    text!(ax, 0.03, 0.97;
-        text = latexstring("\\mathrm{t} = $(t_val)\\;\\mathrm{Myr}"),
-        space = :relative, align = (:left, :top), fontsize = 16)
+    # sev.time_myr is in Myr, not NB units.  Top-right corner: the sequence
+    # enters at top-left, so the upper-right above the ridge line is empty.
+    text!(ax, 0.96, 0.96;
+        text = latexstring("t = $(t_val)\\;\\mathrm{Myr}"),
+        space = :relative, align = (:right, :top), fontsize = 16)
 
     # Group by stellar type for legend
     types_present = sort(unique(r.stellar_type for r in valid))
@@ -92,16 +88,13 @@ function plot_hr(
         mask = [r for r in valid if r.stellar_type == kt]
         teff = [r.log_teff for r in mask]
         lum  = [r.log_luminosity for r in mask]
-        col  = get(_HR_COLORS, Int(kt), :gray50)
         label = get(STELLAR_TYPE_LABELS, Int(kt), "K*=$kt")
-        scatter!(ax, teff, lum; color = col, markersize = 14, label = label)
+        scatter!(ax, teff, lum; color = _hr_color(kt), marker = _hr_marker(kt),
+                 markersize = 14, label = label)
     end
 
     if 2 ≤ length(types_present) ≤ 12
-        # Bottom-left is the empty corner of an HR diagram (the sequence runs
-        # top-left → bottom-right); :cb overlapped the lower MS ribbon.
-        axislegend(ax; position = :lb, nbanks = 2,
-                   backgroundcolor = (:white, 0.7), framevisible = true)
+        _top_legend!(fig, ax; nbanks = 2)
     end
 
     return _save_fig(cfg, filename, fig)
@@ -168,8 +161,8 @@ function plot_hr_evolution(
         t_val = @sprintf("%.3g", sev.time_myr)
         ax = Axis(
             fig[row, col];
-            xlabel = show_xlab ? L"\log_{10}(\mathrm{T}_\mathrm{eff} \, / \, \mathrm{K})" : "",
-            ylabel = show_ylab ? L"\log_{10}(\mathrm{L} \, / \, \mathrm{L}_\odot)" : "",
+            xlabel = show_xlab ? L"\log_{10}(T_\mathrm{eff} \, / \, \mathrm{K})" : "",
+            ylabel = show_ylab ? L"\log_{10}(L \, / \, L_\odot)" : "",
             xlabelsize = 22,
             ylabelsize = 22,
             xticklabelsize = 18,
@@ -183,16 +176,18 @@ function plot_hr_evolution(
             xgridvisible = false,
             ygridvisible = false,
         )
-        # sev.time_myr is in Myr, not NB units
-        text!(ax, 0.03, 0.97;
-            text = latexstring("\\mathrm{t} = $(t_val)\\;\\mathrm{Myr}"),
-            space = :relative, align = (:left, :top), fontsize = 16)
+        # sev.time_myr is in Myr, not NB units.  Top-right in-axis corner is
+        # empty on an HR diagram (the sequence enters at top-left).
+        text!(ax, 0.96, 0.96;
+            text = latexstring("t = $(t_val)\\;\\mathrm{Myr}"),
+            space = :relative, align = (:right, :top), fontsize = 16)
 
-        for r in valid_per_panel[panel_idx]
-            col_sym = get(_HR_COLORS, Int(r.stellar_type), :gray50)
-            scatter!(ax, [r.log_teff], [r.log_luminosity];
-                color = col_sym, markersize = 14, strokewidth = 0)
-        end
+        v = valid_per_panel[panel_idx]
+        isempty(v) || scatter!(ax,
+            [r.log_teff for r in v], [r.log_luminosity for r in v];
+            color  = [_hr_color(r.stellar_type) for r in v],
+            marker = [_hr_marker(r.stellar_type) for r in v],
+            markersize = 14, strokewidth = 0)
     end
 
     colgap!(fig.layout, _MULTIPANEL_HGAP)

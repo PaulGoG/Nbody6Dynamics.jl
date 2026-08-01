@@ -318,10 +318,10 @@ end
         @test haskey(results, :diagnostics)
         @test !haskey(results, :snapshots)
         plots_dir = joinpath(d_diag_only, "plots")
-        @test isfile(joinpath(plots_dir, "energy.png"))
-        @test isfile(joinpath(plots_dir, "particle_count.png"))
-        @test !isfile(joinpath(plots_dir, "snapshot_final_xy.png"))
-        @test !isfile(joinpath(plots_dir, "lagrangian_radii.png"))
+        @test isfile(joinpath(plots_dir, "energy.pdf"))
+        @test isfile(joinpath(plots_dir, "particle_count.pdf"))
+        @test !isfile(joinpath(plots_dir, "snapshot_final_xy.pdf"))
+        @test !isfile(joinpath(plots_dir, "lagrangian_radii.pdf"))
 
         # --- run_test=false, no data_dir, no runs/ directory ---
         pp3 = PostprocessConfig(; enabled=true, data_dir="")
@@ -360,12 +360,12 @@ end
         @test haskey(results, :lagr)
         @test length(results[:snapshots]) == 3
         pdir = joinpath(d_full, "plots")
-        @test isfile(joinpath(pdir, "snapshot_final_xy.png"))
-        @test isfile(joinpath(pdir, "snapshot_final_xz.png"))
-        @test isfile(joinpath(pdir, "snapshot_evolution_xy.png"))
-        @test isfile(joinpath(pdir, "energy.png"))
-        @test isfile(joinpath(pdir, "particle_count.png"))
-        @test isfile(joinpath(pdir, "lagrangian_radii.png"))
+        @test isfile(joinpath(pdir, "snapshot_final_xy.pdf"))
+        @test isfile(joinpath(pdir, "snapshot_final_xz.pdf"))
+        @test isfile(joinpath(pdir, "snapshot_evolution_xy.pdf"))
+        @test isfile(joinpath(pdir, "energy.pdf"))
+        @test isfile(joinpath(pdir, "particle_count.pdf"))
+        @test isfile(joinpath(pdir, "lagrangian_radii.pdf"))
         @test isfile(joinpath(pdir, "cluster_evolution_xy.gif"))
         @test isfile(joinpath(pdir, "lagrangian_anim.gif"))
     end

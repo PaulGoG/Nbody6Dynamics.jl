@@ -7,6 +7,8 @@
                 filename::AbstractString = "energy")
 
 Two-panel figure: (top) relative energy error vs time, (bottom) virial ratio.
+The time axis is in Myr when `cfg.units == "physical"` (from the ADJUST
+records), N-body units otherwise.
 """
 function plot_energy(
     diag::DiagnosticsData, cfg::VisualizationConfig;
@@ -15,26 +17,42 @@ function plot_energy(
     adj = diag.adjust
     isempty(adj) && (@warn "No ADJUST data to plot"; return nothing)
 
-    t     = [r.time_nb  for r in adj]
+    physical = cfg.units == "physical"
+    t     = physical ? [r.time_myr for r in adj] : [r.time_nb for r in adj]
     de    = [r.de_rel   for r in adj]
     qvir  = [r.qvir     for r in adj]
+    tlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]"
 
     fig = Figure(; size = _fig_two_panel(cfg))
 
     ttk = _time_ticks(first(t), last(t))
 
     # --- Panel 1: relative energy error (log scale) ---
-    ax1 = Axis(fig[1, 1];
-        ylabel = L"|\Delta \mathrm{E} \, / \, \mathrm{E}|",
-        yscale = log10,
-        xticklabelsvisible = false,
-        xticks = ttk,
-    )
-
     # Skip points where ΔE is exactly zero (typically the t=0 reference frame);
     # plotting them on a log axis creates a spurious spike to the axis floor.
     nz = [abs(d) > 0 for d in de]
-    lines!(ax1, t[nz], abs.(de[nz]); color = :steelblue)
+    de_abs = abs.(de[nz])
+
+    ax1 = Axis(fig[1, 1];
+        ylabel = L"|\Delta E \, / \, E|",
+        yscale = log10,
+        xticklabelsvisible = false,
+        xticks = ttk,
+        yticks = isempty(de_abs) ? Makie.automatic : _log_ticks(extrema(de_abs)...),
+    )
+
+    if !isempty(de_abs)
+        lines!(ax1, t[nz], de_abs; color = _SEMANTIC_COLORS[:energy_error])
+        # Explicit limits so the peak keeps headroom on the log axis
+        de_lo, de_hi = extrema(de_abs)
+        ylims!(ax1, de_lo * 0.8, de_hi * 1.5)
+        # Annotate the maximum error (2 significant digits)
+        m_str, e_str = split(@sprintf("%.1e", de_hi), 'e')
+        text!(ax1, 0.96, 0.96;
+            text = latexstring("\\max|\\Delta E/E| = $(m_str) \\times 10^{$(parse(Int, e_str))}"),
+            space = :relative, align = (:right, :top), fontsize = 16,
+            color = _SEMANTIC_COLORS[:energy_error])
+    end
 
     # --- Panel 2: virial ratio ---
     # Nbody6++ reports Q = T/|W| (virial equilibrium at Q = 0.5)
@@ -42,22 +60,24 @@ function plot_energy(
     q_max = maximum(qvir)
     use_log_q = q_max > cfg.style.q_log_threshold
 
-    ax2 = Axis(fig[2, 1];
-        xlabel = L"\mathrm{t} \; \mathrm{[NB]}",
-        ylabel = L"\mathrm{Q} = \mathrm{T}/|\mathrm{W}|",
-        xticks = ttk,
-        yscale = use_log_q ? log10 : identity,
-    )
-
     # Floor only on the log axis (zero/tiny Q is invalid there); raw otherwise
     q_plot = use_log_q ? max.(qvir, cfg.style.q_floor) : qvir
-    lines!(ax2, t, q_plot; color = :firebrick,
-           label = L"\mathrm{Q} = \mathrm{T}/|\mathrm{W}|\;\mathrm{(virial\;ratio)}")
-    hlines!(ax2, [0.5]; color = :gray50, linestyle = :dash, linewidth = 1.0,
-            label = L"\mathrm{Q} = 0.5\;\mathrm{(virial\;equilibrium)}")
 
-    axislegend(ax2; position = use_log_q ? :rb : :rt, framevisible = true,
-               backgroundcolor = (:white, 0.6))
+    ax2 = Axis(fig[2, 1];
+        xlabel = tlabel,
+        ylabel = L"Q = T/|W|",
+        xticks = ttk,
+        yscale = use_log_q ? log10 : identity,
+        yticks = use_log_q ? _log_ticks(extrema(q_plot)...) : Makie.automatic,
+    )
+
+    lines!(ax2, t, q_plot; color = _SEMANTIC_COLORS[:virial],
+           label = L"Q = T/|W|\;\mathrm{(virial\;ratio)}")
+    hlines!(ax2, [0.5]; color = :gray50, linestyle = :dash, linewidth = 1.0,
+            label = L"Q = 0.5\;\mathrm{(virial\;equilibrium)}")
+
+    # Shared legend for the two-panel figure: horizontal, above the axes
+    _top_legend!(fig, ax2)
     linkxaxes!(ax1, ax2)
     rowgap!(fig.layout, 12)
 
@@ -71,6 +91,7 @@ end
 
 Two-panel figure: (top) bound particle count N, (bottom) KS binary pairs.
 Each uses a linear y-axis since N and N_pairs evolve on different scales.
+The time axis is in Myr when `cfg.units == "physical"`.
 """
 function plot_particle_count(
     diag::DiagnosticsData, cfg::VisualizationConfig;
@@ -79,7 +100,8 @@ function plot_particle_count(
     adj = diag.adjust
     isempty(adj) && return nothing
 
-    t  = [r.time_nb for r in adj]
+    physical = cfg.units == "physical"
+    t  = physical ? [r.time_myr for r in adj] : [r.time_nb for r in adj]
     n  = [r.n       for r in adj]
     np = [r.npairs  for r in adj]
 
@@ -104,12 +126,20 @@ function plot_particle_count(
     end
 
     ax1 = Axis(fig[1, 1];
-        ylabel = L"\mathrm{N}\;\mathrm{(bound\;particles)}",
+        ylabel = L"N\;\mathrm{(bound\;particles)}",
         xticklabelsvisible = false,
         xticks = ttk,
         limits = (nothing, ylims_n),
     )
-    lines!(ax1, t, n; color = :steelblue)
+    lines!(ax1, t, n; color = _SEMANTIC_COLORS[:n_particles])
+
+    # Annotate the total particle change over the run, coloured to the series
+    n0, n1 = n[1], n[end]
+    pct_str = @sprintf("%+.1f", 100 * (n1 - n0) / max(n0, 1))
+    text!(ax1, 0.96, 0.96;
+        text = latexstring("N: $(n0) \\rightarrow $(n1)\\;($(pct_str)\\%)"),
+        space = :relative, align = (:right, :top), fontsize = 16,
+        color = _SEMANTIC_COLORS[:n_particles])
 
     # --- Bottom panel: N_pairs (KS binaries) ---
     np_lo, np_hi = extrema(np)
@@ -119,13 +149,13 @@ function plot_particle_count(
     np_ylims = all_zero ? (-0.5, 1.0) : nothing
     np_ytk   = all_zero ? [0.0, 1.0] : _integer_ticks(np_lo, np_hi)
     ax2 = Axis(fig[2, 1];
-        xlabel = L"\mathrm{t} \; \mathrm{[NB]}",
-        ylabel = L"\mathrm{N}_\mathrm{pairs}\;\mathrm{(KS\;binaries)}",
+        xlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]",
+        ylabel = L"N_\mathrm{pairs}\;\mathrm{(KS\;binaries)}",
         xticks = ttk,
         yticks = np_ytk,
         limits = (nothing, np_ylims),
     )
-    lines!(ax2, t, np; color = :darkorange)
+    lines!(ax2, t, np; color = _SEMANTIC_COLORS[:n_pairs])
     if all_zero
         text!(ax2, 0.5, 0.55;
               text = L"\mathrm{no\;KS\;binaries\;formed}",

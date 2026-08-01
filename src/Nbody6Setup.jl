@@ -175,14 +175,18 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
     # Build a VisualizationConfig with the output_dir resolved to the run
     vis = if !isempty(run_dir)
         plots_dir = joinpath(run_dir, cfg.visualization.output_dir)
+        # Forward EVERY field except output_dir — a missed field here means
+        # the user's [visualization] settings are silently dropped on the
+        # main pipeline path (this has happened twice; see git history).
         VisualizationConfig(;
             enabled    = cfg.visualization.enabled,
             format     = cfg.visualization.format,
             dpi        = cfg.visualization.dpi,
+            column     = cfg.visualization.column,
             figsize    = cfg.visualization.figsize,
+            units      = cfg.visualization.units,
             output_dir = plots_dir,
-            style      = cfg.visualization.style,   # must forward, or the
-            # user's [visualization.style] is silently dropped on run dirs
+            style      = cfg.visualization.style,
         )
     else
         cfg.visualization
@@ -229,11 +233,16 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
         end
     end
 
+    # Unit scaling for readers whose files carry no header (lagr.7):
+    # derived from the diagnostics when available, else NB units.
+    scaling = haskey(results, :diagnostics) ?
+        extract_scaling(results[:diagnostics]::DiagnosticsData) : nothing
+
     if haskey(results, :lagr)
         lagr = results[:lagr]::LagrangianData
         if !isempty(lagr.time)
             @info "Plotting Lagrangian radii..."
-            plot_lagrangian(lagr, vis; filename = "lagrangian_radii")
+            plot_lagrangian(lagr, vis; filename = "lagrangian_radii", units = scaling)
         end
     end
 
@@ -268,7 +277,7 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
         lagr = results[:lagr]::LagrangianData
         if length(lagr.time) > 1
             @info "Animating Lagrangian radii..."
-            animate_lagrangian(lagr, vis; filename = "lagrangian_anim")
+            animate_lagrangian(lagr, vis; filename = "lagrangian_anim", units = scaling)
         end
     end
 

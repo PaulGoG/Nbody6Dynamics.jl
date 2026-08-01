@@ -284,7 +284,7 @@ are integration parameters kept here for back-compat; a dedicated
 `MergerIntegrationSpec` will take over in a follow-up phase.
 
 # Fields
-- `format::String`: `"nbody"` (KZ(22)=2, N-body units) or `"astro"` (KZ(22)=10).
+- `format::String`: `"nbody"` (KZ(22)=2, N-body units) — the only supported format.
 - `truncate_jacobi::Bool`: truncate each cluster at the nearest-neighbour
   Jacobi radius before combining.
 - `output_dir::String`: directory for generated files.

@@ -21,7 +21,8 @@ end
                     fps::Union{Int,Nothing} = nothing) -> Vector{String}
 
 Create animated GIFs of the cluster's spatial evolution across snapshots,
-one per projection.
+one per projection.  Positions are shown in pc and the time annotation in
+Myr when `cfg.units == "physical"` (header AS scaling); N-body otherwise.
 
 # Arguments
 - `snaps`: ordered vector of `Snapshot`s
@@ -48,6 +49,11 @@ function animate_cluster(
     fps > 0 || (fps = _auto_fps(nframes;
         target_duration = cfg.style.anim_target_seconds, min_fps = 1, max_fps = 10))
 
+    physical = cfg.units == "physical" &&
+               all(_has_physical_scaling(s.header) for s in snaps)
+    unit_str = physical ? "pc" : "NB"
+    scales   = [physical ? rbar(snap.header) : 1.0 for snap in snaps]
+
     ms = _marker_size(cfg, nparticles(snaps[1]))
 
     # Mass colour scale — global across all frames for consistency
@@ -62,7 +68,7 @@ function animate_cluster(
     outpaths = String[]
 
     for projection in projections
-        ix, iy, xlab, ylab = _proj_indices(projection)
+        ix, iy, xsym, ysym = _proj_indices(projection)
 
         # Check if adaptive zoom is needed
         all_indices = collect(1:nframes)
@@ -70,11 +76,12 @@ function animate_cluster(
 
         # Pre-compute per-frame limits for adaptive mode
         frame_limits = if use_adaptive
-            [_square_limits(snaps[i].pos[ix, :], snaps[i].pos[iy, :]) for i in 1:nframes]
+            [_square_limits(snaps[i].pos[ix, :] .* scales[i],
+                            snaps[i].pos[iy, :] .* scales[i]) for i in 1:nframes]
         else
             # Global limits — same for every frame
-            all_x = reduce(vcat, [snap.pos[ix, :] for snap in snaps])
-            all_y = reduce(vcat, [snap.pos[iy, :] for snap in snaps])
+            all_x = reduce(vcat, [snaps[i].pos[ix, :] .* scales[i] for i in 1:nframes])
+            all_y = reduce(vcat, [snaps[i].pos[iy, :] .* scales[i] for i in 1:nframes])
             lims = _square_limits(all_x, all_y)
             fill(lims, nframes)
         end
@@ -88,8 +95,8 @@ function animate_cluster(
         frame_idx = Observable(1)
 
         time_text = @lift begin
-            t_str = @sprintf("%.3g", time_nb(snaps[$frame_idx].header))
-            latexstring("\\mathrm{t} = $(t_str) \\; \\mathrm{[NB]}")
+            h = snaps[$frame_idx].header
+            _time_annotation(physical ? time_myr(h) : time_nb(h), physical)
         end
 
         # Initial limits
@@ -97,16 +104,16 @@ function animate_cluster(
 
         fig = Figure(; size = _fig_with_colorbar(cfg))
         ax = Axis(fig[1, 1];
-            xlabel = xlab,
-            ylabel = ylab,
+            xlabel = _coord_label(xsym, unit_str),
+            ylabel = _coord_label(ysym, unit_str),
             aspect = DataAspect(),
             limits = (xlo0, xhi0, ylo0, yhi0),
-            xticks = _nice_ticks(xlo0, xhi0),
-            yticks = _nice_ticks(ylo0, yhi0),
+            xticks = _nice_ticks(xlo0, xhi0; target_n = 5),
+            yticks = _nice_ticks(ylo0, yhi0; target_n = 5),
             xgridvisible = false,
             ygridvisible = false,
         )
-        text!(ax, 0.03, 0.97; text = time_text,
+        text!(ax, 0.04, 0.96; text = time_text,
             space = :relative, align = (:left, :top), fontsize = 16)
 
         # Single source observable so positions and colours update atomically
@@ -114,7 +121,8 @@ function animate_cluster(
         # the varying length).
         frame_data = @lift begin
             snap = snaps[$frame_idx]
-            (points = Point2f.(snap.pos[ix, :], snap.pos[iy, :]),
+            sc = scales[$frame_idx]
+            (points = Point2f.(snap.pos[ix, :] .* sc, snap.pos[iy, :] .* sc),
              colors = log10.(max.(Float64.(snap.mass), 1e-30)))
         end
         pts    = @lift($frame_data.points)
@@ -130,7 +138,7 @@ function animate_cluster(
 
         # Add colorbar
         Colorbar(fig[1, 2]; colormap = :viridis, colorrange = (cmin, cmax),
-                 label = L"\log_{10}(\mathrm{m} \, / \, \mathrm{M}_\mathrm{tot})",
+                 label = L"\log_{10}(m \, / \, M_\mathrm{tot})",
                  ticks = _nice_colorbar_ticks(cmin, cmax))
         colgap!(fig.layout, 10)
 
@@ -141,8 +149,8 @@ function animate_cluster(
                 xlo, xhi, ylo, yhi = frame_limits[i]
                 xlims!(ax, xlo, xhi)
                 ylims!(ax, ylo, yhi)
-                ax.xticks = _nice_ticks(xlo, xhi)
-                ax.yticks = _nice_ticks(ylo, yhi)
+                ax.xticks = _nice_ticks(xlo, xhi; target_n = 5)
+                ax.yticks = _nice_ticks(ylo, yhi; target_n = 5)
             end
         end
 
@@ -206,13 +214,13 @@ function animate_hr(
     # sev.time_myr is in Myr, not NB units
     time_text = @lift begin
         t_str = @sprintf("%.3g", sevs[$frame_idx].time_myr)
-        latexstring("\\mathrm{t} = $(t_str)\\;\\mathrm{Myr}")
+        latexstring("t = $(t_str)\\;\\mathrm{Myr}")
     end
 
     fig = Figure(; size = _figsize_px(cfg))
     ax = Axis(fig[1, 1];
-        xlabel = L"\log_{10}(\mathrm{T}_\mathrm{eff} \, / \, \mathrm{K})",
-        ylabel = L"\log_{10}(\mathrm{L} \, / \, \mathrm{L}_\odot)",
+        xlabel = L"\log_{10}(T_\mathrm{eff} \, / \, \mathrm{K})",
+        ylabel = L"\log_{10}(L \, / \, L_\odot)",
         limits = (xlims..., ylims...),
         xreversed = true,
         xticks = _logval_ticks(xlims[1], xlims[2]),
@@ -220,23 +228,27 @@ function animate_hr(
         xgridvisible = false,
         ygridvisible = false,
     )
-    text!(ax, 0.03, 0.97; text = time_text,
-        space = :relative, align = (:left, :top), fontsize = 16)
+    # Top-right in-axis corner is empty on an HR diagram (the sequence
+    # enters at top-left).
+    text!(ax, 0.96, 0.96; text = time_text,
+        space = :relative, align = (:right, :top), fontsize = 16)
 
-    # Single source observable so positions and colours update atomically
-    # even when the star count changes between epochs (Point2f handles the
-    # varying length).
+    # Single source observable so positions, colours, and markers update
+    # atomically even when the star count changes between epochs (Point2f
+    # handles the varying length).
     frame_data = @lift begin
         v = valid_per_frame[$frame_idx]
         (points = Point2f.([r.log_teff for r in v],
                            [r.log_luminosity for r in v]),
-         colors = [get(_HR_COLORS, Int(r.stellar_type), :gray50) for r in v])
+         colors  = [_hr_color(r.stellar_type) for r in v],
+         markers = [_hr_marker(r.stellar_type) for r in v])
     end
     pts      = @lift($frame_data.points)
     col_data = @lift($frame_data.colors)
+    mk_data  = @lift($frame_data.markers)
 
     scatter!(ax, pts;
-        color = col_data, markersize = 14, strokewidth = 0)
+        color = col_data, marker = mk_data, markersize = 14, strokewidth = 0)
 
     _backup_existing(outpath)
     record(fig, outpath, 1:nframes; framerate = fps) do i
@@ -251,7 +263,8 @@ end
     animate_lagrangian(lagr::LagrangianData, cfg::VisualizationConfig;
                        filename::AbstractString = "lagrangian_anim",
                        fps::Union{Int,Nothing} = nothing,
-                       selected_fractions::Vector{Float64} = Float64[]) -> String
+                       selected_fractions::Vector{Float64} = Float64[],
+                       units::Union{UnitScaling,Nothing} = nothing) -> String
 
 Animate Lagrangian radii evolution with a sweeping time cursor.
 
@@ -260,6 +273,8 @@ Animate Lagrangian radii evolution with a sweeping time cursor.
   auto-calculates for ~`cfg.style.anim_target_seconds` s, clamped to 2–30 fps).
   Lagrangian data is a dense time series so the auto rate allows smooth,
   fast playback.
+- `units`: when `cfg.units == "physical"` and a `UnitScaling` is provided,
+  times are shown in Myr and radii in pc; N-body units otherwise.
 
 Returns the output file path.
 """
@@ -268,6 +283,7 @@ function animate_lagrangian(
     filename::AbstractString = "lagrangian_anim",
     fps::Union{Int,Nothing} = nothing,
     selected_fractions::Vector{Float64} = Float64[],
+    units::Union{UnitScaling,Nothing} = nothing,
 )::String
     isempty(lagr.time) && error("No Lagrangian data to animate")
 
@@ -282,51 +298,58 @@ function animate_lagrangian(
     fps > 0 || (fps = _auto_fps(nt;
         target_duration = cfg.style.anim_target_seconds, min_fps = 2, max_fps = 30))
 
+    physical = cfg.units == "physical" && units !== nothing &&
+               units.rbar > 0 && units.tscale > 0
+    ts       = physical ? lagr.time .* units.tscale : lagr.time
+    r_scale  = physical ? units.rbar : 1.0
+
+    # Closest available mass fractions and the plotted (positive, scaled)
+    # radii — the log-axis tick range comes from the actual data extents.
+    frac_indices = [argmin(abs.(lagr.mass_fractions .- f)) for f in selected_fractions]
+    r_pos = [r * r_scale for idx in frac_indices
+             for r in @view(lagr.radii[idx, :]) if r > 0]
+
     fig = Figure(; size = _figsize_px(cfg))
-    ttk = _time_ticks(first(lagr.time), last(lagr.time))
+    ttk = _time_ticks(first(ts), last(ts))
     ax = Axis(fig[1, 1];
-        xlabel = L"\mathrm{t} \; \mathrm{[NB]}",
-        ylabel = L"\mathrm{r}_\mathrm{L} \; \mathrm{[NB]}",
+        xlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]",
+        ylabel = physical ? L"r_\mathrm{L} \; [\mathrm{pc}]" : L"r_\mathrm{L} \; [\mathrm{NB}]",
         yscale = log10,
         xticks = ttk,
+        yticks = isempty(r_pos) ? Makie.automatic : _log_ticks(extrema(r_pos)...),
     )
-
-    colors = Makie.wong_colors()
 
     # Pre-plot all lines (full data) in light gray as ghost background.
     # Non-positive radii (empty shells) are invalid on the log axis → NaN.
-    frac_indices = Int[]
-    for frac in selected_fractions
-        idx = argmin(abs.(lagr.mass_fractions .- frac))
-        push!(frac_indices, idx)
-        lines!(ax, lagr.time, [r > 0 ? r : NaN for r in @view lagr.radii[idx, :]];
+    for idx in frac_indices
+        lines!(ax, ts, [r > 0 ? r * r_scale : NaN for r in @view lagr.radii[idx, :]];
             color = :gray82, linewidth = 1.0)
     end
 
     # Animated lines — use Point2f Observables to avoid x/y length mismatch
     frame_idx = Observable(1)
 
-    for (ci, (frac, fidx)) in enumerate(zip(selected_fractions, frac_indices))
+    for (ci, fidx) in enumerate(frac_indices)
         actual_frac = lagr.mass_fractions[fidx]
         pct_val = actual_frac * 100
         pct = isinteger(pct_val) ? @sprintf("%d", Int(pct_val)) : @sprintf("%.1f", pct_val)
 
-        ys = [r > 0 ? r : NaN for r in @view lagr.radii[fidx, :]]
-        pts = @lift(Point2f.(lagr.time[1:$frame_idx], ys[1:$frame_idx]))
+        ys = [r > 0 ? r * r_scale : NaN for r in @view lagr.radii[fidx, :]]
+        pts = @lift(Point2f.(ts[1:$frame_idx], ys[1:$frame_idx]))
 
         lines!(ax, pts;
-            color = colors[mod1(ci, length(colors))],
-            label = latexstring("\\mathrm{M}(\\mathrm{r})/\\mathrm{M}_\\mathrm{tot} = $(pct)\\%"),
+            color = _OKABE_ITO[mod1(ci, length(_OKABE_ITO))],
+            label = latexstring("$(pct)\\%"),
         )
     end
 
     # Vertical cursor line
-    vlines!(ax, @lift(lagr.time[$frame_idx]);
+    vlines!(ax, @lift(ts[$frame_idx]);
         color = :gray40, linestyle = :dash, linewidth = 1.0)
 
+    # Static layout: the top legend row is added before record() starts
     if length(selected_fractions) ≥ 2
-        axislegend(ax; position = :rt, framevisible = true,
-                   backgroundcolor = (:white, 0.7))
+        _top_legend!(fig, ax; title = L"M(r)/M_\mathrm{tot}:")
     end
 
     outpath = _anim_output_path(cfg, filename)

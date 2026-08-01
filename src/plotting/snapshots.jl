@@ -8,14 +8,19 @@
                   projections::Vector{Symbol} = [:xy, :xz])
 
 Generate publication-quality scatter plots of particle positions in the
-requested projections (:xy, :xz, :yz).
+requested projections (:xy, :xz, :yz).  Positions are shown in pc and the
+time annotation in Myr when `cfg.units == "physical"` (header AS scaling);
+N-body units otherwise.
 """
 function plot_snapshot(
     snap::Snapshot, cfg::VisualizationConfig;
     filename::AbstractString = "snapshot",
     projections::Vector{Symbol} = [:xy, :xz, :yz],
 )
-    t_nb = time_nb(snap.header)
+    physical = cfg.units == "physical" && _has_physical_scaling(snap.header)
+    unit_str = physical ? "pc" : "NB"
+    r_scale  = physical ? rbar(snap.header) : 1.0
+    t_val    = physical ? time_myr(snap.header) : time_nb(snap.header)
     n = nparticles(snap)
 
     ms = _marker_size(cfg, n)
@@ -29,17 +34,18 @@ function plot_snapshot(
     for proj in projections
         fig = Figure(; size = _fig_with_colorbar(cfg))
 
-        ix, iy, xlabel, ylabel = _proj_indices(proj)
+        ix, iy, xsym, ysym = _proj_indices(proj)
+        px = snap.pos[ix, :] .* r_scale
+        py = snap.pos[iy, :] .* r_scale
 
         # Square limits and nice ticks for consistent box sizes
-        xlo, xhi, ylo, yhi = _square_limits(snap.pos[ix, :], snap.pos[iy, :])
-        xtk = _nice_ticks(xlo, xhi)
-        ytk = _nice_ticks(ylo, yhi)
+        xlo, xhi, ylo, yhi = _square_limits(px, py)
+        xtk = _nice_ticks(xlo, xhi; target_n = 5)
+        ytk = _nice_ticks(ylo, yhi; target_n = 5)
 
-        t_str = @sprintf("%.3g", t_nb)
         ax = Axis(fig[1, 1];
-            xlabel = xlabel,
-            ylabel = ylabel,
+            xlabel = _coord_label(xsym, unit_str),
+            ylabel = _coord_label(ysym, unit_str),
             aspect = DataAspect(),
             limits = (xlo, xhi, ylo, yhi),
             xticks = xtk,
@@ -47,11 +53,11 @@ function plot_snapshot(
             xgridvisible = false,
             ygridvisible = false,
         )
-        text!(ax, 0.03, 0.97;
-            text = latexstring("\\mathrm{t} = $(t_str) \\; \\mathrm{[NB]}"),
+        text!(ax, 0.04, 0.96;
+            text = _time_annotation(t_val, physical),
             space = :relative, align = (:left, :top), fontsize = 16)
 
-        sc = scatter!(ax, snap.pos[ix, :], snap.pos[iy, :];
+        sc = scatter!(ax, px, py;
             color      = log_m,
             colormap   = :viridis,
             colorrange = (cmin, cmax),
@@ -60,7 +66,7 @@ function plot_snapshot(
         )
 
         Colorbar(fig[1, 2], sc;
-            label = L"\log_{10}(\mathrm{m} \, / \, \mathrm{M}_\mathrm{tot})",
+            label = L"\log_{10}(m \, / \, M_\mathrm{tot})",
             ticks = _nice_colorbar_ticks(cmin, cmax),
         )
 
@@ -78,7 +84,8 @@ end
                            projections::Vector{Symbol} = [:xy, :xz, :yz],
                            max_panels::Int = 6)
 
-Multi-panel figure showing cluster evolution across snapshots.
+Multi-panel figure showing cluster evolution across snapshots.  Positions
+are shown in pc and time annotations in Myr when `cfg.units == "physical"`.
 When the spatial extent varies dramatically across panels (e.g. merger runs),
 per-panel adaptive zoom is enabled and tick labels are shown on every panel
 so the reader can infer the scale from the axis values.
@@ -91,6 +98,11 @@ function plot_snapshot_evolution(
 )
     ns = length(snaps)
     ns == 0 && return nothing
+
+    physical = cfg.units == "physical" &&
+               all(_has_physical_scaling(s.header) for s in snaps)
+    unit_str = physical ? "pc" : "NB"
+    r_scales = [physical ? rbar(s.header) : 1.0 for s in snaps]
 
     # Select evenly-spaced snapshots
     indices = ns <= max_panels ? (1:ns) : round.(Int, range(1, ns; length = max_panels))
@@ -109,18 +121,22 @@ function plot_snapshot_evolution(
         pw, ph = _fig_multipanel(cfg, nrows, ncols)
         fig = Figure(; size = (pw + 110, ph))
 
-        ix, iy, xlab, ylab = _proj_indices(projection)
+        ix, iy, xsym, ysym = _proj_indices(projection)
+        xlab = _coord_label(xsym, unit_str)
+        ylab = _coord_label(ysym, unit_str)
 
         # Check if adaptive zoom is needed
         use_adaptive = _needs_adaptive_zoom(snaps, indices, ix, iy, cfg.style.zoom_frac)
 
         # Global limits (used when adaptive is off)
-        all_x = reduce(vcat, [snaps[i].pos[ix, :] for i in indices])
-        all_y = reduce(vcat, [snaps[i].pos[iy, :] for i in indices])
+        all_x = reduce(vcat, [snaps[i].pos[ix, :] .* r_scales[i] for i in indices])
+        all_y = reduce(vcat, [snaps[i].pos[iy, :] .* r_scales[i] for i in indices])
         gxlo, gxhi, gylo, gyhi = _square_limits(all_x, all_y)
 
         for (panel, idx) in enumerate(indices)
             snap = snaps[idx]
+            px = snap.pos[ix, :] .* r_scales[idx]
+            py = snap.pos[iy, :] .* r_scales[idx]
             row = div(panel - 1, ncols) + 1
             col = mod(panel - 1, ncols) + 1
 
@@ -135,14 +151,14 @@ function plot_snapshot_evolution(
 
             # Per-panel or global limits
             if use_adaptive
-                xlo, xhi, ylo, yhi = _square_limits(snap.pos[ix, :], snap.pos[iy, :])
+                xlo, xhi, ylo, yhi = _square_limits(px, py)
             else
                 xlo, xhi, ylo, yhi = gxlo, gxhi, gylo, gyhi
             end
-            xtk = _nice_ticks(xlo, xhi)
-            ytk = _nice_ticks(ylo, yhi)
+            xtk = _nice_ticks(xlo, xhi; target_n = 5)
+            ytk = _nice_ticks(ylo, yhi; target_n = 5)
 
-            t_str = @sprintf("%.3g", time_nb(snap.header))
+            t_val = physical ? time_myr(snap.header) : time_nb(snap.header)
 
             ax = Axis(fig[row, col];
                 xlabel = show_xlab ? xlab : "",
@@ -160,13 +176,13 @@ function plot_snapshot_evolution(
                 xgridvisible = false,
                 ygridvisible = false,
             )
-            text!(ax, 0.03, 0.97;
-                text = latexstring("\\mathrm{t} = $(t_str) \\; \\mathrm{[NB]}"),
+            text!(ax, 0.04, 0.96;
+                text = _time_annotation(t_val, physical),
                 space = :relative, align = (:left, :top), fontsize = 16)
 
             log_m = log10.(max.(Float64.(snap.mass), 1e-30))
             ms = _marker_size(cfg, nparticles(snap))
-            scatter!(ax, snap.pos[ix, :], snap.pos[iy, :];
+            scatter!(ax, px, py;
                 color      = log_m,
                 colormap   = :viridis,
                 colorrange = (cmin, cmax),
@@ -179,7 +195,7 @@ function plot_snapshot_evolution(
         Colorbar(fig[1:nrows, ncols + 1];
             colormap   = :viridis,
             colorrange = (cmin, cmax),
-            label      = L"\log_{10}(\mathrm{m} \, / \, \mathrm{M}_\mathrm{tot})",
+            label      = L"\log_{10}(m \, / \, M_\mathrm{tot})",
             ticks      = _nice_colorbar_ticks(cmin, cmax),
         )
 
@@ -196,10 +212,27 @@ end
 # ---------------------------------------------------------------------------
 
 function _proj_indices(proj::Symbol)
-    proj == :xy && return (1, 2, L"\mathrm{x} \; \mathrm{[NB]}", L"\mathrm{y} \; \mathrm{[NB]}")
-    proj == :xz && return (1, 3, L"\mathrm{x} \; \mathrm{[NB]}", L"\mathrm{z} \; \mathrm{[NB]}")
-    proj == :yz && return (2, 3, L"\mathrm{y} \; \mathrm{[NB]}", L"\mathrm{z} \; \mathrm{[NB]}")
+    proj == :xy && return (1, 2, "x", "y")
+    proj == :xz && return (1, 3, "x", "z")
+    proj == :yz && return (2, 3, "y", "z")
     error("Unknown projection: $proj.  Use :xy, :xz, or :yz.")
+end
+
+"""Axis label for a spatial coordinate `sym` with unit string (e.g. `x [pc]`):
+italic variable, upright bracketed unit."""
+_coord_label(sym::AbstractString, unit::AbstractString) =
+    latexstring("$(sym) \\; [\\mathrm{$(unit)}]")
+
+"""Whether a snapshot header carries a valid physical scaling (rbar and
+tscale positive).  Guards the `cfg.units == "physical"` branches against
+headers without AS scaling data (fall back to N-body units)."""
+_has_physical_scaling(h::SnapshotHeader) = rbar(h) > 0 && tscale(h) > 0
+
+"""In-axis time annotation: `t = … Myr` (physical) or `t = … [NB]`."""
+function _time_annotation(t_val::Real, physical::Bool)
+    t_str = @sprintf("%.3g", t_val)
+    return physical ? latexstring("t = $(t_str)\\;\\mathrm{Myr}") :
+                      latexstring("t = $(t_str)\\;[\\mathrm{NB}]")
 end
 
 """

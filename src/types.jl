@@ -108,9 +108,12 @@ and the [`PlotStyle`](@ref) presentation knobs.
 """
 Base.@kwdef struct VisualizationConfig
     enabled::Bool               = true
-    format::String              = "png"
-    dpi::Int                    = 300
-    figsize::Tuple{Float64,Float64} = (8.0, 6.0)
+    format::String              = "pdf"    # vector default; "png"/"svg" available
+    dpi::Int                    = 300      # raster resolution at FINAL print size
+    column::String              = "single" # "single" | "double" journal-width preset;
+                                           # "" falls back to free-form figsize
+    figsize::Tuple{Float64,Float64} = (8.0, 6.0)  # inches; used only when column = ""
+    units::String               = "physical"      # "physical" | "nbody" axis units
     output_dir::String          = "plots"
     style::PlotStyle            = PlotStyle()
 end

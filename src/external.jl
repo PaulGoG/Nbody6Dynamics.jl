@@ -323,7 +323,9 @@ function postprocess_external(
 
         if haskey(results, :lagr)
             lagr = results[:lagr]::LagrangianData
-            !isempty(lagr.time) && plot_lagrangian(lagr, vis)
+            ext_scaling = haskey(results, :diagnostics) ?
+                extract_scaling(results[:diagnostics]::DiagnosticsData) : nothing
+            !isempty(lagr.time) && plot_lagrangian(lagr, vis; units = ext_scaling)
         end
 
         if haskey(results, :stellar_evo)
@@ -344,7 +346,9 @@ function postprocess_external(
                 animate_cluster(results[:snapshots], vis)
             end
             if haskey(results, :lagr) && length(results[:lagr].time) > 1
-                animate_lagrangian(results[:lagr], vis)
+                anim_scaling = haskey(results, :diagnostics) ?
+                    extract_scaling(results[:diagnostics]::DiagnosticsData) : nothing
+                animate_lagrangian(results[:lagr], vis; units = anim_scaling)
             end
             if haskey(results, :stellar_evo) && length(results[:stellar_evo]) > 1
                 animate_hr(results[:stellar_evo], vis)

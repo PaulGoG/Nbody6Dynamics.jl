@@ -264,18 +264,13 @@ function generate_merger_ic(cfg::MergerConfig;
 
     # Convert to N-body units for dat.10. `to_nbody_units!` expects velocity
     # in km/s, so we must convert from code units first.
-    kz22 = if cfg.output.format == "nbody"
-        vel_combined .*= 0.06557  # code units → km/s (match to_nbody_units! API)
-        to_nbody_units!(mass_combined, pos_combined, vel_combined, M_total, rbar)
-        2
-    elseif cfg.output.format == "astro"
-        # In astrophysical output we write the physical-units copies so the
-        # file contains km/s, pc, M_sun — convert in-place here too.
-        vel_combined .*= 0.06557
-        10
-    else
-        error("Unknown output format: $(cfg.output.format)")
-    end
+    # NB-unit dat.10 (KZ(22)=2) is the only supported output format; the
+    # untested "astro"/KZ(22)=10 branch was removed (decision D4).
+    cfg.output.format == "nbody" ||
+        error("Unsupported output format \"$(cfg.output.format)\"; only \"nbody\" (KZ(22)=2) is supported.")
+    vel_combined .*= 0.06557  # code units → km/s (match to_nbody_units! API)
+    to_nbody_units!(mass_combined, pos_combined, vel_combined, M_total, rbar)
+    kz22 = 2
 
     # Write files
     write_dat10(joinpath(out_dir, "dat.10"), mass_combined, pos_combined, vel_combined)

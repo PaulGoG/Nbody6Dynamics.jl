@@ -12,7 +12,7 @@ Generate all diagnostic plots for a merger IC:
 - 3-panel overview
 - Velocity field quiver plot coloured by cluster membership
 - Kroupa IMF histogram with reference power-law slopes
-- Radial density profile per cluster
+- Radial mass-density profile per cluster (ρ in M☉ pc⁻³)
 
 All plots use the publication theme and are saved to `vis.output_dir`.
 """
@@ -39,9 +39,9 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
 
     # ── Single-projection plots ──────────────────────────────────
     ic_projections = [
-        (:xy, x_pc, y_pc, L"\mathrm{X} \; \mathrm{[pc]}", L"\mathrm{Y} \; \mathrm{[pc]}"),
-        (:xz, x_pc, z_pc, L"\mathrm{X} \; \mathrm{[pc]}", L"\mathrm{Z} \; \mathrm{[pc]}"),
-        (:yz, y_pc, z_pc, L"\mathrm{Y} \; \mathrm{[pc]}", L"\mathrm{Z} \; \mathrm{[pc]}"),
+        (:xy, x_pc, y_pc, L"x \; [\mathrm{pc}]", L"y \; [\mathrm{pc}]"),
+        (:xz, x_pc, z_pc, L"x \; [\mathrm{pc}]", L"z \; [\mathrm{pc}]"),
+        (:yz, y_pc, z_pc, L"y \; [\mathrm{pc}]", L"z \; [\mathrm{pc}]"),
     ]
 
     for (proj, px, py, xlab, ylab) in ic_projections
@@ -49,8 +49,8 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         fig = Figure(; size = _fig_with_colorbar(vis))
 
         xlo, xhi, ylo, yhi = _square_limits(px, py)
-        xtk = _nice_ticks(xlo, xhi)
-        ytk = _nice_ticks(ylo, yhi)
+        xtk = _nice_ticks(xlo, xhi; target_n = 5)
+        ytk = _nice_ticks(ylo, yhi; target_n = 5)
 
         ax = Axis(fig[1, 1];
             xlabel = xlab, ylabel = ylab,
@@ -59,14 +59,14 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             xticks = xtk, yticks = ytk,
             xgridvisible = false, ygridvisible = false,
         )
-        text!(ax, 0.03, 0.97; text = label_str,
+        text!(ax, 0.04, 0.96; text = label_str,
             space = :relative, align = (:left, :top), fontsize = 16)
         sc = scatter!(ax, px, py;
             color = log_m, colormap = :viridis, colorrange = (cmin, cmax),
             markersize = ms, strokewidth = 0, rasterize = true,
         )
         Colorbar(fig[1, 2], sc;
-            label = L"\log_{10}(\mathrm{m} \; [\mathrm{M}_\odot])",
+            label = L"\log_{10}(m \; [\mathrm{M}_\odot])",
             ticks = _nice_colorbar_ticks(cmin, cmax),
         )
         colgap!(fig.layout, 10)
@@ -81,7 +81,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     # Global limits across all 3 projections
     all_coords = vcat(x_pc, y_pc, z_pc)
     xlo, xhi, _, _ = _square_limits(all_coords, all_coords)
-    tk = _nice_ticks(xlo, xhi)
+    tk = _nice_ticks(xlo, xhi; target_n = 5)
 
     orbit_annot = if result.orbit_mode == "kepler"
         d_apo = result.orbit_spec.apocentre
@@ -103,10 +103,10 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             yticklabelsvisible = col == 1,
             xgridvisible = false, ygridvisible = false,
         )
-        text!(ax, 0.03, 0.97; text = label_str,
+        text!(ax, 0.04, 0.96; text = label_str,
             space = :relative, align = (:left, :top), fontsize = 16)
         if col == 1 && orbit_annot !== nothing
-            text!(ax, 0.03, 0.90; text = orbit_annot,
+            text!(ax, 0.04, 0.89; text = orbit_annot,
                 space = :relative, align = (:left, :top), fontsize = 16)
         end
         sc = scatter!(ax, px, py;
@@ -114,7 +114,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             markersize = ms * 0.7, strokewidth = 0, rasterize = true,
         )
         col == 3 && Colorbar(fig3[1, 4], sc;
-            label = L"\log_{10}(\mathrm{m} \; [\mathrm{M}_\odot])",
+            label = L"\log_{10}(m \; [\mathrm{M}_\odot])",
             ticks = _nice_colorbar_ticks(cmin, cmax),
         )
     end
@@ -124,14 +124,15 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     _save_fig(vis, "merger_ic_overview", fig3)
 
     # ── Velocity field ───────────────────────────────────────────
-    fig_v = Figure(; size = _fig_with_colorbar(vis))
+    # No side panel any more (legend sits above the axes) → single-panel size
+    fig_v = Figure(; size = _figsize_px(vis))
     ax_v = Axis(fig_v[1, 1];
-        xlabel = L"\mathrm{X} \; \mathrm{[pc]}",
-        ylabel = L"\mathrm{Y} \; \mathrm{[pc]}",
+        xlabel = L"x \; [\mathrm{pc}]",
+        ylabel = L"y \; [\mathrm{pc}]",
         aspect = DataAspect(),
         xgridvisible = false, ygridvisible = false,
     )
-    text!(ax_v, 0.03, 0.97; text = "XY",
+    text!(ax_v, 0.04, 0.96; text = "XY",
         space = :relative, align = (:left, :top), fontsize = 16)
 
     vx_kms = result.vel_physical[1, :]
@@ -145,14 +146,10 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     v_max = maximum(sqrt.(vx_kms[1:stride:N].^2 .+ vy_kms[1:stride:N].^2))
     arrow_scale = 2.0 / max(v_max, 1e-10)
 
-    cluster_colors = [:royalblue, :crimson, :forestgreen, :darkorange, :purple,
-                      :deeppink, :teal, :gold, :slateblue, :sienna]
-    # Per-model palette (used as fallback when n_cl is large and a per-cluster
-    # legend would overflow the figure).
-    model_colors = Dict(
-        "king"    => :royalblue,
-        "plummer" => :crimson,
-    )
+    # Cluster colours cycle the Okabe–Ito palette; when n_cl is large and a
+    # per-cluster legend would overflow the figure, colour by density model
+    # instead (first two palette colours: king → blue, plummer → orange).
+    model_color(model) = model == "king" ? _OKABE_ITO[1] : _OKABE_ITO[2]
     per_cluster_legend = n_cl ≤ 8
 
     legend_elems = []
@@ -162,8 +159,8 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     for (ci, rng) in enumerate(result.cluster_ranges)
         model = profile_name(result.cluster_specs[ci].profile)
         col = per_cluster_legend ?
-              cluster_colors[mod1(ci, length(cluster_colors))] :
-              get(model_colors, model, cluster_colors[mod1(ci, length(cluster_colors))])
+              _OKABE_ITO[mod1(ci, length(_OKABE_ITO))] :
+              model_color(model)
         sub = filter(i -> i in rng, collect(1:stride:N))
         arrows!(ax_v, x_pc[sub], y_pc[sub],
             vx_kms[sub] .* arrow_scale, vy_kms[sub] .* arrow_scale;
@@ -179,18 +176,13 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         end
     end
     length(legend_labels) ≥ 2 &&
-        Legend(fig_v[1, 2], legend_elems, legend_labels; framevisible = true)
+        _top_legend!(fig_v, legend_elems, legend_labels)
 
     _save_fig(vis, "merger_ic_velocity", fig_v)
 
     # ── IMF histogram ────────────────────────────────────────────
-    fig_h = Figure(; size = _figsize_px(vis))
-    ax_h = Axis(fig_h[1, 1];
-        xlabel = L"\mathrm{m} \; [\mathrm{M}_\odot]",
-        ylabel = L"\mathrm{d}N / \mathrm{d}\log m",
-        xscale = log10, yscale = log10,
-    )
-
+    # Histogram data first: the log-log axis takes explicit decade-anchored
+    # ticks from the actual data extents.
     m_min = max(minimum(mass_solar), 1e-3)
     m_max = maximum(mass_solar)
     m_edges = 10.0 .^ range(log10(m_min), log10(m_max); length = 40)
@@ -206,6 +198,15 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     dn_max = any(mask) ? maximum(dn[mask]) : 10.0
     y_floor = max(dn_min / 3, dn_max / 1e4)
 
+    fig_h = Figure(; size = _figsize_px(vis))
+    ax_h = Axis(fig_h[1, 1];
+        xlabel = L"m \; [\mathrm{M}_\odot]",
+        ylabel = L"\mathrm{d}N / \mathrm{d}\log m",
+        xscale = log10, yscale = log10,
+        xticks = _log_ticks(m_min, m_max),
+        yticks = _log_ticks(y_floor, dn_max),
+    )
+
     # Render the histogram as a step-filled band: empty bins drop to `y_floor`.
     # `band!` fills between two step-expanded y-curves and is robust on log-log
     # axes, unlike per-bin `poly!` or barplot-with-log-x.
@@ -217,8 +218,10 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         push!(step_x, m_edges[j+1]); push!(step_top, dn_plot[j])
     end
     step_bot = fill(y_floor, length(step_x))
-    band!(ax_h, step_x, step_bot, step_top; color = (:steelblue, 0.55))
-    lines!(ax_h, step_x, step_top; color = :steelblue, linewidth = 1.5)
+    hist_color = _OKABE_ITO[1]
+    band!(ax_h, step_x, step_bot, step_top; color = (hist_color, 0.55))
+    # Darker same-hue edge on the band fill
+    lines!(ax_h, step_x, step_top; color = _band_edge(hist_color), linewidth = 1.5)
 
     # Reference slopes, normalised to the most populated bin (more robust than
     # picking m≈0.3 when the sample doesn't span the full Kroupa range).
@@ -229,8 +232,8 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         x_ref = 10.0 .^ range(log10(m_min / 1.5), log10(m_max * 1.5); length = 200)
         n_slopes = 0
         for (α, lbl, lo, hi, c) in [
-            (1.3, L"\alpha = 1.3", 0.08, 0.5, :darkorange),
-            (2.3, L"\alpha = 2.3", 0.5, 150.0, :firebrick),
+            (1.3, L"\alpha = 1.3", 0.08, 0.5, _OKABE_ITO[2]),
+            (2.3, L"\alpha = 2.3", 0.5, 150.0, _OKABE_ITO[6]),
         ]
             seg = filter(x -> lo ≤ x ≤ hi, x_ref)
             isempty(seg) && continue
@@ -239,16 +242,18 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             n_slopes += 1
         end
         ylims!(ax_h, y_floor, dn_max * 2)
-        n_slopes ≥ 2 && axislegend(ax_h; position = :rt)
+        n_slopes ≥ 2 && _top_legend!(fig_h, ax_h)
     end
 
     _save_fig(vis, "merger_ic_imf", fig_h)
 
-    # ── Radial density per cluster ───────────────────────────────
+    # ── Radial mass-density profile per cluster ──────────────────
+    # True mass density: shell mass / shell volume (positions in pc, masses
+    # in M☉ → ρ in M☉ pc⁻³).
     fig_r = Figure(; size = _figsize_px(vis))
     ax_r = Axis(fig_r[1, 1];
-        xlabel = L"\mathrm{r} \; [\mathrm{pc}]",
-        ylabel = L"\rho(\mathrm{r}) \; [\mathrm{arb.}]",
+        xlabel = L"r \; [\mathrm{pc}]",
+        ylabel = L"\rho(r) \; [\mathrm{M}_\odot\,\mathrm{pc}^{-3}]",
         xscale = log10, yscale = log10,
     )
 
@@ -260,11 +265,15 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     line_alpha = per_cluster_density ? 1.0 : 0.55
     n_labels = 0
 
+    # Plotted data extents for decade-anchored log-log ticks
+    r_ext = (Inf, -Inf)
+    ρ_ext = (Inf, -Inf)
+
     for (ci, rng) in enumerate(result.cluster_ranges)
         model = profile_name(result.cluster_specs[ci].profile)
         col = per_cluster_density ?
-              cluster_colors[mod1(ci, length(cluster_colors))] :
-              get(model_colors, model, :gray50)
+              _OKABE_ITO[mod1(ci, length(_OKABE_ITO))] :
+              model_color(model)
         m_cl = mass_solar[rng]
         px_cl = x_pc[rng]; py_cl = y_pc[rng]; pz_cl = z_pc[rng]
         M_cl = sum(m_cl)
@@ -279,8 +288,12 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         r_edges = 10.0 .^ range(log10(r_lo), log10(r_hi); length = n_bins + 1)
         r_mid = sqrt.(r_edges[1:end-1] .* r_edges[2:end])
         shell_vol = (4π / 3) .* (r_edges[2:end] .^ 3 .- r_edges[1:end-1] .^ 3)
-        shell_n = [count(ri -> r_edges[j] ≤ ri < r_edges[j+1], r) for j in 1:n_bins]
-        ρ = shell_n ./ shell_vol
+        shell_mass = zeros(n_bins)
+        for (ri, mi) in zip(r, m_cl)
+            j = min(searchsortedlast(r_edges, ri), n_bins)
+            j ≥ 1 && (shell_mass[j] += mi)
+        end
+        ρ = shell_mass ./ shell_vol
         m_r = ρ .> 0
 
         label = if per_cluster_density
@@ -293,15 +306,22 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             nothing  # no legend entry for subsequent lines of same model
         end
 
+        if any(m_r)
+            r_ext = (min(r_ext[1], minimum(r_mid[m_r])), max(r_ext[2], maximum(r_mid[m_r])))
+            ρ_ext = (min(ρ_ext[1], minimum(ρ[m_r])),     max(ρ_ext[2], maximum(ρ[m_r])))
+        end
         lines!(ax_r, r_mid[m_r], ρ[m_r];
             color = (col, line_alpha), linewidth = 2,
             label = isnothing(label) ? nothing : label)
         isnothing(label) || (n_labels += 1)
     end
-    if n_labels ≥ 2
-        axislegend(ax_r; position = :lb, framevisible = true,
-                   backgroundcolor = (:white, 0.7))
+    if isfinite(r_ext[1]) && r_ext[1] < r_ext[2]
+        ax_r.xticks = _log_ticks(r_ext...)
     end
+    if isfinite(ρ_ext[1]) && ρ_ext[1] < ρ_ext[2]
+        ax_r.yticks = _log_ticks(ρ_ext...)
+    end
+    n_labels ≥ 2 && _top_legend!(fig_r, ax_r)
 
     _save_fig(vis, "merger_ic_density", fig_r)
 
