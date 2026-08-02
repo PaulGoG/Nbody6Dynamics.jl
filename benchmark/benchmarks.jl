@@ -1,13 +1,13 @@
 #!/usr/bin/env julia
 # =============================================================================
-# Nbody6Setup Performance Benchmarks
+# Nbody6Dynamics Performance Benchmarks
 # =============================================================================
 #
 # Usage:
-#   julia --project=path/to/Nbody6Setup benchmark/benchmarks.jl
+#   julia --project=path/to/Nbody6Dynamics benchmark/benchmarks.jl
 
 using BenchmarkTools
-using Nbody6Setup
+using Nbody6Dynamics
 using Printf
 
 const BENCHDIR = mktempdir()
@@ -80,7 +80,7 @@ end
 # ---------------------------------------------------------------------------
 
 println("=" ^ 60)
-println("  Nbody6Setup.jl — Performance Benchmarks")
+println("  Nbody6Dynamics.jl — Performance Benchmarks")
 println("=" ^ 60)
 
 # --- conf.3 reader ---
@@ -122,12 +122,12 @@ println()
 
 # --- _format_elapsed ---
 println("\n--- _format_elapsed ---")
-display(@benchmark Nbody6Setup._format_elapsed(t) setup=(t=rand()*10000.0) samples=100)
+display(@benchmark Nbody6Dynamics._format_elapsed(t) setup=(t=rand()*10000.0) samples=100)
 println()
 
 # --- _auto_fps ---
 println("\n--- _auto_fps ---")
-display(@benchmark Nbody6Setup._auto_fps(n; target_duration=12.0, min_fps=1, max_fps=30) setup=(n=rand(1:500)) samples=100)
+display(@benchmark Nbody6Dynamics._auto_fps(n; target_duration=12.0, min_fps=1, max_fps=30) setup=(n=rand(1:500)) samples=100)
 println()
 
 println("\nBenchmarks complete.")

@@ -33,7 +33,7 @@ Returns a [`MergerICResult`](@ref) for programmatic inspection.
 
 # Example
 ```julia
-using Nbody6Setup
+using Nbody6Dynamics
 result = run_merger_pipeline("input_files/merger_equal_mass.toml")
 ```
 """

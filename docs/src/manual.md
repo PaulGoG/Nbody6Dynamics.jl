@@ -1,4 +1,4 @@
-# Nbody6Setup.jl — User Manual
+# Nbody6Dynamics.jl — User Manual
 
 ## Table of Contents
 
@@ -20,7 +20,7 @@
 
 ## 1. Introduction
 
-**Nbody6Setup.jl** automates the full lifecycle of N-body star cluster simulations with [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing):
+**Nbody6Dynamics.jl** automates the full lifecycle of N-body star cluster simulations with [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing):
 
 1. **Download and compile** the Fortran simulation code
 2. **Generate merger initial conditions** (optional; see [Multi-Cluster Merger Simulations](@ref))
@@ -51,7 +51,7 @@ Optional, depending on config: MPI (`mpicc`, `mpif90`, `mpirun`), CUDA toolkit (
 ## 3. Installation
 
 ```bash
-cd Nbody6Setup
+cd Nbody6Dynamics
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
@@ -190,7 +190,7 @@ results = postprocess_external("/scratch/sim42/output")   # scan + read + plot
 
 ### HDF5 build patching
 
-The upstream `./configure --enable-hdf5` flag is broken. Nbody6Setup patches the build with a two-file mechanism:
+The upstream `./configure --enable-hdf5` flag is broken. Nbody6Dynamics patches the build with a two-file mechanism:
 
 1. Writes `hdf5_flags.mk` in the source root with the correct `-DCONFIG_HDF5`, include paths, and library flags
 2. Appends `-include ../hdf5_flags.mk` to `build/Makefile`
@@ -207,7 +207,7 @@ When `enable_gpu = true` and `cuda_path` is empty, the build searches in order:
 
 ### Fedora h5pfc workaround
 
-On Fedora the HDF5 parallel Fortran wrapper `h5pfc` may carry an erroneous `/openmpi-x86_64` suffix in its `includedir`, preventing `hdf5.mod` from being found. Nbody6Setup detects this and prints the fix:
+On Fedora the HDF5 parallel Fortran wrapper `h5pfc` may carry an erroneous `/openmpi-x86_64` suffix in its `includedir`, preventing `hdf5.mod` from being found. Nbody6Dynamics detects this and prints the fix:
 
 ```bash
 sudo sed -i 's|/openmpi-x86_64||g' /usr/lib64/openmpi/bin/h5pfc
@@ -364,7 +364,7 @@ All plot functions accept a `VisualizationConfig` and a `filename` keyword:
 
 ```julia
 vis = VisualizationConfig(format = "pdf", dpi = 600, figsize = (10.0, 8.0),
-                          output_dir = "my_plots", style = Nbody6Setup.PlotStyle())
+                          output_dir = "my_plots", style = Nbody6Dynamics.PlotStyle())
 plot_snapshot(snap, vis; filename = "cluster_final")
 ```
 
@@ -373,7 +373,7 @@ plot_snapshot(snap, vis; filename = "cluster_final")
 ## 10. Using the Julia API Directly
 
 ```julia
-using Nbody6Setup
+using Nbody6Dynamics
 
 cfg = load_config("config.toml")
 

@@ -1,9 +1,9 @@
 using Documenter
-using Nbody6Setup
+using Nbody6Dynamics
 
 makedocs(;
-    modules  = [Nbody6Setup],
-    sitename = "Nbody6Setup.jl",
+    modules  = [Nbody6Dynamics],
+    sitename = "Nbody6Dynamics.jl",
     authors  = "paulgog",
     remotes  = nothing,
     format   = Documenter.HTML(;

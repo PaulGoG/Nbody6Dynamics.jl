@@ -1,10 +1,10 @@
 #!/usr/bin/env julia
 # =============================================================================
-# Nbody6Setup — Main entry point
+# Nbody6Dynamics — Main entry point
 # =============================================================================
 #
 # Usage:
-#   julia --project=path/to/Nbody6Setup scripts/run_setup.jl [config.toml]
+#   julia --project=path/to/Nbody6Dynamics scripts/run_setup.jl [config.toml]
 #
 # If no config path is given, it defaults to config.toml in the project root.
 #
@@ -18,7 +18,7 @@ using Pkg
 Pkg.activate(joinpath(@__DIR__, ".."); io = devnull)
 Pkg.instantiate(; io = devnull)
 
-using Nbody6Setup
+using Nbody6Dynamics
 
 function main()
     config_path = length(ARGS) >= 1 ? ARGS[1] : joinpath(@__DIR__, "..", "config.toml")
@@ -39,7 +39,7 @@ function main()
             v isa DiagnosticsData ? length(v.adjust) : 1
         @info "  Loaded: $k ($n records)"
     end
-    @info "Done. Total pipeline time: $(Nbody6Setup._format_elapsed(time() - t0))"
+    @info "Done. Total pipeline time: $(Nbody6Dynamics._format_elapsed(time() - t0))"
 end
 
 main()

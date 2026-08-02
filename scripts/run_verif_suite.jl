@@ -11,7 +11,7 @@ const PROJ = normpath(joinpath(@__DIR__, ".."))
 using Pkg
 Pkg.activate(PROJ; io = devnull)
 
-using Nbody6Setup, TOML, Dates
+using Nbody6Dynamics, TOML, Dates
 
 cd(PROJ)
 
@@ -82,8 +82,8 @@ mktempdir() do scratch
         end
         t0 = time()
         try
-            cfg = Nbody6Setup.load_config(cfg_path)
-            Nbody6Setup.run_pipeline(cfg; base_dir = PROJ)
+            cfg = Nbody6Dynamics.load_config(cfg_path)
+            Nbody6Dynamics.run_pipeline(cfg; base_dir = PROJ)
             @info "✓ $(entry.name) completed in $(round(time() - t0, digits=1))s"
         catch e
             @error "✗ $(entry.name) failed" exception = (e, catch_backtrace())

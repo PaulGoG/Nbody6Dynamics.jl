@@ -1,4 +1,4 @@
-# Nbody6Setup.jl
+# Nbody6Dynamics.jl
 
 A Julia package for automated setup, execution, post-processing, and visualisation of the [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) N-body astrophysical simulation code, plus a validated multi-cluster merger initial-condition generator.
 
@@ -16,7 +16,7 @@ A Julia package for automated setup, execution, post-processing, and visualisati
 ## Quick Start
 
 ```bash
-cd Nbody6Setup
+cd Nbody6Dynamics
 
 # Install Julia dependencies (one-time)
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
@@ -25,7 +25,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 $EDITOR config.toml
 
 # Run the full pipeline
-julia --project=. -e 'using Nbody6Setup; run_pipeline(load_config("config.toml"))'
+julia --project=. -e 'using Nbody6Dynamics; run_pipeline(load_config("config.toml"))'
 ```
 
 ## Usage Modes
@@ -42,7 +42,7 @@ julia --project=. -e 'using Nbody6Setup; run_pipeline(load_config("config.toml")
 ## Programmatic API
 
 ```julia
-using Nbody6Setup
+using Nbody6Dynamics
 
 # Full pipeline from config
 cfg = load_config("config.toml")

@@ -201,7 +201,7 @@ A `Dict{Symbol,Any}` with keys `:scan`, `:snapshots`, `:diagnostics`,
 
 # Example
 ```julia
-using Nbody6Setup
+using Nbody6Dynamics
 
 # Point at any directory with Nbody6++ output
 results = postprocess_external("/scratch/sim42/output")

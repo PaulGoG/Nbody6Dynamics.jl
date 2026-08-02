@@ -35,7 +35,7 @@ BuildConfig
 SimulationConfig
 PostprocessConfig
 VisualizationConfig
-Nbody6Setup.PlotStyle
+Nbody6Dynamics.PlotStyle
 MergerPipelineConfig
 ```
 

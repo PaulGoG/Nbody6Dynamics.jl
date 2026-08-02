@@ -1,5 +1,5 @@
 using Test
-using Nbody6Setup
+using Nbody6Dynamics
 
 # Temporary directory for test artifacts
 const TESTDIR = mktempdir()
@@ -22,7 +22,7 @@ function _write_fortran_record(io::IO, data::Vector{UInt8})
     write(io, marker)
 end
 
-@testset "Nbody6Setup.jl" begin
+@testset "Nbody6Dynamics.jl" begin
 
     # =====================================================================
     @testset "Configuration" begin
@@ -115,8 +115,8 @@ end
         @test platform in [:fedora, :ubuntu, :debian, :unknown]
 
         # check_command should find basic tools
-        @test Nbody6Setup.check_command("ls") == true
-        @test Nbody6Setup.check_command("nonexistent_tool_xyz") == false
+        @test Nbody6Dynamics.check_command("ls") == true
+        @test Nbody6Dynamics.check_command("nonexistent_tool_xyz") == false
     end
 
     # =====================================================================
@@ -126,13 +126,13 @@ end
         @test cuda isa String
 
         # cuda_env_vars returns a dict
-        env = Nbody6Setup.cuda_env_vars("/usr/local/cuda")
+        env = Nbody6Dynamics.cuda_env_vars("/usr/local/cuda")
         @test haskey(env, "CUDA_HOME")
         @test env["CUDA_HOME"] == "/usr/local/cuda"
         @test occursin("/usr/local/cuda/bin", env["PATH"])
 
         # Empty path returns empty dict
-        env_empty = Nbody6Setup.cuda_env_vars("")
+        env_empty = Nbody6Dynamics.cuda_env_vars("")
         @test isempty(env_empty)
     end
 
@@ -171,16 +171,16 @@ end
         end
 
         open(fpath, "r") do io
-            rec1 = Nbody6Setup.read_fortran_record(io, Float32, 3)
+            rec1 = Nbody6Dynamics.read_fortran_record(io, Float32, 3)
             @test rec1 ≈ Float32[1.0, 2.0, 3.0]
 
-            rec2 = Nbody6Setup.read_fortran_record(io, Int32, 2)
+            rec2 = Nbody6Dynamics.read_fortran_record(io, Int32, 2)
             @test rec2 == Int32[42, 99]
         end
 
         # peek_record_size
         open(fpath, "r") do io
-            sz = Nbody6Setup.peek_record_size(io)
+            sz = Nbody6Dynamics.peek_record_size(io)
             @test sz == Int32(12)  # 3 × 4 bytes
         end
     end
@@ -490,14 +490,14 @@ end
         @test time_myr(hdr) ≈ 12.0   # 1.5 * 8.0
 
         u = UnitScaling(2.0, 0.6, 8.0, 4.0)
-        @test Nbody6Setup.to_pc(u, 1.0) ≈ 2.0
-        @test Nbody6Setup.to_myr(u, 1.0) ≈ 8.0
-        @test Nbody6Setup.to_kms(u, 1.0) ≈ 4.0
+        @test Nbody6Dynamics.to_pc(u, 1.0) ≈ 2.0
+        @test Nbody6Dynamics.to_myr(u, 1.0) ≈ 8.0
+        @test Nbody6Dynamics.to_kms(u, 1.0) ≈ 4.0
     end
 
     # =====================================================================
     @testset "Plotting (smoke tests)" begin
-        Nbody6Setup.set_publication_theme!()
+        Nbody6Dynamics.set_publication_theme!()
 
         vis = VisualizationConfig(;
             output_dir = joinpath(TESTDIR, "test_plots"),
@@ -572,7 +572,7 @@ end
 
     # =====================================================================
     @testset "Elapsed time formatting" begin
-        fmt = Nbody6Setup._format_elapsed
+        fmt = Nbody6Dynamics._format_elapsed
 
         # Sub-minute
         @test fmt(0.0)  == "0.0 s"
@@ -654,7 +654,7 @@ end
 
     # =====================================================================
     @testset "Auto FPS calculation" begin
-        _auto_fps = Nbody6Setup._auto_fps
+        _auto_fps = Nbody6Dynamics._auto_fps
 
         # Few frames → clamped to min
         @test _auto_fps(5; target_duration = 12.0, min_fps = 1, max_fps = 10) == 1
@@ -669,7 +669,7 @@ end
 
     # =====================================================================
     @testset "Animations (smoke tests)" begin
-        Nbody6Setup.set_publication_theme!()
+        Nbody6Dynamics.set_publication_theme!()
 
         vis = VisualizationConfig(;
             output_dir = joinpath(TESTDIR, "test_anims"),
@@ -854,7 +854,7 @@ end
 
         # --- King ODE solver ---
         @testset "King ODE solver" begin
-            rhat, What, rho = Nbody6Setup._solve_king(6.0)
+            rhat, What, rho = Nbody6Dynamics._solve_king(6.0)
             @test length(rhat) == length(What) == length(rho)
             @test What[1] ≈ 6.0
             @test What[end] ≈ 0.0 atol = 0.01
@@ -870,7 +870,7 @@ end
             # reference values from the King (1966) model tables.
             for (W0, c_ref) in [(3.0, 0.672), (5.0, 1.029), (6.0, 1.255),
                                 (7.0, 1.528), (9.0, 2.119), (12.0, 2.739)]
-                rhat, _, _ = Nbody6Setup._solve_king(W0)
+                rhat, _, _ = Nbody6Dynamics._solve_king(W0)
                 c = log10(rhat[end])
                 @test isapprox(c, c_ref; rtol = 0.01)
             end
@@ -951,7 +951,7 @@ end
                 v .-= sum(m' .* v, dims = 2) ./ sum(m)
             end
 
-            pos, vel, mass = Nbody6Setup.setup_two_cluster_orbit(
+            pos, vel, mass = Nbody6Dynamics.setup_two_cluster_orbit(
                 pos1, vel1, mass1, pos2, vel2, mass2,
                 20.0, 0.5; truncate_jacobi_flag = false
             )
@@ -986,7 +986,7 @@ end
             a = 1.0
             pos, _ = sample_plummer(N, a; rng = rng)
             mass = fill(1.0 / N, N)
-            r_hm = Nbody6Setup.half_mass_radius(mass, pos; centre = zeros(3))
+            r_hm = Nbody6Dynamics.half_mass_radius(mass, pos; centre = zeros(3))
             @test r_hm ≈ 1.3048 rtol = 0.05    # statistical tolerance
         end
 

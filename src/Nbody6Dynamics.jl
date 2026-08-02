@@ -1,4 +1,4 @@
-module Nbody6Setup
+module Nbody6Dynamics
 
 using TOML
 using Dates
@@ -11,7 +11,7 @@ using SpecialFunctions
 using OrdinaryDiffEqTsit5
 
 # Package root directory — all relative config paths resolve against this.
-# Computed at precompile time: @__DIR__ = src/, dirname = Nbody6Setup/.
+# Computed at precompile time: @__DIR__ = src/, dirname = Nbody6Dynamics/.
 const _PROJECT_ROOT = dirname(@__DIR__)
 
 # ---------------------------------------------------------------------------

@@ -1,18 +1,18 @@
-# Nbody6Setup.jl
+# Nbody6Dynamics.jl
 
 A Julia package that automates the full lifecycle of [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations: install/build of the Fortran code, multi-cluster merger initial-condition generation, simulation execution, post-processing of all standard output files, and publication-quality visualization. Every phase is driven by a single TOML configuration and orchestrated through one entry point, `run_pipeline`.
 
 ## Project Structure
 
 ```
-Nbody6Setup/
+Nbody6Dynamics/
 ├── README.md
 ├── LICENSE                          # MIT
 ├── Project.toml                     # Package metadata & dependencies
 ├── Manifest.toml                    # Version-controlled — exact dependency versions
 ├── config.toml                      # Main pipeline configuration (edit this)
 ├── src/
-│   ├── Nbody6Setup.jl               # Module root; run_pipeline orchestrator; exports
+│   ├── Nbody6Dynamics.jl               # Module root; run_pipeline orchestrator; exports
 │   ├── types.jl                     # Config structs (incl. PlotStyle), Snapshot, records, UnitScaling
 │   ├── config.jl                    # TOML loader/serialiser for Nbody6Config
 │   ├── util.jl                      # safesave-style never-overwrite backups
@@ -104,7 +104,7 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 | 6 | Merger + simulate | `merger.enabled=true`, `simulation.run_test=true` |
 
 ```julia
-using Nbody6Setup
+using Nbody6Dynamics
 cfg = load_config("config.toml")
 results = run_pipeline(cfg)   # Dict with :snapshots, :diagnostics, :lagr, :escapers, :stellar_evo
 ```

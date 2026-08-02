@@ -1,6 +1,6 @@
 [deps]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
-Nbody6Setup = "7d8e9f0a-1b2c-4d3e-8f6a-7b8c9d0e1f2a"
+Nbody6Dynamics = "7d8e9f0a-1b2c-4d3e-8f6a-7b8c9d0e1f2a"
 
 [compat]
 Documenter = "1"

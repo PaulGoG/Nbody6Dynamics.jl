@@ -1,6 +1,6 @@
 # Multi-Cluster Merger Simulations
 
-Nbody6Setup ships a merger initial-condition generator (`src/ic/`) that produces `dat.10` particle files and matching `.inp` files for Nbody6++ external-IC runs (`KZ(22)=2`). It supports any number of clusters ≥ 2, King or Plummer density profiles per cluster, three IMF modes, automatic Kepler placement for cluster pairs, and Jacobi truncation.
+Nbody6Dynamics ships a merger initial-condition generator (`src/ic/`) that produces `dat.10` particle files and matching `.inp` files for Nbody6++ external-IC runs (`KZ(22)=2`). It supports any number of clusters ≥ 2, King or Plummer density profiles per cluster, three IMF modes, automatic Kepler placement for cluster pairs, and Jacobi truncation.
 
 ## Entry points
 

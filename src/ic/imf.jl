@@ -157,7 +157,7 @@ function sample_masses(imf::RescaledKroupaIMF, N::Int, rng::AbstractRNG)
         ≈ $(round(expected, digits=1)) M☉ for N=$N). If super-particles are
         intended, silence this warning by setting imf="kroupa_rescaled"
         explicitly.
-        """ _group=:Nbody6Setup
+        """ _group=:Nbody6Dynamics
     end
     raw .* c
 end
