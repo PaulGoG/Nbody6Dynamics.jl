@@ -15,6 +15,15 @@ jobs:
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
+      - name: Install system libraries for the Cairo/Makie stack
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libglib2.0-0 libcairo2 libpango-1.0-0 libpangocairo-1.0-0
+      - name: Resolve fresh on CI
+        # The committed Manifest is the workstation's (Julia 1.12) exact
+        # environment; CI resolves from Project.toml instead, which also
+        # exercises the [compat] bounds on every tested Julia version.
+        run: rm -f Manifest.toml
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
