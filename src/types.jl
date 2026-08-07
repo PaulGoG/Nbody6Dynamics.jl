@@ -48,6 +48,7 @@ Base.@kwdef struct SimulationConfig
     binary_name::String = "nbody6++"
     mpi_ranks::Int = 1
     run_id_prefix::String = "run"
+    monitor::Bool = false   # opt-in live progress ticker (§9); interactive stderr only
 end
 
 """

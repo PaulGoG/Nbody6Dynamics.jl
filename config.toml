@@ -27,6 +27,7 @@ runs_dir      = "runs"
 binary_name   = "nbody6++"
 mpi_ranks     = 1
 run_id_prefix = "cubic27"
+monitor       = true            # live progress ticker (interactive terminals only)
 
 [postprocess]
 enabled              = true

@@ -92,26 +92,32 @@ function run_simulation(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_R
     launch_script =
         _write_launch_script(out_dir, local_binary, input_path, stdout_path, stderr_path, cfg)
 
-    # --- Execute with real-time monitoring ---
-    t_start = time()
-    @info "Starting simulation..."
-    process = cd(out_dir) do
-        run(`bash $launch_script`; wait = false)
+    # --- Execute, teeing pipeline logs to the run directory (§9) ---
+    _with_run_log(run_dir) do
+        t_start = time()
+        @info "Starting simulation..."
+        process = cd(out_dir) do
+            run(`bash $launch_script`; wait = false)
+        end
+
+        # Live ticker is opt-in and interactive-only; the Fortran stdout is
+        # captured to out1000 regardless.
+        if sim.monitor && stderr isa Base.TTY
+            _monitor_stdout_file(stdout_path, process, t_start)
+        end
+        wait(process)
+
+        elapsed = time() - t_start
+
+        if !success(process)
+            @warn "Simulation exited with non-zero status ($(process.exitcode)) after $(_format_elapsed(elapsed))"
+        end
+
+        # --- Write run summary ---
+        _write_run_summary(run_dir, run_id, stdout_path, out_dir, elapsed)
+
+        @info "Simulation complete. Run: $run_id  ($(_format_elapsed(elapsed)))"
     end
-
-    _monitor_stdout_file(stdout_path, process, t_start)
-    wait(process)
-
-    elapsed = time() - t_start
-
-    if !success(process)
-        @warn "Simulation exited with non-zero status ($(process.exitcode)) after $(_format_elapsed(elapsed))"
-    end
-
-    # --- Write run summary ---
-    _write_run_summary(run_dir, run_id, stdout_path, out_dir, elapsed)
-
-    @info "Simulation complete. Run: $run_id  ($(_format_elapsed(elapsed)))"
     return run_dir
 end
 

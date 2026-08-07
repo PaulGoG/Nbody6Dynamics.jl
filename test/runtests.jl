@@ -1388,6 +1388,31 @@ truncate_jacobi = false
     end
 
     # =====================================================================
+    @testset "export_for_paper provenance" begin
+        src_dir = mktempdir()
+        dest = mktempdir()
+        fig_path = joinpath(src_dir, "plots", "energy.pdf")
+        mkpath(dirname(fig_path))
+        write(fig_path, "pdfbytes")
+        write(
+            joinpath(src_dir, "RUN_INFO.txt"),
+            "Run ID:    testrun_x\nCommit:    abc1234\nBackend:   def5678-dirty\n",
+        )
+        out = export_for_paper([fig_path], dest; run_dir = src_dir)
+        @test length(out) == 1
+        @test isfile(out[1])
+        @test startswith(basename(out[1]), basename(src_dir) * "__")
+        sidecar = out[1] * ".provenance.toml"
+        @test isfile(sidecar)
+        prov = Nbody6Dynamics.TOML.parsefile(sidecar)
+        @test prov["package_commit"] == "abc1234"
+        @test prov["backend_commit"] == "def5678-dirty"
+        # Never-overwrite: second export backs up, both exist
+        export_for_paper([fig_path], dest; run_dir = src_dir)
+        @test length(filter(f -> endswith(f, ".pdf"), readdir(dest))) ≥ 2
+    end
+
+    # =====================================================================
     # Static QA (§8): ships with the tests.
     # =====================================================================
     @testset "Static QA — Aqua" begin

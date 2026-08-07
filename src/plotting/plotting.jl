@@ -7,39 +7,11 @@
 # ---------------------------------------------------------------------------
 
 # Makie's MathTeXEngine renders L"..." strings in Computer Modern automatically.
-# For regular (non-LaTeX) text, we use the "NewComputerModern" font family which
-# ships with MathTeXEngine (a CairoMakie dependency), so no system font install
-# is needed.
 
-const _CM_FONT = let
-    # MathTeXEngine (a Makie dependency) bundles NewComputerModern OTF fonts.
-    # Search the Julia package depot for them.
-    _found = ""
-    for depot in Base.DEPOT_PATH
-        candidate = joinpath(depot, "packages", "MathTeXEngine")
-        isdir(candidate) || continue
-        for entry in readdir(candidate; join = true)
-            font_dir = joinpath(entry, "assets", "fonts", "NewComputerModern")
-            if isdir(font_dir) && isfile(joinpath(font_dir, "NewCM10-Regular.otf"))
-                _found = font_dir
-                break
-            end
-        end
-        isempty(_found) || break
-    end
-
-    if !isempty(_found)
-        (
-            regular = joinpath(_found, "NewCM10-Regular.otf"),
-            bold = joinpath(_found, "NewCM10-Bold.otf"),
-            italic = joinpath(_found, "NewCM10-Italic.otf"),
-            bold_italic = joinpath(_found, "NewCM10-BoldItalic.otf"),
-        )
-    else
-        # Fallback: let Makie use its defaults if fonts are not found
-        (regular = "serif",)
-    end
-end
+# Computer Modern via MathTeXEngine's texfont API (direct dependency) —
+# no depot scanning, no silent fallback: if the fonts are missing this
+# fails loudly at load time rather than degrading to serif.
+const _CM_FONT = (regular = texfont(:text), bold = texfont(:bold), italic = texfont(:italic))
 
 const PUBLICATION_THEME = Theme(
     fontsize = 22,
@@ -48,7 +20,6 @@ const PUBLICATION_THEME = Theme(
     Axis = (
         xlabelsize = 20,
         ylabelsize = 20,
-        titlesize = 20,
         xticklabelsize = 16,
         yticklabelsize = 16,
         xlabelpadding = 10.0,
@@ -56,8 +27,6 @@ const PUBLICATION_THEME = Theme(
         spinewidth = 1.5,
         xtickwidth = 1.2,
         ytickwidth = 1.2,
-        xminortickwidth = 0.8,
-        yminortickwidth = 0.8,
         xtickalign = 1.0,     # ticks face inward
         ytickalign = 1.0,
         xticksize = 8,
@@ -332,7 +301,10 @@ function _log_ticks(lo::Real, hi::Real)
     lo > 0 || (lo = hi / 1e3)          # guard: log axes need positive range
     e_lo = floor(Int, log10(lo) + 1e-12)
     e_hi = ceil(Int, log10(hi) - 1e-12)
-    mults = (e_hi - e_lo) ≤ 2 ? (1.0, 2.0, 5.0) : (1.0,)
+    # Sparse-decade test counts decades actually inside [lo, hi] — the
+    # exponent-bin span overcounts when the range endpoints sit mid-decade.
+    n_dec = count(e -> lo * (1 - 1e-9) ≤ 10.0^e ≤ hi * (1 + 1e-9), e_lo:e_hi)
+    mults = n_dec ≤ 2 ? (1.0, 2.0, 5.0) : (1.0,)
     vals = Float64[]
     for e in e_lo:e_hi, m in mults
         v = m * 10.0^e

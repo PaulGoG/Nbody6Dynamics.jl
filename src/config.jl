@@ -76,6 +76,7 @@ function _parse_simulation(d::Dict)
         binary_name = get(d, "binary_name", "nbody6++"),
         mpi_ranks = get(d, "mpi_ranks", 1),
         run_id_prefix = get(d, "run_id_prefix", "run"),
+        monitor = get(d, "monitor", false),
     )
 end
 

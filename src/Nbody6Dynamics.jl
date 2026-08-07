@@ -9,6 +9,9 @@ using ProgressMeter
 using Random
 using SpecialFunctions
 using OrdinaryDiffEqTsit5
+using Logging
+using LoggingExtras: FormatLogger, MinLevelLogger, TeeLogger
+using MathTeXEngine: texfont
 
 # Package root directory — all relative config paths resolve against this.
 # Computed at precompile time: @__DIR__ = src/, dirname = Nbody6Dynamics/.
@@ -481,25 +484,28 @@ function _run_merger_simulation(
     launch_script =
         _write_launch_script(out_dir, local_binary, input_path, stdout_path, stderr_path, cfg)
 
-    # Execute
-    t_start = time()
-    @info "Starting merger simulation..."
-    process = cd(out_dir) do
-        run(`bash $launch_script`; wait = false)
+    # Execute, teeing pipeline logs to the run directory (§9)
+    _with_run_log(run_dir) do
+        t_start = time()
+        @info "Starting merger simulation..."
+        process = cd(out_dir) do
+            run(`bash $launch_script`; wait = false)
+        end
+
+        if cfg.simulation.monitor && stderr isa Base.TTY
+            _monitor_stdout_file(stdout_path, process, t_start)
+        end
+        wait(process)
+
+        elapsed = time() - t_start
+
+        if !success(process)
+            @warn "Simulation exited with non-zero status ($(process.exitcode)) after $(_format_elapsed(elapsed))"
+        end
+
+        _write_run_summary(run_dir, basename(run_dir), stdout_path, out_dir, elapsed)
+        @info "Simulation complete ($(_format_elapsed(elapsed)))"
     end
-
-    _monitor_stdout_file(stdout_path, process, t_start)
-    wait(process)
-
-    elapsed = time() - t_start
-
-    if !success(process)
-        @warn "Simulation exited with non-zero status ($(process.exitcode)) after $(_format_elapsed(elapsed))"
-    end
-
-    _write_run_summary(run_dir, basename(run_dir), stdout_path, out_dir, elapsed)
-    @info "Simulation complete ($(_format_elapsed(elapsed)))"
-
     return run_dir
 end
 
@@ -553,7 +559,7 @@ export plot_hr, plot_hr_evolution
 export plot_cluster_separation, plot_cluster_virial, per_cluster_virial, parse_merger_summary
 export animate_cluster, animate_hr, animate_lagrangian
 export set_publication_theme!
-export generate_run_id
+export generate_run_id, export_for_paper
 export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 export detect_platform, check_dependencies, detect_cuda_path
 export ClusterSpec, OrbitSpec, MergerOutputSpec, MergerConfig, MergerICResult
