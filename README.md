@@ -1,5 +1,10 @@
 # Nbody6Dynamics.jl
 
+[![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)
+[![Format](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg?branch=main)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml)
+[![codecov](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A Julia package that automates the full lifecycle of [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations: install/build of the Fortran code, multi-cluster merger initial-condition generation, simulation execution, post-processing of all standard output files, and publication-quality visualization. Every phase is driven by a single TOML configuration and orchestrated through one entry point, `run_pipeline`.
 
 ## Project Structure

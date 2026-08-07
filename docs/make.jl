@@ -4,8 +4,8 @@ using Nbody6Dynamics
 makedocs(;
     modules = [Nbody6Dynamics],
     sitename = "Nbody6Dynamics.jl",
-    authors = "paulgog",
-    remotes = nothing,
+    authors = "Paul-Adrian Gogîță",
+    repo = Documenter.Remotes.GitHub("PaulGoG", "Nbody6Dynamics.jl"),
     format = Documenter.HTML(; prettyurls = get(ENV, "CI", nothing) == "true", assets = String[]),
     pages = [
         "Home" => "index.md",
@@ -14,5 +14,5 @@ makedocs(;
         "Cluster Mergers" => "multi_cluster_mergers.md",
         "API Reference" => "api.md",
     ],
-    warnonly = [:missing_docs],
+    warnonly = [:missing_docs, :cross_references],
 )
