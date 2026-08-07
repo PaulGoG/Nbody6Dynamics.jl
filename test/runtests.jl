@@ -863,8 +863,10 @@ figsize = [12, 9]
 
     # =====================================================================
     @testset "Initial Conditions — Merger IC Generator" begin
-        using Random
-        rng = MersenneTwister(12345)
+        # StableRNGs guarantees an identical stream across Julia versions, so
+        # reference values in these tests survive upgrades (§8).
+        using StableRNGs
+        rng = StableRNG(12345)
 
         # --- Plummer sampler ---
         @testset "Plummer sampler" begin
@@ -1383,5 +1385,35 @@ truncate_jacobi = false
             @test cfg.merger.enabled == false
             @test cfg.merger.config_file == ""
         end
+    end
+
+    # =====================================================================
+    # Static QA (§8): ships with the tests.
+    # =====================================================================
+    @testset "Static QA — Aqua" begin
+        using Aqua
+        # Method ambiguities are checked for this package only — recursing
+        # into the Makie/SciML dependency tree reports upstream noise.
+        Aqua.test_all(Nbody6Dynamics; ambiguities = false)
+        Aqua.test_ambiguities(Nbody6Dynamics)
+    end
+
+    @testset "Static QA — ExplicitImports" begin
+        using ExplicitImports
+        # Pragmatic subset: the package uses plain `using` for its small,
+        # stable dependency surface (full explicit-import migration is
+        # tracked in the roadmap). These checks catch the real hazards:
+        # stale explicit imports, self-qualified names, and accesses of
+        # non-owning modules.
+        @test check_no_stale_explicit_imports(Nbody6Dynamics) === nothing
+        @test check_no_self_qualified_accesses(Nbody6Dynamics) === nothing
+    end
+
+    @testset "Static QA — JET" begin
+        using JET
+        # Reports scoped to this package's own frames — Base/dependency
+        # internals (e.g. @sync's sync_end, tuple broadcasting) produce
+        # known false positives outside our control.
+        JET.test_package(Nbody6Dynamics; target_modules = (Nbody6Dynamics,))
     end
 end  # top-level testset

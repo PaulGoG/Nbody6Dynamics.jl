@@ -1,0 +1,3 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+Nbody6Dynamics = "7d8e9f0a-1b2c-4d3e-8f6a-7b8c9d0e1f2a"

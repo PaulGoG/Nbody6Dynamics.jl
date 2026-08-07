@@ -232,8 +232,10 @@ Patterns:  `R* = 1.234`  `T* = 5.678`  etc.
 """
 function _parse_scaling_line!(scaling::Dict{String,Float64}, line::AbstractString)
     for m in eachmatch(r"([A-Z<>\*]+)\s*=\s*([\d.Ee\+\-]+)", line)
-        key = String(m.captures[1])
-        val = tryparse(Float64, String(m.captures[2]))
+        # Both capture groups are non-optional — `something` narrows the
+        # Union{Nothing,SubString} eltype for type stability (JET-clean).
+        key = String(something(m.captures[1]))
+        val = tryparse(Float64, String(something(m.captures[2])))
         !isnothing(val) && (scaling[key] = val)
     end
 end

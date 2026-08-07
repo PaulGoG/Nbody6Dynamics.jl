@@ -33,7 +33,7 @@ function parse_merger_summary(path::AbstractString)::Vector{UnitRange{Int}}
     for line in eachline(path)
         m = match(pattern, line)
         m === nothing && continue
-        push!(trunc_counts, parse(Int, m.captures[1]))
+        push!(trunc_counts, parse(Int, something(m.captures[1])))
     end
 
     isempty(trunc_counts) && return UnitRange{Int}[]
