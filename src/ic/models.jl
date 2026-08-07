@@ -315,6 +315,12 @@ ratio `Q = T/|W| = 0.5` (virial equilibrium). Operates in-place.
 Assumes `G = 1`. Uses the exact N-body potential energy — O(N²), threaded
 over strided rows. Refuses (with a clear error) above `nmax` particles
 rather than silently burning hours; raise `nmax` deliberately for large ICs.
+
+Determinism note: the threaded pair sum accumulates per-task partials, so
+the floating-point summation order — and therefore the bit-exact velocity
+scale — depends on `Threads.nthreads()`. Seeded IC generation is bit-
+reproducible for a fixed thread count; across thread counts results agree
+to floating-point roundoff only.
 """
 function virialise!(
     mass::Vector{Float64},

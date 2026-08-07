@@ -1832,13 +1832,61 @@ truncate_jacobi = false
     end
 
     # =====================================================================
+    # Edge cases for pure helpers and degenerate reader inputs
+    # =====================================================================
+    @testset "Log-tick generator edge cases" begin
+        # >2 in-range decades → decades only
+        vals, _ = Nbody6Dynamics._log_ticks(0.05, 50.0)
+        @test vals == [0.1, 1.0, 10.0]
+        # ≤2 in-range decades → 2×/5× intermediates appear
+        vals2, labels2 = Nbody6Dynamics._log_ticks(0.5, 30.0)
+        @test all(v -> v in vals2, (0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+        # 10^0 renders as plain "1"
+        lab1 = String(labels2[findfirst(==(1.0), vals2)])
+        @test occursin("1", lab1) && !occursin("10", lab1)
+        # Degenerate equal endpoints still yield ≥ 2 ticks
+        vals3, _ = Nbody6Dynamics._log_ticks(2.0, 2.0)
+        @test length(vals3) ≥ 2
+    end
+
+    @testset "Degenerate reader inputs" begin
+        # sev.83 with zero stars: header-only file parses to an empty snapshot
+        p_empty = joinpath(TESTDIR, "sev.83_empty")
+        write(p_empty, "  0  0.0\n")
+        sev0 = read_stellar_evolution(p_empty)
+        @test sev0.n_stars == 0 && isempty(sev0.records)
+
+        # esc.11 line with only 12 tokens (angle column truncated) is skipped
+        p_trunc = joinpath(TESTDIR, "esc_trunc.11")
+        write(
+            p_trunc,
+            "  1.0 5.0e-4 20.0 40.0 2.0e-3 1.234 0.5 -0.1 15.6 0 101 22.2\n",
+        )
+        @test isempty(read_escapers(p_trunc))
+    end
+
+    @testset "half_mass_radius boundaries" begin
+        # Single particle: the half-mass radius is that particle's radius
+        @test Nbody6Dynamics.half_mass_radius([2.0], zeros(3, 1); centre = zeros(3)) == 0.0
+        # Two equal masses: cumulative ≥ M/2 at the inner particle
+        pos2 = [1.0 2.0; 0.0 0.0; 0.0 0.0]
+        @test Nbody6Dynamics.half_mass_radius([0.5, 0.5], pos2; centre = zeros(3)) ≈ 1.0
+    end
+
+    @testset "Kepler near-parabolic limit" begin
+        # Apocentre speed → 0 as e → 1 (vis-viva); must stay finite/nonneg
+        v1, v2 = kepler_velocity(1.0, 1.0, 10.0, 1.0 - 1e-12)
+        @test 0.0 ≤ v1 < 1e-5 && 0.0 ≤ v2 < 1e-5
+    end
+
+    # =====================================================================
     # Static QA (§8): ships with the tests.
     # =====================================================================
     @testset "Static QA — Aqua" begin
         using Aqua
         # Method ambiguities are checked for this package only — recursing
         # into the Makie/SciML dependency tree reports upstream noise.
-        Aqua.test_all(Nbody6Dynamics; ambiguities = false)
+        Aqua.test_all(Nbody6Dynamics; ambiguities = false, persistent_tasks = false)
         Aqua.test_ambiguities(Nbody6Dynamics)
     end
 

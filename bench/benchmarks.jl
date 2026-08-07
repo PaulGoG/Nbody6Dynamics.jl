@@ -158,4 +158,25 @@ display(
 )
 println()
 
+
+
+# ---------------------------------------------------------------------------
+# IC-generation hot paths
+# ---------------------------------------------------------------------------
+println("\n── King model solver ──")
+for W0 in (3.0, 6.0, 12.0)
+    b = @benchmark Nbody6Dynamics._solve_king($W0)
+    @printf("  _solve_king(W0 = %4.1f): median %8.2f ms\n", W0, median(b).time / 1e6)
+end
+
+println("\n── virialise! (threaded O(N²) pair sum) ──")
+for N in (1_000, 5_000)
+    b = @benchmark virialise!(m, p, v) setup = begin
+        m = fill(1.0 / $N, $N)
+        p = randn(3, $N)
+        v = 0.1 .* randn(3, $N)
+    end evals = 1
+    @printf("  virialise!(N = %5d):   median %8.2f ms\n", N, median(b).time / 1e6)
+end
+
 println("\nBenchmarks complete.")
