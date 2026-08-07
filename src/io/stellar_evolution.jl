@@ -26,7 +26,7 @@ function read_stellar_evolution(path::AbstractString)::StellarEvolutionSnapshot
 
     # Parse header — first non-empty line: "NS  TPHYS[Myr]"
     header_tokens = split(strip(lines[1]))
-    n_stars  = parse(Int, header_tokens[1])
+    n_stars = parse(Int, header_tokens[1])
     time_myr = parse(Float64, header_tokens[2])
 
     records = StellarRecord[]
@@ -40,21 +40,23 @@ function read_stellar_evolution(path::AbstractString)::StellarEvolutionSnapshot
         length(tokens) < 15 && continue
 
         try
-            t_nb  = parse(Float64, tokens[1])
-            idx   = parse(Int32, tokens[2])
-            name  = parse(Int32, tokens[3])
+            t_nb = parse(Float64, tokens[1])
+            idx = parse(Int32, tokens[2])
+            name = parse(Int32, tokens[3])
             kstar = parse(Int32, tokens[4])
-            ri    = parse(Float64, tokens[5])
-            mass  = parse(Float64, tokens[6])
-            logl  = parse(Float64, tokens[7])
-            logr  = parse(Float64, tokens[8])
-            logt  = parse(Float64, tokens[9])
-            tm    = parse(Float64, tokens[12])
-            mc    = parse(Float64, tokens[13])
-            rcc   = parse(Float64, tokens[14])
-            re    = parse(Float64, tokens[15])
-            push!(records, StellarRecord(t_nb, idx, name, kstar, ri, mass,
-                                         logl, logr, logt, tm, mc, rcc, re))
+            ri = parse(Float64, tokens[5])
+            mass = parse(Float64, tokens[6])
+            logl = parse(Float64, tokens[7])
+            logr = parse(Float64, tokens[8])
+            logt = parse(Float64, tokens[9])
+            tm = parse(Float64, tokens[12])
+            mc = parse(Float64, tokens[13])
+            rcc = parse(Float64, tokens[14])
+            re = parse(Float64, tokens[15])
+            push!(
+                records,
+                StellarRecord(t_nb, idx, name, kstar, ri, mass, logl, logr, logt, tm, mc, rcc, re),
+            )
         catch e
             @debug "Skipping unparseable stellar line" line = stripped exception = e
         end

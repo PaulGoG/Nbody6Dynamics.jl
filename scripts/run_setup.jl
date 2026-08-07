@@ -35,8 +35,7 @@ function main()
     results = run_pipeline(cfg; base_dir = dirname(abspath(config_path)))
 
     for (k, v) in results
-        n = v isa AbstractVector ? length(v) :
-            v isa DiagnosticsData ? length(v.adjust) : 1
+        n = v isa AbstractVector ? length(v) : v isa DiagnosticsData ? length(v.adjust) : 1
         @info "  Loaded: $k ($n records)"
     end
     @info "Done. Total pipeline time: $(Nbody6Dynamics._format_elapsed(time() - t0))"

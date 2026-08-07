@@ -28,34 +28,37 @@ end
     @testset "Configuration" begin
         # Write a minimal config
         cfg_path = joinpath(TESTDIR, "test_config.toml")
-        write(cfg_path, """
-        [install]
-        enabled = false
-        install_dir = "test-nbody"
+        write(
+            cfg_path,
+            """
+[install]
+enabled = false
+install_dir = "test-nbody"
 
-        [build]
-        enable_mpi = false
-        enable_hdf5 = false
-        enable_gpu = false
-        cuda_path = "/usr/local/cuda"
+[build]
+enable_mpi = false
+enable_hdf5 = false
+enable_gpu = false
+cuda_path = "/usr/local/cuda"
 
-        [simulation]
-        run_test = false
-        runs_dir = "test-runs"
-        run_id_prefix = "test"
+[simulation]
+run_test = false
+runs_dir = "test-runs"
+run_id_prefix = "test"
 
-        [postprocess]
-        enabled = false
-        read_escapers = true
-        escapers_file = "esc.11"
-        read_stellar_evo = true
-        stellar_evo_pattern = "sev.83_*"
+[postprocess]
+enabled = false
+read_escapers = true
+escapers_file = "esc.11"
+read_stellar_evo = true
+stellar_evo_pattern = "sev.83_*"
 
-        [visualization]
-        enabled = false
-        dpi = 150
-        figsize = [10, 8]
-        """)
+[visualization]
+enabled = false
+dpi = 150
+figsize = [10, 8]
+""",
+        )
 
         cfg = load_config(cfg_path)
 
@@ -77,24 +80,27 @@ end
     # =====================================================================
     @testset "Config round-trip (save/load)" begin
         cfg_path = joinpath(TESTDIR, "test_config_rt.toml")
-        write(cfg_path, """
-        [install]
-        enabled = true
+        write(
+            cfg_path,
+            """
+[install]
+enabled = true
 
-        [build]
-        enable_gpu = true
-        cuda_path = "/opt/cuda"
+[build]
+enable_gpu = true
+cuda_path = "/opt/cuda"
 
-        [simulation]
-        run_id_prefix = "bench"
+[simulation]
+run_id_prefix = "bench"
 
-        [postprocess]
-        enabled = true
+[postprocess]
+enabled = true
 
-        [visualization]
-        dpi = 300
-        figsize = [12, 9]
-        """)
+[visualization]
+dpi = 300
+figsize = [12, 9]
+""",
+        )
 
         cfg = load_config(cfg_path)
         save_path = joinpath(TESTDIR, "test_config_saved.toml")
@@ -272,7 +278,9 @@ end
     # =====================================================================
     @testset "Diagnostics parser" begin
         diag_path = joinpath(TESTDIR, "out1000")
-        write(diag_path, """
+        write(
+            diag_path,
+            """
  Some header text...
 
  PHYSICAL SCALING:  R* = 1.234  M* = 5678.0  V* = 3.456  T* = 7.890
@@ -283,7 +291,8 @@ end
  ADJUST:    1.0000    100.00  0.995  2.45E-06 -0.2498   9990    495   1.267
 
  END RUN
-""")
+""",
+        )
 
         diag = read_diagnostics(diag_path)
 
@@ -309,11 +318,14 @@ end
         lagr_path = joinpath(TESTDIR, "lagr.7")
 
         # Synthetic lagr.7: 3 time epochs, 5 radii columns, block_size=1 (simplified)
-        write(lagr_path, """
+        write(
+            lagr_path,
+            """
 0.0  0.01  0.05  0.20  0.50  1.00
 0.5  0.012 0.055 0.22  0.52  1.05
 1.0  0.015 0.060 0.25  0.55  1.10
-""")
+""",
+        )
 
         lagr = read_lagr(lagr_path; rows_per_block = 1)
 
@@ -329,12 +341,15 @@ end
         # Real esc.11 shape (escape.F): 5 NB-unit diagnostics, then the
         # physical-unit block T[Myr] M[M*] EESC VI[km/s] K* NAME, then extras.
         esc_path = joinpath(TESTDIR, "esc.11")
-        write(esc_path, """
+        write(
+            esc_path,
+            """
          TTOT         BODY         RI           VI           STEP         T[Myr]       M[M*]      EESC      VI[km/s]     K*  NAME
    1.00000E+00  5.00000E-04  2.00000E+01  4.00000E+01  1.95312E-03  1.23400E+00  5.00000E-01 -1.23000E-01  1.56000E+01   0       101  1.0  2.0
    2.00000E+00  3.00000E-04  2.50000E+01  4.20000E+01  1.95312E-03  2.56700E+00  3.00000E-01  4.56000E-01  2.23000E+01   1       202  1.0  2.0
    3.00000E+00  1.20000E-03  3.00000E+01  4.40000E+01  1.95312E-03  3.89000E+00  1.20000E+00 -7.89000E-01  1.01000E+01  14       303  1.0  2.0
-""")
+""",
+        )
 
         escs = read_escapers(esc_path)
         @test length(escs) == 3
@@ -360,12 +375,15 @@ end
         # Header time is TPHYS [Myr]; data-line token 1 is TTOT [NB] —
         # different clocks, both kept. 15-token v2026.07+ layout.
         sev_path = joinpath(TESTDIR, "sev.83_0")
-        write(sev_path, """
+        write(
+            sev_path,
+            """
   3  0.5000
    0.4315   1   101  0  1.20  0.800   0.123  -0.456  3.750  0.0  0.0  90.0  0.0  0.0  1.0e-10
    0.4315   2   202  1  0.80  1.200   1.500   0.200  4.100  0.0  0.0  5.20  0.0  0.0  1.0e-10
    0.4315   3   303  13 2.50  10.00   5.000   1.500  4.500  0.0  0.0  4.10  1.4  1.0e-5  1.0e-10
-""")
+""",
+        )
 
         sev = read_stellar_evolution(sev_path)
         @test sev.n_stars == 3
@@ -390,11 +408,14 @@ end
 
         # Test read_all_stellar_evolution
         sev2_path = joinpath(TESTDIR, "sev.83_1")
-        write(sev2_path, """
+        write(
+            sev2_path,
+            """
   2  1.0000
    1.0000   1   101  2  1.50  0.750   0.500  -0.200  3.600  0.0  0.0  8.0  0.2  0.01  2.0
    1.0000   2   202  4  0.90  1.100   2.000   0.400  3.900  0.0  0.0  6.5  0.4  0.02  4.0
-""")
+""",
+        )
 
         sevs = read_all_stellar_evolution(TESTDIR, "sev.83_*")
         @test length(sevs) == 2
@@ -436,10 +457,10 @@ end
         @testset "out1000 scaling + ADJUST" begin
             diag = read_diagnostics(joinpath(FIXDIR, "out1000"))
             u = extract_scaling(diag)
-            @test u.rbar   ≈ 5.503639     rtol = 1e-6
-            @test u.zmbar  ≈ 27695.934588 rtol = 1e-6   # M* (scale), not <M>
-            @test u.tscale ≈ 1.15885054   rtol = 1e-6
-            @test u.vstar  ≈ 4.65224425   rtol = 1e-6
+            @test u.rbar ≈ 5.503639 rtol = 1e-6
+            @test u.zmbar ≈ 27695.934588 rtol = 1e-6   # M* (scale), not <M>
+            @test u.tscale ≈ 1.15885054 rtol = 1e-6
+            @test u.vstar ≈ 4.65224425 rtol = 1e-6
             @test length(diag.adjust) ≥ 6
             a0 = diag.adjust[1]
             @test a0.time_nb == 0.0
@@ -541,18 +562,18 @@ end
             [0.1, 0.5, 1.0],
             [0.05 0.06 0.07; 0.2 0.22 0.25; 1.0 1.05 1.1],
         )
-        plot_lagrangian(lagr, vis; filename = "test_lagr",
-                        selected_fractions = [0.1, 0.5, 1.0])
+        plot_lagrangian(lagr, vis; filename = "test_lagr", selected_fractions = [0.1, 0.5, 1.0])
         @test isfile(joinpath(TESTDIR, "test_plots", "test_lagr.png"))
 
         # --- HR diagram ---
         sev = StellarEvolutionSnapshot(
-            0.5, 4,
+            0.5,
+            4,
             [
-                StellarRecord(0.5, Int32(1), Int32(101), Int32(0),  1.0, 0.8,  0.1, -0.5, 3.75),
-                StellarRecord(0.5, Int32(2), Int32(102), Int32(1),  0.8, 1.2,  1.5,  0.2, 4.10),
-                StellarRecord(0.5, Int32(3), Int32(103), Int32(2),  1.5, 0.7,  2.0,  0.8, 3.60),
-                StellarRecord(0.5, Int32(4), Int32(104), Int32(13), 2.0, 10.0, 5.0,  1.5, 4.50),
+                StellarRecord(0.5, Int32(1), Int32(101), Int32(0), 1.0, 0.8, 0.1, -0.5, 3.75),
+                StellarRecord(0.5, Int32(2), Int32(102), Int32(1), 0.8, 1.2, 1.5, 0.2, 4.10),
+                StellarRecord(0.5, Int32(3), Int32(103), Int32(2), 1.5, 0.7, 2.0, 0.8, 3.60),
+                StellarRecord(0.5, Int32(4), Int32(104), Int32(13), 2.0, 10.0, 5.0, 1.5, 4.50),
             ],
         )
         plot_hr(sev, vis; filename = "test_hr")
@@ -560,10 +581,11 @@ end
 
         # --- HR evolution ---
         sev2 = StellarEvolutionSnapshot(
-            1.0, 2,
+            1.0,
+            2,
             [
                 StellarRecord(1.0, Int32(1), Int32(101), Int32(2), 1.5, 0.75, 0.5, -0.2, 3.60),
-                StellarRecord(1.0, Int32(2), Int32(102), Int32(4), 0.9, 1.10, 2.0,  0.4, 3.90),
+                StellarRecord(1.0, Int32(2), Int32(102), Int32(4), 0.9, 1.10, 2.0, 0.4, 3.90),
             ],
         )
         plot_hr_evolution([sev, sev2], vis; filename = "test_hr_evo")
@@ -575,25 +597,27 @@ end
         fmt = Nbody6Dynamics._format_elapsed
 
         # Sub-minute
-        @test fmt(0.0)  == "0.0 s"
-        @test fmt(1.5)  == "1.5 s"
+        @test fmt(0.0) == "0.0 s"
+        @test fmt(1.5) == "1.5 s"
         @test fmt(59.4) == "59.4 s"
 
         # Minutes
-        @test fmt(60.0)  == "1m 00s"
+        @test fmt(60.0) == "1m 00s"
         @test fmt(122.0) == "2m 02s"
         @test fmt(3599.0) == "59m 59s"
 
         # Hours
-        @test fmt(3600.0)  == "1h 00m 00s"
-        @test fmt(3661.0)  == "1h 01m 01s"
-        @test fmt(7384.0)  == "2h 03m 04s"
+        @test fmt(3600.0) == "1h 00m 00s"
+        @test fmt(3661.0) == "1h 01m 01s"
+        @test fmt(7384.0) == "2h 03m 04s"
     end
 
     # =====================================================================
     @testset "Diagnostics — key-value ADJUST format" begin
         diag_path = joinpath(TESTDIR, "out1000_kv")
-        write(diag_path, """
+        write(
+            diag_path,
+            """
  PHYSICAL SCALING:  R* = 2.500  M* = 1000.0  V* = 4.200  T* = 12.00
                     <M> = 0.500  SU = 1.0  AU = 1.0
 
@@ -606,7 +630,8 @@ end
  TIME[NB]    0.5000 N     9990 <NB>      0 NPAIRS    495
 
  END RUN
-""")
+""",
+        )
 
         diag = read_diagnostics(diag_path)
 
@@ -633,11 +658,14 @@ end
     # =====================================================================
     @testset "Diagnostics — mixed format with partial epochs" begin
         diag_path = joinpath(TESTDIR, "out1000_mixed")
-        write(diag_path, """
+        write(
+            diag_path,
+            """
  ADJUST:    0.0000      0.00  1.000  0.00E+00 -0.2500  10000    500   1.234
  ADJUST:  TIME   1.0000  T[Myr]    100.00  Q  0.990  DE  5.00E-06  ETOT  -0.2480
  TIME[NB]    1.0000 N     9500 <NB>      0 NPAIRS    450
-""")
+""",
+        )
         diag = read_diagnostics(diag_path)
         @test length(diag.adjust) == 2
 
@@ -680,26 +708,38 @@ end
 
         # Build two simple test snapshots
         n = 30
-        params1 = zeros(Float32, 20); params1[1] = 0.0f0
-        params2 = zeros(Float32, 20); params2[1] = 1.0f0
+        params1 = zeros(Float32, 20)
+        params1[1] = 0.0f0
+        params2 = zeros(Float32, 20)
+        params2[1] = 1.0f0
         hdr1 = SnapshotHeader(Int32(n), Int32(1), Int32(1), Int32(20), params1)
         hdr2 = SnapshotHeader(Int32(n), Int32(2), Int32(1), Int32(20), params2)
-        snap1 = Snapshot(hdr1, Int32.(1:n), Float32.(rand(n)),
-                         Float32.(randn(3, n)), Float32.(0.1 .* randn(3, n)),
-                         Float32[], Float32[])
-        snap2 = Snapshot(hdr2, Int32.(1:n), Float32.(rand(n)),
-                         Float32.(randn(3, n) .+ 0.5), Float32.(0.1 .* randn(3, n)),
-                         Float32[], Float32[])
+        snap1 = Snapshot(
+            hdr1,
+            Int32.(1:n),
+            Float32.(rand(n)),
+            Float32.(randn(3, n)),
+            Float32.(0.1 .* randn(3, n)),
+            Float32[],
+            Float32[],
+        )
+        snap2 = Snapshot(
+            hdr2,
+            Int32.(1:n),
+            Float32.(rand(n)),
+            Float32.(randn(3, n) .+ 0.5),
+            Float32.(0.1 .* randn(3, n)),
+            Float32[],
+            Float32[],
+        )
 
         # --- Cluster animation (explicit fps) ---
-        outpaths = animate_cluster([snap1, snap2], vis;
-            filename = "test_cluster_anim", fps = 2)
+        outpaths = animate_cluster([snap1, snap2], vis; filename = "test_cluster_anim", fps = 2)
         @test all(isfile, outpaths)
         @test all(p -> endswith(p, ".gif"), outpaths)
 
         # --- Cluster animation (auto fps) ---
-        outpaths = animate_cluster([snap1, snap2], vis;
-            filename = "test_cluster_anim_auto")
+        outpaths = animate_cluster([snap1, snap2], vis; filename = "test_cluster_anim_auto")
         @test all(isfile, outpaths)
         @test all(p -> endswith(p, ".gif"), outpaths)
 
@@ -709,36 +749,49 @@ end
             [0.1, 0.5, 1.0],
             [0.05 0.06 0.07; 0.2 0.22 0.25; 1.0 1.05 1.1],
         )
-        outpath = animate_lagrangian(lagr, vis;
-            filename = "test_lagr_anim", fps = 2,
-            selected_fractions = [0.1, 0.5, 1.0])
+        outpath = animate_lagrangian(
+            lagr,
+            vis;
+            filename = "test_lagr_anim",
+            fps = 2,
+            selected_fractions = [0.1, 0.5, 1.0],
+        )
         @test isfile(outpath)
         @test endswith(outpath, ".gif")
 
         # --- Lagrangian animation (auto fps) ---
-        outpath = animate_lagrangian(lagr, vis;
+        outpath = animate_lagrangian(
+            lagr,
+            vis;
             filename = "test_lagr_anim_auto",
-            selected_fractions = [0.1, 0.5, 1.0])
+            selected_fractions = [0.1, 0.5, 1.0],
+        )
         @test isfile(outpath)
         @test endswith(outpath, ".gif")
 
         # --- HR animation ---
-        sev1 = StellarEvolutionSnapshot(0.5, 2, [
-            StellarRecord(0.5, Int32(1), Int32(101), Int32(0), 1.0, 0.8, 0.1, -0.5, 3.75),
-            StellarRecord(0.5, Int32(2), Int32(102), Int32(1), 0.8, 1.2, 1.5,  0.2, 4.10),
-        ])
-        sev2 = StellarEvolutionSnapshot(1.0, 2, [
-            StellarRecord(1.0, Int32(1), Int32(101), Int32(2), 1.5, 0.75, 0.5, -0.2, 3.60),
-            StellarRecord(1.0, Int32(2), Int32(102), Int32(4), 0.9, 1.10, 2.0,  0.4, 3.90),
-        ])
-        outpath = animate_hr([sev1, sev2], vis;
-            filename = "test_hr_anim", fps = 2)
+        sev1 = StellarEvolutionSnapshot(
+            0.5,
+            2,
+            [
+                StellarRecord(0.5, Int32(1), Int32(101), Int32(0), 1.0, 0.8, 0.1, -0.5, 3.75),
+                StellarRecord(0.5, Int32(2), Int32(102), Int32(1), 0.8, 1.2, 1.5, 0.2, 4.10),
+            ],
+        )
+        sev2 = StellarEvolutionSnapshot(
+            1.0,
+            2,
+            [
+                StellarRecord(1.0, Int32(1), Int32(101), Int32(2), 1.5, 0.75, 0.5, -0.2, 3.60),
+                StellarRecord(1.0, Int32(2), Int32(102), Int32(4), 0.9, 1.10, 2.0, 0.4, 3.90),
+            ],
+        )
+        outpath = animate_hr([sev1, sev2], vis; filename = "test_hr_anim", fps = 2)
         @test isfile(outpath)
         @test endswith(outpath, ".gif")
 
         # --- HR animation (auto fps) ---
-        outpath = animate_hr([sev1, sev2], vis;
-            filename = "test_hr_anim_auto")
+        outpath = animate_hr([sev1, sev2], vis; filename = "test_hr_anim_auto")
         @test isfile(outpath)
         @test endswith(outpath, ".gif")
     end
@@ -796,9 +849,7 @@ end
         @test_throws ErrorException scan_output("/nonexistent/path")
 
         # --- postprocess_external (data only, no plots) ---
-        results = postprocess_external(ext_dir;
-            generate_plots = false,
-        )
+        results = postprocess_external(ext_dir; generate_plots = false)
         @test haskey(results, :scan)
         @test results[:scan] isa OutputScan
         @test haskey(results, :diagnostics)
@@ -823,10 +874,10 @@ end
             @test size(pos) == (3, N)
             @test size(vel) == (3, N)
             # Particles should be centred near origin
-            cm = vec(sum(pos, dims=2)) ./ N
+            cm = vec(sum(pos, dims = 2)) ./ N
             @test all(abs.(cm) .< 0.5)
             # Radii should be finite and positive
-            radii = [sqrt(sum(pos[:, i].^2)) for i in 1:N]
+            radii = [sqrt(sum(pos[:, i] .^ 2)) for i in 1:N]
             @test all(radii .> 0)
             @test all(isfinite.(radii))
             # Half-mass radius should be roughly 1.305 × a for Plummer
@@ -845,7 +896,7 @@ end
             @test size(vel) == (3, N)
             # All particles should be within the tidal radius (with some tolerance
             # from the sampling/scaling)
-            radii = [sqrt(sum(pos[:, i].^2)) for i in 1:N]
+            radii = [sqrt(sum(pos[:, i] .^ 2)) for i in 1:N]
             @test all(isfinite.(radii))
             # Invalid W0
             @test_throws ArgumentError sample_king(10, -1.0, 5.0)
@@ -861,15 +912,21 @@ end
             @test rhat[1] ≈ 0.0
             @test rhat[end] > 0.0
             # Density should be monotonically decreasing
-            @test all(diff(rho[1:end-1]) .≤ 0.01)
+            @test all(diff(rho[1:(end - 1)]) .≤ 0.01)
         end
 
         # --- King concentration vs published values (physics validation) ---
         @testset "King concentration c(W0)" begin
             # c = log10(r_t/r_0) for the standard dimensionless King equation;
             # reference values from the King (1966) model tables.
-            for (W0, c_ref) in [(3.0, 0.672), (5.0, 1.029), (6.0, 1.255),
-                                (7.0, 1.528), (9.0, 2.119), (12.0, 2.739)]
+            for (W0, c_ref) in [
+                (3.0, 0.672),
+                (5.0, 1.029),
+                (6.0, 1.255),
+                (7.0, 1.528),
+                (9.0, 2.119),
+                (12.0, 2.739),
+            ]
                 rhat, _, _ = Nbody6Dynamics._solve_king(W0)
                 c = log10(rhat[end])
                 @test isapprox(c, c_ref; rtol = 0.01)
@@ -897,16 +954,16 @@ end
             vel = randn(rng, 3, N) .* 0.1
             virialise!(mass, pos, vel)
             # CM should be at origin
-            cm_pos = vec(sum(mass' .* pos, dims=2))
-            cm_vel = vec(sum(mass' .* vel, dims=2))
+            cm_pos = vec(sum(mass' .* pos, dims = 2))
+            cm_vel = vec(sum(mass' .* vel, dims = 2))
             @test all(abs.(cm_pos) .< 1e-10)
             @test all(abs.(cm_vel) .< 1e-10)
             # Virial ratio should be ~0.5
-            T = 0.5 * sum(mass[i] * sum(vel[:, i].^2) for i in 1:N)
+            T = 0.5 * sum(mass[i] * sum(vel[:, i] .^ 2) for i in 1:N)
             W = 0.0
-            for i in 1:N, j in (i+1):N
+            for i in 1:N, j in (i + 1):N
                 dr = pos[:, i] .- pos[:, j]
-                W -= mass[i] * mass[j] / sqrt(sum(dr.^2))
+                W -= mass[i] * mass[j] / sqrt(sum(dr .^ 2))
             end
             Q = T / abs(W)
             @test Q ≈ 0.5 atol = 0.01
@@ -952,22 +1009,31 @@ end
             end
 
             pos, vel, mass = Nbody6Dynamics.setup_two_cluster_orbit(
-                pos1, vel1, mass1, pos2, vel2, mass2,
-                20.0, 0.5; truncate_jacobi_flag = false
+                pos1,
+                vel1,
+                mass1,
+                pos2,
+                vel2,
+                mass2,
+                20.0,
+                0.5;
+                truncate_jacobi_flag = false,
             )
             @test length(mass) == N1 + N2
             @test size(pos, 2) == N1 + N2
             # Combined CM should be near origin
             M = sum(mass)
-            cm = vec(sum(mass' .* pos, dims=2)) ./ M
+            cm = vec(sum(mass' .* pos, dims = 2)) ./ M
             @test all(abs.(cm) .< 0.1)
 
             # Total momentum must vanish and the two-COM orbit must have the
             # Keplerian energy of the requested (d_apo, e) orbit.
             p = vec(sum(mass' .* vel, dims = 2))
             @test all(abs.(p) .< 1e-10)
-            r1 = 1:N1; r2 = (N1+1):(N1+N2)
-            M1 = sum(mass[r1]); M2 = sum(mass[r2])
+            r1 = 1:N1
+            r2 = (N1 + 1):(N1 + N2)
+            M1 = sum(mass[r1])
+            M2 = sum(mass[r2])
             com1 = vec(sum(mass[r1]' .* pos[:, r1], dims = 2)) ./ M1
             com2 = vec(sum(mass[r2]' .* pos[:, r2], dims = 2)) ./ M2
             vcom1 = vec(sum(mass[r1]' .* vel[:, r1], dims = 2)) ./ M1
@@ -1053,32 +1119,35 @@ end
         # --- TOML config loading (kepler mode) ---
         @testset "Merger config TOML — kepler" begin
             cfg_path = joinpath(TESTDIR, "test_merger.toml")
-            write(cfg_path, """
-            [merger]
-            n_clusters = 2
-            orbit_mode = "kepler"
+            write(
+                cfg_path,
+                """
+[merger]
+n_clusters = 2
+orbit_mode = "kepler"
 
-            [merger.cluster1]
-            model = "plummer"
-            N = 100
-            mass_total = 1000.0
-            rbar = 1.0
+[merger.cluster1]
+model = "plummer"
+N = 100
+mass_total = 1000.0
+rbar = 1.0
 
-            [merger.cluster2]
-            model = "king"
-            N = 100
-            W0 = 5.0
-            mass_total = 1000.0
-            rbar = 1.0
+[merger.cluster2]
+model = "king"
+N = 100
+W0 = 5.0
+mass_total = 1000.0
+rbar = 1.0
 
-            [merger.orbit]
-            apocentre = 10.0
-            eccentricity = 0.5
+[merger.orbit]
+apocentre = 10.0
+eccentricity = 0.5
 
-            [merger.output]
-            format = "nbody"
-            truncate_jacobi = false
-            """)
+[merger.output]
+format = "nbody"
+truncate_jacobi = false
+""",
+            )
             cfg = load_merger_config(cfg_path)
             @test length(cfg.clusters) == 2
             @test cfg.orbit_mode == "kepler"
@@ -1094,40 +1163,43 @@ end
         # --- TOML config loading (explicit mode) ---
         @testset "Merger config TOML — explicit" begin
             cfg_path = joinpath(TESTDIR, "test_merger_explicit.toml")
-            write(cfg_path, """
-            [merger]
-            n_clusters = 3
-            orbit_mode = "explicit"
+            write(
+                cfg_path,
+                """
+[merger]
+n_clusters = 3
+orbit_mode = "explicit"
 
-            [merger.cluster1]
-            model = "plummer"
-            N = 50
-            mass_total = 500.0
-            rbar = 1.0
-            position = [-5.0, 0.0, 0.0]
-            velocity = [1.0, 0.0, 0.0]
+[merger.cluster1]
+model = "plummer"
+N = 50
+mass_total = 500.0
+rbar = 1.0
+position = [-5.0, 0.0, 0.0]
+velocity = [1.0, 0.0, 0.0]
 
-            [merger.cluster2]
-            model = "king"
-            N = 50
-            W0 = 4.0
-            mass_total = 500.0
-            rbar = 1.0
-            position = [2.5, 4.33, 0.0]
-            velocity = [-0.5, -0.87, 0.0]
+[merger.cluster2]
+model = "king"
+N = 50
+W0 = 4.0
+mass_total = 500.0
+rbar = 1.0
+position = [2.5, 4.33, 0.0]
+velocity = [-0.5, -0.87, 0.0]
 
-            [merger.cluster3]
-            model = "plummer"
-            N = 50
-            mass_total = 300.0
-            rbar = 0.8
-            position = [2.5, -4.33, 0.0]
-            velocity = [-0.5, 0.87, 0.0]
+[merger.cluster3]
+model = "plummer"
+N = 50
+mass_total = 300.0
+rbar = 0.8
+position = [2.5, -4.33, 0.0]
+velocity = [-0.5, 0.87, 0.0]
 
-            [merger.output]
-            format = "nbody"
-            truncate_jacobi = false
-            """)
+[merger.output]
+format = "nbody"
+truncate_jacobi = false
+""",
+            )
             cfg = load_merger_config(cfg_path)
             @test length(cfg.clusters) == 3
             @test cfg.orbit_mode == "explicit"
@@ -1140,14 +1212,29 @@ end
             out_dir = mktempdir()
             cfg = MergerConfig(
                 [
-                    ClusterSpec(model="plummer", N=100, mass_total=1e3, rbar=1.0,
-                                imf_kind="kroupa", body1=50.0, bodyn=0.1),
-                    ClusterSpec(model="king", N=100, W0=5.0, mass_total=1e3, rbar=1.0,
-                                imf_kind="kroupa", body1=50.0, bodyn=0.1),
+                    ClusterSpec(
+                        model = "plummer",
+                        N = 100,
+                        mass_total = 1e3,
+                        rbar = 1.0,
+                        imf_kind = "kroupa",
+                        body1 = 50.0,
+                        bodyn = 0.1,
+                    ),
+                    ClusterSpec(
+                        model = "king",
+                        N = 100,
+                        W0 = 5.0,
+                        mass_total = 1e3,
+                        rbar = 1.0,
+                        imf_kind = "kroupa",
+                        body1 = 50.0,
+                        bodyn = 0.1,
+                    ),
                 ],
                 "kepler",
-                OrbitSpec(apocentre=10.0, eccentricity=0.5),
-                MergerOutputSpec(format="nbody", truncate_jacobi=true, output_dir=out_dir)
+                OrbitSpec(apocentre = 10.0, eccentricity = 0.5),
+                MergerOutputSpec(format = "nbody", truncate_jacobi = true, output_dir = out_dir),
             )
             result = generate_merger_ic(cfg; rng = rng)
             @test result isa MergerICResult
@@ -1175,19 +1262,44 @@ end
             out_dir = mktempdir()
             cfg = MergerConfig(
                 [
-                    ClusterSpec(model="plummer", N=80, mass_total=800.0, rbar=1.0,
-                                imf_kind="kroupa", body1=50.0, bodyn=0.1,
-                                position=[-5.0, 0.0, 0.0], velocity=[1.0, 0.0, 0.0]),
-                    ClusterSpec(model="king", N=80, W0=5.0, mass_total=800.0, rbar=1.0,
-                                imf_kind="kroupa", body1=50.0, bodyn=0.1,
-                                position=[2.5, 4.33, 0.0], velocity=[-0.5, -0.87, 0.0]),
-                    ClusterSpec(model="plummer", N=60, mass_total=400.0, rbar=0.8,
-                                imf_kind="equal", body1=50.0, bodyn=0.1,
-                                position=[2.5, -4.33, 0.0], velocity=[-0.5, 0.87, 0.0]),
+                    ClusterSpec(
+                        model = "plummer",
+                        N = 80,
+                        mass_total = 800.0,
+                        rbar = 1.0,
+                        imf_kind = "kroupa",
+                        body1 = 50.0,
+                        bodyn = 0.1,
+                        position = [-5.0, 0.0, 0.0],
+                        velocity = [1.0, 0.0, 0.0],
+                    ),
+                    ClusterSpec(
+                        model = "king",
+                        N = 80,
+                        W0 = 5.0,
+                        mass_total = 800.0,
+                        rbar = 1.0,
+                        imf_kind = "kroupa",
+                        body1 = 50.0,
+                        bodyn = 0.1,
+                        position = [2.5, 4.33, 0.0],
+                        velocity = [-0.5, -0.87, 0.0],
+                    ),
+                    ClusterSpec(
+                        model = "plummer",
+                        N = 60,
+                        mass_total = 400.0,
+                        rbar = 0.8,
+                        imf_kind = "equal",
+                        body1 = 50.0,
+                        bodyn = 0.1,
+                        position = [2.5, -4.33, 0.0],
+                        velocity = [-0.5, 0.87, 0.0],
+                    ),
                 ],
                 "explicit",
                 OrbitSpec(),  # ignored in explicit mode
-                MergerOutputSpec(format="nbody", truncate_jacobi=false, output_dir=out_dir)
+                MergerOutputSpec(format = "nbody", truncate_jacobi = false, output_dir = out_dir),
             )
             result = generate_merger_ic(cfg; rng = rng)
             @test result isa MergerICResult
@@ -1204,14 +1316,28 @@ end
             out_dir = mktempdir()
             cfg = MergerConfig(
                 [
-                    ClusterSpec(model="plummer", N=50, mass_total=500.0, rbar=1.0,
-                                imf_kind="equal", body1=50.0, bodyn=0.1),
-                    ClusterSpec(model="plummer", N=50, mass_total=500.0, rbar=1.0,
-                                imf_kind="equal", body1=50.0, bodyn=0.1),
+                    ClusterSpec(
+                        model = "plummer",
+                        N = 50,
+                        mass_total = 500.0,
+                        rbar = 1.0,
+                        imf_kind = "equal",
+                        body1 = 50.0,
+                        bodyn = 0.1,
+                    ),
+                    ClusterSpec(
+                        model = "plummer",
+                        N = 50,
+                        mass_total = 500.0,
+                        rbar = 1.0,
+                        imf_kind = "equal",
+                        body1 = 50.0,
+                        bodyn = 0.1,
+                    ),
                 ],
                 "kepler",
-                OrbitSpec(apocentre=8.0, eccentricity=0.3),
-                MergerOutputSpec(format="nbody", truncate_jacobi=false, output_dir=out_dir)
+                OrbitSpec(apocentre = 8.0, eccentricity = 0.3),
+                MergerOutputSpec(format = "nbody", truncate_jacobi = false, output_dir = out_dir),
             )
             generate_merger_ic(cfg; rng = rng)
             lines = readlines(joinpath(out_dir, "dat.10"))
@@ -1223,15 +1349,27 @@ end
             out_dir = mktempdir()
             cfg = MergerConfig(
                 [
-                    ClusterSpec(model = "king", N = 150, W0 = 5.0, mass_total = 1e3,
-                                rbar = 1.0, imf_kind = "kroupa", body1 = 50.0, bodyn = 0.1),
-                    ClusterSpec(model = "plummer", N = 100, mass_total = 8e2,
-                                rbar = 1.0, imf_kind = "equal"),
+                    ClusterSpec(
+                        model = "king",
+                        N = 150,
+                        W0 = 5.0,
+                        mass_total = 1e3,
+                        rbar = 1.0,
+                        imf_kind = "kroupa",
+                        body1 = 50.0,
+                        bodyn = 0.1,
+                    ),
+                    ClusterSpec(
+                        model = "plummer",
+                        N = 100,
+                        mass_total = 8e2,
+                        rbar = 1.0,
+                        imf_kind = "equal",
+                    ),
                 ],
                 "kepler",
                 OrbitSpec(apocentre = 10.0, eccentricity = 0.4),
-                MergerOutputSpec(format = "nbody", truncate_jacobi = true,
-                                 output_dir = out_dir),
+                MergerOutputSpec(format = "nbody", truncate_jacobi = true, output_dir = out_dir),
             )
             result = generate_merger_ic(cfg; rng = rng)
             ranges = parse_merger_summary(joinpath(out_dir, "merger_summary.txt"))
@@ -1246,5 +1384,4 @@ end
             @test cfg.merger.config_file == ""
         end
     end
-
 end  # top-level testset

@@ -8,9 +8,12 @@
 Compute a frame rate so the animation lasts approximately `target_duration`
 seconds, clamped to `[min_fps, max_fps]`.
 """
-function _auto_fps(nframes::Int;
-                   target_duration::Float64 = 12.0,
-                   min_fps::Int = 1, max_fps::Int = 30)::Int
+function _auto_fps(
+    nframes::Int;
+    target_duration::Float64 = 12.0,
+    min_fps::Int = 1,
+    max_fps::Int = 30,
+)::Int
     return clamp(round(Int, nframes / target_duration), min_fps, max_fps)
 end
 
@@ -35,7 +38,8 @@ Myr when `cfg.units == "physical"` (header AS scaling); N-body otherwise.
 Returns a vector of output file paths.
 """
 function animate_cluster(
-    snaps::Vector{Snapshot}, cfg::VisualizationConfig;
+    snaps::Vector{Snapshot},
+    cfg::VisualizationConfig;
     filename::AbstractString = "cluster_evolution",
     projections::Vector{Symbol} = [:xy, :xz, :yz],
     fps::Union{Int,Nothing} = nothing,
@@ -46,13 +50,18 @@ function animate_cluster(
     # Cluster snapshots are discrete, each worth studying individually:
     # fewer snapshots → slower pace, many → speed up.
     fps = something(fps, cfg.style.anim_fps)
-    fps > 0 || (fps = _auto_fps(nframes;
-        target_duration = cfg.style.anim_target_seconds, min_fps = 1, max_fps = 10))
+    fps > 0 || (
+        fps = _auto_fps(
+            nframes;
+            target_duration = cfg.style.anim_target_seconds,
+            min_fps = 1,
+            max_fps = 10,
+        )
+    )
 
-    physical = cfg.units == "physical" &&
-               all(_has_physical_scaling(s.header) for s in snaps)
+    physical = cfg.units == "physical" && all(_has_physical_scaling(s.header) for s in snaps)
     unit_str = physical ? "pc" : "NB"
-    scales   = [physical ? rbar(snap.header) : 1.0 for snap in snaps]
+    scales = [physical ? rbar(snap.header) : 1.0 for snap in snaps]
 
     ms = _marker_size(cfg, nparticles(snaps[1]))
 
@@ -76,8 +85,9 @@ function animate_cluster(
 
         # Pre-compute per-frame limits for adaptive mode
         frame_limits = if use_adaptive
-            [_square_limits(snaps[i].pos[ix, :] .* scales[i],
-                            snaps[i].pos[iy, :] .* scales[i]) for i in 1:nframes]
+            [
+                _square_limits(snaps[i].pos[ix, :] .* scales[i], snaps[i].pos[iy, :] .* scales[i]) for i in 1:nframes
+            ]
         else
             # Global limits — same for every frame
             all_x = reduce(vcat, [snaps[i].pos[ix, :] .* scales[i] for i in 1:nframes])
@@ -103,7 +113,8 @@ function animate_cluster(
         xlo0, xhi0, ylo0, yhi0 = frame_limits[1]
 
         fig = Figure(; size = _fig_with_colorbar(cfg))
-        ax = Axis(fig[1, 1];
+        ax = Axis(
+            fig[1, 1];
             xlabel = _coord_label(xsym, unit_str),
             ylabel = _coord_label(ysym, unit_str),
             aspect = DataAspect(),
@@ -113,8 +124,15 @@ function animate_cluster(
             xgridvisible = false,
             ygridvisible = false,
         )
-        text!(ax, 0.04, 0.96; text = time_text,
-            space = :relative, align = (:left, :top), fontsize = 16)
+        text!(
+            ax,
+            0.04,
+            0.96;
+            text = time_text,
+            space = :relative,
+            align = (:left, :top),
+            fontsize = 16,
+        )
 
         # Single source observable so positions and colours update atomically
         # even when the particle count changes between frames (Point2f handles
@@ -122,24 +140,32 @@ function animate_cluster(
         frame_data = @lift begin
             snap = snaps[$frame_idx]
             sc = scales[$frame_idx]
-            (points = Point2f.(snap.pos[ix, :] .* sc, snap.pos[iy, :] .* sc),
-             colors = log10.(max.(Float64.(snap.mass), 1e-30)))
+            (
+                points = Point2f.(snap.pos[ix, :] .* sc, snap.pos[iy, :] .* sc),
+                colors = log10.(max.(Float64.(snap.mass), 1e-30)),
+            )
         end
-        pts    = @lift($frame_data.points)
+        pts = @lift($frame_data.points)
         colors = @lift($frame_data.colors)
 
-        scatter!(ax, pts;
-            color      = colors,
-            colormap   = :viridis,
+        scatter!(
+            ax,
+            pts;
+            color = colors,
+            colormap = :viridis,
             colorrange = (cmin, cmax),
             markersize = ms,
             strokewidth = 0,
         )
 
         # Add colorbar
-        Colorbar(fig[1, 2]; colormap = :viridis, colorrange = (cmin, cmax),
-                 label = L"\log_{10}(m \, / \, M_\mathrm{tot})",
-                 ticks = _nice_colorbar_ticks(cmin, cmax))
+        Colorbar(
+            fig[1, 2];
+            colormap = :viridis,
+            colorrange = (cmin, cmax),
+            label = L"\log_{10}(m \, / \, M_\mathrm{tot})",
+            ticks = _nice_colorbar_ticks(cmin, cmax),
+        )
         colgap!(fig.layout, 10)
 
         _backup_existing(outpath)
@@ -177,7 +203,8 @@ Animate HR diagram evolution across stellar evolution snapshots.
 Returns the output file path.
 """
 function animate_hr(
-    sevs::Vector{StellarEvolutionSnapshot}, cfg::VisualizationConfig;
+    sevs::Vector{StellarEvolutionSnapshot},
+    cfg::VisualizationConfig;
     filename::AbstractString = "hr_evolution_anim",
     fps::Union{Int,Nothing} = nothing,
 )::String
@@ -188,7 +215,8 @@ function animate_hr(
 
     # Compute global axis limits from valid records only
     all_teff = reduce(vcat, [[r.log_teff for r in v] for v in valid_per_frame]; init = Float64[])
-    all_lum  = reduce(vcat, [[r.log_luminosity for r in v] for v in valid_per_frame]; init = Float64[])
+    all_lum =
+        reduce(vcat, [[r.log_luminosity for r in v] for v in valid_per_frame]; init = Float64[])
     isempty(all_teff) && error("No valid HR records in any snapshot")
 
     tmin, tmax = extrema(all_teff)
@@ -202,8 +230,14 @@ function animate_hr(
     # HR frames are information-dense (stellar types, population structure);
     # keep pace slow so each epoch is readable.
     fps = something(fps, cfg.style.anim_fps)
-    fps > 0 || (fps = _auto_fps(nframes;
-        target_duration = cfg.style.anim_target_seconds, min_fps = 1, max_fps = 8))
+    fps > 0 || (
+        fps = _auto_fps(
+            nframes;
+            target_duration = cfg.style.anim_target_seconds,
+            min_fps = 1,
+            max_fps = 8,
+        )
+    )
 
     outpath = _anim_output_path(cfg, filename)
 
@@ -218,7 +252,8 @@ function animate_hr(
     end
 
     fig = Figure(; size = _figsize_px(cfg))
-    ax = Axis(fig[1, 1];
+    ax = Axis(
+        fig[1, 1];
         xlabel = L"\log_{10}(T_\mathrm{eff} \, / \, \mathrm{K})",
         ylabel = L"\log_{10}(L \, / \, L_\odot)",
         limits = (xlims..., ylims...),
@@ -230,25 +265,32 @@ function animate_hr(
     )
     # Top-right in-axis corner is empty on an HR diagram (the sequence
     # enters at top-left).
-    text!(ax, 0.96, 0.96; text = time_text,
-        space = :relative, align = (:right, :top), fontsize = 16)
+    text!(
+        ax,
+        0.96,
+        0.96;
+        text = time_text,
+        space = :relative,
+        align = (:right, :top),
+        fontsize = 16,
+    )
 
     # Single source observable so positions, colours, and markers update
     # atomically even when the star count changes between epochs (Point2f
     # handles the varying length).
     frame_data = @lift begin
         v = valid_per_frame[$frame_idx]
-        (points = Point2f.([r.log_teff for r in v],
-                           [r.log_luminosity for r in v]),
-         colors  = [_hr_color(r.stellar_type) for r in v],
-         markers = [_hr_marker(r.stellar_type) for r in v])
+        (
+            points = Point2f.([r.log_teff for r in v], [r.log_luminosity for r in v]),
+            colors = [_hr_color(r.stellar_type) for r in v],
+            markers = [_hr_marker(r.stellar_type) for r in v],
+        )
     end
-    pts      = @lift($frame_data.points)
+    pts = @lift($frame_data.points)
     col_data = @lift($frame_data.colors)
-    mk_data  = @lift($frame_data.markers)
+    mk_data = @lift($frame_data.markers)
 
-    scatter!(ax, pts;
-        color = col_data, marker = mk_data, markersize = 14, strokewidth = 0)
+    scatter!(ax, pts; color = col_data, marker = mk_data, markersize = 14, strokewidth = 0)
 
     _backup_existing(outpath)
     record(fig, outpath, 1:nframes; framerate = fps) do i
@@ -279,7 +321,8 @@ Animate Lagrangian radii evolution with a sweeping time cursor.
 Returns the output file path.
 """
 function animate_lagrangian(
-    lagr::LagrangianData, cfg::VisualizationConfig;
+    lagr::LagrangianData,
+    cfg::VisualizationConfig;
     filename::AbstractString = "lagrangian_anim",
     fps::Union{Int,Nothing} = nothing,
     selected_fractions::Vector{Float64} = Float64[],
@@ -295,23 +338,28 @@ function animate_lagrangian(
     # Lagrangian data is a dense time series (often hundreds of steps)
     # with smooth playback; allow up to 30 fps.
     fps = something(fps, cfg.style.anim_fps)
-    fps > 0 || (fps = _auto_fps(nt;
-        target_duration = cfg.style.anim_target_seconds, min_fps = 2, max_fps = 30))
+    fps > 0 || (
+        fps = _auto_fps(
+            nt;
+            target_duration = cfg.style.anim_target_seconds,
+            min_fps = 2,
+            max_fps = 30,
+        )
+    )
 
-    physical = cfg.units == "physical" && units !== nothing &&
-               units.rbar > 0 && units.tscale > 0
-    ts       = physical ? lagr.time .* units.tscale : lagr.time
-    r_scale  = physical ? units.rbar : 1.0
+    physical = cfg.units == "physical" && units !== nothing && units.rbar > 0 && units.tscale > 0
+    ts = physical ? lagr.time .* units.tscale : lagr.time
+    r_scale = physical ? units.rbar : 1.0
 
     # Closest available mass fractions and the plotted (positive, scaled)
     # radii — the log-axis tick range comes from the actual data extents.
     frac_indices = [argmin(abs.(lagr.mass_fractions .- f)) for f in selected_fractions]
-    r_pos = [r * r_scale for idx in frac_indices
-             for r in @view(lagr.radii[idx, :]) if r > 0]
+    r_pos = [r * r_scale for idx in frac_indices for r in @view(lagr.radii[idx, :]) if r > 0]
 
     fig = Figure(; size = _figsize_px(cfg))
     ttk = _time_ticks(first(ts), last(ts))
-    ax = Axis(fig[1, 1];
+    ax = Axis(
+        fig[1, 1];
         xlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]",
         ylabel = physical ? L"r_\mathrm{L} \; [\mathrm{pc}]" : L"r_\mathrm{L} \; [\mathrm{NB}]",
         yscale = log10,
@@ -322,8 +370,13 @@ function animate_lagrangian(
     # Pre-plot all lines (full data) in light gray as ghost background.
     # Non-positive radii (empty shells) are invalid on the log axis → NaN.
     for idx in frac_indices
-        lines!(ax, ts, [r > 0 ? r * r_scale : NaN for r in @view lagr.radii[idx, :]];
-            color = :gray82, linewidth = 1.0)
+        lines!(
+            ax,
+            ts,
+            [r > 0 ? r * r_scale : NaN for r in @view lagr.radii[idx, :]];
+            color = :gray82,
+            linewidth = 1.0,
+        )
     end
 
     # Animated lines — use Point2f Observables to avoid x/y length mismatch
@@ -335,17 +388,18 @@ function animate_lagrangian(
         pct = isinteger(pct_val) ? @sprintf("%d", Int(pct_val)) : @sprintf("%.1f", pct_val)
 
         ys = [r > 0 ? r * r_scale : NaN for r in @view lagr.radii[fidx, :]]
-        pts = @lift(Point2f.(ts[1:$frame_idx], ys[1:$frame_idx]))
+        pts = @lift(Point2f.(ts[1:($frame_idx)], ys[1:($frame_idx)]))
 
-        lines!(ax, pts;
+        lines!(
+            ax,
+            pts;
             color = _OKABE_ITO[mod1(ci, length(_OKABE_ITO))],
             label = latexstring("$(pct)\\%"),
         )
     end
 
     # Vertical cursor line
-    vlines!(ax, @lift(ts[$frame_idx]);
-        color = :gray40, linestyle = :dash, linewidth = 1.0)
+    vlines!(ax, @lift(ts[$frame_idx]); color = :gray40, linestyle = :dash, linewidth = 1.0)
 
     # Static layout: the top legend row is added before record() starts
     if length(selected_fractions) ≥ 2

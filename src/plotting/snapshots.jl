@@ -13,14 +13,15 @@ time annotation in Myr when `cfg.units == "physical"` (header AS scaling);
 N-body units otherwise.
 """
 function plot_snapshot(
-    snap::Snapshot, cfg::VisualizationConfig;
+    snap::Snapshot,
+    cfg::VisualizationConfig;
     filename::AbstractString = "snapshot",
     projections::Vector{Symbol} = [:xy, :xz, :yz],
 )
     physical = cfg.units == "physical" && _has_physical_scaling(snap.header)
     unit_str = physical ? "pc" : "NB"
-    r_scale  = physical ? rbar(snap.header) : 1.0
-    t_val    = physical ? time_myr(snap.header) : time_nb(snap.header)
+    r_scale = physical ? rbar(snap.header) : 1.0
+    t_val = physical ? time_myr(snap.header) : time_nb(snap.header)
     n = nparticles(snap)
 
     ms = _marker_size(cfg, n)
@@ -29,7 +30,10 @@ function plot_snapshot(
     m = Float64.(snap.mass)
     log_m = log10.(max.(m, 1e-30))
     cmin, cmax = extrema(log_m)
-    if cmin ≈ cmax; cmin -= 0.5; cmax += 0.5; end
+    if cmin ≈ cmax
+        cmin -= 0.5
+        cmax += 0.5
+    end
 
     for proj in projections
         fig = Figure(; size = _fig_with_colorbar(cfg))
@@ -43,7 +47,8 @@ function plot_snapshot(
         xtk = _nice_ticks(xlo, xhi; target_n = 5)
         ytk = _nice_ticks(ylo, yhi; target_n = 5)
 
-        ax = Axis(fig[1, 1];
+        ax = Axis(
+            fig[1, 1];
             xlabel = _coord_label(xsym, unit_str),
             ylabel = _coord_label(ysym, unit_str),
             aspect = DataAspect(),
@@ -53,19 +58,30 @@ function plot_snapshot(
             xgridvisible = false,
             ygridvisible = false,
         )
-        text!(ax, 0.04, 0.96;
+        text!(
+            ax,
+            0.04,
+            0.96;
             text = _time_annotation(t_val, physical),
-            space = :relative, align = (:left, :top), fontsize = 16)
+            space = :relative,
+            align = (:left, :top),
+            fontsize = 16,
+        )
 
-        sc = scatter!(ax, px, py;
-            color      = log_m,
-            colormap   = :viridis,
+        sc = scatter!(
+            ax,
+            px,
+            py;
+            color = log_m,
+            colormap = :viridis,
             colorrange = (cmin, cmax),
             markersize = ms,
             strokewidth = 0,
         )
 
-        Colorbar(fig[1, 2], sc;
+        Colorbar(
+            fig[1, 2],
+            sc;
             label = L"\log_{10}(m \, / \, M_\mathrm{tot})",
             ticks = _nice_colorbar_ticks(cmin, cmax),
         )
@@ -91,7 +107,8 @@ per-panel adaptive zoom is enabled and tick labels are shown on every panel
 so the reader can infer the scale from the axis values.
 """
 function plot_snapshot_evolution(
-    snaps::Vector{Snapshot}, cfg::VisualizationConfig;
+    snaps::Vector{Snapshot},
+    cfg::VisualizationConfig;
     filename::AbstractString = "snapshot_evolution",
     projections::Vector{Symbol} = [:xy, :xz, :yz],
     max_panels::Int = 6,
@@ -99,8 +116,7 @@ function plot_snapshot_evolution(
     ns = length(snaps)
     ns == 0 && return nothing
 
-    physical = cfg.units == "physical" &&
-               all(_has_physical_scaling(s.header) for s in snaps)
+    physical = cfg.units == "physical" && all(_has_physical_scaling(s.header) for s in snaps)
     unit_str = physical ? "pc" : "NB"
     r_scales = [physical ? rbar(s.header) : 1.0 for s in snaps]
 
@@ -114,7 +130,10 @@ function plot_snapshot_evolution(
     all_m = reduce(vcat, [Float64.(snaps[i].mass) for i in indices])
     log_m_global = log10.(max.(all_m, 1e-30))
     cmin, cmax = extrema(log_m_global)
-    if cmin ≈ cmax; cmin -= 0.5; cmax += 0.5; end
+    if cmin ≈ cmax
+        cmin -= 0.5
+        cmax += 0.5
+    end
 
     for projection in projections
         # Extra width for the shared colorbar column
@@ -160,7 +179,8 @@ function plot_snapshot_evolution(
 
             t_val = physical ? time_myr(snap.header) : time_nb(snap.header)
 
-            ax = Axis(fig[row, col];
+            ax = Axis(
+                fig[row, col];
                 xlabel = show_xlab ? xlab : "",
                 ylabel = show_ylab ? ylab : "",
                 xlabelsize = 22,
@@ -176,15 +196,24 @@ function plot_snapshot_evolution(
                 xgridvisible = false,
                 ygridvisible = false,
             )
-            text!(ax, 0.04, 0.96;
+            text!(
+                ax,
+                0.04,
+                0.96;
                 text = _time_annotation(t_val, physical),
-                space = :relative, align = (:left, :top), fontsize = 16)
+                space = :relative,
+                align = (:left, :top),
+                fontsize = 16,
+            )
 
             log_m = log10.(max.(Float64.(snap.mass), 1e-30))
             ms = _marker_size(cfg, nparticles(snap))
-            scatter!(ax, px, py;
-                color      = log_m,
-                colormap   = :viridis,
+            scatter!(
+                ax,
+                px,
+                py;
+                color = log_m,
+                colormap = :viridis,
                 colorrange = (cmin, cmax),
                 markersize = ms,
                 strokewidth = 0,
@@ -192,11 +221,12 @@ function plot_snapshot_evolution(
         end
 
         # Shared colorbar spanning all rows, right of the panel grid
-        Colorbar(fig[1:nrows, ncols + 1];
-            colormap   = :viridis,
+        Colorbar(
+            fig[1:nrows, ncols + 1];
+            colormap = :viridis,
             colorrange = (cmin, cmax),
-            label      = L"\log_{10}(m \, / \, M_\mathrm{tot})",
-            ticks      = _nice_colorbar_ticks(cmin, cmax),
+            label = L"\log_{10}(m \, / \, M_\mathrm{tot})",
+            ticks = _nice_colorbar_ticks(cmin, cmax),
         )
 
         colgap!(fig.layout, _MULTIPANEL_HGAP)
@@ -232,7 +262,7 @@ _has_physical_scaling(h::SnapshotHeader) = rbar(h) > 0 && tscale(h) > 0
 function _time_annotation(t_val::Real, physical::Bool)
     t_str = @sprintf("%.3g", t_val)
     return physical ? latexstring("t = $(t_str)\\;\\mathrm{Myr}") :
-                      latexstring("t = $(t_str)\\;[\\mathrm{NB}]")
+           latexstring("t = $(t_str)\\;[\\mathrm{NB}]")
 end
 
 """
@@ -241,12 +271,18 @@ end
 Return `true` if the spatial extent varies by more than `1/zoom_frac` across
 the selected snapshots, meaning per-panel adaptive zoom should be used.
 """
-function _needs_adaptive_zoom(snaps::Vector{Snapshot}, indices, ix::Int, iy::Int,
-                              zoom_frac::Real)::Bool
+function _needs_adaptive_zoom(
+    snaps::Vector{Snapshot},
+    indices,
+    ix::Int,
+    iy::Int,
+    zoom_frac::Real,
+)::Bool
     extents = Float64[]
     for idx in indices
         snap = snaps[idx]
-        sx = snap.pos[ix, :]; sy = snap.pos[iy, :]
+        sx = snap.pos[ix, :]
+        sy = snap.pos[iy, :]
         push!(extents, max(maximum(abs, sx), maximum(abs, sy), 0.1))
     end
     return (minimum(extents) / maximum(extents)) < zoom_frac

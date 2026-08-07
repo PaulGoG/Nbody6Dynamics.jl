@@ -16,8 +16,24 @@
 #   0.4,   0.5,   0.6,   0.7,  0.8,  0.9,  0.95, 0.99, 1.0
 
 const LAGR_MASS_FRACTIONS = [
-    0.001, 0.003, 0.005, 0.01, 0.03, 0.05, 0.1, 0.2, 0.3,
-    0.4,   0.5,   0.6,   0.7,  0.8,  0.9,  0.95, 0.99, 1.0,
+    0.001,
+    0.003,
+    0.005,
+    0.01,
+    0.03,
+    0.05,
+    0.1,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    0.95,
+    0.99,
+    1.0,
 ]
 
 # Number of radii columns in the total-particle block (18 fractions + RC)
@@ -35,7 +51,8 @@ function read_lagr(path::AbstractString; rows_per_block::Int = 15)::LagrangianDa
     isfile(path) || error("Lagrangian radii file not found: $path")
 
     lines = readlines(path)
-    isempty(lines) && return LagrangianData(Float64[], LAGR_MASS_FRACTIONS, Matrix{Float64}(undef, 0, 0))
+    isempty(lines) &&
+        return LagrangianData(Float64[], LAGR_MASS_FRACTIONS, Matrix{Float64}(undef, 0, 0))
 
     # Detect format: modern format has header lines starting with ## or non-numeric text
     if _is_modern_format(lines)
@@ -86,7 +103,8 @@ function _read_lagr_modern(lines::Vector{String})::LagrangianData
         push!(radii_rows, [parse(Float64, tokens[1 + k]) for k in 1:ncols])
     end
 
-    isempty(times) && return LagrangianData(Float64[], LAGR_MASS_FRACTIONS, Matrix{Float64}(undef, 0, 0))
+    isempty(times) &&
+        return LagrangianData(Float64[], LAGR_MASS_FRACTIONS, Matrix{Float64}(undef, 0, 0))
 
     nf = length(radii_rows[1])
     nt = length(times)
@@ -94,11 +112,11 @@ function _read_lagr_modern(lines::Vector{String})::LagrangianData
     for j in 1:nt
         nr = length(radii_rows[j])
         mat[1:min(nr, nf), j] .= radii_rows[j][1:min(nr, nf)]
-        nr < nf && (mat[nr+1:nf, j] .= NaN)
+        nr < nf && (mat[(nr + 1):nf, j] .= NaN)
     end
 
-    fracs = nf == length(LAGR_MASS_FRACTIONS) ? LAGR_MASS_FRACTIONS :
-            collect(range(0, 1; length = nf))
+    fracs =
+        nf == length(LAGR_MASS_FRACTIONS) ? LAGR_MASS_FRACTIONS : collect(range(0, 1; length = nf))
 
     return LagrangianData(times, fracs, mat)
 end
@@ -127,7 +145,8 @@ function _read_lagr_legacy(lines::Vector{String}, rows_per_block::Int)::Lagrangi
         push!(radii_rows, [parse(Float64, tok) for tok in tokens[2:end]])
     end
 
-    isempty(times) && return LagrangianData(Float64[], LAGR_MASS_FRACTIONS, Matrix{Float64}(undef, 0, 0))
+    isempty(times) &&
+        return LagrangianData(Float64[], LAGR_MASS_FRACTIONS, Matrix{Float64}(undef, 0, 0))
 
     nf = length(radii_rows[1])
     nt = length(times)
@@ -135,10 +154,11 @@ function _read_lagr_legacy(lines::Vector{String}, rows_per_block::Int)::Lagrangi
     for j in 1:nt
         nr = length(radii_rows[j])
         mat[1:min(nr, nf), j] .= radii_rows[j][1:min(nr, nf)]
-        nr < nf && (mat[nr+1:nf, j] .= NaN)
+        nr < nf && (mat[(nr + 1):nf, j] .= NaN)
     end
 
-    fracs = length(LAGR_MASS_FRACTIONS) == nf ? LAGR_MASS_FRACTIONS : collect(range(0, 1; length = nf))
+    fracs =
+        length(LAGR_MASS_FRACTIONS) == nf ? LAGR_MASS_FRACTIONS : collect(range(0, 1; length = nf))
 
     return LagrangianData(times, fracs, mat)
 end

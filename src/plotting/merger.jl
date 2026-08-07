@@ -57,14 +57,11 @@ fewer than 3 members of cluster `i` remain in snapshot `k`. `r_rms[i, k]` is
 the mass-weighted RMS radius of cluster `i`'s members from their COM (a
 proxy for cluster extent); `NaN` when `present` is false.
 """
-function _cluster_com_trajectories(
-    snaps::Vector{Snapshot},
-    cluster_ranges::Vector{UnitRange{Int}},
-)
+function _cluster_com_trajectories(snaps::Vector{Snapshot}, cluster_ranges::Vector{UnitRange{Int}})
     n_cl = length(cluster_ranges)
-    n_t  = length(snaps)
-    coms    = fill(NaN, 3, n_cl, n_t)
-    r_rms   = fill(NaN, n_cl, n_t)
+    n_t = length(snaps)
+    coms = fill(NaN, 3, n_cl, n_t)
+    r_rms = fill(NaN, n_cl, n_t)
     present = falses(n_cl, n_t)
 
     for (k, snap) in enumerate(snaps)
@@ -118,7 +115,7 @@ function _count_spatial_clusters(
     overlap_factor::Real = 1.0,
 )
     n_cl = size(coms, 2)
-    n_t  = size(coms, 3)
+    n_t = size(coms, 3)
     counts = zeros(Int, n_t)
 
     # Reference radii: each cluster's RMS radius in its first present snapshot
@@ -146,17 +143,19 @@ function _count_spatial_clusters(
         active = findall(@view present[:, k])
         isempty(active) && (counts[k] = 0; continue)
 
-        for i in 1:n_cl; parent[i] = i; end
+        for i in 1:n_cl
+            parent[i] = i
+        end
         for ia in eachindex(active)
             i = active[ia]
             isnan(r_ref[i]) && continue
-            for jb in ia+1:length(active)
+            for jb in (ia + 1):length(active)
                 j = active[jb]
                 isnan(r_ref[j]) && continue
                 dx = coms[1, i, k] - coms[1, j, k]
                 dy = coms[2, i, k] - coms[2, j, k]
                 dz = coms[3, i, k] - coms[3, j, k]
-                d  = sqrt(dx*dx + dy*dy + dz*dz)
+                d = sqrt(dx*dx + dy*dy + dz*dz)
                 if d < overlap_factor * (r_ref[i] + r_ref[j])
                     ri = find(parent, i)
                     rj = find(parent, j)
@@ -165,7 +164,9 @@ function _count_spatial_clusters(
             end
         end
         roots = Set{Int}()
-        for i in active; push!(roots, find(parent, i)); end
+        for i in active
+            push!(roots, find(parent, i))
+        end
         counts[k] = length(roots)
     end
     return counts
@@ -195,13 +196,12 @@ function plot_cluster_separation(
     n_t = length(snaps)
     n_t ≥ 2 || (@info "Skipping separation plot: need ≥ 2 snapshots"; return nothing)
 
-    physical = cfg.units == "physical" &&
-               all(_has_physical_scaling(s.header) for s in snaps)
+    physical = cfg.units == "physical" && all(_has_physical_scaling(s.header) for s in snaps)
     t = physical ? [time_myr(s.header) for s in snaps] : [time_nb(s.header) for s in snaps]
     coms, present, r_rms = _cluster_com_trajectories(snaps, cluster_ranges)
 
     # Pairwise separations over time: pairs × n_times
-    pairs = [(i, j) for i in 1:n_cl-1 for j in i+1:n_cl]
+    pairs = [(i, j) for i in 1:(n_cl - 1) for j in (i + 1):n_cl]
     n_pairs = length(pairs)
     seps = fill(NaN, n_pairs, n_t)
     for (p, (i, j)) in enumerate(pairs)
@@ -222,7 +222,8 @@ function plot_cluster_separation(
     end
 
     fig = Figure(; size = _figsize_px(cfg))
-    ax = Axis(fig[1, 1];
+    ax = Axis(
+        fig[1, 1];
         xlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]",
         ylabel = physical ? L"d_{ij} \; [\mathrm{pc}]" : L"d_{ij} \; [\mathrm{NB}]",
         xticks = _time_ticks(first(t), last(t)),
@@ -235,17 +236,21 @@ function plot_cluster_separation(
         for (p, (i, j)) in enumerate(pairs)
             valid = .!isnan.(seps[p, :])
             any(valid) || continue
-            lines!(ax, t[valid], seps[p, valid];
+            lines!(
+                ax,
+                t[valid],
+                seps[p, valid];
                 color = _OKABE_ITO[mod1(p, length(_OKABE_ITO))],
                 linewidth = 1.8,
-                label = "$(i)–$(j)")
+                label = "$(i)–$(j)",
+            )
             n_lines += 1
         end
         n_lines ≥ 2 && _top_legend!(fig, ax; nbanks = min(3, cld(n_pairs, 4)))
     else
         # Envelope: show min/max band plus mean line
-        d_min  = fill(NaN, n_t)
-        d_max  = fill(NaN, n_t)
+        d_min = fill(NaN, n_t)
+        d_max = fill(NaN, n_t)
         d_mean = fill(NaN, n_t)
         for k in 1:n_t
             vals = Float64[]
@@ -254,35 +259,37 @@ function plot_cluster_separation(
                 isnan(x) || push!(vals, x)
             end
             isempty(vals) && continue
-            d_min[k]  = minimum(vals)
-            d_max[k]  = maximum(vals)
+            d_min[k] = minimum(vals)
+            d_max[k] = maximum(vals)
             d_mean[k] = sum(vals) / length(vals)
         end
 
         valid = .!isnan.(d_mean)
         sep_color = _SEMANTIC_COLORS[:separation]
-        band_plot = band!(ax, t[valid], d_min[valid], d_max[valid];
-                          color = (sep_color, 0.25))
+        band_plot = band!(ax, t[valid], d_min[valid], d_max[valid]; color = (sep_color, 0.25))
         # Darker same-hue edges on the band fill
         sep_edge = _band_edge(sep_color)
         lines!(ax, t[valid], d_min[valid]; color = sep_edge, linewidth = 1.0)
         lines!(ax, t[valid], d_max[valid]; color = sep_edge, linewidth = 1.0)
-        mean_plot = lines!(ax, t[valid], d_mean[valid];
-                           color = sep_color, linewidth = 2.4)
+        mean_plot = lines!(ax, t[valid], d_mean[valid]; color = sep_color, linewidth = 2.4)
 
         # Mark estimated coalescence: max/mean ratio and mean separation both
         # drop below their heuristic thresholds (consts at top of file)
         d_init_min = minimum(filter(!isnan, d_min))
         ratio = [isnan(d_mean[k]) ? NaN : d_max[k] / d_mean[k] for k in 1:n_t]
-        idx_merge = findfirst(k -> !isnan(ratio[k]) && ratio[k] < _COALESCENCE_RATIO_MAX &&
-                                    d_mean[k] < _COALESCENCE_MEAN_SEP_FACTOR * d_init_min, 1:n_t)
+        idx_merge = findfirst(
+            k ->
+                !isnan(ratio[k]) &&
+                ratio[k] < _COALESCENCE_RATIO_MAX &&
+                d_mean[k] < _COALESCENCE_MEAN_SEP_FACTOR * d_init_min,
+            1:n_t,
+        )
 
         merge_plot = nothing
         merge_label = ""
         if idx_merge !== nothing && t[idx_merge] > first(t)
             t_merge = t[idx_merge]
-            merge_plot = vlines!(ax, [t_merge]; color = :black,
-                                 linestyle = :dash, linewidth = 1.5)
+            merge_plot = vlines!(ax, [t_merge]; color = :black, linestyle = :dash, linewidth = 1.5)
             merge_label = latexstring("t_\\mathrm{merge} \\approx $(round(t_merge; digits=2))")
         end
 
@@ -290,10 +297,10 @@ function plot_cluster_separation(
         # merged when |COM_i − COM_j| < (r_rms_i + r_rms_j), i.e. their
         # member spheres overlap. Connected components via union-find.
         # Tick/label colour matches the count series (semantic N colour).
-        survivor_count = _count_spatial_clusters(coms, r_rms, present;
-                                                  overlap_factor = 1.0)
+        survivor_count = _count_spatial_clusters(coms, r_rms, present; overlap_factor = 1.0)
         count_color = _SEMANTIC_COLORS[:n_particles]
-        ax2 = Axis(fig[1, 1];
+        ax2 = Axis(
+            fig[1, 1];
             yaxisposition = :right,
             ylabel = L"N_\mathrm{clusters}\;\mathrm{(\geq 3\;members)}",
             ylabelcolor = count_color,
@@ -312,9 +319,14 @@ function plot_cluster_separation(
             limits = ((nothing, nothing), (0, n_cl + max(1, ceil(Int, 0.1 * n_cl)))),
         )
         hidespines!(ax2, :t, :b, :l)
-        surv_plot = stairs!(ax2, t, Float64.(survivor_count);
-                            color = count_color, linewidth = 2.2,
-                            step = :post)
+        surv_plot = stairs!(
+            ax2,
+            t,
+            Float64.(survivor_count);
+            color = count_color,
+            linewidth = 2.2,
+            step = :post,
+        )
 
         # Manual legend combining primary and twin axes: horizontal, above
         legend_elems = Any[band_plot, mean_plot]
@@ -379,9 +391,9 @@ function _cluster_virial_snapshot(snap::Snapshot, rng::UnitRange{Int})
 
     # Self-gravitational potential energy of the cluster (G = 1)
     W = 0.0
-    @inbounds for i in 1:n_mem - 1
+    @inbounds for i in 1:(n_mem - 1)
         xi, yi, zi, mi = x[i], y[i], z[i], m[i]
-        for j in i+1:n_mem
+        for j in (i + 1):n_mem
             dx = xi - x[j]
             dy = yi - y[j]
             dz = zi - z[j]
@@ -405,13 +417,10 @@ has < 3 members left.
 
 Complexity: O(Σ_i N_i²) per snapshot. Manageable for N_i ≲ few × 10³.
 """
-function per_cluster_virial(
-    snaps::Vector{Snapshot},
-    cluster_ranges::Vector{UnitRange{Int}},
-)
+function per_cluster_virial(snaps::Vector{Snapshot}, cluster_ranges::Vector{UnitRange{Int}})
     n_cl = length(cluster_ranges)
-    n_t  = length(snaps)
-    Q     = fill(NaN, n_cl, n_t)
+    n_t = length(snaps)
+    Q = fill(NaN, n_cl, n_t)
     n_mem = zeros(Int, n_cl, n_t)
 
     for (k, snap) in enumerate(snaps)
@@ -453,8 +462,7 @@ function plot_cluster_virial(
     n_t = length(snaps)
     n_t ≥ 2 || (@info "Skipping virial plot: need ≥ 2 snapshots"; return nothing)
 
-    physical = cfg.units == "physical" &&
-               all(_has_physical_scaling(s.header) for s in snaps)
+    physical = cfg.units == "physical" && all(_has_physical_scaling(s.header) for s in snaps)
     t = physical ? [time_myr(s.header) for s in snaps] : [time_nb(s.header) for s in snaps]
     @info "Computing per-cluster virial ratios ($(n_cl) clusters × $(n_t) snapshots)..."
     Q, _ = per_cluster_virial(snaps, cluster_ranges)
@@ -469,13 +477,14 @@ function plot_cluster_virial(
     Q_plot = use_log ? max.(Q, cfg.style.q_floor) : copy(Q)
     q_plotted = filter(!isnan, vec(Q_plot))
 
-    ax = Axis(fig[1, 1];
+    ax = Axis(
+        fig[1, 1];
         xlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]",
         ylabel = L"Q_i = T_i / |W_i|",
         xticks = _time_ticks(first(t), last(t)),
         yscale = use_log ? log10 : identity,
-        yticks = use_log && !isempty(q_plotted) ?
-                 _log_ticks(extrema(q_plotted)...) : Makie.automatic,
+        yticks = use_log && !isempty(q_plotted) ? _log_ticks(extrema(q_plotted)...) :
+                 Makie.automatic,
     )
 
     detail = n_cl ≤ 5
@@ -484,10 +493,14 @@ function plot_cluster_virial(
         for i in 1:n_cl
             valid = .!isnan.(@view Q[i, :])
             any(valid) || continue
-            lines!(ax, t[valid], Q_plot[i, valid];
+            lines!(
+                ax,
+                t[valid],
+                Q_plot[i, valid];
                 color = _OKABE_ITO[mod1(i, length(_OKABE_ITO))],
                 linewidth = 1.8,
-                label = latexstring("\\mathrm{cluster}\\;$(i)"))
+                label = latexstring("\\mathrm{cluster}\\;$(i)"),
+            )
             n_series += 1
         end
     else
@@ -501,33 +514,47 @@ function plot_cluster_virial(
                 isnan(x) || push!(vals, x)
             end
             isempty(vals) && continue
-            q_min[k]  = minimum(vals)
-            q_max[k]  = maximum(vals)
+            q_min[k] = minimum(vals)
+            q_max[k] = maximum(vals)
             q_mean[k] = sum(vals) / length(vals)
         end
         valid = .!isnan.(q_mean)
         vir_color = _SEMANTIC_COLORS[:virial]
-        band!(ax, t[valid], q_min[valid], q_max[valid];
-              color = (vir_color, 0.25),
-              label = L"\min\;-\;\max\;\mathrm{range}")
+        band!(
+            ax,
+            t[valid],
+            q_min[valid],
+            q_max[valid];
+            color = (vir_color, 0.25),
+            label = L"\min\;-\;\max\;\mathrm{range}",
+        )
         # Darker same-hue edges on the band fill
         vir_edge = _band_edge(vir_color)
         lines!(ax, t[valid], q_min[valid]; color = vir_edge, linewidth = 1.0)
         lines!(ax, t[valid], q_max[valid]; color = vir_edge, linewidth = 1.0)
-        lines!(ax, t[valid], q_mean[valid];
-               color = vir_color, linewidth = 2.4,
-               label = L"\mathrm{mean}")
+        lines!(
+            ax,
+            t[valid],
+            q_mean[valid];
+            color = vir_color,
+            linewidth = 2.4,
+            label = L"\mathrm{mean}",
+        )
         n_series = 2
     end
 
     # Virial equilibrium reference
-    hlines!(ax, [0.5];
-            color = :gray50, linestyle = :dash, linewidth = 1.0,
-            label = L"Q = 0.5\;\mathrm{(virial\;equilibrium)}")
+    hlines!(
+        ax,
+        [0.5];
+        color = :gray50,
+        linestyle = :dash,
+        linewidth = 1.0,
+        label = L"Q = 0.5\;\mathrm{(virial\;equilibrium)}",
+    )
 
     # ≥ 2 legend entries whenever at least one data series was drawn
-    n_series ≥ 1 &&
-        _top_legend!(fig, ax; nbanks = detail ? min(3, cld(n_cl + 1, 4)) : 1)
+    n_series ≥ 1 && _top_legend!(fig, ax; nbanks = detail ? min(3, cld(n_cl + 1, 4)) : 1)
 
     return _save_fig(cfg, filename, fig)
 end

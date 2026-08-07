@@ -59,8 +59,12 @@ Return copies of `(pos, vel, mass)` with particles beyond `r_trunc` from the
 coordinate origin removed. Non-mutating (the inputs are left untouched), so
 no `!` — the cluster is assumed centred at the origin (pre-offset).
 """
-function truncate_jacobi(pos::Matrix{Float64}, vel::Matrix{Float64},
-                         mass::Vector{Float64}, r_trunc::Float64)
+function truncate_jacobi(
+    pos::Matrix{Float64},
+    vel::Matrix{Float64},
+    mass::Vector{Float64},
+    r_trunc::Float64,
+)
     N = length(mass)
     keep = Bool[]
     sizehint!(keep, N)
@@ -70,7 +74,8 @@ function truncate_jacobi(pos::Matrix{Float64}, vel::Matrix{Float64},
     end
     idx = findall(keep)
     n_removed = N - length(idx)
-    n_removed > 0 && @info "Jacobi truncation: removed $n_removed / $N particles (r_trunc = $(round(r_trunc; digits=4)))"
+    n_removed > 0 &&
+        @info "Jacobi truncation: removed $n_removed / $N particles (r_trunc = $(round(r_trunc; digits=4)))"
     return pos[:, idx], vel[:, idx], mass[idx]
 end
 
@@ -91,10 +96,15 @@ instantaneous Jacobi radius before combining.
 Returns combined `(pos, vel, mass)` arrays in the system CM frame.
 """
 function setup_two_cluster_orbit(
-    pos1::Matrix{Float64}, vel1::Matrix{Float64}, mass1::Vector{Float64},
-    pos2::Matrix{Float64}, vel2::Matrix{Float64}, mass2::Vector{Float64},
-    d_apo::Float64, ecc::Float64;
-    truncate_jacobi_flag::Bool = true
+    pos1::Matrix{Float64},
+    vel1::Matrix{Float64},
+    mass1::Vector{Float64},
+    pos2::Matrix{Float64},
+    vel2::Matrix{Float64},
+    mass2::Vector{Float64},
+    d_apo::Float64,
+    ecc::Float64;
+    truncate_jacobi_flag::Bool = true,
 )
     M1 = sum(mass1)
     M2 = sum(mass2)
@@ -171,13 +181,15 @@ giving the particle index range for each cluster in the output.
 function combine_clusters_explicit(
     cluster_data::Vector{<:NamedTuple},
     specs::Vector{ClusterSpec};
-    truncate_jacobi_flag::Bool = true
+    truncate_jacobi_flag::Bool = true,
 )
     n = length(cluster_data)
     n == length(specs) || error("cluster_data and specs must have same length")
 
     # Optional Jacobi truncation against nearest neighbour
-    truncated = Vector{NamedTuple{(:pos, :vel, :mass), Tuple{Matrix{Float64}, Matrix{Float64}, Vector{Float64}}}}()
+    truncated = Vector{
+        NamedTuple{(:pos, :vel, :mass),Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}},
+    }()
 
     for i in 1:n
         cd = cluster_data[i]
@@ -240,11 +252,11 @@ function combine_clusters_explicit(
     cmv = zeros(3)
     for i in 1:N_total
         for k in 1:3
-            cm[k]  += mass_out[i] * pos_out[k, i]
+            cm[k] += mass_out[i] * pos_out[k, i]
             cmv[k] += mass_out[i] * vel_out[k, i]
         end
     end
-    cm  ./= M_total
+    cm ./= M_total
     cmv ./= M_total
     for i in 1:N_total
         for k in 1:3

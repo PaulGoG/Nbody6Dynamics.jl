@@ -160,8 +160,7 @@ Uses the standard recipe:
 Returns `(pos::Matrix{Float64}, vel::Matrix{Float64})` each `3 × N`,
 in units where the tidal radius equals `rt`.
 """
-function sample_king(N::Int, W0::Float64, rt::Float64;
-                     rng::AbstractRNG = Random.default_rng())
+function sample_king(N::Int, W0::Float64, rt::Float64; rng::AbstractRNG = Random.default_rng())
     W0 > 0.0 || throw(ArgumentError("W0 must be positive, got $W0"))
     rt > 0.0 || throw(ArgumentError("rt must be positive, got $rt"))
 
@@ -175,9 +174,9 @@ function sample_king(N::Int, W0::Float64, rt::Float64;
     n_pts = length(rhat)
     cdf = zeros(Float64, n_pts)
     for i in 2:n_pts
-        dr = rhat[i] - rhat[i-1]
+        dr = rhat[i] - rhat[i - 1]
         # Trapezoidal integration
-        cdf[i] = cdf[i-1] + 0.5 * dr * (ρ_arr[i-1] * rhat[i-1]^2 + ρ_arr[i] * rhat[i]^2)
+        cdf[i] = cdf[i - 1] + 0.5 * dr * (ρ_arr[i - 1] * rhat[i - 1]^2 + ρ_arr[i] * rhat[i]^2)
     end
     cdf ./= cdf[end]  # normalise
 
@@ -281,8 +280,11 @@ total. `centre` defaults to the mass-weighted centre of mass.
 Note this is *not* the count-median radius — with an IMF the two differ by
 sampling noise, and only the mass-based definition matches RBAR semantics.
 """
-function half_mass_radius(mass::Vector{Float64}, pos::Matrix{Float64};
-                          centre::Union{Nothing,Vector{Float64}} = nothing)
+function half_mass_radius(
+    mass::Vector{Float64},
+    pos::Matrix{Float64};
+    centre::Union{Nothing,Vector{Float64}} = nothing,
+)
     N = length(mass)
     M_total = sum(mass)
     c = if centre === nothing
@@ -294,8 +296,7 @@ function half_mass_radius(mass::Vector{Float64}, pos::Matrix{Float64};
     else
         centre
     end
-    r = [sqrt((pos[1, i] - c[1])^2 + (pos[2, i] - c[2])^2 + (pos[3, i] - c[3])^2)
-         for i in 1:N]
+    r = [sqrt((pos[1, i] - c[1])^2 + (pos[2, i] - c[2])^2 + (pos[3, i] - c[3])^2) for i in 1:N]
     order = sortperm(r)
     m_cum = 0.0
     for idx in order
@@ -315,13 +316,18 @@ Assumes `G = 1`. Uses the exact N-body potential energy — O(N²), threaded
 over strided rows. Refuses (with a clear error) above `nmax` particles
 rather than silently burning hours; raise `nmax` deliberately for large ICs.
 """
-function virialise!(mass::Vector{Float64}, pos::Matrix{Float64}, vel::Matrix{Float64};
-                    nmax::Int = 200_000)
+function virialise!(
+    mass::Vector{Float64},
+    pos::Matrix{Float64},
+    vel::Matrix{Float64};
+    nmax::Int = 200_000,
+)
     N = length(mass)
     N ≤ nmax || error(
         "virialise!: N = $N exceeds nmax = $nmax. The exact potential is O(N²) " *
         "(≈ $(round(N^2 / 2e9; digits = 1))×10⁹ pair evaluations); pass a larger " *
-        "`nmax` explicitly if this is intended.")
+        "`nmax` explicitly if this is intended.",
+    )
     M_total = sum(mass)
 
     # Centre of mass correction
@@ -358,7 +364,7 @@ function virialise!(mass::Vector{Float64}, pos::Matrix{Float64}, vel::Matrix{Flo
         Threads.@spawn begin
             acc = 0.0
             for i in t:P:N
-                @inbounds for j in (i+1):N
+                @inbounds for j in (i + 1):N
                     dx = pos[1, i] - pos[1, j]
                     dy = pos[2, i] - pos[2, j]
                     dz = pos[3, i] - pos[3, j]

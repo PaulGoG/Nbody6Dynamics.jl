@@ -18,31 +18,48 @@ cd(PROJ)
 function make_base_cfg()
     Dict(
         "install" => Dict(
-            "enabled" => false, "reinstall" => false, "clean_build" => true,
+            "enabled" => false,
+            "reinstall" => false,
+            "clean_build" => true,
             "source_url" => "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git",
             "install_dir" => "backend/Nbody6PPGPU-beijing",
         ),
         "build" => Dict(
-            "enable_gpu" => false, "cuda_path" => "",
+            "enable_gpu" => false,
+            "cuda_path" => "",
             "configure_flags" => ["--enable-mcmodel=large", "--with-par=b1m"],
-            "nproc" => 0, "enable_hdf5" => true, "enable_mpi" => false,
+            "nproc" => 0,
+            "enable_hdf5" => true,
+            "enable_mpi" => false,
         ),
         "simulation" => Dict(
-            "run_test" => true, "runs_dir" => "runs",
-            "binary_name" => "nbody6++", "mpi_ranks" => 1,
+            "run_test" => true,
+            "runs_dir" => "runs",
+            "binary_name" => "nbody6++",
+            "mpi_ranks" => 1,
             "input_file" => "../../input_files/N100k_production.inp",
             "run_id_prefix" => "verif",
         ),
         "postprocess" => Dict(
-            "enabled" => true, "data_dir" => "", "parse_stdout" => true,
-            "stdout_file" => "out1000", "read_lagr" => true, "lagr_file" => "lagr.7",
-            "read_escapers" => true, "escapers_file" => "esc.11",
-            "read_stellar_evo" => true, "stellar_evo_pattern" => "sev.83_*",
-            "snapshot_format" => "conf3", "snapshot_pattern" => "conf.3_*",
+            "enabled" => true,
+            "data_dir" => "",
+            "parse_stdout" => true,
+            "stdout_file" => "out1000",
+            "read_lagr" => true,
+            "lagr_file" => "lagr.7",
+            "read_escapers" => true,
+            "escapers_file" => "esc.11",
+            "read_stellar_evo" => true,
+            "stellar_evo_pattern" => "sev.83_*",
+            "snapshot_format" => "conf3",
+            "snapshot_pattern" => "conf.3_*",
         ),
         "visualization" => Dict(
-            "enabled" => true, "format" => "png", "dpi" => 300,
-            "output_dir" => "plots", "figsize" => [8, 6],
+            "enabled" => true,
+            "format" => "png",
+            "dpi" => 300,
+            "output_dir" => "plots",
+            "figsize" => [8, 6],
         ),
     )
 end
@@ -63,9 +80,9 @@ function cfg_for_merger(merger_toml::String, prefix::String)
 end
 
 const SUITE = [
-    (name = "single",    raw = cfg_for_single("../../input_files/N5k_medium.inp", "verif_single")),
-    (name = "triorbit",  raw = cfg_for_merger("input_files/verif_triorbit.toml",  "verif_triorbit")),
-    (name = "3d5cluster",raw = cfg_for_merger("input_files/verif_3d5cluster.toml","verif_3d5")),
+    (name = "single", raw = cfg_for_single("../../input_files/N5k_medium.inp", "verif_single")),
+    (name = "triorbit", raw = cfg_for_merger("input_files/verif_triorbit.toml", "verif_triorbit")),
+    (name = "3d5cluster", raw = cfg_for_merger("input_files/verif_3d5cluster.toml", "verif_3d5")),
 ]
 
 # Intermediate configs go to a scratch dir (the TOML round-trip through

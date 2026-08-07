@@ -8,7 +8,7 @@
 Generate a unique run identifier: `{prefix}_YYYYMMDD_HHMMSS_{4hex}`.
 """
 function generate_run_id(prefix::String = "run")::String
-    ts  = Dates.format(Dates.now(), "yyyymmdd_HHMMSS")
+    ts = Dates.format(Dates.now(), "yyyymmdd_HHMMSS")
     hex = bytes2hex(rand(UInt8, 2))
     return "$(prefix)_$(ts)_$(hex)"
 end
@@ -54,12 +54,12 @@ Execute the Nbody6++ simulation with:
 Returns the path to the run directory.
 """
 function run_simulation(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROOT)::String
-    sim  = cfg.simulation
+    sim = cfg.simulation
     inst = cfg.install
 
     # --- Locate binary ---
     src_dir = joinpath(base_dir, inst.install_dir)
-    binary  = _find_binary(src_dir, sim.binary_name)
+    binary = _find_binary(src_dir, sim.binary_name)
 
     # --- Resolve input file ---
     input_path = abspath(joinpath(src_dir, sim.input_file))
@@ -70,7 +70,7 @@ function run_simulation(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_R
     #       output/      — simulation output files
     #       plots/       — post-processing plots (created later)
     #       config.toml  — frozen config
-    run_id  = generate_run_id(sim.run_id_prefix)
+    run_id = generate_run_id(sim.run_id_prefix)
     run_dir = abspath(joinpath(base_dir, sim.runs_dir, run_id))
     out_dir = joinpath(run_dir, "output")
     mkpath(out_dir)
@@ -89,9 +89,8 @@ function run_simulation(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_R
     # --- Build launch script ---
     stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
     stderr_path = joinpath(out_dir, "err1000")
-    launch_script = _write_launch_script(
-        out_dir, local_binary, input_path, stdout_path, stderr_path, cfg,
-    )
+    launch_script =
+        _write_launch_script(out_dir, local_binary, input_path, stdout_path, stderr_path, cfg)
 
     # --- Execute with real-time monitoring ---
     t_start = time()
@@ -138,7 +137,7 @@ function _write_launch_script(
     cfg::Nbody6Config,
 )::String
     path = joinpath(run_dir, "_launch.sh")
-    sim  = cfg.simulation
+    sim = cfg.simulation
     build = cfg.build
 
     open(path, "w") do io
@@ -163,10 +162,16 @@ function _write_launch_script(
         println(io, stdbuf_prefix)
 
         if build.enable_mpi && sim.mpi_ranks > 1
-            println(io, "exec mpirun --bind-to none -np $(sim.mpi_ranks) " *
-                        "\$STDBUF \"$binary\" < \"$input\" > \"$stdout_file\" 2> \"$stderr_file\"")
+            println(
+                io,
+                "exec mpirun --bind-to none -np $(sim.mpi_ranks) " *
+                "\$STDBUF \"$binary\" < \"$input\" > \"$stdout_file\" 2> \"$stderr_file\"",
+            )
         else
-            println(io, "exec \$STDBUF \"$binary\" < \"$input\" > \"$stdout_file\" 2> \"$stderr_file\"")
+            println(
+                io,
+                "exec \$STDBUF \"$binary\" < \"$input\" > \"$stdout_file\" 2> \"$stderr_file\"",
+            )
         end
     end
     chmod(path, 0o755)
@@ -182,11 +187,10 @@ the process is alive even during quiet periods. When a diagnostics line
 (ADJUST or TIME[NB]) is detected, it prints as a full log line and resets
 the spinner.
 """
-function _monitor_stdout_file(path::String, process::Base.Process,
-                              t_start::Float64 = time())
-    last_pos       = 0
-    spin_idx       = 1
-    last_event_t   = t_start   # wall-clock of last printed diagnostics line
+function _monitor_stdout_file(path::String, process::Base.Process, t_start::Float64 = time())
+    last_pos = 0
+    spin_idx = 1
+    last_event_t = t_start   # wall-clock of last printed diagnostics line
 
     while process_running(process)
         new_output = false
@@ -211,7 +215,7 @@ function _monitor_stdout_file(path::String, process::Base.Process,
         # Heartbeat spinner (overwritten in-place) when no new diagnostics
         if !new_output
             elapsed = time() - t_start
-            idle    = time() - last_event_t
+            idle = time() - last_event_t
             spin_ch = _SPINNER[mod1(spin_idx, length(_SPINNER))]
             spin_idx += 1
             # \r overwrites the line; \e[K clears to end of line
@@ -262,30 +266,44 @@ function _print_monitor_line(line::AbstractString, t_start::Float64 = time())::B
                     kv[uppercase(tokens[i])] = tokens[i + 1]
                     i += 2
                 end
-                t_nb  = parse(Float64, get(kv, "TIME", "0"))
+                t_nb = parse(Float64, get(kv, "TIME", "0"))
                 t_myr = parse(Float64, get(kv, "T[MYR]", "0"))
-                qvir  = parse(Float64, get(kv, "Q", "0"))
-                de    = parse(Float64, get(kv, "DE", "0"))
-                @info @sprintf("[%s]  t_NB=%.4f  t_Myr=%.1f  |ΔE/E|=%.2e  Q_vir=%.3f",
-                               elapsed_str, t_nb, t_myr, abs(de), qvir)
+                qvir = parse(Float64, get(kv, "Q", "0"))
+                de = parse(Float64, get(kv, "DE", "0"))
+                @info @sprintf(
+                    "[%s]  t_NB=%.4f  t_Myr=%.1f  |ΔE/E|=%.2e  Q_vir=%.3f",
+                    elapsed_str,
+                    t_nb,
+                    t_myr,
+                    abs(de),
+                    qvir
+                )
             else
                 length(tokens) >= 8 || return false
-                t_nb  = parse(Float64, tokens[1])
+                t_nb = parse(Float64, tokens[1])
                 t_myr = parse(Float64, tokens[2])
-                qvir  = parse(Float64, tokens[3])
-                de    = parse(Float64, tokens[4])
-                n     = parse(Int, tokens[6])
-                @info @sprintf("[%s]  t_NB=%.4f  t_Myr=%.1f  N=%d  |ΔE/E|=%.2e  Q_vir=%.3f",
-                               elapsed_str, t_nb, t_myr, n, abs(de), qvir)
+                qvir = parse(Float64, tokens[3])
+                de = parse(Float64, tokens[4])
+                n = parse(Int, tokens[6])
+                @info @sprintf(
+                    "[%s]  t_NB=%.4f  t_Myr=%.1f  N=%d  |ΔE/E|=%.2e  Q_vir=%.3f",
+                    elapsed_str,
+                    t_nb,
+                    t_myr,
+                    n,
+                    abs(de),
+                    qvir
+                )
             end
-        catch; end
+        catch
+        end
         return true
     end
 
     # ── TIME[NB] line: particle counts ──
     if startswith(stripped, "TIME[NB]")
         print(stderr, "\r\e[K")
-        m_n  = match(r"\bN\s+(\d+)", stripped)
+        m_n = match(r"\bN\s+(\d+)", stripped)
         m_np = match(r"NPAIRS\s+(\d+)", stripped)
         if !isnothing(m_n)
             n = parse(Int, m_n.captures[1])
@@ -301,16 +319,23 @@ end
 """
 Write a brief human-readable run summary including elapsed wall-clock time.
 """
-function _write_run_summary(run_dir::String, run_id::String, stdout_path::String,
-                            out_dir::String = run_dir,
-                            elapsed::Float64 = 0.0)
+function _write_run_summary(
+    run_dir::String,
+    run_id::String,
+    stdout_path::String,
+    out_dir::String = run_dir,
+    elapsed::Float64 = 0.0,
+)
     open(joinpath(run_dir, "RUN_INFO.txt"), "w") do io
         println(io, "Run ID:    $run_id")
         println(io, "Date:      $(Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"))")
         println(io, "Host:      $(gethostname())")
         println(io, "Julia:     $(VERSION)")
         println(io, "Commit:    $(_git_commit(_PROJECT_ROOT))")
-        println(io, "Backend:   $(_git_commit(joinpath(_PROJECT_ROOT, "backend", "Nbody6PPGPU-beijing")))")
+        println(
+            io,
+            "Backend:   $(_git_commit(joinpath(_PROJECT_ROOT, "backend", "Nbody6PPGPU-beijing")))",
+        )
         println(io, "Elapsed:   $(_format_elapsed(elapsed))")
         if isfile(stdout_path)
             println(io, "Stdout:    $(countlines(stdout_path)) lines")

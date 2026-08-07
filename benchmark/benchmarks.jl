@@ -47,9 +47,17 @@ function generate_diagnostics_positional(path::String, n_lines::Int)
         println(io, " PHYSICAL SCALING:  R* = 1.0  M* = 1000.0  V* = 5.0  T* = 10.0")
         for i in 1:n_lines
             t = Float64(i) / n_lines
-            @printf(io,
+            @printf(
+                io,
                 " ADJUST:  %10.4f  %10.2f  %7.3f  %10.2E  %8.4f  %6d  %6d  %7.3f\n",
-                t, t * 100, 1.0, 1e-6 * randn(), -0.25, 10000 - i, 500 - div(i, 2), 1.0 + 0.1 * t,
+                t,
+                t * 100,
+                1.0,
+                1e-6 * randn(),
+                -0.25,
+                10000 - i,
+                500 - div(i, 2),
+                1.0 + 0.1 * t,
             )
         end
     end
@@ -67,8 +75,15 @@ function generate_diagnostics_keyvalue(path::String, n_epochs::Int)
             n = 10000 - i
             npairs = 500 - div(i, 2)
             rscale = 1.0 + 0.1 * t
-            @printf(io, " ADJUST:  TIME  %10.4f  T[Myr]  %10.2f  Q  %7.3f  DE  %10.2E  ETOT  %8.4f\n",
-                    t, t_myr, 1.0, de, -0.25)
+            @printf(
+                io,
+                " ADJUST:  TIME  %10.4f  T[Myr]  %10.2f  Q  %7.3f  DE  %10.2E  ETOT  %8.4f\n",
+                t,
+                t_myr,
+                1.0,
+                de,
+                -0.25
+            )
             @printf(io, " RMIN =    0.001 RSCALE =   %7.3f\n", rscale)
             @printf(io, " TIME[NB]   %10.4f N   %6d <NB>      0 NPAIRS   %5d\n", t, n, npairs)
         end
@@ -127,7 +142,11 @@ println()
 
 # --- _auto_fps ---
 println("\n--- _auto_fps ---")
-display(@benchmark Nbody6Dynamics._auto_fps(n; target_duration=12.0, min_fps=1, max_fps=30) setup=(n=rand(1:500)) samples=100)
+display(
+    @benchmark Nbody6Dynamics._auto_fps(n; target_duration = 12.0, min_fps = 1, max_fps = 30) setup=(
+        n=rand(1:500)
+    ) samples=100
+)
 println()
 
 println("\nBenchmarks complete.")

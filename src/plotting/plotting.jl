@@ -30,9 +30,9 @@ const _CM_FONT = let
 
     if !isempty(_found)
         (
-            regular     = joinpath(_found, "NewCM10-Regular.otf"),
-            bold        = joinpath(_found, "NewCM10-Bold.otf"),
-            italic      = joinpath(_found, "NewCM10-Italic.otf"),
+            regular = joinpath(_found, "NewCM10-Regular.otf"),
+            bold = joinpath(_found, "NewCM10-Bold.otf"),
+            italic = joinpath(_found, "NewCM10-Italic.otf"),
             bold_italic = joinpath(_found, "NewCM10-BoldItalic.otf"),
         )
     else
@@ -43,56 +43,49 @@ end
 
 const PUBLICATION_THEME = Theme(
     fontsize = 22,
-    fonts    = _CM_FONT,
+    fonts = _CM_FONT,
     figure_padding = 16,
     Axis = (
-        xlabelsize         = 20,
-        ylabelsize         = 20,
-        titlesize          = 20,
-        xticklabelsize     = 16,
-        yticklabelsize     = 16,
-        xlabelpadding      = 10.0,
-        ylabelpadding      = 10.0,
-        spinewidth         = 1.5,
-        xtickwidth         = 1.2,
-        ytickwidth         = 1.2,
-        xminortickwidth    = 0.8,
-        yminortickwidth    = 0.8,
-        xtickalign         = 1.0,     # ticks face inward
-        ytickalign         = 1.0,
-        xticksize          = 8,
-        yticksize          = 8,
+        xlabelsize = 20,
+        ylabelsize = 20,
+        titlesize = 20,
+        xticklabelsize = 16,
+        yticklabelsize = 16,
+        xlabelpadding = 10.0,
+        ylabelpadding = 10.0,
+        spinewidth = 1.5,
+        xtickwidth = 1.2,
+        ytickwidth = 1.2,
+        xminortickwidth = 0.8,
+        yminortickwidth = 0.8,
+        xtickalign = 1.0,     # ticks face inward
+        ytickalign = 1.0,
+        xticksize = 8,
+        yticksize = 8,
         # No minor ticks; grey dashed major grid at very low opacity.
         # Dense scatter plots (cluster projections, HR) disable the grid
         # locally via x/ygridvisible = false.
         xminorticksvisible = false,
         yminorticksvisible = false,
-        xgridvisible       = true,
-        ygridvisible       = true,
-        xgridstyle         = :dash,
-        ygridstyle         = :dash,
-        xgridcolor         = (:grey, 0.12),
-        ygridcolor         = (:grey, 0.12),
-        topspinevisible    = true,
-        rightspinevisible  = true,
+        xgridvisible = true,
+        ygridvisible = true,
+        xgridstyle = :dash,
+        ygridstyle = :dash,
+        xgridcolor = (:grey, 0.12),
+        ygridcolor = (:grey, 0.12),
+        topspinevisible = true,
+        rightspinevisible = true,
     ),
     Legend = (
         framevisible = true,
-        framewidth   = 1.0,
-        labelsize    = 15,
-        patchsize    = (25, 14),
-        padding      = (8, 8, 6, 6),
-        rowgap       = 4,
+        framewidth = 1.0,
+        labelsize = 15,
+        patchsize = (25, 14),
+        padding = (8, 8, 6, 6),
+        rowgap = 4,
     ),
-    Lines = (
-        linewidth = 2.2,
-    ),
-    Colorbar = (
-        labelsize     = 18,
-        ticklabelsize = 14,
-        tickalign     = 1.0,
-        width         = 14,
-    ),
+    Lines = (linewidth = 2.2,),
+    Colorbar = (labelsize = 18, ticklabelsize = 14, tickalign = 1.0, width = 14),
 )
 
 """
@@ -120,8 +113,7 @@ const _COLUMN_PRESETS = Dict(
 
 """Render scale of the canvas relative to the final printed size (1.0 for
 free-form `figsize` canvases, `_PRINT_SCALE` for column presets)."""
-_render_scale(cfg::VisualizationConfig) =
-    haskey(_COLUMN_PRESETS, cfg.column) ? _PRINT_SCALE : 1.0
+_render_scale(cfg::VisualizationConfig) = haskey(_COLUMN_PRESETS, cfg.column) ? _PRINT_SCALE : 1.0
 
 """Canvas size in Makie units (1 unit = 1 pt): column preset × render scale,
 or the free-form `figsize` inches when `column` is empty/unknown."""
@@ -141,8 +133,7 @@ end
 # primary axis box remains the same physical size.
 
 """Single-panel with a right-side colorbar — extra width keeps axis box size."""
-_fig_with_colorbar(cfg::VisualizationConfig) =
-    (_figsize_px(cfg)[1] + 110, _figsize_px(cfg)[2])
+_fig_with_colorbar(cfg::VisualizationConfig) = (_figsize_px(cfg)[1] + 110, _figsize_px(cfg)[2])
 
 """Two vertically stacked panels (e.g. energy + virial)."""
 _fig_two_panel(cfg::VisualizationConfig) =
@@ -158,8 +149,10 @@ const _MULTIPANEL_VGAP = 70
 
 function _fig_multipanel(cfg::VisualizationConfig, nrows::Int, ncols::Int)
     pw, ph = _figsize_px(cfg)
-    return (ncols * pw + (ncols - 1) * _MULTIPANEL_HGAP,
-            nrows * ph + (nrows - 1) * _MULTIPANEL_VGAP)
+    return (
+        ncols * pw + (ncols - 1) * _MULTIPANEL_HGAP,
+        nrows * ph + (nrows - 1) * _MULTIPANEL_VGAP,
+    )
 end
 
 # ---------------------------------------------------------------------------
@@ -290,20 +283,40 @@ function _top_legend!(fig::Figure, ax::Axis; title = nothing, nbanks::Int = 1, k
     # The family title must be passed positionally — Legend's convenience
     # constructors take (layout, ax, title); a `title` kwarg is ignored.
     args = title === nothing ? (ax,) : (ax, title)
-    Legend(fig[0, :], args...;
-        orientation = :horizontal, nbanks = nbanks, framevisible = false,
-        titleposition = :left, tellheight = true,
-        padding = (0, 0, 0, 0), kwargs...)
+    Legend(
+        fig[0, :],
+        args...;
+        orientation = :horizontal,
+        nbanks = nbanks,
+        framevisible = false,
+        titleposition = :left,
+        tellheight = true,
+        padding = (0, 0, 0, 0),
+        kwargs...,
+    )
     return nothing
 end
 
-function _top_legend!(fig::Figure, elements::AbstractVector, labels::AbstractVector;
-                      title = nothing, nbanks::Int = 1, kwargs...)
+function _top_legend!(
+    fig::Figure,
+    elements::AbstractVector,
+    labels::AbstractVector;
+    title = nothing,
+    nbanks::Int = 1,
+    kwargs...,
+)
     args = title === nothing ? (elements, labels) : (elements, labels, title)
-    Legend(fig[0, :], args...;
-        orientation = :horizontal, nbanks = nbanks, framevisible = false,
-        titleposition = :left, tellheight = true,
-        padding = (0, 0, 0, 0), kwargs...)
+    Legend(
+        fig[0, :],
+        args...;
+        orientation = :horizontal,
+        nbanks = nbanks,
+        framevisible = false,
+        titleposition = :left,
+        tellheight = true,
+        padding = (0, 0, 0, 0),
+        kwargs...,
+    )
     return nothing
 end
 
@@ -347,7 +360,6 @@ Scatter marker size for `n` particles: `marker_budget / n` clamped to
 _marker_size(cfg::VisualizationConfig, n::Integer) =
     clamp(cfg.style.marker_budget / max(n, 1), cfg.style.marker_min, cfg.style.marker_max)
 
-
 # ---------------------------------------------------------------------------
 # Semantic colour table
 # ---------------------------------------------------------------------------
@@ -364,10 +376,10 @@ const _OKABE_ITO = vcat(Makie.wong_colors(), Makie.RGBAf(0, 0, 0, 1))
 project (series family encoded by colour, role by line style)."""
 const _SEMANTIC_COLORS = Dict{Symbol,Makie.RGBAf}(
     :energy_error => _OKABE_ITO[1],  # blue          |ΔE/E|
-    :virial       => _OKABE_ITO[6],  # vermillion    Q = T/|W|
-    :n_particles  => _OKABE_ITO[3],  # bluish green  N (counts)
-    :n_pairs      => _OKABE_ITO[2],  # orange        N_pairs
-    :separation   => _OKABE_ITO[5],  # sky blue      pairwise separations
+    :virial => _OKABE_ITO[6],  # vermillion    Q = T/|W|
+    :n_particles => _OKABE_ITO[3],  # bluish green  N (counts)
+    :n_pairs => _OKABE_ITO[2],  # orange        N_pairs
+    :separation => _OKABE_ITO[5],  # sky blue      pairwise separations
 )
 
 """Darkened same-hue edge colour for `band!` fills (edge at full opacity)."""

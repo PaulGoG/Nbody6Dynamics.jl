@@ -1,60 +1,37 @@
 # =============================================================================
 # Nbody6Dynamics Configuration
 # =============================================================================
-# Controls all phases: install, build, simulation, post-processing, and
-# visualization of the Nbody6PPGPU-beijing N-body code.
-#
-# Each section can be independently enabled/disabled.
-#
-# Usage modes:
-#   1. Full pipeline:     install.enabled=true, simulation.run_test=true
-#   2. Simulate only:     install.enabled=false, simulation.run_test=true
-#   3. Postprocess only:  simulation.run_test=false, postprocess.data_dir="..."
-#   4. Re-plot latest:    simulation.run_test=false, postprocess.data_dir=""
-#   5. Merger ICs:        merger.enabled=true, merger.config_file="input_files/..."
-#   6. Merger + simulate: merger.enabled=true, simulation.run_test=true
-#
-# Entry point:
-#   cfg = load_config("config.toml")
-#   results = run_pipeline(cfg)
-#
-# Directory layout:
-#   backend/              — N-body source code (clone, build artefacts)
-#   runs/<run_id>/        — Per-run isolation directory
-#       output/           — Simulation output files
-#       plots/            — Publication-quality plots & GIF animations
-#       config.toml       — Frozen configuration snapshot
+# 27-cluster cubic grid merger: 3×3×3 lattice, mixed King + Plummer,
+# Kroupa IMF, all clusters converging inward.  Total N ≈ 27 000.
+# Full pipeline: merger IC → simulation → post-processing → plots.
 
 [install]
 enabled        = false           # binary already built
 source_url     = "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
-install_dir    = "backend/Nbody6PPGPU-beijing"   # relative to project root
-reinstall      = false          # true = remove existing and re-clone
-clean_build    = true           # run 'make clean' before building
+install_dir    = "backend/Nbody6PPGPU-beijing"
+reinstall      = false
+clean_build    = true
 
 [build]
 configure_flags = ["--enable-mcmodel=large", "--with-par=b1m"]
-enable_mpi      = false         # --disable-mpi if false
-enable_hdf5     = true          # patch Makefile for HDF5 support
-enable_gpu      = false         # --disable-gpu if false
-cuda_path       = ""            # empty = auto-detect; e.g. "/usr/local/cuda-11.8"
-nproc           = 0             # 0 = auto-detect via nproc
+enable_mpi      = false
+enable_hdf5     = true
+enable_gpu      = false
+cuda_path       = ""
+nproc           = 0
 
 [simulation]
-run_test      = false
-input_file    = "../../input_files/N100k_production.inp"
-runs_dir      = "runs"          # base directory for all runs
+run_test      = true
+input_file    = "../../input_files/N25k_production.inp"   # fallback; overridden by merger.inp
+runs_dir      = "runs"
 binary_name   = "nbody6++"
-mpi_ranks     = 1               # only used when MPI is enabled
-run_id_prefix = "run"           # prefix for run directory names
+mpi_ranks     = 1
+run_id_prefix = "cubic27"
 
 [postprocess]
 enabled              = true
 data_dir             = ""
-                                   #   empty  → use run_dir/output/ from simulation
-                                   #   set    → read from this directory instead
-                                   #   Tip: set simulation.run_test=false to skip sim
-snapshot_format      = "conf3"     # conf.3 Fortran binaries (HDF5 not supported)
+snapshot_format      = "conf3"
 snapshot_pattern     = "conf.3_*"
 parse_stdout         = true
 stdout_file          = "out1000"
@@ -67,24 +44,23 @@ stellar_evo_pattern  = "sev.83_*"
 
 [visualization]
 enabled    = true
-format     = "pdf"              # "pdf" | "svg" (vector) | "png" (raster)
-dpi        = 300                # raster resolution at final printed size
-column     = "single"           # "single" | "double" journal width; "" = use figsize
-figsize    = [10, 8]            # inches [width, height]; only when column = ""
-units      = "physical"         # "physical" (pc, Myr, km/s, M☉) | "nbody"
-output_dir = "plots"            # relative to each run directory
+format     = "png"              # raster for inspection
+dpi        = 300
+column     = ""                 # use figsize
+figsize    = [10, 8]
+units      = "physical"         # pc, Myr, km/s, M☉
+output_dir = "plots"
 
 [visualization.style]
-# Presentation knobs (defaults shown; all optional)
-marker_budget       = 18000.0   # scatter marker size = marker_budget/N …
-marker_min          = 4.0       # … clamped to [marker_min, marker_max] pt
-marker_max          = 20.0
-q_log_threshold     = 10.0      # log virial-ratio axis when max(Q) exceeds this
-q_floor             = 1e-3      # virial-ratio floor on log-scale axes only
-zoom_frac           = 0.15      # particle fraction defining the zoom-in radius
-anim_fps            = 0         # 0 = auto from frame count
-anim_target_seconds = 12.0      # target GIF duration for auto FPS
+marker_budget       = 18000.0
+marker_min          = 1.5       # smaller markers for dense 27k-particle field
+marker_max          = 12.0
+q_log_threshold     = 10.0
+q_floor             = 1e-3
+zoom_frac           = 0.15
+anim_fps            = 0
+anim_target_seconds = 15.0      # longer animation for more frames
 
 [merger]
-enabled     = false             # true = generate merger ICs before simulation
-config_file = ""                # path to merger cluster TOML (e.g. "input_files/merger_equal_mass.toml")
+enabled     = true
+config_file = "input_files/merger_27cluster_cubic.toml"

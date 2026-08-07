@@ -13,11 +13,11 @@ Configuration for the Nbody6++ source installation phase.
 Controls git clone, reinstall behaviour, and clean builds.
 """
 Base.@kwdef struct InstallConfig
-    enabled::Bool             = true
-    source_url::String        = "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
-    install_dir::String       = joinpath("backend", "Nbody6PPGPU-beijing")
-    reinstall::Bool           = false
-    clean_build::Bool         = true
+    enabled::Bool = true
+    source_url::String = "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
+    install_dir::String = joinpath("backend", "Nbody6PPGPU-beijing")
+    reinstall::Bool = false
+    clean_build::Bool = true
 end
 
 """
@@ -28,11 +28,11 @@ Controls configure flags, MPI/GPU/HDF5 toggles, CUDA path, and parallel make.
 """
 Base.@kwdef struct BuildConfig
     configure_flags::Vector{String} = ["--enable-mcmodel=large", "--with-par=b1m"]
-    enable_mpi::Bool                = false
-    enable_hdf5::Bool               = true
-    enable_gpu::Bool                = false
-    cuda_path::String               = ""
-    nproc::Int                      = 0
+    enable_mpi::Bool = false
+    enable_hdf5::Bool = true
+    enable_gpu::Bool = false
+    cuda_path::String = ""
+    nproc::Int = 0
 end
 
 """
@@ -42,11 +42,11 @@ Configuration for the simulation execution phase.
 Controls input file, run directory, MPI ranks, and run ID generation.
 """
 Base.@kwdef struct SimulationConfig
-    run_test::Bool        = true
-    input_file::String    = "examples/input_files/N10k_noDat10.inp"
-    runs_dir::String      = "runs"
-    binary_name::String   = "nbody6++"
-    mpi_ranks::Int        = 1
+    run_test::Bool = true
+    input_file::String = "examples/input_files/N10k_noDat10.inp"
+    runs_dir::String = "runs"
+    binary_name::String = "nbody6++"
+    mpi_ranks::Int = 1
     run_id_prefix::String = "run"
 end
 
@@ -58,17 +58,17 @@ Controls which output files to read (snapshots, diagnostics, Lagrangian radii,
 escapers, stellar evolution) and their file patterns.
 """
 Base.@kwdef struct PostprocessConfig
-    enabled::Bool              = true
-    data_dir::String           = ""
-    snapshot_format::String    = "conf3"   # "hdf5" is no longer supported
-    snapshot_pattern::String   = "conf.3_*"
-    parse_stdout::Bool         = true
-    stdout_file::String        = "out1000"
-    read_lagr::Bool            = true
-    lagr_file::String          = "lagr.7"
-    read_escapers::Bool        = true
-    escapers_file::String      = "esc.11"
-    read_stellar_evo::Bool     = true
+    enabled::Bool = true
+    data_dir::String = ""
+    snapshot_format::String = "conf3"   # "hdf5" is no longer supported
+    snapshot_pattern::String = "conf.3_*"
+    parse_stdout::Bool = true
+    stdout_file::String = "out1000"
+    read_lagr::Bool = true
+    lagr_file::String = "lagr.7"
+    read_escapers::Bool = true
+    escapers_file::String = "esc.11"
+    read_stellar_evo::Bool = true
     stellar_evo_pattern::String = "sev.83_*"
 end
 
@@ -89,13 +89,13 @@ Stylistic plotting parameters, configurable via `[visualization.style]` in
 - `anim_target_seconds`: target duration used by the automatic FPS selection
 """
 Base.@kwdef struct PlotStyle
-    marker_budget::Float64       = 18000.0
-    marker_min::Float64          = 4.0
-    marker_max::Float64          = 20.0
-    q_log_threshold::Float64     = 10.0
-    q_floor::Float64             = 1e-3
-    zoom_frac::Float64           = 0.15
-    anim_fps::Int                = 0
+    marker_budget::Float64 = 18000.0
+    marker_min::Float64 = 4.0
+    marker_max::Float64 = 20.0
+    q_log_threshold::Float64 = 10.0
+    q_floor::Float64 = 1e-3
+    zoom_frac::Float64 = 0.15
+    anim_fps::Int = 0
     anim_target_seconds::Float64 = 12.0
 end
 
@@ -107,15 +107,15 @@ Controls output format (png/pdf/svg), DPI, figure size, output directory,
 and the [`PlotStyle`](@ref) presentation knobs.
 """
 Base.@kwdef struct VisualizationConfig
-    enabled::Bool               = true
-    format::String              = "pdf"    # vector default; "png"/"svg" available
-    dpi::Int                    = 300      # raster resolution at FINAL print size
-    column::String              = "single" # "single" | "double" journal-width preset;
-                                           # "" falls back to free-form figsize
+    enabled::Bool = true
+    format::String = "pdf"    # vector default; "png"/"svg" available
+    dpi::Int = 300      # raster resolution at FINAL print size
+    column::String = "single" # "single" | "double" journal-width preset;
+    # "" falls back to free-form figsize
     figsize::Tuple{Float64,Float64} = (8.0, 6.0)  # inches; used only when column = ""
-    units::String               = "physical"      # "physical" | "nbody" axis units
-    output_dir::String          = "plots"
-    style::PlotStyle            = PlotStyle()
+    units::String = "physical"      # "physical" | "nbody" axis units
+    output_dir::String = "plots"
+    style::PlotStyle = PlotStyle()
 end
 
 """
@@ -128,7 +128,7 @@ Configuration for the merger IC generation phase within the main pipeline.
 - `config_file::String`: path to the merger cluster TOML file
 """
 Base.@kwdef struct MergerPipelineConfig
-    enabled::Bool      = false
+    enabled::Bool = false
     config_file::String = ""
 end
 
@@ -166,51 +166,51 @@ end
 
 """    time_nb(h::SnapshotHeader) -> Float64
 Simulation time in N-body units."""
-time_nb(h::SnapshotHeader)  = Float64(h.params[1])
+time_nb(h::SnapshotHeader) = Float64(h.params[1])
 
 """    npairs(h::SnapshotHeader) -> Int
 Number of KS regularised binary pairs."""
-npairs(h::SnapshotHeader)   = round(Int, h.params[2])
+npairs(h::SnapshotHeader) = round(Int, h.params[2])
 
 """    rbar(h::SnapshotHeader) -> Float64
 Length scaling factor: 1 NB length unit = `rbar` pc."""
-rbar(h::SnapshotHeader)     = Float64(h.params[3])
+rbar(h::SnapshotHeader) = Float64(h.params[3])
 
 """    zmbar(h::SnapshotHeader) -> Float64
 Mass scaling factor: 1 NB mass unit (the total cluster mass) = `zmbar` M☉.
 NOT the mean stellar mass — Nbody6++ redefines ZMBAR as the total-mass
 scale factor at startup (`start.F`); the mean mass is printed separately
 as `<M>` in the PHYSICAL SCALING line."""
-zmbar(h::SnapshotHeader)    = Float64(h.params[4])
+zmbar(h::SnapshotHeader) = Float64(h.params[4])
 
-rtide(h::SnapshotHeader)    = Float64(h.params[5])
-tidal4(h::SnapshotHeader)   = Float64(h.params[6])
-rdens(h::SnapshotHeader)    = Float64.(h.params[7:9])
+rtide(h::SnapshotHeader) = Float64(h.params[5])
+tidal4(h::SnapshotHeader) = Float64(h.params[6])
+rdens(h::SnapshotHeader) = Float64.(h.params[7:9])
 time_tcr(h::SnapshotHeader) = Float64(h.params[10])
 
 """    tscale(h::SnapshotHeader) -> Float64
 Time scaling factor: 1 NB time unit = `tscale` Myr."""
-tscale(h::SnapshotHeader)   = Float64(h.params[11])
+tscale(h::SnapshotHeader) = Float64(h.params[11])
 
 """    vstar(h::SnapshotHeader) -> Float64
 Velocity scaling factor: 1 NB velocity unit = `vstar` km/s."""
-vstar(h::SnapshotHeader)    = Float64(h.params[12])
+vstar(h::SnapshotHeader) = Float64(h.params[12])
 
 """    rc(h::SnapshotHeader) -> Float64
 Core radius in N-body units."""
-rc(h::SnapshotHeader)       = Float64(h.params[13])
+rc(h::SnapshotHeader) = Float64(h.params[13])
 
-nc(h::SnapshotHeader)       = round(Int, h.params[14])
-vc(h::SnapshotHeader)       = Float64(h.params[15])
-rhom(h::SnapshotHeader)     = Float64(h.params[16])
-cmax(h::SnapshotHeader)     = Float64(h.params[17])
+nc(h::SnapshotHeader) = round(Int, h.params[14])
+vc(h::SnapshotHeader) = Float64(h.params[15])
+rhom(h::SnapshotHeader) = Float64(h.params[16])
+cmax(h::SnapshotHeader) = Float64(h.params[17])
 
 """    rscale(h::SnapshotHeader) -> Float64
 Half-mass radius in N-body units."""
-rscale(h::SnapshotHeader)   = Float64(h.params[18])
+rscale(h::SnapshotHeader) = Float64(h.params[18])
 
-rsmin(h::SnapshotHeader)    = Float64(h.params[19])
-dmin1(h::SnapshotHeader)    = Float64(h.params[20])
+rsmin(h::SnapshotHeader) = Float64(h.params[19])
+dmin1(h::SnapshotHeader) = Float64(h.params[20])
 
 """    time_myr(h::SnapshotHeader) -> Float64
 Physical time in Myr, computed as `time_nb(h) * tscale(h)`."""
@@ -330,10 +330,31 @@ struct StellarRecord
 end
 
 # Convenience constructor for synthetic records (SSE fields default to NaN).
-StellarRecord(time_nb, index, name, stellar_type, ri, mass_solar,
-              log_luminosity, log_radius, log_teff) =
-    StellarRecord(time_nb, index, name, stellar_type, ri, mass_solar,
-                  log_luminosity, log_radius, log_teff, NaN, NaN, NaN, NaN)
+StellarRecord(
+    time_nb,
+    index,
+    name,
+    stellar_type,
+    ri,
+    mass_solar,
+    log_luminosity,
+    log_radius,
+    log_teff,
+) = StellarRecord(
+    time_nb,
+    index,
+    name,
+    stellar_type,
+    ri,
+    mass_solar,
+    log_luminosity,
+    log_radius,
+    log_teff,
+    NaN,
+    NaN,
+    NaN,
+    NaN,
+)
 
 """
     StellarEvolutionSnapshot
@@ -355,16 +376,16 @@ convention used by this fork (`global_output.F`): 0/1 = low-/high-mass MS,
 2 = HG, …, 13 = NS, 14 = BH, 15 = massless supernova remnant.
 """
 const STELLAR_TYPE_LABELS = Dict{Int,String}(
-    0  => "MS (low-mass, M < 0.7)",
-    1  => "MS (Main Seq.)",
-    2  => "HG (Hertzsprung Gap)",
-    3  => "GB (Giant Branch)",
-    4  => "CHeB (Core He Burn.)",
-    5  => "EAGB (Early AGB)",
-    6  => "TPAGB (Therm. Puls. AGB)",
-    7  => "HeMS (Naked He MS)",
-    8  => "HeHG (He Hertzsp. Gap)",
-    9  => "HeGB (He Giant Branch)",
+    0 => "MS (low-mass, M < 0.7)",
+    1 => "MS (Main Seq.)",
+    2 => "HG (Hertzsprung Gap)",
+    3 => "GB (Giant Branch)",
+    4 => "CHeB (Core He Burn.)",
+    5 => "EAGB (Early AGB)",
+    6 => "TPAGB (Therm. Puls. AGB)",
+    7 => "HeMS (Naked He MS)",
+    8 => "HeHG (He Hertzsp. Gap)",
+    9 => "HeGB (He Giant Branch)",
     10 => "HeWD (He White Dwarf)",
     11 => "COWD (CO White Dwarf)",
     12 => "ONeWD (ONe White Dwarf)",
@@ -389,7 +410,7 @@ struct UnitScaling
     vstar::Float64     # NB velocity → km/s (V*)
 end
 
-to_pc(u::UnitScaling, r_nb)    = r_nb * u.rbar
-to_msun(u::UnitScaling, m_nb)  = m_nb * u.zmbar
-to_myr(u::UnitScaling, t_nb)   = t_nb * u.tscale
-to_kms(u::UnitScaling, v_nb)   = v_nb * u.vstar
+to_pc(u::UnitScaling, r_nb) = r_nb * u.rbar
+to_msun(u::UnitScaling, m_nb) = m_nb * u.zmbar
+to_myr(u::UnitScaling, t_nb) = t_nb * u.tscale
+to_kms(u::UnitScaling, v_nb) = v_nb * u.vstar

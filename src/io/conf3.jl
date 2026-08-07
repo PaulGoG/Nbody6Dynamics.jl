@@ -48,7 +48,8 @@ function read_all_conf3(dir::AbstractString, pattern::AbstractString = "conf.3_*
         something(tryparse(Float64, suffix), Inf)
     end)
 
-    isempty(files) && (@warn "No snapshot files matching '$pattern' found in $dir"; return Snapshot[])
+    isempty(files) &&
+        (@warn "No snapshot files matching '$pattern' found in $dir"; return Snapshot[])
 
     snapshots = Snapshot[]
     sizehint!(snapshots, length(files))
@@ -75,11 +76,11 @@ function _read_conf3_snapshot(io::IO)::Snapshot
     # Record 1: header integers
     hdr_data = read_fortran_record(io)
     hdr_ints = reinterpret(Int32, hdr_data) |> collect
-    ntot  = hdr_ints[1]
+    ntot = hdr_ints[1]
     model = hdr_ints[2]
-    nrun  = hdr_ints[3]
-    nk    = hdr_ints[4]
-    n     = Int(ntot)
+    nrun = hdr_ints[3]
+    nk = hdr_ints[4]
+    n = Int(ntot)
 
     # Record 2: peek at size to determine format
     rec2_size = peek_record_size(io)
@@ -98,7 +99,7 @@ Read the bulk-array format where record 2 contains params + all particle data.
 """
 function _read_bulk_format(io::IO, ntot, model, nrun, nk, n::Int)::Snapshot
     data = read_fortran_record(io)
-    buf  = IOBuffer(data)
+    buf = IOBuffer(data)
 
     # 1. AS parameters
     params = Vector{Float32}(undef, nk)
@@ -148,36 +149,36 @@ function _read_per_particle_format(io::IO, ntot, model, nrun, nk, n::Int)::Snaps
     extended = (rec_size == 44)
 
     names = Vector{Int32}(undef, n)
-    mass  = Vector{Float32}(undef, n)
-    pos   = Matrix{Float32}(undef, 3, n)
-    vel   = Matrix{Float32}(undef, 3, n)
-    rho   = extended ? Vector{Float32}(undef, n) : Float32[]
-    phi   = extended ? Vector{Float32}(undef, n) : Float32[]
+    mass = Vector{Float32}(undef, n)
+    pos = Matrix{Float32}(undef, 3, n)
+    vel = Matrix{Float32}(undef, 3, n)
+    rho = extended ? Vector{Float32}(undef, n) : Float32[]
+    phi = extended ? Vector{Float32}(undef, n) : Float32[]
 
     for i in 1:n
         data = read_fortran_record(io)
         buf = IOBuffer(data)
         if extended
-            mass[i]   = read(buf, Float32)
-            rho[i]    = read(buf, Float32)
-            _         = read(buf, Float32)  # XNS
+            mass[i] = read(buf, Float32)
+            rho[i] = read(buf, Float32)
+            _ = read(buf, Float32)  # XNS
             pos[1, i] = read(buf, Float32)
             pos[2, i] = read(buf, Float32)
             pos[3, i] = read(buf, Float32)
             vel[1, i] = read(buf, Float32)
             vel[2, i] = read(buf, Float32)
             vel[3, i] = read(buf, Float32)
-            phi[i]    = read(buf, Float32)
-            names[i]  = read(buf, Int32)
+            phi[i] = read(buf, Float32)
+            names[i] = read(buf, Int32)
         else
-            mass[i]   = read(buf, Float32)
+            mass[i] = read(buf, Float32)
             pos[1, i] = read(buf, Float32)
             pos[2, i] = read(buf, Float32)
             pos[3, i] = read(buf, Float32)
             vel[1, i] = read(buf, Float32)
             vel[2, i] = read(buf, Float32)
             vel[3, i] = read(buf, Float32)
-            names[i]  = read(buf, Int32)
+            names[i] = read(buf, Int32)
         end
     end
 

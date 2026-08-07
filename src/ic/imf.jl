@@ -40,8 +40,8 @@ function _active_kroupa_segments(m_low::Real, m_up::Real)
     m_low < m_up || error("IMF bounds must satisfy m_low < m_up, got [$m_low, $m_up]")
     segs = Tuple{Float64,Float64,Float64,Float64}[]
     for k in 1:3
-        a = max(_KROUPA_BREAKS[k],   m_low)
-        b = min(_KROUPA_BREAKS[k+1], m_up)
+        a = max(_KROUPA_BREAKS[k], m_low)
+        b = min(_KROUPA_BREAKS[k + 1], m_up)
         a < b || continue
         push!(segs, (a, b, _KROUPA_COEFFS[k], _KROUPA_ALPHAS[k]))
     end
@@ -63,8 +63,8 @@ For the standard range [0.08, 100] this returns ≈ 0.58 M☉.
 """
 function kroupa_mean_mass(m_low::Real = 0.08, m_up::Real = 100.0)::Float64
     segs = _active_kroupa_segments(Float64(m_low), Float64(m_up))
-    num   = sum(_powlaw_mass_integral(a, b, c, α) for (a, b, c, α) in segs)
-    denom = sum(_powlaw_integral(a, b, c, α)       for (a, b, c, α) in segs)
+    num = sum(_powlaw_mass_integral(a, b, c, α) for (a, b, c, α) in segs)
+    denom = sum(_powlaw_integral(a, b, c, α) for (a, b, c, α) in segs)
     return num / denom
 end
 
@@ -79,13 +79,17 @@ Only the segments of the Kroupa IMF that overlap `[m_low, m_up]` are active.
 Masses are returned in M☉, un-normalised — the caller is responsible for
 any post-sampling rescale.
 """
-function sample_kroupa(N::Int; m_low::Float64 = 0.08, m_up::Float64 = 100.0,
-                       rng::AbstractRNG = Random.default_rng())
+function sample_kroupa(
+    N::Int;
+    m_low::Float64 = 0.08,
+    m_up::Float64 = 100.0,
+    rng::AbstractRNG = Random.default_rng(),
+)
     segments = _active_kroupa_segments(m_low, m_up)
 
     # Per-segment probability weights (normalised)
     weights = Float64[_powlaw_integral(a, b, c, α) for (a, b, c, α) in segments]
-    total   = sum(weights)
+    total = sum(weights)
     cum_weights = cumsum(weights) ./ total
 
     # Inverse CDF within a single power-law segment
@@ -131,8 +135,7 @@ the concrete `IMFSpec` subtype:
                          ×[0.7, 1.4].
 - `EqualMassIMF`       — every body gets `particle_mass`.
 """
-sample_masses(imf::EqualMassIMF, N::Int, ::AbstractRNG) =
-    fill(imf.particle_mass, N)
+sample_masses(imf::EqualMassIMF, N::Int, ::AbstractRNG) = fill(imf.particle_mass, N)
 
 sample_masses(imf::KroupaIMF, N::Int, rng::AbstractRNG) =
     sample_kroupa(N; m_low = imf.bodyn, m_up = imf.body1, rng = rng)

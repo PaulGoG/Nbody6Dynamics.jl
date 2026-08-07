@@ -11,16 +11,17 @@ The time axis is in Myr when `cfg.units == "physical"` (from the ADJUST
 records), N-body units otherwise.
 """
 function plot_energy(
-    diag::DiagnosticsData, cfg::VisualizationConfig;
+    diag::DiagnosticsData,
+    cfg::VisualizationConfig;
     filename::AbstractString = "energy",
 )
     adj = diag.adjust
     isempty(adj) && (@warn "No ADJUST data to plot"; return nothing)
 
     physical = cfg.units == "physical"
-    t     = physical ? [r.time_myr for r in adj] : [r.time_nb for r in adj]
-    de    = [r.de_rel   for r in adj]
-    qvir  = [r.qvir     for r in adj]
+    t = physical ? [r.time_myr for r in adj] : [r.time_nb for r in adj]
+    de = [r.de_rel for r in adj]
+    qvir = [r.qvir for r in adj]
     tlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]"
 
     fig = Figure(; size = _fig_two_panel(cfg))
@@ -33,7 +34,8 @@ function plot_energy(
     nz = [abs(d) > 0 for d in de]
     de_abs = abs.(de[nz])
 
-    ax1 = Axis(fig[1, 1];
+    ax1 = Axis(
+        fig[1, 1];
         ylabel = L"|\Delta E \, / \, E|",
         yscale = log10,
         xticklabelsvisible = false,
@@ -48,10 +50,16 @@ function plot_energy(
         ylims!(ax1, de_lo * 0.8, de_hi * 1.5)
         # Annotate the maximum error (2 significant digits)
         m_str, e_str = split(@sprintf("%.1e", de_hi), 'e')
-        text!(ax1, 0.96, 0.96;
+        text!(
+            ax1,
+            0.96,
+            0.96;
             text = latexstring("\\max|\\Delta E/E| = $(m_str) \\times 10^{$(parse(Int, e_str))}"),
-            space = :relative, align = (:right, :top), fontsize = 16,
-            color = _SEMANTIC_COLORS[:energy_error])
+            space = :relative,
+            align = (:right, :top),
+            fontsize = 16,
+            color = _SEMANTIC_COLORS[:energy_error],
+        )
     end
 
     # --- Panel 2: virial ratio ---
@@ -63,7 +71,8 @@ function plot_energy(
     # Floor only on the log axis (zero/tiny Q is invalid there); raw otherwise
     q_plot = use_log_q ? max.(qvir, cfg.style.q_floor) : qvir
 
-    ax2 = Axis(fig[2, 1];
+    ax2 = Axis(
+        fig[2, 1];
         xlabel = tlabel,
         ylabel = L"Q = T/|W|",
         xticks = ttk,
@@ -71,10 +80,21 @@ function plot_energy(
         yticks = use_log_q ? _log_ticks(extrema(q_plot)...) : Makie.automatic,
     )
 
-    lines!(ax2, t, q_plot; color = _SEMANTIC_COLORS[:virial],
-           label = L"Q = T/|W|\;\mathrm{(virial\;ratio)}")
-    hlines!(ax2, [0.5]; color = :gray50, linestyle = :dash, linewidth = 1.0,
-            label = L"Q = 0.5\;\mathrm{(virial\;equilibrium)}")
+    lines!(
+        ax2,
+        t,
+        q_plot;
+        color = _SEMANTIC_COLORS[:virial],
+        label = L"Q = T/|W|\;\mathrm{(virial\;ratio)}",
+    )
+    hlines!(
+        ax2,
+        [0.5];
+        color = :gray50,
+        linestyle = :dash,
+        linewidth = 1.0,
+        label = L"Q = 0.5\;\mathrm{(virial\;equilibrium)}",
+    )
 
     # Shared legend for the two-panel figure: horizontal, above the axes
     _top_legend!(fig, ax2)
@@ -94,16 +114,17 @@ Each uses a linear y-axis since N and N_pairs evolve on different scales.
 The time axis is in Myr when `cfg.units == "physical"`.
 """
 function plot_particle_count(
-    diag::DiagnosticsData, cfg::VisualizationConfig;
+    diag::DiagnosticsData,
+    cfg::VisualizationConfig;
     filename::AbstractString = "particle_count",
 )
     adj = diag.adjust
     isempty(adj) && return nothing
 
     physical = cfg.units == "physical"
-    t  = physical ? [r.time_myr for r in adj] : [r.time_nb for r in adj]
-    n  = [r.n       for r in adj]
-    np = [r.npairs  for r in adj]
+    t = physical ? [r.time_myr for r in adj] : [r.time_nb for r in adj]
+    n = [r.n for r in adj]
+    np = [r.npairs for r in adj]
 
     fig = Figure(; size = _fig_two_panel(cfg))
     ttk = _time_ticks(first(t), last(t))
@@ -125,7 +146,8 @@ function plot_particle_count(
         ylims_n = (n_lo - pad, n_hi + pad)
     end
 
-    ax1 = Axis(fig[1, 1];
+    ax1 = Axis(
+        fig[1, 1];
         ylabel = L"N\;\mathrm{(bound\;particles)}",
         xticklabelsvisible = false,
         xticks = ttk,
@@ -136,10 +158,16 @@ function plot_particle_count(
     # Annotate the total particle change over the run, coloured to the series
     n0, n1 = n[1], n[end]
     pct_str = @sprintf("%+.1f", 100 * (n1 - n0) / max(n0, 1))
-    text!(ax1, 0.96, 0.96;
+    text!(
+        ax1,
+        0.96,
+        0.96;
         text = latexstring("N: $(n0) \\rightarrow $(n1)\\;($(pct_str)\\%)"),
-        space = :relative, align = (:right, :top), fontsize = 16,
-        color = _SEMANTIC_COLORS[:n_particles])
+        space = :relative,
+        align = (:right, :top),
+        fontsize = 16,
+        color = _SEMANTIC_COLORS[:n_particles],
+    )
 
     # --- Bottom panel: N_pairs (KS binaries) ---
     np_lo, np_hi = extrema(np)
@@ -147,8 +175,9 @@ function plot_particle_count(
     # When no binaries ever form, integer-ticks degenerates and the panel looks
     # broken — give it a small fixed range and annotate.
     np_ylims = all_zero ? (-0.5, 1.0) : nothing
-    np_ytk   = all_zero ? [0.0, 1.0] : _integer_ticks(np_lo, np_hi)
-    ax2 = Axis(fig[2, 1];
+    np_ytk = all_zero ? [0.0, 1.0] : _integer_ticks(np_lo, np_hi)
+    ax2 = Axis(
+        fig[2, 1];
         xlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]",
         ylabel = L"N_\mathrm{pairs}\;\mathrm{(KS\;binaries)}",
         xticks = ttk,
@@ -157,10 +186,16 @@ function plot_particle_count(
     )
     lines!(ax2, t, np; color = _SEMANTIC_COLORS[:n_pairs])
     if all_zero
-        text!(ax2, 0.5, 0.55;
-              text = L"\mathrm{no\;KS\;binaries\;formed}",
-              space = :relative, align = (:center, :center),
-              color = :gray30, fontsize = 18)
+        text!(
+            ax2,
+            0.5,
+            0.55;
+            text = L"\mathrm{no\;KS\;binaries\;formed}",
+            space = :relative,
+            align = (:center, :center),
+            color = :gray30,
+            fontsize = 18,
+        )
     end
 
     linkxaxes!(ax1, ax2)

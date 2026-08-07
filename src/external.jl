@@ -29,9 +29,9 @@ end
 # ---------------------------------------------------------------------------
 
 # Standard Nbody6++ output file names to search for
-const _STDOUT_CANDIDATES  = ["out1000", "out1", "stdout", "output.log"]
-const _LAGR_CANDIDATES    = ["lagr.7"]
-const _ESC_CANDIDATES     = ["esc.11"]
+const _STDOUT_CANDIDATES = ["out1000", "out1", "stdout", "output.log"]
+const _LAGR_CANDIDATES = ["lagr.7"]
+const _ESC_CANDIDATES = ["esc.11"]
 
 """
     scan_output(dir::AbstractString) -> OutputScan
@@ -64,8 +64,10 @@ function scan_output(dir::AbstractString)::OutputScan
     # ── conf.3 snapshots ──
     conf3_prefix = "conf.3"
     conf3_files = sort(
-        [joinpath(dir, f) for f in entries
-         if startswith(f, conf3_prefix * "_") || f == conf3_prefix];
+        [
+            joinpath(dir, f) for
+            f in entries if startswith(f, conf3_prefix * "_") || f == conf3_prefix
+        ];
         by = f -> begin
             name = basename(f)
             suffix = replace(name, conf3_prefix * "_" => ""; count = 1)
@@ -74,8 +76,8 @@ function scan_output(dir::AbstractString)::OutputScan
     )
 
     # ── HDF5 snapshots ──
-    hdf5_files = sort([joinpath(dir, f) for f in entries
-                       if endswith(f, ".h5part") || endswith(f, ".hdf5")])
+    hdf5_files =
+        sort([joinpath(dir, f) for f in entries if endswith(f, ".h5part") || endswith(f, ".hdf5")])
 
     # ── Diagnostics stdout ──
     stdout_file = ""
@@ -111,15 +113,23 @@ function scan_output(dir::AbstractString)::OutputScan
     # ── Availability summary ──
     available = Dict{Symbol,Bool}(
         :snapshots_conf3 => !isempty(conf3_files),
-        :snapshots_hdf5  => !isempty(hdf5_files),
-        :diagnostics     => !isempty(stdout_file),
-        :lagr            => !isempty(lagr_file),
-        :escapers        => !isempty(esc_file),
-        :stellar_evo     => !isempty(sev_files),
+        :snapshots_hdf5 => !isempty(hdf5_files),
+        :diagnostics => !isempty(stdout_file),
+        :lagr => !isempty(lagr_file),
+        :escapers => !isempty(esc_file),
+        :stellar_evo => !isempty(sev_files),
     )
 
-    return OutputScan(dir, conf3_files, hdf5_files, stdout_file,
-                      lagr_file, esc_file, sev_files, available)
+    return OutputScan(
+        dir,
+        conf3_files,
+        hdf5_files,
+        stdout_file,
+        lagr_file,
+        esc_file,
+        sev_files,
+        available,
+    )
 end
 
 # Pretty-print for REPL
@@ -127,18 +137,37 @@ function Base.show(io::IO, ::MIME"text/plain", s::OutputScan)
     println(io, "OutputScan: $(s.dir)")
     println(io, "─────────────────────────────────────────────")
 
-    _section(io, "conf.3 snapshots", s.available[:snapshots_conf3],
-             "$(length(s.conf3_files)) files")
-    _section(io, "HDF5 snapshots",   s.available[:snapshots_hdf5],
-             "$(length(s.hdf5_files)) files")
-    _section(io, "Diagnostics",      s.available[:diagnostics],
-             isempty(s.stdout_file) ? "" : basename(s.stdout_file))
-    _section(io, "Lagrangian radii", s.available[:lagr],
-             isempty(s.lagr_file) ? "" : basename(s.lagr_file))
-    _section(io, "Escapers",         s.available[:escapers],
-             isempty(s.escapers_file) ? "" : basename(s.escapers_file))
-    _section(io, "Stellar evolution", s.available[:stellar_evo],
-             "$(length(s.stellar_evo_files)) files")
+    _section(
+        io,
+        "conf.3 snapshots",
+        s.available[:snapshots_conf3],
+        "$(length(s.conf3_files)) files",
+    )
+    _section(io, "HDF5 snapshots", s.available[:snapshots_hdf5], "$(length(s.hdf5_files)) files")
+    _section(
+        io,
+        "Diagnostics",
+        s.available[:diagnostics],
+        isempty(s.stdout_file) ? "" : basename(s.stdout_file),
+    )
+    _section(
+        io,
+        "Lagrangian radii",
+        s.available[:lagr],
+        isempty(s.lagr_file) ? "" : basename(s.lagr_file),
+    )
+    _section(
+        io,
+        "Escapers",
+        s.available[:escapers],
+        isempty(s.escapers_file) ? "" : basename(s.escapers_file),
+    )
+    _section(
+        io,
+        "Stellar evolution",
+        s.available[:stellar_evo],
+        "$(length(s.stellar_evo_files)) files",
+    )
 
     n_avail = count(values(s.available))
     n_total = length(s.available)
@@ -148,9 +177,9 @@ function Base.show(io::IO, ::MIME"text/plain", s::OutputScan)
     # Determine which plots can be generated
     plots = String[]
     s.available[:snapshots_conf3] && push!(plots, "snapshot", "snapshot_evolution", "cluster_anim")
-    s.available[:diagnostics]     && push!(plots, "energy", "particle_count")
-    s.available[:lagr]            && push!(plots, "lagrangian_radii", "lagrangian_anim")
-    s.available[:stellar_evo]     && push!(plots, "hr_diagram", "hr_evolution", "hr_anim")
+    s.available[:diagnostics] && push!(plots, "energy", "particle_count")
+    s.available[:lagr] && push!(plots, "lagrangian_radii", "lagrangian_anim")
+    s.available[:stellar_evo] && push!(plots, "hr_diagram", "hr_evolution", "hr_anim")
     if !isempty(plots)
         println(io)
         print(io, "Plots available: ", join(plots, ", "))
@@ -287,8 +316,11 @@ function postprocess_external(
     if generate_plots
         out = isempty(output_dir) ? joinpath(dirname(scan.dir), "plots") : output_dir
         vis = VisualizationConfig(;
-            enabled = true, format = String(format),
-            dpi = dpi, figsize = figsize, output_dir = out,
+            enabled = true,
+            format = String(format),
+            dpi = dpi,
+            figsize = figsize,
+            output_dir = out,
         )
 
         set_publication_theme!()
@@ -323,7 +355,8 @@ function postprocess_external(
 
         if haskey(results, :lagr)
             lagr = results[:lagr]::LagrangianData
-            ext_scaling = haskey(results, :diagnostics) ?
+            ext_scaling =
+                haskey(results, :diagnostics) ?
                 extract_scaling(results[:diagnostics]::DiagnosticsData) : nothing
             !isempty(lagr.time) && plot_lagrangian(lagr, vis; units = ext_scaling)
         end
@@ -332,8 +365,11 @@ function postprocess_external(
             sevs = results[:stellar_evo]::Vector{StellarEvolutionSnapshot}
             if !isempty(sevs)
                 mid = max(1, length(sevs) ÷ 2)
-                for (idx, fname) in [(1, "hr_diagram_early"), (mid, "hr_diagram_mid"),
-                                     (length(sevs), "hr_diagram_final")]
+                for (idx, fname) in [
+                    (1, "hr_diagram_early"),
+                    (mid, "hr_diagram_mid"),
+                    (length(sevs), "hr_diagram_final"),
+                ]
                     plot_hr(sevs[idx], vis; filename = fname)
                 end
                 length(sevs) > 1 && plot_hr_evolution(sevs, vis)
@@ -346,7 +382,8 @@ function postprocess_external(
                 animate_cluster(results[:snapshots], vis)
             end
             if haskey(results, :lagr) && length(results[:lagr].time) > 1
-                anim_scaling = haskey(results, :diagnostics) ?
+                anim_scaling =
+                    haskey(results, :diagnostics) ?
                     extract_scaling(results[:diagnostics]::DiagnosticsData) : nothing
                 animate_lagrangian(results[:lagr], vis; units = anim_scaling)
             end
@@ -373,9 +410,9 @@ function _sanity_snapshots(results::Dict{Symbol,Any})
 
     if n > 0
         t_first = time_nb(snaps[1].header)
-        t_last  = time_nb(snaps[end].header)
+        t_last = time_nb(snaps[end].header)
         n_first = nparticles(snaps[1])
-        n_last  = nparticles(snaps[end])
+        n_last = nparticles(snaps[end])
         @info @sprintf("  Time range: %.4f → %.4f [NB]", t_first, t_last)
         @info @sprintf("  Particles:  %d → %d", n_first, n_last)
 
@@ -392,8 +429,11 @@ function _sanity_snapshots(results::Dict{Symbol,Any})
 
         # Large particle loss
         if n_last < 0.5 * n_first
-            @warn @sprintf("  >50%% particle loss: %d → %d (check for dissolution or escaper flood)",
-                           n_first, n_last)
+            @warn @sprintf(
+                "  >50%% particle loss: %d → %d (check for dissolution or escaper flood)",
+                n_first,
+                n_last
+            )
         end
     end
 end
@@ -453,7 +493,7 @@ function _sanity_stellar_evo(sevs::Vector{StellarEvolutionSnapshot})
 
     if n > 0
         t_first = sevs[1].time_myr
-        t_last  = sevs[end].time_myr
+        t_last = sevs[end].time_myr
         @info @sprintf("  Time range: %.4f → %.4f [Myr]", t_first, t_last)
 
         # Count stellar types across all epochs

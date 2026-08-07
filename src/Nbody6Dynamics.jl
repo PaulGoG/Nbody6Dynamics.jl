@@ -81,8 +81,11 @@ Data directory resolution (in priority order):
 
 `base_dir` defaults to the package root directory, making the pipeline path-agnostic.
 """
-function postprocess(cfg::Nbody6Config; run_dir::AbstractString = "",
-                     base_dir::AbstractString = _PROJECT_ROOT)::Dict{Symbol,Any}
+function postprocess(
+    cfg::Nbody6Config;
+    run_dir::AbstractString = "",
+    base_dir::AbstractString = _PROJECT_ROOT,
+)::Dict{Symbol,Any}
     pp = cfg.postprocess
 
     # Resolve the directory containing simulation output files.
@@ -96,9 +99,10 @@ function postprocess(cfg::Nbody6Config; run_dir::AbstractString = "",
         abspath(pp.data_dir)
     else
         latest = _find_latest_run(cfg, base_dir)
-        isempty(latest) &&
-            error("No run_dir/data_dir given and no matching run found under " *
-                  joinpath(base_dir, cfg.simulation.runs_dir))
+        isempty(latest) && error(
+            "No run_dir/data_dir given and no matching run found under " *
+            joinpath(base_dir, cfg.simulation.runs_dir),
+        )
         @info "Post-processing most recent run: $(basename(latest))"
         out = joinpath(latest, "output")
         isdir(out) ? out : latest
@@ -117,8 +121,10 @@ function postprocess(cfg::Nbody6Config; run_dir::AbstractString = "",
         # never writes (the KZ(46) writer produces snap.40_*.h5part with
         # 'Step#i' groups and numbered datasets). Re-adding support means
         # porting to that layout — see git history for the old reader.
-        error("snapshot_format=\"hdf5\" is no longer supported; use \"conf3\". " *
-              "The fork's KZ(46) H5Part layout was never readable by the old code.")
+        error(
+            "snapshot_format=\"hdf5\" is no longer supported; use \"conf3\". " *
+            "The fork's KZ(46) H5Part layout was never readable by the old code.",
+        )
     end
 
     # Diagnostics from stdout
@@ -170,8 +176,7 @@ When `run_dir` is provided (e.g. `runs/run_XXXX/`), plots are saved to
 `run_dir/<visualization.output_dir>/` (typically `runs/run_XXXX/plots/`).
 Otherwise, falls back to `visualization.output_dir` relative to the package root.
 """
-function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
-                        run_dir::AbstractString = "")
+function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config; run_dir::AbstractString = "")
     # Build a VisualizationConfig with the output_dir resolved to the run
     vis = if !isempty(run_dir)
         plots_dir = joinpath(run_dir, cfg.visualization.output_dir)
@@ -179,14 +184,14 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
         # the user's [visualization] settings are silently dropped on the
         # main pipeline path (this has happened twice; see git history).
         VisualizationConfig(;
-            enabled    = cfg.visualization.enabled,
-            format     = cfg.visualization.format,
-            dpi        = cfg.visualization.dpi,
-            column     = cfg.visualization.column,
-            figsize    = cfg.visualization.figsize,
-            units      = cfg.visualization.units,
+            enabled = cfg.visualization.enabled,
+            format = cfg.visualization.format,
+            dpi = cfg.visualization.dpi,
+            column = cfg.visualization.column,
+            figsize = cfg.visualization.figsize,
+            units = cfg.visualization.units,
             output_dir = plots_dir,
-            style      = cfg.visualization.style,
+            style = cfg.visualization.style,
         )
     else
         cfg.visualization
@@ -235,8 +240,9 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
 
     # Unit scaling for readers whose files carry no header (lagr.7):
     # derived from the diagnostics when available, else NB units.
-    scaling = haskey(results, :diagnostics) ?
-        extract_scaling(results[:diagnostics]::DiagnosticsData) : nothing
+    scaling =
+        haskey(results, :diagnostics) ? extract_scaling(results[:diagnostics]::DiagnosticsData) :
+        nothing
 
     if haskey(results, :lagr)
         lagr = results[:lagr]::LagrangianData
@@ -251,8 +257,11 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
         if !isempty(sevs)
             # Three HR diagrams: beginning, middle, end
             mid = max(1, length(sevs) ÷ 2)
-            hr_epochs = [(1, "hr_diagram_early"), (mid, "hr_diagram_mid"),
-                         (length(sevs), "hr_diagram_final")]
+            hr_epochs = [
+                (1, "hr_diagram_early"),
+                (mid, "hr_diagram_mid"),
+                (length(sevs), "hr_diagram_final"),
+            ]
             for (idx, fname) in hr_epochs
                 @info "Plotting HR diagram (epoch $idx/$(length(sevs)))..."
                 plot_hr(sevs[idx], vis; filename = fname)
@@ -343,8 +352,7 @@ A `Dict{Symbol,Any}` with keys `:snapshots`, `:diagnostics`, `:lagr`,
 `:escapers`, `:stellar_evo` (present only when corresponding data exists).
 Returns an empty dict if post-processing is disabled.
 """
-function run_pipeline(cfg::Nbody6Config;
-                      base_dir::AbstractString = _PROJECT_ROOT)::Dict{Symbol,Any}
+function run_pipeline(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROOT)::Dict{Symbol,Any}
     # ── Phase 1: Install / Build ──
     if cfg.install.enabled
         @info "Phase 1: Installing Nbody6++..."
@@ -438,14 +446,17 @@ Run Nbody6++ inside the merger IC output directory so `dat.10` is found
 in the working directory.  Reuses the launch-script infrastructure from
 `run_simulation` but points at `merger.inp` instead of the config's input file.
 """
-function _run_merger_simulation(cfg::Nbody6Config, merger_result::MergerICResult;
-                                base_dir::AbstractString = _PROJECT_ROOT)::String
+function _run_merger_simulation(
+    cfg::Nbody6Config,
+    merger_result::MergerICResult;
+    base_dir::AbstractString = _PROJECT_ROOT,
+)::String
     inst = cfg.install
-    sim  = cfg.simulation
+    sim = cfg.simulation
 
     # Locate binary
     src_dir = joinpath(base_dir, inst.install_dir)
-    binary  = _find_binary(src_dir, sim.binary_name)
+    binary = _find_binary(src_dir, sim.binary_name)
 
     # The run directory is the merger's parent (merger writes to run_dir/output/)
     # Absolute paths required — launch script runs from out_dir via cd()
@@ -467,9 +478,8 @@ function _run_merger_simulation(cfg::Nbody6Config, merger_result::MergerICResult
     # Build launch script
     stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
     stderr_path = joinpath(out_dir, "err1000")
-    launch_script = _write_launch_script(
-        out_dir, local_binary, input_path, stdout_path, stderr_path, cfg,
-    )
+    launch_script =
+        _write_launch_script(out_dir, local_binary, input_path, stdout_path, stderr_path, cfg)
 
     # Execute
     t_start = time()
@@ -506,14 +516,13 @@ function _find_latest_run(cfg::Nbody6Config, base_dir::AbstractString)::String
     prefix = cfg.simulation.run_id_prefix * "_"
     merger_prefix = "merger_" * prefix
     dirs = filter(readdir(runs_base; join = true)) do p
-        isdir(p) && (startswith(basename(p), prefix) ||
-                     startswith(basename(p), merger_prefix))
+        isdir(p) && (startswith(basename(p), prefix) || startswith(basename(p), merger_prefix))
     end
     isempty(dirs) && return ""
     # Sort by the timestamp part of the run ID and return the latest
     timestamp_key(p) = begin
         b = basename(p)
-        startswith(b, merger_prefix) ? b[length("merger_")+1:end] : b
+        startswith(b, merger_prefix) ? b[(length("merger_") + 1):end] : b
     end
     return sort(dirs; by = timestamp_key)[end]
 end
@@ -521,14 +530,17 @@ end
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
-export Nbody6Config, InstallConfig, BuildConfig, SimulationConfig,
-       PostprocessConfig, VisualizationConfig, MergerPipelineConfig
-export Snapshot, SnapshotHeader, DiagnosticsData, AdjustRecord,
-       LagrangianData, UnitScaling
-export EscaperRecord, StellarRecord, StellarEvolutionSnapshot,
-       STELLAR_TYPE_LABELS
-export load_config, save_config, setup_nbody6, run_simulation,
-       postprocess, generate_plots, run_pipeline
+export Nbody6Config,
+    InstallConfig,
+    BuildConfig,
+    SimulationConfig,
+    PostprocessConfig,
+    VisualizationConfig,
+    MergerPipelineConfig
+export Snapshot, SnapshotHeader, DiagnosticsData, AdjustRecord, LagrangianData, UnitScaling
+export EscaperRecord, StellarRecord, StellarEvolutionSnapshot, STELLAR_TYPE_LABELS
+export load_config,
+    save_config, setup_nbody6, run_simulation, postprocess, generate_plots, run_pipeline
 export scan_output, postprocess_external, OutputScan
 export read_conf3, read_all_conf3
 export read_diagnostics, extract_scaling
@@ -538,19 +550,26 @@ export read_stellar_evolution, read_all_stellar_evolution
 export plot_snapshot, plot_snapshot_evolution
 export plot_lagrangian, plot_energy, plot_particle_count
 export plot_hr, plot_hr_evolution
-export plot_cluster_separation, plot_cluster_virial, per_cluster_virial,
-       parse_merger_summary
+export plot_cluster_separation, plot_cluster_virial, per_cluster_virial, parse_merger_summary
 export animate_cluster, animate_hr, animate_lagrangian
 export set_publication_theme!
 export generate_run_id
 export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 export detect_platform, check_dependencies, detect_cuda_path
 export ClusterSpec, OrbitSpec, MergerOutputSpec, MergerConfig, MergerICResult
-export DensityProfile, KingProfile, PlummerProfile,
-       IMFSpec, KroupaIMF, RescaledKroupaIMF, EqualMassIMF,
-       profile_name, imf_name, expected_mass, sample_masses, kroupa_mean_mass
-export load_merger_config, generate_merger_ic, run_merger_pipeline,
-       load_merger_ic_result
+export DensityProfile,
+    KingProfile,
+    PlummerProfile,
+    IMFSpec,
+    KroupaIMF,
+    RescaledKroupaIMF,
+    EqualMassIMF,
+    profile_name,
+    imf_name,
+    expected_mass,
+    sample_masses,
+    kroupa_mean_mass
+export load_merger_config, generate_merger_ic, run_merger_pipeline, load_merger_ic_result
 export plot_merger_ic
 export sample_plummer, sample_king, sample_kroupa
 export virialise!, kepler_velocity, jacobi_radius

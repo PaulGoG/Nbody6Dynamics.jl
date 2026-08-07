@@ -1,0 +1,9 @@
+# JuliaFormatter configuration (§5: run over touched files before committing)
+indent = 4
+margin = 100
+always_for_in = true
+whitespace_ops_in_indices = true
+remove_extra_newlines = true
+always_use_return = false
+whitespace_in_kwargs = true
+trailing_comma = true

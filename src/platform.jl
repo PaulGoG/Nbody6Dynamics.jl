@@ -85,7 +85,8 @@ function detect_cuda_path()::String
     try
         nvcc = strip(read(`which nvcc`, String))
         return dirname(dirname(nvcc))  # nvcc lives in CUDA_HOME/bin/
-    catch; end
+    catch
+    end
 
     return ""
 end
@@ -102,9 +103,9 @@ function cuda_env_vars(cuda_path::String)::Dict{String,String}
     bin_dir = joinpath(cuda_path, "bin")
     lib_dir = joinpath(cuda_path, "lib64")
 
-    env["CUDA_HOME"]         = cuda_path
-    env["PATH"]              = "$bin_dir:" * get(ENV, "PATH", "")
-    env["LD_LIBRARY_PATH"]   = "$lib_dir:" * get(ENV, "LD_LIBRARY_PATH", "")
+    env["CUDA_HOME"] = cuda_path
+    env["PATH"] = "$bin_dir:" * get(ENV, "PATH", "")
+    env["LD_LIBRARY_PATH"] = "$lib_dir:" * get(ENV, "LD_LIBRARY_PATH", "")
 
     return env
 end
@@ -124,19 +125,24 @@ function detect_hdf5_flags(platform::Symbol, use_mpi::Bool)::Tuple{String,String
     # Try pkg-config first (suppress stderr — common for pkg-config to warn)
     try
         cflags = strip(read(pipeline(`pkg-config --cflags $hdf5_lib`; stderr = devnull), String))
-        libs   = strip(read(pipeline(`pkg-config --libs $hdf5_lib`; stderr = devnull), String))
-        libs  *= " -lhdf5_fortran"
+        libs = strip(read(pipeline(`pkg-config --libs $hdf5_lib`; stderr = devnull), String))
+        libs *= " -lhdf5_fortran"
         return (cflags, libs)
-    catch; end
+    catch
+    end
 
     # Platform-specific fallbacks
     if platform == :ubuntu || platform == :debian
         if use_mpi
-            return ("-I/usr/include/hdf5/openmpi",
-                    "-L/usr/lib/x86_64-linux-gnu/hdf5/openmpi -lhdf5_openmpi -lhdf5 -lhdf5_fortran")
+            return (
+                "-I/usr/include/hdf5/openmpi",
+                "-L/usr/lib/x86_64-linux-gnu/hdf5/openmpi -lhdf5_openmpi -lhdf5 -lhdf5_fortran",
+            )
         else
-            return ("-I/usr/include/hdf5/serial",
-                    "-L/usr/lib/x86_64-linux-gnu/hdf5/serial -lhdf5 -lhdf5_fortran")
+            return (
+                "-I/usr/include/hdf5/serial",
+                "-L/usr/lib/x86_64-linux-gnu/hdf5/serial -lhdf5 -lhdf5_fortran",
+            )
         end
     elseif platform == :fedora
         lib = use_mpi ? "-lhdf5_openmpi -lhdf5 -lhdf5_fortran" : "-lhdf5 -lhdf5_fortran"

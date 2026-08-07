@@ -44,12 +44,12 @@ function read_escapers(path::AbstractString)::Vector{EscaperRecord}
         length(tokens) < 11 && continue
 
         try
-            tesc   = parse(Float64, tokens[6])
-            besc   = parse(Float64, tokens[7])
-            eesc   = parse(Float64, tokens[8])
-            vkm    = parse(Float64, tokens[9])
-            kstar  = parse(Int, tokens[10])
-            namei  = parse(Int, tokens[11])
+            tesc = parse(Float64, tokens[6])
+            besc = parse(Float64, tokens[7])
+            eesc = parse(Float64, tokens[8])
+            vkm = parse(Float64, tokens[9])
+            kstar = parse(Int, tokens[10])
+            namei = parse(Int, tokens[11])
             push!(records, EscaperRecord(tesc, besc, eesc, vkm, kstar, namei))
         catch e
             @debug "Skipping unparseable escaper line" line exception = e

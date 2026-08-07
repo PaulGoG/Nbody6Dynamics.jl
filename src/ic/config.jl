@@ -54,7 +54,7 @@ radius carried on `ClusterSpec`.
 struct PlummerProfile <: DensityProfile end
 
 "Model name used in log messages and metadata TOML."
-profile_name(::KingProfile)    = "king"
+profile_name(::KingProfile) = "king"
 profile_name(::PlummerProfile) = "plummer"
 
 # -----------------------------------------------------------------------------
@@ -95,8 +95,8 @@ This is the legacy behaviour of the pre-v2 API; use it deliberately when
 constructing super-particle simulations.
 """
 Base.@kwdef struct RescaledKroupaIMF <: IMFSpec
-    bodyn::Float64       = 0.08
-    body1::Float64       = 100.0
+    bodyn::Float64 = 0.08
+    body1::Float64 = 100.0
     target_mass::Float64       # required
 end
 
@@ -110,9 +110,9 @@ Base.@kwdef struct EqualMassIMF <: IMFSpec
 end
 
 "Short label used in metadata TOML and logs."
-imf_name(::KroupaIMF)         = "kroupa"
+imf_name(::KroupaIMF) = "kroupa"
 imf_name(::RescaledKroupaIMF) = "kroupa_rescaled"
-imf_name(::EqualMassIMF)      = "equal"
+imf_name(::EqualMassIMF) = "equal"
 
 # -----------------------------------------------------------------------------
 # ClusterSpec
@@ -159,18 +159,18 @@ end
 # kwarg-only method would silently replace this one — the legacy String
 # `imf` is therefore accepted here and routed to `imf_kind` internally.
 function ClusterSpec(;
-    N::Int                   = 50000,
-    rbar::Real               = 2.0,
+    N::Int = 50000,
+    rbar::Real = 2.0,
     profile::Union{DensityProfile,Nothing} = nothing,
     imf::Union{IMFSpec,AbstractString,Nothing} = nothing,
     position::AbstractVector = Float64[],
     velocity::AbstractVector = Float64[],
     # legacy flat kwargs
-    model::Union{AbstractString,Nothing}   = nothing,
-    W0::Union{Real,Nothing}                = nothing,
-    mass_total::Union{Real,Nothing}        = nothing,
-    bodyn::Union{Real,Nothing}             = nothing,
-    body1::Union{Real,Nothing}             = nothing,
+    model::Union{AbstractString,Nothing} = nothing,
+    W0::Union{Real,Nothing} = nothing,
+    mass_total::Union{Real,Nothing} = nothing,
+    bodyn::Union{Real,Nothing} = nothing,
+    body1::Union{Real,Nothing} = nothing,
     imf_kind::Union{AbstractString,Nothing} = nothing,
 )
     # Route the legacy String `imf` through `imf_kind`.
@@ -181,7 +181,9 @@ function ClusterSpec(;
         imf = nothing
     end
     resolved_profile = if profile !== nothing
-        model === nothing || error("ClusterSpec: pass either `profile=...` (new) or `model=...` (legacy), not both.")
+        model === nothing || error(
+            "ClusterSpec: pass either `profile=...` (new) or `model=...` (legacy), not both.",
+        )
         profile
     elseif model !== nothing
         if model == "king"
@@ -197,17 +199,18 @@ function ClusterSpec(;
     end
 
     resolved_imf = if imf !== nothing
-        imf_kind === nothing || error("ClusterSpec: pass either `imf=...` (structured) or `imf_kind=...` (legacy), not both.")
+        imf_kind === nothing || error(
+            "ClusterSpec: pass either `imf=...` (structured) or `imf_kind=...` (legacy), not both.",
+        )
         imf
     else
         kind = imf_kind === nothing ? "kroupa" : imf_kind
-        bodyn_eff = bodyn === nothing ? 0.08  : Float64(bodyn)
+        bodyn_eff = bodyn === nothing ? 0.08 : Float64(bodyn)
         body1_eff = body1 === nothing ? 100.0 : Float64(body1)
-        mt_eff    = mass_total === nothing ? nothing : Float64(mass_total)
+        mt_eff = mass_total === nothing ? nothing : Float64(mass_total)
         if kind == "kroupa"
-            mt_eff === nothing ?
-                KroupaIMF(bodyn = bodyn_eff, body1 = body1_eff) :
-                RescaledKroupaIMF(bodyn = bodyn_eff, body1 = body1_eff, target_mass = mt_eff)
+            mt_eff === nothing ? KroupaIMF(bodyn = bodyn_eff, body1 = body1_eff) :
+            RescaledKroupaIMF(bodyn = bodyn_eff, body1 = body1_eff, target_mass = mt_eff)
         elseif kind == "kroupa_rescaled"
             mt_eff === nothing && error("imf='kroupa_rescaled' requires mass_total")
             RescaledKroupaIMF(bodyn = bodyn_eff, body1 = body1_eff, target_mass = mt_eff)
@@ -219,8 +222,14 @@ function ClusterSpec(;
         end
     end
 
-    return ClusterSpec(N, Float64(rbar), resolved_profile, resolved_imf,
-                       Float64.(position), Float64.(velocity))
+    return ClusterSpec(
+        N,
+        Float64(rbar),
+        resolved_profile,
+        resolved_imf,
+        Float64.(position),
+        Float64.(velocity),
+    )
 end
 
 # -----------------------------------------------------------------------------
@@ -233,7 +242,7 @@ end
 Serialise a density-profile tag to the structured TOML table form parsed by
 [`_parse_profile_table`](@ref), so metadata files round-trip losslessly.
 """
-_profile_table(p::KingProfile)   = Dict{String,Any}("type" => "king", "W0" => p.W0)
+_profile_table(p::KingProfile) = Dict{String,Any}("type" => "king", "W0" => p.W0)
 _profile_table(::PlummerProfile) = Dict{String,Any}("type" => "plummer")
 
 """
@@ -244,9 +253,12 @@ Serialise an IMF tag to the structured TOML table form parsed by
 """
 _imf_table(i::KroupaIMF) =
     Dict{String,Any}("type" => "kroupa", "bodyn" => i.bodyn, "body1" => i.body1)
-_imf_table(i::RescaledKroupaIMF) =
-    Dict{String,Any}("type" => "kroupa_rescaled", "bodyn" => i.bodyn,
-                     "body1" => i.body1, "target_mass" => i.target_mass)
+_imf_table(i::RescaledKroupaIMF) = Dict{String,Any}(
+    "type" => "kroupa_rescaled",
+    "bodyn" => i.bodyn,
+    "body1" => i.body1,
+    "target_mass" => i.target_mass,
+)
 _imf_table(i::EqualMassIMF) =
     Dict{String,Any}("type" => "equal", "particle_mass" => i.particle_mass)
 
@@ -256,9 +268,9 @@ _imf_table(i::EqualMassIMF) =
 Expected total cluster mass [M☉] for `N` bodies drawn from `imf` — exact for
 `RescaledKroupaIMF`/`EqualMassIMF`, the analytic expectation for `KroupaIMF`.
 """
-expected_mass(imf::KroupaIMF, N::Int)         = N * kroupa_mean_mass(imf.bodyn, imf.body1)
+expected_mass(imf::KroupaIMF, N::Int) = N * kroupa_mean_mass(imf.bodyn, imf.body1)
 expected_mass(imf::RescaledKroupaIMF, N::Int) = imf.target_mass
-expected_mass(imf::EqualMassIMF, N::Int)      = N * imf.particle_mass
+expected_mass(imf::EqualMassIMF, N::Int) = N * imf.particle_mass
 
 # -----------------------------------------------------------------------------
 # Orbit and output specs
@@ -271,8 +283,8 @@ Orbital parameters for the 2-cluster Kepler convenience mode. Ignored for
 `orbit_mode = "explicit"`.
 """
 Base.@kwdef struct OrbitSpec
-    apocentre::Float64     = 15.0
-    eccentricity::Float64  = 0.7
+    apocentre::Float64 = 15.0
+    eccentricity::Float64 = 0.7
 end
 
 """
@@ -292,12 +304,12 @@ are integration parameters kept here for back-compat; a dedicated
 - `dtadj::Float64`, `deltat::Float64`: adjustment and snapshot intervals.
 """
 Base.@kwdef struct MergerOutputSpec
-    format::String         = "nbody"
-    truncate_jacobi::Bool  = true
-    output_dir::String     = "."
-    tcrit::Float64         = 100.0
-    dtadj::Float64         = 1.0
-    deltat::Float64        = 1.0
+    format::String = "nbody"
+    truncate_jacobi::Bool = true
+    output_dir::String = "."
+    tcrit::Float64 = 100.0
+    dtadj::Float64 = 1.0
+    deltat::Float64 = 1.0
 end
 
 # -----------------------------------------------------------------------------
@@ -330,15 +342,18 @@ struct MergerConfig
     orbit_mode::String
     orbit::OrbitSpec
     output::MergerOutputSpec
-    seed::Union{Int, Nothing}
+    seed::Union{Int,Nothing}
 end
 
 # Convenience form: seed defaults to nothing (non-deterministic; the drawn
 # seed is still recorded in the run metadata).
-MergerConfig(clusters::Vector{ClusterSpec}, orbit_mode::AbstractString,
-             orbit::OrbitSpec, output::MergerOutputSpec;
-             seed::Union{Int,Nothing} = nothing) =
-    MergerConfig(clusters, String(orbit_mode), orbit, output, seed)
+MergerConfig(
+    clusters::Vector{ClusterSpec},
+    orbit_mode::AbstractString,
+    orbit::OrbitSpec,
+    output::MergerOutputSpec;
+    seed::Union{Int,Nothing} = nothing,
+) = MergerConfig(clusters, String(orbit_mode), orbit, output, seed)
 
 # -----------------------------------------------------------------------------
 # MergerICResult
@@ -451,18 +466,18 @@ function load_merger_config(path::AbstractString)::MergerConfig
         @warn "[merger.orbit] is defined but orbit_mode=\"explicit\" — the orbit section will be ignored."
     end
     orbit = OrbitSpec(;
-        apocentre    = Float64(get(orbit_raw, "apocentre", 15.0)),
+        apocentre = Float64(get(orbit_raw, "apocentre", 15.0)),
         eccentricity = Float64(get(orbit_raw, "eccentricity", 0.7)),
     )
 
     out_raw = get(m, "output", Dict{String,Any}())
     output = MergerOutputSpec(;
-        format          = get(out_raw, "format", "nbody")::String,
+        format = get(out_raw, "format", "nbody")::String,
         truncate_jacobi = get(out_raw, "truncate_jacobi", true)::Bool,
-        output_dir      = get(out_raw, "output_dir", ".")::String,
-        tcrit           = Float64(get(out_raw, "tcrit", 100.0)),
-        dtadj           = Float64(get(out_raw, "dtadj", 1.0)),
-        deltat           = Float64(get(out_raw, "deltat", 1.0)),
+        output_dir = get(out_raw, "output_dir", ".")::String,
+        tcrit = Float64(get(out_raw, "tcrit", 100.0)),
+        dtadj = Float64(get(out_raw, "dtadj", 1.0)),
+        deltat = Float64(get(out_raw, "deltat", 1.0)),
     )
 
     seed_raw = get(m, "seed", nothing)
@@ -476,9 +491,8 @@ function load_merger_config(path::AbstractString)::MergerConfig
 end
 
 # Parse one [merger.clusterN] table handling both flat and structured forms.
-function _parse_cluster_table(c::AbstractDict, idx::Int,
-                              orbit_mode::AbstractString)::ClusterSpec
-    N    = Int(get(c, "N", 50000))
+function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractString)::ClusterSpec
+    N = Int(get(c, "N", 50000))
     rbar = Float64(get(c, "rbar", 2.0))
 
     pos_raw = get(c, "position", Float64[])
@@ -487,8 +501,10 @@ function _parse_cluster_table(c::AbstractDict, idx::Int,
     velocity = isempty(vel_raw) ? Float64[] : Float64.(vel_raw)
 
     if orbit_mode == "explicit"
-        length(position) == 3 || error("[merger.cluster$idx] requires position = [x, y, z] in explicit mode")
-        length(velocity) == 3 || error("[merger.cluster$idx] requires velocity = [vx, vy, vz] in explicit mode")
+        length(position) == 3 ||
+            error("[merger.cluster$idx] requires position = [x, y, z] in explicit mode")
+        length(velocity) == 3 ||
+            error("[merger.cluster$idx] requires velocity = [vx, vy, vz] in explicit mode")
     end
 
     profile = if haskey(c, "profile") && c["profile"] isa AbstractDict
@@ -515,9 +531,8 @@ function _parse_cluster_table(c::AbstractDict, idx::Int,
         mass_total::Union{Float64,Nothing} = mt_raw === nothing ? nothing : Float64(mt_raw)
 
         if imf_str == "kroupa"
-            mass_total === nothing ?
-                KroupaIMF(bodyn = bodyn, body1 = body1) :
-                RescaledKroupaIMF(bodyn = bodyn, body1 = body1, target_mass = mass_total)
+            mass_total === nothing ? KroupaIMF(bodyn = bodyn, body1 = body1) :
+            RescaledKroupaIMF(bodyn = bodyn, body1 = body1, target_mass = mass_total)
         elseif imf_str == "kroupa_rescaled"
             mass_total === nothing &&
                 error("[merger.cluster$idx] imf=\"kroupa_rescaled\" requires mass_total")
@@ -527,7 +542,9 @@ function _parse_cluster_table(c::AbstractDict, idx::Int,
                 error("[merger.cluster$idx] imf=\"equal\" requires mass_total")
             EqualMassIMF(particle_mass = mass_total / N)
         else
-            error("[merger.cluster$idx] unknown imf '$imf_str'. Supported: 'kroupa', 'kroupa_rescaled', 'equal'.")
+            error(
+                "[merger.cluster$idx] unknown imf '$imf_str'. Supported: 'kroupa', 'kroupa_rescaled', 'equal'.",
+            )
         end
     end
 
@@ -560,7 +577,8 @@ function _parse_imf_table(imf::AbstractDict, N::Int, idx::Int)::IMFSpec
         return KroupaIMF(bodyn = bodyn, body1 = body1)
     elseif t == "kroupa_rescaled"
         tm = get(imf, "target_mass", nothing)
-        tm === nothing && error("[merger.cluster$idx.imf] type='kroupa_rescaled' requires target_mass")
+        tm === nothing &&
+            error("[merger.cluster$idx.imf] type='kroupa_rescaled' requires target_mass")
         return RescaledKroupaIMF(bodyn = bodyn, body1 = body1, target_mass = Float64(tm))
     elseif t == "equal"
         pm_raw = get(imf, "particle_mass", nothing)
@@ -568,9 +586,12 @@ function _parse_imf_table(imf::AbstractDict, N::Int, idx::Int)::IMFSpec
             return EqualMassIMF(particle_mass = Float64(pm_raw))
         end
         tm = get(imf, "target_mass", nothing)
-        tm === nothing && error("[merger.cluster$idx.imf] type='equal' requires 'particle_mass' or 'target_mass'")
+        tm === nothing &&
+            error("[merger.cluster$idx.imf] type='equal' requires 'particle_mass' or 'target_mass'")
         return EqualMassIMF(particle_mass = Float64(tm) / N)
     else
-        error("[merger.cluster$idx.imf] unknown type '$t'. Supported: 'kroupa', 'kroupa_rescaled', 'equal'.")
+        error(
+            "[merger.cluster$idx.imf] unknown type '$t'. Supported: 'kroupa', 'kroupa_rescaled', 'equal'.",
+        )
     end
 end

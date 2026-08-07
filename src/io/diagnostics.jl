@@ -30,15 +30,15 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     scaling = Dict{String,Float64}()
 
     # Accumulator for the current epoch being assembled
-    pending_time_nb  = NaN
+    pending_time_nb = NaN
     pending_time_myr = NaN
-    pending_qvir     = NaN
-    pending_de_rel   = NaN
-    pending_e_tot    = NaN
-    pending_n        = 0
-    pending_npairs   = 0
-    pending_rscale   = 0.0
-    have_adjust      = false   # true once we've seen ADJUST: for this epoch
+    pending_qvir = NaN
+    pending_de_rel = NaN
+    pending_e_tot = NaN
+    pending_n = 0
+    pending_npairs = 0
+    pending_rscale = 0.0
+    have_adjust = false   # true once we've seen ADJUST: for this epoch
 
     for line in eachline(path)
         stripped = lstrip(line)
@@ -47,22 +47,31 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
         if startswith(stripped, "ADJUST:")
             # Flush any previous pending epoch
             if have_adjust
-                push!(adjust_records, AdjustRecord(
-                    pending_time_nb, pending_time_myr, pending_qvir,
-                    pending_de_rel, pending_e_tot,
-                    pending_n, pending_npairs, pending_rscale))
+                push!(
+                    adjust_records,
+                    AdjustRecord(
+                        pending_time_nb,
+                        pending_time_myr,
+                        pending_qvir,
+                        pending_de_rel,
+                        pending_e_tot,
+                        pending_n,
+                        pending_npairs,
+                        pending_rscale,
+                    ),
+                )
             end
             # Parse the new ADJUST line
             vals = _parse_adjust_fields(stripped)
-            pending_time_nb  = vals.time_nb
+            pending_time_nb = vals.time_nb
             pending_time_myr = vals.time_myr
-            pending_qvir     = vals.qvir
-            pending_de_rel   = vals.de_rel
-            pending_e_tot    = vals.e_tot
-            pending_n        = vals.n
-            pending_npairs   = vals.npairs
-            pending_rscale   = vals.rscale
-            have_adjust      = true
+            pending_qvir = vals.qvir
+            pending_de_rel = vals.de_rel
+            pending_e_tot = vals.e_tot
+            pending_n = vals.n
+            pending_npairs = vals.npairs
+            pending_rscale = vals.rscale
+            have_adjust = true
             continue
         end
 
@@ -79,7 +88,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
         # ── TIME[NB] line: N, NPAIRS for current epoch ──
         if have_adjust && startswith(stripped, "TIME[NB]")
             info = _parse_time_nb_line(stripped)
-            pending_n      = info.n
+            pending_n = info.n
             pending_npairs = info.npairs
             continue
         end
@@ -93,10 +102,19 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
 
     # Flush the last pending epoch
     if have_adjust
-        push!(adjust_records, AdjustRecord(
-            pending_time_nb, pending_time_myr, pending_qvir,
-            pending_de_rel, pending_e_tot,
-            pending_n, pending_npairs, pending_rscale))
+        push!(
+            adjust_records,
+            AdjustRecord(
+                pending_time_nb,
+                pending_time_myr,
+                pending_qvir,
+                pending_de_rel,
+                pending_e_tot,
+                pending_n,
+                pending_npairs,
+                pending_rscale,
+            ),
+        )
     end
 
     # Forward-fill N and NPAIRS: TIME[NB] lines appear less frequently than
@@ -174,14 +192,14 @@ function _parse_adjust_kv(tokens)::_AdjustFields
         end
     end
 
-    time_nb  = parse(Float64, get(kv, "TIME", "0"))
+    time_nb = parse(Float64, get(kv, "TIME", "0"))
     time_myr = parse(Float64, get(kv, "T[MYR]", "0"))
-    qvir     = parse(Float64, get(kv, "Q", "0"))
-    de_rel   = parse(Float64, get(kv, "DE", "0"))
-    e_tot    = parse(Float64, get(kv, "ETOT", get(kv, "E", "0")))
-    n        = round(Int, parse(Float64, get(kv, "N", "0")))
-    npairs   = round(Int, parse(Float64, get(kv, "NPAIRS", "0")))
-    rscale   = parse(Float64, get(kv, "RSCALE", get(kv, "RSCL", "0")))
+    qvir = parse(Float64, get(kv, "Q", "0"))
+    de_rel = parse(Float64, get(kv, "DE", "0"))
+    e_tot = parse(Float64, get(kv, "ETOT", get(kv, "E", "0")))
+    n = round(Int, parse(Float64, get(kv, "N", "0")))
+    npairs = round(Int, parse(Float64, get(kv, "NPAIRS", "0")))
+    rscale = parse(Float64, get(kv, "RSCALE", get(kv, "RSCL", "0")))
 
     return _AdjustFields(time_nb, time_myr, qvir, de_rel, e_tot, n, npairs, rscale)
 end
@@ -232,12 +250,19 @@ function _forward_fill_particle_counts!(records::Vector{AdjustRecord})
     for i in eachindex(records)
         r = records[i]
         if r.n > 0
-            last_n  = r.n
+            last_n = r.n
             last_np = r.npairs
         elseif last_n > 0
             records[i] = AdjustRecord(
-                r.time_nb, r.time_myr, r.qvir, r.de_rel, r.e_tot,
-                last_n, last_np, r.rscale)
+                r.time_nb,
+                r.time_myr,
+                r.qvir,
+                r.de_rel,
+                r.e_tot,
+                last_n,
+                last_np,
+                r.rscale,
+            )
         end
     end
 end
@@ -255,10 +280,5 @@ factor at startup, and `units.f` converts masses as `ZMBAR*M`.
 """
 function extract_scaling(diag::DiagnosticsData)::UnitScaling
     s = diag.physical_scaling
-    UnitScaling(
-        get(s, "R*", 1.0),
-        get(s, "M*", 1.0),
-        get(s, "T*", 1.0),
-        get(s, "V*", 1.0),
-    )
+    UnitScaling(get(s, "R*", 1.0), get(s, "M*", 1.0), get(s, "T*", 1.0), get(s, "V*", 1.0))
 end

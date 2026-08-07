@@ -6,8 +6,8 @@
 # temperature (e.g. massless remnants, stars past the end of the grid). Points
 # at these values would otherwise force the axes to extend into empty regions
 # and visually compress the true stellar distribution.
-const _HR_MIN_LOG_L    = -5.0
-const _HR_MIN_LOG_TEFF =  3.0
+const _HR_MIN_LOG_L = -5.0
+const _HR_MIN_LOG_TEFF = 3.0
 
 """
     _hr_valid_records(records)
@@ -17,17 +17,15 @@ within physically meaningful ranges for an HR diagram. Placeholders such as
 `log_L = -10` are discarded.
 """
 @inline function _hr_valid_records(records)
-    return [r for r in records
-            if r.log_luminosity > _HR_MIN_LOG_L &&
-               r.log_teff      > _HR_MIN_LOG_TEFF]
+    return [r for r in records if r.log_luminosity > _HR_MIN_LOG_L && r.log_teff > _HR_MIN_LOG_TEFF]
 end
 
 # Okabe–Ito colour + marker encoding for stellar types K* ∈ 0:15: the eight
 # palette colours cover one cycle (K* 0–7); the second cycle (K* ≥ 8, white
 # dwarfs and compact objects) repeats the colours with a distinct marker so
 # the two cycles remain separable (and survive grayscale).
-const _HR_COLORS = Dict{Int,Makie.RGBAf}(
-    k => _OKABE_ITO[mod1(k + 1, length(_OKABE_ITO))] for k in 0:15)
+const _HR_COLORS =
+    Dict{Int,Makie.RGBAf}(k => _OKABE_ITO[mod1(k + 1, length(_OKABE_ITO))] for k in 0:15)
 
 """Colour for stellar type `kt` from the Okabe–Ito cycle (grey fallback)."""
 _hr_color(kt::Integer) = get(_HR_COLORS, Int(kt), Makie.RGBAf(0.5, 0.5, 0.5, 1))
@@ -58,9 +56,9 @@ function plot_hr(
 
     # Compute data ranges for tick placement
     all_teff = [r.log_teff for r in valid]
-    all_lum  = [r.log_luminosity for r in valid]
+    all_lum = [r.log_luminosity for r in valid]
     teff_min, teff_max = extrema(all_teff)
-    lum_min, lum_max   = extrema(all_lum)
+    lum_min, lum_max = extrema(all_lum)
     dt = (teff_max - teff_min) * 0.06
     dl = (lum_max - lum_min) * 0.06
 
@@ -77,9 +75,15 @@ function plot_hr(
     )
     # sev.time_myr is in Myr, not NB units.  Top-right corner: the sequence
     # enters at top-left, so the upper-right above the ridge line is empty.
-    text!(ax, 0.96, 0.96;
+    text!(
+        ax,
+        0.96,
+        0.96;
         text = latexstring("t = $(t_val)\\;\\mathrm{Myr}"),
-        space = :relative, align = (:right, :top), fontsize = 16)
+        space = :relative,
+        align = (:right, :top),
+        fontsize = 16,
+    )
 
     # Group by stellar type for legend
     types_present = sort(unique(r.stellar_type for r in valid))
@@ -87,10 +91,17 @@ function plot_hr(
     for kt in types_present
         mask = [r for r in valid if r.stellar_type == kt]
         teff = [r.log_teff for r in mask]
-        lum  = [r.log_luminosity for r in mask]
+        lum = [r.log_luminosity for r in mask]
         label = get(STELLAR_TYPE_LABELS, Int(kt), "K*=$kt")
-        scatter!(ax, teff, lum; color = _hr_color(kt), marker = _hr_marker(kt),
-                 markersize = 14, label = label)
+        scatter!(
+            ax,
+            teff,
+            lum;
+            color = _hr_color(kt),
+            marker = _hr_marker(kt),
+            markersize = 14,
+            label = label,
+        )
     end
 
     if 2 ≤ length(types_present) ≤ 12
@@ -137,7 +148,8 @@ function plot_hr_evolution(
 
     # Consistent axis limits across panels (using valid records only)
     all_teff = reduce(vcat, [[r.log_teff for r in v] for v in valid_per_panel]; init = Float64[])
-    all_lum  = reduce(vcat, [[r.log_luminosity for r in v] for v in valid_per_panel]; init = Float64[])
+    all_lum =
+        reduce(vcat, [[r.log_luminosity for r in v] for v in valid_per_panel]; init = Float64[])
     isempty(all_teff) && error("No valid HR records across any panel")
     tmin, tmax = extrema(all_teff)
     lmin, lmax = extrema(all_lum)
@@ -178,16 +190,26 @@ function plot_hr_evolution(
         )
         # sev.time_myr is in Myr, not NB units.  Top-right in-axis corner is
         # empty on an HR diagram (the sequence enters at top-left).
-        text!(ax, 0.96, 0.96;
+        text!(
+            ax,
+            0.96,
+            0.96;
             text = latexstring("t = $(t_val)\\;\\mathrm{Myr}"),
-            space = :relative, align = (:right, :top), fontsize = 16)
+            space = :relative,
+            align = (:right, :top),
+            fontsize = 16,
+        )
 
         v = valid_per_panel[panel_idx]
-        isempty(v) || scatter!(ax,
-            [r.log_teff for r in v], [r.log_luminosity for r in v];
-            color  = [_hr_color(r.stellar_type) for r in v],
+        isempty(v) || scatter!(
+            ax,
+            [r.log_teff for r in v],
+            [r.log_luminosity for r in v];
+            color = [_hr_color(r.stellar_type) for r in v],
             marker = [_hr_marker(r.stellar_type) for r in v],
-            markersize = 14, strokewidth = 0)
+            markersize = 14,
+            strokewidth = 0,
+        )
     end
 
     colgap!(fig.layout, _MULTIPANEL_HGAP)

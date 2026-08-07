@@ -12,7 +12,7 @@ All paths are resolved relative to `base_dir` (defaults to the package root).
 """
 function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROOT)
     install = cfg.install
-    build   = cfg.build
+    build = cfg.build
     src_dir = joinpath(base_dir, install.install_dir)
 
     # ------------------------------------------------------------------
@@ -205,7 +205,7 @@ function _run_build_with_progress(cmd::Cmd)
     proc = open(merged_cmd; read = true, write = false)
     n_compiled = 0
     n_warnings = 0
-    linking    = false
+    linking = false
 
     for line in eachline(proc)
         if occursin(r"-o\s+\S+\.o\b", line)

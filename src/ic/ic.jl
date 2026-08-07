@@ -37,10 +37,12 @@ using Nbody6Dynamics
 result = run_merger_pipeline("input_files/merger_equal_mass.toml")
 ```
 """
-function run_merger_pipeline(config_path::AbstractString;
-                             rng::Union{AbstractRNG,Nothing} = nothing,
-                             output_dir::AbstractString = "",
-                             generate_plots::Bool = true)
+function run_merger_pipeline(
+    config_path::AbstractString;
+    rng::Union{AbstractRNG,Nothing} = nothing,
+    output_dir::AbstractString = "",
+    generate_plots::Bool = true,
+)
     @info "═══ Merger IC Pipeline ═══"
     @info "Loading config: $config_path"
     cfg = load_merger_config(config_path)
@@ -64,10 +66,10 @@ function run_merger_pipeline(config_path::AbstractString;
         @info "Generating diagnostic plots..."
         plots_dir = joinpath(out, "plots")
         vis = VisualizationConfig(;
-            enabled    = true,
-            format     = "png",
-            dpi        = 300,
-            figsize    = (8, 6),
+            enabled = true,
+            format = "png",
+            dpi = 300,
+            figsize = (8, 6),
             output_dir = plots_dir,
         )
         plot_merger_ic(result, vis)
