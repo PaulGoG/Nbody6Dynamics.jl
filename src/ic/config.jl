@@ -402,7 +402,10 @@ end
     load_merger_config(path::AbstractString) -> MergerConfig
 
 Load a merger IC configuration from a TOML file. Accepts the flat legacy
-schema and the new structured schema interchangeably.
+schema and the new structured schema interchangeably. Parsed values are
+validated fail-fast (N ≥ 2, rbar > 0, W0 > 0, IMF mass bounds, Kepler orbit
+parameters, positive integration intervals); violations raise an error
+naming the offending `merger.*` key.
 
 # Kepler mode (2 clusters, flat form)
 
@@ -487,6 +490,23 @@ function load_merger_config(path::AbstractString)::MergerConfig
         Int(seed_raw)   # any integer is a real seed, including 0
     end
 
+    # Fail-fast validation of the parsed values (bounds documented in the
+    # config comments and the manual). kepler_velocity re-checks the orbit
+    # parameters at run time for programmatically constructed configs.
+    for (i, spec) in enumerate(clusters)
+        _validate_cluster_spec(spec, i)
+    end
+    if orbit_mode == "kepler"
+        orbit.apocentre > 0 ||
+            error("config: merger.orbit.apocentre must be > 0; got $(orbit.apocentre)")
+        (0 ≤ orbit.eccentricity < 1) || error(
+            "config: merger.orbit.eccentricity must satisfy 0 ≤ e < 1; got $(orbit.eccentricity)",
+        )
+    end
+    output.tcrit > 0 || error("config: merger.output.tcrit must be > 0; got $(output.tcrit)")
+    output.dtadj > 0 || error("config: merger.output.dtadj must be > 0; got $(output.dtadj)")
+    output.deltat > 0 || error("config: merger.output.deltat must be > 0; got $(output.deltat)")
+
     return MergerConfig(clusters, orbit_mode, orbit, output, seed)
 end
 
@@ -549,6 +569,59 @@ function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractStr
     end
 
     return ClusterSpec(N, rbar, profile, imf, position, velocity)
+end
+
+# ---------------------------------------------------------------------------
+# Fail-fast validation of parsed cluster specifications
+# ---------------------------------------------------------------------------
+
+"""
+    _validate_cluster_spec(spec::ClusterSpec, idx::Int)
+
+Validate one parsed `ClusterSpec` against the documented bounds; raises an
+`ErrorException` naming the offending `merger.cluster<idx>.<key>`.
+"""
+function _validate_cluster_spec(spec::ClusterSpec, idx::Int)
+    key = "merger.cluster$idx"
+    spec.N ≥ 2 || error("config: $key.N must be ≥ 2; got $(spec.N)")
+    spec.rbar > 0 || error("config: $key.rbar must be > 0; got $(spec.rbar)")
+    _validate_profile(spec.profile, key)
+    _validate_imf(spec.imf, key)
+    return nothing
+end
+
+"Validate a density-profile tag; `key` names the owning cluster table."
+function _validate_profile(p::KingProfile, key::String)
+    p.W0 > 0 || error("config: $key.W0 must be > 0; got $(p.W0)")
+    return nothing
+end
+_validate_profile(::PlummerProfile, ::String) = nothing
+
+"Validate an IMF tag; `key` names the owning cluster table."
+function _validate_imf(i::KroupaIMF, key::String)
+    (0 < i.bodyn < i.body1) || error(
+        "config: $key.imf must satisfy 0 < bodyn < body1; " *
+        "got bodyn = $(i.bodyn), body1 = $(i.body1)",
+    )
+    return nothing
+end
+function _validate_imf(i::RescaledKroupaIMF, key::String)
+    (0 < i.bodyn < i.body1) || error(
+        "config: $key.imf must satisfy 0 < bodyn < body1; " *
+        "got bodyn = $(i.bodyn), body1 = $(i.body1)",
+    )
+    i.target_mass > 0 || error(
+        "config: $key.imf target_mass (flat form: mass_total) must be > 0; " *
+        "got $(i.target_mass)",
+    )
+    return nothing
+end
+function _validate_imf(i::EqualMassIMF, key::String)
+    i.particle_mass > 0 || error(
+        "config: $key.imf particle_mass (flat form: mass_total / N) must be > 0; " *
+        "got $(i.particle_mass)",
+    )
+    return nothing
 end
 
 function _parse_profile_table(p::AbstractDict, idx::Int)::DensityProfile

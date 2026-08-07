@@ -8,7 +8,7 @@
 [install]
 enabled        = false           # binary already built
 source_url     = "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
-install_dir    = "backend/Nbody6PPGPU-beijing"
+install_dir    = "backend/Nbody6PPGPU-beijing"   # nonempty
 reinstall      = false
 clean_build    = true
 
@@ -18,50 +18,50 @@ enable_mpi      = false
 enable_hdf5     = true
 enable_gpu      = false
 cuda_path       = ""
-nproc           = 0
+nproc           = 0             # ≥ 0; 0 = auto-detect
 
 [simulation]
 run_test      = true
-input_file    = "../../input_files/N25k_production.inp"   # fallback; overridden by merger.inp
-runs_dir      = "runs"
+input_file    = "../../input_files/N25k_production.inp"   # nonempty; overridden by merger.inp
+runs_dir      = "runs"          # nonempty
 binary_name   = "nbody6++"
-mpi_ranks     = 1
-run_id_prefix = "cubic27"
+mpi_ranks     = 1               # ≥ 1; > 1 requires build.enable_mpi
+run_id_prefix = "cubic27"       # nonempty
 monitor       = true            # live progress ticker (interactive terminals only)
 
 [postprocess]
 enabled              = true
 data_dir             = ""
-snapshot_format      = "conf3"
-snapshot_pattern     = "conf.3_*"
+snapshot_format      = "conf3"      # only supported value: "conf3"
+snapshot_pattern     = "conf.3_*"   # nonempty
 parse_stdout         = true
-stdout_file          = "out1000"
+stdout_file          = "out1000"    # nonempty when parse_stdout = true
 read_lagr            = true
-lagr_file            = "lagr.7"
+lagr_file            = "lagr.7"     # nonempty when read_lagr = true
 read_escapers        = true
-escapers_file        = "esc.11"
+escapers_file        = "esc.11"     # nonempty when read_escapers = true
 read_stellar_evo     = true
-stellar_evo_pattern  = "sev.83_*"
+stellar_evo_pattern  = "sev.83_*"   # nonempty when read_stellar_evo = true
 
 [visualization]
 enabled    = true
-format     = "png"              # raster for inspection
-dpi        = 300
-column     = ""                 # use figsize
-figsize    = [10, 8]
-units      = "physical"         # pc, Myr, km/s, M☉
+format     = "png"              # one of: "pdf" | "svg" | "png"
+dpi        = 300                # ≥ 72
+column     = ""                 # one of: "single" | "double" | "" (use figsize)
+figsize    = [10, 8]            # inches; both > 0
+units      = "physical"         # one of: "physical" | "nbody"
 output_dir = "plots"
 
 [visualization.style]
-marker_budget       = 18000.0
-marker_min          = 1.5       # smaller markers for dense 27k-particle field
-marker_max          = 12.0
-q_log_threshold     = 10.0
-q_floor             = 1e-3
-zoom_frac           = 0.15
-anim_fps            = 0
-anim_target_seconds = 15.0      # longer animation for more frames
+marker_budget       = 18000.0   # > 0
+marker_min          = 1.5       # 0 < marker_min ≤ marker_max
+marker_max          = 12.0      # ≥ marker_min
+q_log_threshold     = 10.0      # > 0
+q_floor             = 1e-3      # 0 < q_floor < 1
+zoom_frac           = 0.15      # 0 < zoom_frac ≤ 1
+anim_fps            = 0         # ≥ 0; 0 = auto from frame count
+anim_target_seconds = 15.0      # > 0
 
 [merger]
 enabled     = true
-config_file = "input_files/merger_27cluster_cubic.toml"
+config_file = "input_files/merger_27cluster_cubic.toml"   # nonempty when enabled = true

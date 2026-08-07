@@ -60,7 +60,7 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 ## 4. Configuration Reference
 
-Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall back to the defaults shown. `save_config` writes a frozen snapshot of the full configuration into each run directory.
+Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall back to the defaults shown. All constraints listed below are enforced fail-fast at load time: `load_config` raises an error naming the offending `section.key` and the actual value, so a pipeline cannot start from a configuration it cannot honor. `save_config` writes a frozen snapshot of the full configuration into each run directory.
 
 ### `[install]`
 
@@ -68,7 +68,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 |---------------|--------|---------|-------------|
 | `enabled`     | Bool   | `true`  | Enable the install/build phase |
 | `source_url`  | String | `"https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"` | Git repository to clone |
-| `install_dir` | String | `"backend/Nbody6PPGPU-beijing"` | Source directory, relative to the package root |
+| `install_dir` | String | `"backend/Nbody6PPGPU-beijing"` | Source directory, relative to the package root; must be nonempty |
 | `reinstall`   | Bool   | `false` | Delete and re-clone if `true` |
 | `clean_build` | Bool   | `true`  | Run `make clean` before building |
 
@@ -81,18 +81,18 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `enable_hdf5`     | Bool     | `true`  | Patch the Makefile with HDF5 build flags |
 | `enable_gpu`      | Bool     | `false` | Enable GPU acceleration (requires CUDA) |
 | `cuda_path`       | String   | `""`    | CUDA installation path; empty = auto-detect |
-| `nproc`           | Int      | `0`     | Parallel `make` jobs; 0 = auto-detect |
+| `nproc`           | Int      | `0`     | Parallel `make` jobs; 0 = auto-detect; must be ≥ 0 |
 
 ### `[simulation]`
 
 | Key             | Type   | Default | Description |
 |-----------------|--------|---------|-------------|
 | `run_test`      | Bool   | `true`  | Run the simulation phase |
-| `input_file`    | String | `"examples/input_files/N10k_noDat10.inp"` | Path to the `.inp` input file |
-| `runs_dir`      | String | `"runs"` | Base directory for run output |
+| `input_file`    | String | `"examples/input_files/N10k_noDat10.inp"` | Path to the `.inp` input file; must be nonempty |
+| `runs_dir`      | String | `"runs"` | Base directory for run output; must be nonempty |
 | `binary_name`   | String | `"nbody6++"` | Expected binary name |
-| `mpi_ranks`     | Int    | `1`     | Number of MPI ranks (when MPI enabled) |
-| `run_id_prefix` | String | `"run"` | Prefix for run directory names |
+| `mpi_ranks`     | Int    | `1`     | Number of MPI ranks; must be ≥ 1, and > 1 requires `build.enable_mpi = true` |
+| `run_id_prefix` | String | `"run"` | Prefix for run directory names; must be nonempty |
 
 ### `[postprocess]`
 
@@ -101,15 +101,15 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `enabled`             | Bool   | `true`  | Enable post-processing |
 | `data_dir`            | String | `""`    | External data directory. Empty → use `run_dir/output/` from the simulation, or the most recent run under `runs/`. Set → read from this directory instead (any dir with Nbody6++ output) |
 | `snapshot_format`     | String | `"conf3"` | Snapshot source. **Only `"conf3"` is supported** (see note below) |
-| `snapshot_pattern`    | String | `"conf.3_*"` | Glob pattern for conf.3 files |
+| `snapshot_pattern`    | String | `"conf.3_*"` | Glob pattern for conf.3 files; must be nonempty |
 | `parse_stdout`        | Bool   | `true`  | Parse simulation stdout for ADJUST diagnostics |
-| `stdout_file`         | String | `"out1000"` | Name of the stdout capture file |
+| `stdout_file`         | String | `"out1000"` | Name of the stdout capture file; must be nonempty when `parse_stdout = true` |
 | `read_lagr`           | Bool   | `true`  | Read Lagrangian radii |
-| `lagr_file`           | String | `"lagr.7"` | Lagrangian radii file name |
+| `lagr_file`           | String | `"lagr.7"` | Lagrangian radii file name; must be nonempty when `read_lagr = true` |
 | `read_escapers`       | Bool   | `true`  | Read escaper data |
-| `escapers_file`       | String | `"esc.11"` | Escaper file name |
+| `escapers_file`       | String | `"esc.11"` | Escaper file name; must be nonempty when `read_escapers = true` |
 | `read_stellar_evo`    | Bool   | `true`  | Read stellar evolution snapshots |
-| `stellar_evo_pattern` | String | `"sev.83_*"` | Glob pattern for stellar evolution files (matches what this fork's `hrplot.F` writes: `sev.83_<time>`) |
+| `stellar_evo_pattern` | String | `"sev.83_*"` | Glob pattern for stellar evolution files (matches what this fork's `hrplot.F` writes: `sev.83_<time>`); must be nonempty when `read_stellar_evo = true` |
 
 !!! note "HDF5 snapshot support was removed"
     Setting `snapshot_format = "hdf5"` raises an error. The old HDF5 reader
@@ -126,9 +126,11 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | Key          | Type    | Default | Description |
 |--------------|---------|---------|-------------|
 | `enabled`    | Bool    | `true`  | Enable plot generation |
-| `format`     | String  | `"png"` | Static plot format: `"png"`, `"pdf"`, `"svg"` (animations are always GIF) |
-| `dpi`        | Int     | `300`   | Resolution for raster formats |
-| `figsize`    | [Float] | `[8.0, 6.0]` | Figure size in inches `[width, height]` |
+| `format`     | String  | `"png"` | Static plot format; one of `"pdf"`, `"svg"`, `"png"` (animations are always GIF) |
+| `dpi`        | Int     | `300`   | Resolution for raster formats; must be ≥ 72 |
+| `column`     | String  | `"single"` | Journal-width preset; one of `"single"`, `"double"`, `""` (empty = free-form `figsize`) |
+| `figsize`    | [Float] | `[8.0, 6.0]` | Figure size in inches `[width, height]`; both entries must be > 0 |
+| `units`      | String  | `"physical"` | Axis units; one of `"physical"`, `"nbody"` |
 | `output_dir` | String  | `"plots"` | Plot directory, relative to each run directory |
 
 ### `[visualization.style]`
@@ -137,21 +139,21 @@ Presentation knobs collected in the `PlotStyle` struct (`cfg.visualization.style
 
 | Key                   | Type  | Default   | Description |
 |-----------------------|-------|-----------|-------------|
-| `marker_budget`       | Float | `18000.0` | Scatter marker size is `clamp(marker_budget/N, marker_min, marker_max)` |
-| `marker_min`          | Float | `4.0`     | Lower clamp bound for the scatter marker size [pt] |
-| `marker_max`          | Float | `20.0`    | Upper clamp bound for the scatter marker size [pt] |
-| `q_log_threshold`     | Float | `10.0`    | Switch virial-ratio axes to log scale when `max(Q)` exceeds this |
-| `q_floor`             | Float | `1e-3`    | Clamp floor for the virial ratio on *log-scale* axes only |
-| `zoom_frac`           | Float | `0.15`    | Extent-ratio threshold for adaptive per-panel zoom in snapshot evolution plots and cluster animations |
-| `anim_fps`            | Int   | `0`       | Animation frame rate; `0` selects automatically from frame count |
-| `anim_target_seconds` | Float | `12.0`    | Target GIF duration used by the automatic FPS selection |
+| `marker_budget`       | Float | `18000.0` | Scatter marker size is `clamp(marker_budget/N, marker_min, marker_max)`; must be > 0 |
+| `marker_min`          | Float | `4.0`     | Lower clamp bound for the scatter marker size [pt]; must satisfy `0 < marker_min ≤ marker_max` |
+| `marker_max`          | Float | `20.0`    | Upper clamp bound for the scatter marker size [pt]; must be ≥ `marker_min` |
+| `q_log_threshold`     | Float | `10.0`    | Switch virial-ratio axes to log scale when `max(Q)` exceeds this; must be > 0 |
+| `q_floor`             | Float | `1e-3`    | Clamp floor for the virial ratio on *log-scale* axes only; must satisfy `0 < q_floor < 1` |
+| `zoom_frac`           | Float | `0.15`    | Extent-ratio threshold for adaptive per-panel zoom in snapshot evolution plots and cluster animations; must satisfy `0 < zoom_frac ≤ 1` |
+| `anim_fps`            | Int   | `0`       | Animation frame rate; `0` selects automatically from frame count; must be ≥ 0 |
+| `anim_target_seconds` | Float | `12.0`    | Target GIF duration used by the automatic FPS selection; must be > 0 |
 
 ### `[merger]`
 
 | Key           | Type   | Default | Description |
 |---------------|--------|---------|-------------|
 | `enabled`     | Bool   | `false` | Generate merger ICs before the simulation phase |
-| `config_file` | String | `""`    | Path to the merger cluster TOML (e.g. `"input_files/merger_demo_small.toml"`); relative paths resolve against the package root |
+| `config_file` | String | `""`    | Path to the merger cluster TOML (e.g. `"input_files/merger_demo_small.toml"`); relative paths resolve against the package root; must be nonempty when `enabled = true` |
 
 The merger TOML schema itself (clusters, profiles, IMFs, orbit, output, seed) is documented in [Input File Reference](@ref) and [Multi-Cluster Merger Simulations](@ref).
 

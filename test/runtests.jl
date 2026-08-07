@@ -115,6 +115,116 @@ figsize = [12, 9]
     end
 
     # =====================================================================
+    @testset "Config validation" begin
+        # Valid config (defaults only) passes validation — smoke test
+        ok_path = joinpath(TESTDIR, "val_ok.toml")
+        write(
+            ok_path,
+            """
+[simulation]
+mpi_ranks = 1
+
+[visualization]
+format = "pdf"
+""",
+        )
+        @test load_config(ok_path) isa Nbody6Config
+
+        # Each entry: (label, TOML violating exactly one rule, expected
+        # substring of the error message naming the offending section.key).
+        bad_cases = [
+            ("install_dir", "[install]\ninstall_dir = \"\"\n", "install.install_dir"),
+            ("nproc", "[build]\nnproc = -1\n", "build.nproc"),
+            ("mpi_ranks", "[simulation]\nmpi_ranks = 0\n", "simulation.mpi_ranks"),
+            (
+                "mpi_no_mpi_build",
+                "[build]\nenable_mpi = false\n\n[simulation]\nmpi_ranks = 4\n",
+                "requires build.enable_mpi = true",
+            ),
+            ("runs_dir", "[simulation]\nruns_dir = \"\"\n", "simulation.runs_dir"),
+            ("run_id_prefix", "[simulation]\nrun_id_prefix = \"\"\n", "simulation.run_id_prefix"),
+            ("input_file", "[simulation]\ninput_file = \"\"\n", "simulation.input_file"),
+            (
+                "snapshot_format_hdf5",
+                "[postprocess]\nsnapshot_format = \"hdf5\"\n",
+                "postprocess.snapshot_format",
+            ),
+            (
+                "snapshot_format_other",
+                "[postprocess]\nsnapshot_format = \"parquet\"\n",
+                "postprocess.snapshot_format",
+            ),
+            (
+                "snapshot_pattern",
+                "[postprocess]\nsnapshot_pattern = \"\"\n",
+                "postprocess.snapshot_pattern",
+            ),
+            (
+                "stdout_file",
+                "[postprocess]\nparse_stdout = true\nstdout_file = \"\"\n",
+                "postprocess.stdout_file",
+            ),
+            (
+                "lagr_file",
+                "[postprocess]\nread_lagr = true\nlagr_file = \"\"\n",
+                "postprocess.lagr_file",
+            ),
+            (
+                "escapers_file",
+                "[postprocess]\nread_escapers = true\nescapers_file = \"\"\n",
+                "postprocess.escapers_file",
+            ),
+            (
+                "stellar_evo_pattern",
+                "[postprocess]\nread_stellar_evo = true\nstellar_evo_pattern = \"\"\n",
+                "postprocess.stellar_evo_pattern",
+            ),
+            ("format", "[visualization]\nformat = \"gif\"\n", "visualization.format"),
+            ("column", "[visualization]\ncolumn = \"triple\"\n", "visualization.column"),
+            ("units", "[visualization]\nunits = \"cgs\"\n", "visualization.units"),
+            ("dpi", "[visualization]\ndpi = 50\n", "visualization.dpi"),
+            ("figsize", "[visualization]\nfigsize = [0.0, 6.0]\n", "visualization.figsize"),
+            (
+                "marker_budget",
+                "[visualization.style]\nmarker_budget = 0.0\n",
+                "visualization.style.marker_budget",
+            ),
+            (
+                "marker_bounds",
+                "[visualization.style]\nmarker_min = 10.0\nmarker_max = 4.0\n",
+                "0 < marker_min ≤ marker_max",
+            ),
+            (
+                "q_log_threshold",
+                "[visualization.style]\nq_log_threshold = -1.0\n",
+                "visualization.style.q_log_threshold",
+            ),
+            ("q_floor", "[visualization.style]\nq_floor = 1.5\n", "visualization.style.q_floor"),
+            (
+                "zoom_frac",
+                "[visualization.style]\nzoom_frac = 0.0\n",
+                "visualization.style.zoom_frac",
+            ),
+            ("anim_fps", "[visualization.style]\nanim_fps = -5\n", "visualization.style.anim_fps"),
+            (
+                "anim_target_seconds",
+                "[visualization.style]\nanim_target_seconds = 0.0\n",
+                "visualization.style.anim_target_seconds",
+            ),
+            (
+                "merger_config_file",
+                "[merger]\nenabled = true\nconfig_file = \"\"\n",
+                "merger.config_file",
+            ),
+        ]
+        for (label, body, expected) in bad_cases
+            path = joinpath(TESTDIR, "val_bad_$label.toml")
+            write(path, body)
+            @test_throws expected load_config(path)
+        end
+    end
+
+    # =====================================================================
     @testset "Platform detection" begin
         platform = detect_platform()
         @test platform isa Symbol
@@ -1207,6 +1317,113 @@ truncate_jacobi = false
             @test cfg.orbit_mode == "explicit"
             @test cfg.clusters[1].position == [-5.0, 0.0, 0.0]
             @test cfg.clusters[3].velocity == [-0.5, 0.87, 0.0]
+        end
+
+        # --- Fail-fast validation of merger TOML values ---
+        @testset "Merger config validation" begin
+            # Template with one overridable block per constrained section
+            function _merger_toml(;
+                cluster1::String = "model = \"king\"\nN = 100\nW0 = 5.0\nrbar = 1.0",
+                orbit::String = "apocentre = 10.0\neccentricity = 0.5",
+                output::String = "tcrit = 10.0\ndtadj = 1.0\ndeltat = 1.0",
+            )
+                """
+                [merger]
+                n_clusters = 2
+                orbit_mode = "kepler"
+
+                [merger.cluster1]
+                $cluster1
+
+                [merger.cluster2]
+                model = "plummer"
+                N = 100
+                rbar = 1.0
+
+                [merger.orbit]
+                $orbit
+
+                [merger.output]
+                $output
+                """
+            end
+
+            # Valid template loads cleanly — smoke test
+            ok_path = joinpath(TESTDIR, "merger_val_ok.toml")
+            write(ok_path, _merger_toml())
+            @test load_merger_config(ok_path) isa MergerConfig
+
+            cases = [
+                (
+                    "N",
+                    _merger_toml(cluster1 = "model = \"king\"\nN = 1\nrbar = 1.0"),
+                    "merger.cluster1.N",
+                ),
+                (
+                    "rbar",
+                    _merger_toml(cluster1 = "model = \"king\"\nN = 100\nrbar = -1.0"),
+                    "merger.cluster1.rbar",
+                ),
+                (
+                    "W0",
+                    _merger_toml(cluster1 = "model = \"king\"\nN = 100\nW0 = -2.0\nrbar = 1.0"),
+                    "merger.cluster1.W0",
+                ),
+                (
+                    "kroupa_bounds",
+                    _merger_toml(
+                        cluster1 = "model = \"king\"\nN = 100\nrbar = 1.0\n" *
+                                   "imf = \"kroupa\"\nbodyn = 50.0\nbody1 = 0.1",
+                    ),
+                    "0 < bodyn < body1",
+                ),
+                (
+                    "target_mass",
+                    _merger_toml(
+                        cluster1 = "model = \"king\"\nN = 100\nrbar = 1.0\n" *
+                                   "imf = \"kroupa\"\nmass_total = -500.0",
+                    ),
+                    "target_mass",
+                ),
+                (
+                    "particle_mass",
+                    _merger_toml(
+                        cluster1 = "model = \"king\"\nN = 100\nrbar = 1.0\n" *
+                                   "imf = \"equal\"\nmass_total = 0.0",
+                    ),
+                    "particle_mass",
+                ),
+                (
+                    "apocentre",
+                    _merger_toml(orbit = "apocentre = -5.0\neccentricity = 0.5"),
+                    "merger.orbit.apocentre",
+                ),
+                (
+                    "eccentricity",
+                    _merger_toml(orbit = "apocentre = 10.0\neccentricity = 1.0"),
+                    "merger.orbit.eccentricity",
+                ),
+                (
+                    "tcrit",
+                    _merger_toml(output = "tcrit = 0.0\ndtadj = 1.0\ndeltat = 1.0"),
+                    "merger.output.tcrit",
+                ),
+                (
+                    "dtadj",
+                    _merger_toml(output = "tcrit = 10.0\ndtadj = -0.5\ndeltat = 1.0"),
+                    "merger.output.dtadj",
+                ),
+                (
+                    "deltat",
+                    _merger_toml(output = "tcrit = 10.0\ndtadj = 1.0\ndeltat = 0.0"),
+                    "merger.output.deltat",
+                ),
+            ]
+            for (label, body, expected) in cases
+                path = joinpath(TESTDIR, "merger_val_bad_$label.toml")
+                write(path, body)
+                @test_throws expected load_merger_config(path)
+            end
         end
 
         # --- Full pipeline — kepler mode (small N) ---
