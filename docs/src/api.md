@@ -92,6 +92,11 @@ plot_particle_count
 plot_lagrangian
 plot_hr
 plot_hr_evolution
+plot_escapers
+plot_escape_anisotropy
+plot_mass_segregation
+plot_evolutionary_clock
+plot_core_mass
 ```
 
 ## Animations

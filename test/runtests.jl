@@ -449,20 +449,23 @@ format = "pdf"
     # =====================================================================
     @testset "Escaper reader" begin
         # Real esc.11 shape (escape.F): 5 NB-unit diagnostics, then the
-        # physical-unit block T[Myr] M[M*] EESC VI[km/s] K* NAME, then extras.
+        # physical-unit block T[Myr] M[M*] EESC VI[km/s] K* NAME, then the
+        # direction angles ANGLE PHI / ANGLE THETA (tokens 12–13).  The last
+        # line is truncated to 11 tokens (no angles) and must be skipped.
         esc_path = joinpath(TESTDIR, "esc.11")
         write(
             esc_path,
             """
-         TTOT         BODY         RI           VI           STEP         T[Myr]       M[M*]      EESC      VI[km/s]     K*  NAME
-   1.00000E+00  5.00000E-04  2.00000E+01  4.00000E+01  1.95312E-03  1.23400E+00  5.00000E-01 -1.23000E-01  1.56000E+01   0       101  1.0  2.0
-   2.00000E+00  3.00000E-04  2.50000E+01  4.20000E+01  1.95312E-03  2.56700E+00  3.00000E-01  4.56000E-01  2.23000E+01   1       202  1.0  2.0
-   3.00000E+00  1.20000E-03  3.00000E+01  4.40000E+01  1.95312E-03  3.89000E+00  1.20000E+00 -7.89000E-01  1.01000E+01  14       303  1.0  2.0
+         TTOT         BODY         RI           VI           STEP         T[Myr]       M[M*]      EESC      VI[km/s]     K*  NAME      ANGLE PHI     ANGLE THETA
+   1.00000E+00  5.00000E-04  2.00000E+01  4.00000E+01  1.95312E-03  1.23400E+00  5.00000E-01 -1.23000E-01  1.56000E+01   0       101  1.20000E+01  2.50000E+01
+   2.00000E+00  3.00000E-04  2.50000E+01  4.20000E+01  1.95312E-03  2.56700E+00  3.00000E-01  4.56000E-01  2.23000E+01   1       202  1.85000E+02 -3.00000E+01
+   3.00000E+00  1.20000E-03  3.00000E+01  4.40000E+01  1.95312E-03  3.89000E+00  1.20000E+00 -7.89000E-01  1.01000E+01  14       303  3.40000E+02  6.00000E+01
+   4.00000E+00  1.00000E-03  3.10000E+01  4.50000E+01  1.95312E-03  4.50000E+00  1.00000E+00  1.00000E-01  1.20000E+01   1       404
 """,
         )
 
         escs = read_escapers(esc_path)
-        @test length(escs) == 3
+        @test length(escs) == 3   # the 11-token line is skipped
 
         @test escs[1].time_myr ≈ 1.234
         @test escs[1].mass_solar ≈ 0.500
@@ -470,9 +473,16 @@ format = "pdf"
         @test escs[1].velocity_kms ≈ 15.6
         @test escs[1].stellar_type == 0
         @test escs[1].name == 101
+        @test escs[1].phi_deg ≈ 12.0
+        @test escs[1].theta_deg ≈ 25.0
+
+        @test escs[2].phi_deg ≈ 185.0
+        @test escs[2].theta_deg ≈ -30.0
 
         @test escs[3].stellar_type == 14   # BH (Hurley convention)
         @test escs[3].name == 303
+        @test escs[3].phi_deg ≈ 340.0
+        @test escs[3].theta_deg ≈ 60.0
 
         # Empty file
         empty_path = joinpath(TESTDIR, "esc_empty.11")
@@ -562,6 +572,11 @@ format = "pdf"
             @test e1.velocity_kms ≈ 209.841 rtol = 1e-5
             @test e1.stellar_type == 14                 # BH escaper
             @test e1.name == 2248
+            @test e1.phi_deg ≈ 22.2302 rtol = 1e-5      # ANGLE PHI [deg]
+            @test e1.theta_deg ≈ 28.7010 rtol = 1e-5    # ANGLE THETA [deg]
+            # escape.F angle conventions: φ ∈ [0, 360], θ ∈ [-90, 90]
+            @test all(0.0 ≤ e.phi_deg ≤ 360.0 for e in escs)
+            @test all(-90.0 ≤ e.theta_deg ≤ 90.0 for e in escs)
         end
 
         @testset "out1000 scaling + ADJUST" begin
@@ -700,6 +715,193 @@ format = "pdf"
         )
         plot_hr_evolution([sev, sev2], vis; filename = "test_hr_evo")
         @test isfile(joinpath(TESTDIR, "test_plots", "test_hr_evo.png"))
+    end
+
+    # =====================================================================
+    @testset "Escaper and SSE plots (smoke tests)" begin
+        Nbody6Dynamics.set_publication_theme!()
+
+        plots_dir = joinpath(TESTDIR, "test_plots_f23")
+        vis = VisualizationConfig(;
+            output_dir = plots_dir,
+            format = "png",
+            dpi = 72,
+            figsize = (6, 4),
+        )
+
+        # --- Escaper plots ---
+        escs = [
+            EscaperRecord(1.0, 0.5, -0.1, 15.0, 0, 101, 10.0, -20.0),
+            EscaperRecord(2.0, 0.3, 0.2, 30.0, 1, 202, 120.0, 35.0),
+            EscaperRecord(3.5, 1.4, 0.5, 250.0, 14, 303, 300.0, -60.0),
+            EscaperRecord(4.0, 0.6, 0.1, 22.0, 11, 404, 200.0, 5.0),
+        ]
+
+        plot_escapers(escs, vis; filename = "test_escapers")
+        @test isfile(joinpath(plots_dir, "test_escapers.png"))
+
+        plot_escape_anisotropy(escs, vis; filename = "test_esc_aniso")
+        @test isfile(joinpath(plots_dir, "test_esc_aniso.png"))
+
+        # Empty-input guards: warn, return nothing, produce no file
+        ret = @test_logs (:warn, r"No escaper records") plot_escapers(
+            EscaperRecord[],
+            vis;
+            filename = "test_escapers_empty",
+        )
+        @test ret === nothing
+        @test !isfile(joinpath(plots_dir, "test_escapers_empty.png"))
+
+        ret = @test_logs (:warn, r"No escaper records") plot_escape_anisotropy(
+            EscaperRecord[],
+            vis;
+            filename = "test_esc_aniso_empty",
+        )
+        @test ret === nothing
+        @test !isfile(joinpath(plots_dir, "test_esc_aniso_empty.png"))
+
+        # --- SSE plots ---
+        # Mixed snapshot: two MS stars (finite TM, one past turnoff), one
+        # giant with a partial core, one NS remnant (MC = M).  Records built
+        # with the 9-argument convenience constructor carry NaN SSE fields
+        # and must be skipped gracefully.
+        sev_mix = StellarEvolutionSnapshot(
+            50.0,
+            5,
+            [
+                StellarRecord(
+                    1.0,
+                    Int32(1),
+                    Int32(1),
+                    Int32(0),
+                    0.5,
+                    0.4,
+                    -0.6,
+                    -0.3,
+                    3.65,
+                    8.0e4,
+                    0.0,
+                    0.0,
+                    1e-10,
+                ),
+                StellarRecord(
+                    1.0,
+                    Int32(2),
+                    Int32(2),
+                    Int32(1),
+                    1.2,
+                    1.0,
+                    0.0,
+                    0.0,
+                    3.76,
+                    30.0,
+                    0.0,
+                    0.0,
+                    1e-10,
+                ),
+                StellarRecord(
+                    1.0,
+                    Int32(3),
+                    Int32(3),
+                    Int32(3),
+                    2.0,
+                    1.8,
+                    1.8,
+                    1.2,
+                    3.68,
+                    40.0,
+                    0.25,
+                    0.02,
+                    15.0,
+                ),
+                StellarRecord(
+                    1.0,
+                    Int32(4),
+                    Int32(4),
+                    Int32(13),
+                    3.0,
+                    1.4,
+                    -5.0,
+                    -5.0,
+                    5.0,
+                    10.0,
+                    1.4,
+                    1e-5,
+                    1e-10,
+                ),
+                StellarRecord(1.0, Int32(5), Int32(5), Int32(1), 0.9, 0.8, -0.1, -0.1, 3.70),
+            ],
+        )
+
+        plot_mass_segregation(sev_mix, vis; filename = "test_mass_seg")
+        @test isfile(joinpath(plots_dir, "test_mass_seg.png"))
+
+        plot_evolutionary_clock(sev_mix, vis; filename = "test_evo_clock")
+        @test isfile(joinpath(plots_dir, "test_evo_clock.png"))
+
+        plot_core_mass([sev_mix], vis; filename = "test_core_mass")
+        @test isfile(joinpath(plots_dir, "test_core_mass.png"))
+
+        # MS-only snapshot: no evolved stars — core-mass plot must warn,
+        # return nothing, and create no file.
+        sev_ms = StellarEvolutionSnapshot(
+            0.5,
+            2,
+            [
+                StellarRecord(
+                    0.5,
+                    Int32(1),
+                    Int32(1),
+                    Int32(0),
+                    1.0,
+                    0.8,
+                    0.1,
+                    -0.5,
+                    3.75,
+                    90.0,
+                    0.0,
+                    0.0,
+                    1e-10,
+                ),
+                StellarRecord(
+                    0.5,
+                    Int32(2),
+                    Int32(2),
+                    Int32(1),
+                    0.8,
+                    1.2,
+                    1.5,
+                    0.2,
+                    4.10,
+                    5.2,
+                    0.0,
+                    0.0,
+                    1e-10,
+                ),
+            ],
+        )
+        ret = @test_logs (:warn, r"No evolved stars") plot_core_mass(
+            [sev_ms],
+            vis;
+            filename = "test_core_mass_ms",
+        )
+        @test ret === nothing
+        @test !isfile(joinpath(plots_dir, "test_core_mass_ms.png"))
+
+        # NaN-TM main-sequence snapshot (pre-v2026.07 data): the clock has
+        # no valid TM and must warn + return nothing without a file.
+        sev_nan = StellarEvolutionSnapshot(
+            0.5,
+            1,
+            [StellarRecord(0.5, Int32(1), Int32(1), Int32(1), 1.0, 0.8, 0.1, -0.5, 3.75)],
+        )
+        ret = @test_logs (:warn, r"No main-sequence records") plot_evolutionary_clock(
+            sev_nan,
+            vis;
+            filename = "test_evo_clock_nan",
+        )
+        @test ret === nothing
+        @test !isfile(joinpath(plots_dir, "test_evo_clock_nan.png"))
     end
 
     # =====================================================================

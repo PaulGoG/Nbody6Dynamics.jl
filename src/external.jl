@@ -179,7 +179,16 @@ function Base.show(io::IO, ::MIME"text/plain", s::OutputScan)
     s.available[:snapshots_conf3] && push!(plots, "snapshot", "snapshot_evolution", "cluster_anim")
     s.available[:diagnostics] && push!(plots, "energy", "particle_count")
     s.available[:lagr] && push!(plots, "lagrangian_radii", "lagrangian_anim")
-    s.available[:stellar_evo] && push!(plots, "hr_diagram", "hr_evolution", "hr_anim")
+    s.available[:escapers] && push!(plots, "escapers", "escape_anisotropy")
+    s.available[:stellar_evo] && push!(
+        plots,
+        "hr_diagram",
+        "hr_evolution",
+        "mass_segregation",
+        "evolutionary_clock",
+        "core_mass_growth",
+        "hr_anim",
+    )
     if !isempty(plots)
         println(io)
         print(io, "Plots available: ", join(plots, ", "))
@@ -361,6 +370,14 @@ function postprocess_external(
             !isempty(lagr.time) && plot_lagrangian(lagr, vis; units = ext_scaling)
         end
 
+        if haskey(results, :escapers)
+            escs = results[:escapers]::Vector{EscaperRecord}
+            if !isempty(escs)
+                plot_escapers(escs, vis)
+                plot_escape_anisotropy(escs, vis)
+            end
+        end
+
         if haskey(results, :stellar_evo)
             sevs = results[:stellar_evo]::Vector{StellarEvolutionSnapshot}
             if !isempty(sevs)
@@ -373,6 +390,9 @@ function postprocess_external(
                     plot_hr(sevs[idx], vis; filename = fname)
                 end
                 length(sevs) > 1 && plot_hr_evolution(sevs, vis)
+                plot_mass_segregation(sevs[end], vis)
+                plot_evolutionary_clock(sevs[end], vis)
+                plot_core_mass(sevs, vis)
             end
         end
 

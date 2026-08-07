@@ -255,6 +255,15 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config; run_dir::A
         end
     end
 
+    if haskey(results, :escapers)
+        escs = results[:escapers]::Vector{EscaperRecord}
+        if !isempty(escs)
+            @info "Plotting escaper analysis..."
+            plot_escapers(escs, vis; filename = "escapers")
+            plot_escape_anisotropy(escs, vis; filename = "escape_anisotropy")
+        end
+    end
+
     if haskey(results, :stellar_evo)
         sevs = results[:stellar_evo]::Vector{StellarEvolutionSnapshot}
         if !isempty(sevs)
@@ -273,6 +282,10 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config; run_dir::A
                 @info "Plotting HR evolution..."
                 plot_hr_evolution(sevs, vis; filename = "hr_evolution")
             end
+            @info "Plotting SSE quantities..."
+            plot_mass_segregation(sevs[end], vis; filename = "mass_segregation")
+            plot_evolutionary_clock(sevs[end], vis; filename = "evolutionary_clock")
+            plot_core_mass(sevs, vis; filename = "core_mass_growth")
         end
     end
 
@@ -556,6 +569,8 @@ export read_stellar_evolution, read_all_stellar_evolution
 export plot_snapshot, plot_snapshot_evolution
 export plot_lagrangian, plot_energy, plot_particle_count
 export plot_hr, plot_hr_evolution
+export plot_escapers, plot_escape_anisotropy
+export plot_mass_segregation, plot_evolutionary_clock, plot_core_mass
 export plot_cluster_separation, plot_cluster_virial, per_cluster_virial, parse_merger_summary
 export animate_cluster, animate_hr, animate_lagrangian
 export set_publication_theme!

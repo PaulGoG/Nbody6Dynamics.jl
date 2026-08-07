@@ -351,6 +351,11 @@ Static plots take the extension from `visualization.format`; animations are alwa
 | `plot_lagrangian(lagr, vis)` | Selected mass-fraction radii vs time, log y | `lagrangian_radii` |
 | `plot_hr(sev, vis)` | HR diagram coloured by stellar type K*, reversed Teff axis | `hr_diagram_{early,mid,final}` |
 | `plot_hr_evolution(sevs, vis)` | HR panel grid across up to 6 epochs | `hr_evolution` |
+| `plot_escapers(escs, vis)` | Two panels: cumulative escaped mass step curve with totals annotation, and escape velocity vs time (log y) split into luminous / compact-remnant classes | `escapers` |
+| `plot_escape_anisotropy(escs, vis)` | Sky projection of escape directions φ ∈ [0°, 360°], θ ∈ [-90°, 90°] by stellar class | `escape_anisotropy` |
+| `plot_mass_segregation(sev, vis)` | Distance from density centre RI vs stellar mass, log–log, epoch annotated | `mass_segregation` |
+| `plot_evolutionary_clock(sev, vis)` | Histogram of the MS age fraction t/T_MS (K* ≤ 1), turnoff boundary and past-turnoff fraction annotated | `evolutionary_clock` |
+| `plot_core_mass(sevs, vis)` | Core mass MC vs total mass for evolved stars (K* ≥ 2) at the last epoch, MC = M identity guide | `core_mass_growth` |
 | `plot_cluster_separation(snaps, ranges, vis)` | Pairwise COM separations of the initial clusters; per-pair lines for ≤ 5 clusters, min/max/mean envelope + surviving-cluster staircase and coalescence marker otherwise | `merger_cluster_separation` |
 | `plot_cluster_virial(snaps, ranges, vis)` | Internal virial ratio `Q_i(t)` per initial cluster (COM-subtracted, self-gravity only); log axis when `max(Q) > q_log_threshold` | `merger_cluster_virial` |
 | `plot_merger_ic(result, vis)` | IC diagnostics: projections, 3-panel overview, velocity quiver by cluster, IMF histogram with Kroupa reference slopes, per-cluster radial density | `merger_ic_{xy,xz,yz}`, `merger_ic_overview`, `merger_ic_velocity`, `merger_ic_imf`, `merger_ic_density` |

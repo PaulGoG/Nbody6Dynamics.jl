@@ -324,6 +324,25 @@ function _log_ticks(lo::Real, hi::Real)
 end
 
 """
+    _fmt_latex_sig3(x) -> String
+
+Format a non-negative quantity to 3 significant digits for LaTeX
+annotations, following the power-of-ten typography standard: plain
+decimal within 10⁻²–10⁴, mantissa `\\times 10^{e}` outside — never
+computer notation.
+"""
+function _fmt_latex_sig3(x::Real)::String
+    x == 0 && return "0"
+    m_str, e_str = split(@sprintf("%.2e", x), 'e')
+    e = parse(Int, e_str)
+    if -2 ≤ e ≤ 3
+        v = round(x; sigdigits = 3)
+        return isinteger(v) ? string(Int(v)) : string(v)
+    end
+    return "$(m_str) \\times 10^{$(e)}"
+end
+
+"""
     _marker_size(cfg, n) -> Float64
 
 Scatter marker size for `n` particles: `marker_budget / n` clamped to
@@ -352,6 +371,7 @@ const _SEMANTIC_COLORS = Dict{Symbol,Makie.RGBAf}(
     :n_particles => _OKABE_ITO[3],  # bluish green  N (counts)
     :n_pairs => _OKABE_ITO[2],  # orange        N_pairs
     :separation => _OKABE_ITO[5],  # sky blue      pairwise separations
+    :escapers => _OKABE_ITO[4],  # reddish purple escaper counts & cumulative mass
 )
 
 """Darkened same-hue edge colour for `band!` fills (edge at full opacity)."""
@@ -365,5 +385,7 @@ include("snapshots.jl")
 include("lagrangian.jl")
 include("energy.jl")
 include("hr.jl")
+include("escapers.jl")
+include("sse.jl")
 include("animation.jl")
 include("merger.jl")

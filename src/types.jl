@@ -293,7 +293,10 @@ end
 """
     EscaperRecord
 
-A single escaper event from esc.11.
+A single escaper event from esc.11.  The direction angles follow the
+`escape.F` convention: `phi_deg` is the azimuth of the escape direction
+measured from the x-axis in [0°, 360°]; `theta_deg` is the elevation
+from the xy-plane in [-90°, 90°].
 """
 struct EscaperRecord
     time_myr::Float64         # escape time [Myr]
@@ -302,6 +305,8 @@ struct EscaperRecord
     velocity_kms::Float64     # escape velocity [km/s]
     stellar_type::Int         # K* stellar type
     name::Int                 # particle identifier
+    phi_deg::Float64          # escape azimuth from x-axis [deg], [0, 360]
+    theta_deg::Float64        # escape elevation from xy-plane [deg], [-90, 90]
 end
 
 # ---------------------------------------------------------------------------
