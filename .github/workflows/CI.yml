@@ -28,6 +28,10 @@ jobs:
         with:
           version: ${{ matrix.version }}
       - uses: julia-actions/cache@v2
+        with:
+          # cache-name busts the depot poisoned by the first (pre-fix) runs:
+          # a broken artifact extraction persisted across restores.
+          cache-name: julia-cache-v2
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
       - uses: julia-actions/julia-processcoverage@v1

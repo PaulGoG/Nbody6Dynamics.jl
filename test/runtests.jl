@@ -1858,10 +1858,7 @@ truncate_jacobi = false
 
         # esc.11 line with only 12 tokens (angle column truncated) is skipped
         p_trunc = joinpath(TESTDIR, "esc_trunc.11")
-        write(
-            p_trunc,
-            "  1.0 5.0e-4 20.0 40.0 2.0e-3 1.234 0.5 -0.1 15.6 0 101 22.2\n",
-        )
+        write(p_trunc, "  1.0 5.0e-4 20.0 40.0 2.0e-3 1.234 0.5 -0.1 15.6 0 101 22.2\n")
         @test isempty(read_escapers(p_trunc))
     end
 
