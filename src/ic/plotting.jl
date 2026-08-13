@@ -30,12 +30,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     mass_solar = result.mass_physical
 
     # Mass colour scale (log of physical mass in solar masses)
-    log_m = log10.(max.(mass_solar, 1e-30))
-    cmin, cmax = extrema(log_m)
-    if cmin ≈ cmax
-        cmin -= 0.5
-        cmax += 0.5
-    end
+    log_m, cmin, cmax = _log_color_range(mass_solar)
 
     # Marker size — same formula as snapshot plots
     ms = _marker_size(vis, N)
@@ -66,15 +61,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             xgridvisible = false,
             ygridvisible = false,
         )
-        text!(
-            ax,
-            0.04,
-            0.96;
-            text = label_str,
-            space = :relative,
-            align = (:left, :top),
-            fontsize = 16,
-        )
+        _annotate!(ax, label_str)
         sc = scatter!(
             ax,
             px,
@@ -92,14 +79,14 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             label = L"\log_{10}(m \; [\mathrm{M}_\odot])",
             ticks = _nice_colorbar_ticks(cmin, cmax),
         )
-        colgap!(fig.layout, 10)
+        colgap!(fig.layout, _COLORBAR_COLGAP)
 
         _save_fig(vis, "merger_ic_$(proj)", fig)
     end
 
     # ── 3-panel overview ─────────────────────────────────────────
     pw, ph = _fig_multipanel(vis, 1, 3)
-    fig3 = Figure(; size = (pw + 110, ph))   # extra width for shared colorbar
+    fig3 = Figure(; size = (pw + _COLORBAR_WIDTH, ph))   # extra width for shared colorbar
 
     # Global limits across all 3 projections
     all_coords = vcat(x_pc, y_pc, z_pc)
@@ -132,25 +119,9 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             xgridvisible = false,
             ygridvisible = false,
         )
-        text!(
-            ax,
-            0.04,
-            0.96;
-            text = label_str,
-            space = :relative,
-            align = (:left, :top),
-            fontsize = 16,
-        )
+        _annotate!(ax, label_str)
         if col == 1 && orbit_annot !== nothing
-            text!(
-                ax,
-                0.04,
-                0.89;
-                text = orbit_annot,
-                space = :relative,
-                align = (:left, :top),
-                fontsize = 16,
-            )
+            _annotate!(ax, orbit_annot; dy = 0.07)
         end
         sc = scatter!(
             ax,
@@ -186,7 +157,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         xgridvisible = false,
         ygridvisible = false,
     )
-    text!(ax_v, 0.04, 0.96; text = "XY", space = :relative, align = (:left, :top), fontsize = 16)
+    _annotate!(ax_v, "XY")
 
     vx_kms = result.vel_physical[1, :]
     vy_kms = result.vel_physical[2, :]
@@ -291,8 +262,9 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     # Darker same-hue edge on the band fill
     lines!(ax_h, step_x, step_top; color = _band_edge(hist_color), linewidth = 1.5)
 
-    # Reference slopes, normalised to the most populated bin (more robust than
-    # picking m≈0.3 when the sample doesn't span the full Kroupa range).
+    # Reference slopes (the canonical Kroupa segment exponents and break
+    # masses from imf.jl), normalised to the most populated bin (more robust
+    # than picking m≈0.3 when the sample doesn't span the full Kroupa range).
     if any(mask)
         i_ref = argmax(dn)
         norm_val = dn[i_ref]
@@ -300,8 +272,14 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         x_ref = 10.0 .^ range(log10(m_min / 1.5), log10(m_max * 1.5); length = 200)
         n_slopes = 0
         for (α, lbl, lo, hi, c) in [
-            (1.3, L"\alpha = 1.3", 0.08, 0.5, _OKABE_ITO[2]),
-            (2.3, L"\alpha = 2.3", 0.5, 150.0, _OKABE_ITO[6]),
+            (
+                _KROUPA_ALPHAS[2],
+                L"\alpha = 1.3",
+                _KROUPA_BREAKS[2],
+                _KROUPA_BREAKS[3],
+                _OKABE_ITO[2],
+            ),
+            (_KROUPA_ALPHAS[3], L"\alpha = 2.3", _KROUPA_BREAKS[3], 150.0, _OKABE_ITO[6]),
         ]
             seg = filter(x -> lo ≤ x ≤ hi, x_ref)
             isempty(seg) && continue

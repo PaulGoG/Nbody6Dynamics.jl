@@ -101,8 +101,12 @@ end
 # elements (colorbar, second panel) get a wider or taller canvas so the
 # primary axis box remains the same physical size.
 
+"""Extra canvas width reserved for a right-side colorbar column."""
+const _COLORBAR_WIDTH = 110
+
 """Single-panel with a right-side colorbar — extra width keeps axis box size."""
-_fig_with_colorbar(cfg::VisualizationConfig) = (_figsize_px(cfg)[1] + 110, _figsize_px(cfg)[2])
+_fig_with_colorbar(cfg::VisualizationConfig) =
+    (_figsize_px(cfg)[1] + _COLORBAR_WIDTH, _figsize_px(cfg)[2])
 
 """Two vertically stacked panels (e.g. energy + virial)."""
 _fig_two_panel(cfg::VisualizationConfig) =
@@ -350,6 +354,114 @@ Scatter marker size for `n` particles: `marker_budget / n` clamped to
 """
 _marker_size(cfg::VisualizationConfig, n::Integer) =
     clamp(cfg.style.marker_budget / max(n, 1), cfg.style.marker_min, cfg.style.marker_max)
+
+# ---------------------------------------------------------------------------
+# Shared annotation, layout, and data-preparation helpers
+# ---------------------------------------------------------------------------
+
+"""Standard fontsize for in-axis annotations (quantitative takeaways, §10)."""
+const _ANNOTATION_FONTSIZE = 16
+
+"""Row gap between the stacked panels of two-panel figures."""
+const _TWO_PANEL_ROWGAP = 12
+
+"""Column gap between an axis and its colorbar."""
+const _COLORBAR_COLGAP = 10
+
+"""
+    _annotate!(ax, text; corner = :tl, color = :black,
+               fontsize = _ANNOTATION_FONTSIZE, dy = 0.0)
+
+In-axis annotation at a standard corner in relative coordinates, coloured to
+the relevant series per the annotation standard. `corner` is one of `:tl`,
+`:tr`, `:br`; `dy` shifts the anchor downward for stacked annotations.
+`text` may be an `Observable` (animations).
+"""
+function _annotate!(
+    ax,
+    text;
+    corner::Symbol = :tl,
+    color = :black,
+    fontsize::Real = _ANNOTATION_FONTSIZE,
+    dy::Real = 0.0,
+)
+    x, y, align = if corner === :tl
+        (0.04, 0.96 - dy, (:left, :top))
+    elseif corner === :tr
+        (0.96, 0.96 - dy, (:right, :top))
+    elseif corner === :br
+        (0.96, 0.04 + dy, (:right, :bottom))
+    else
+        throw(ArgumentError("corner must be :tl, :tr, or :br; got $corner"))
+    end
+    text!(
+        ax,
+        x,
+        y;
+        text = text,
+        space = :relative,
+        align = align,
+        fontsize = fontsize,
+        color = color,
+    )
+    return nothing
+end
+
+"""Centred grey note for panels with no plottable data."""
+function _no_data_note!(ax, text)
+    text!(
+        ax,
+        0.5,
+        0.55;
+        text = text,
+        space = :relative,
+        align = (:center, :center),
+        color = :gray30,
+        fontsize = 18,
+    )
+    return nothing
+end
+
+"""
+    _log_color_range(values) -> (log_vals, cmin, cmax)
+
+`log10` colour scale for mass colouring: floors values at `1e-30` and widens
+a degenerate (single-value) range by ±0.5 so the colormap stays defined.
+"""
+function _log_color_range(values)
+    log_vals = log10.(max.(values, 1e-30))
+    cmin, cmax = extrema(log_vals)
+    if cmin ≈ cmax
+        cmin -= 0.5
+        cmax += 0.5
+    end
+    return log_vals, cmin, cmax
+end
+
+"""
+    _envelope_stats(values::AbstractMatrix) -> (lo, hi, mean)
+
+Per-column (per-timestep) minimum / maximum / mean over the non-NaN entries
+of a series × times matrix; all-NaN columns stay NaN in every output.
+"""
+function _envelope_stats(values::AbstractMatrix{<:Real})
+    n_series, n_t = size(values)
+    lo = fill(NaN, n_t)
+    hi = fill(NaN, n_t)
+    mean_vals = fill(NaN, n_t)
+    for k in 1:n_t
+        vals = Float64[]
+        for i in 1:n_series
+            x = values[i, k]
+            isnan(x) || push!(vals, x)
+        end
+        isempty(vals) && continue
+        lo[k] = minimum(vals)
+        hi[k] = maximum(vals)
+        mean_vals[k] = sum(vals) / length(vals)
+    end
+    return lo, hi, mean_vals
+end
 
 # ---------------------------------------------------------------------------
 # Semantic colour table

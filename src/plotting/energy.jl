@@ -50,14 +50,10 @@ function plot_energy(
         ylims!(ax1, de_lo * 0.8, de_hi * 1.5)
         # Annotate the maximum error (2 significant digits)
         m_str, e_str = split(@sprintf("%.1e", de_hi), 'e')
-        text!(
+        _annotate!(
             ax1,
-            0.96,
-            0.96;
-            text = latexstring("\\max|\\Delta E/E| = $(m_str) \\times 10^{$(parse(Int, e_str))}"),
-            space = :relative,
-            align = (:right, :top),
-            fontsize = 16,
+            latexstring("\\max|\\Delta E/E| = $(m_str) \\times 10^{$(parse(Int, e_str))}");
+            corner = :tr,
             color = _SEMANTIC_COLORS[:energy_error],
         )
     end
@@ -99,7 +95,7 @@ function plot_energy(
     # Shared legend for the two-panel figure: horizontal, above the axes
     _top_legend!(fig, ax2)
     linkxaxes!(ax1, ax2)
-    rowgap!(fig.layout, 12)
+    rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
 
     _save_fig(cfg, filename, fig)
     return nothing
@@ -158,14 +154,10 @@ function plot_particle_count(
     # Annotate the total particle change over the run, coloured to the series
     n0, n1 = n[1], n[end]
     pct_str = @sprintf("%+.1f", 100 * (n1 - n0) / max(n0, 1))
-    text!(
+    _annotate!(
         ax1,
-        0.96,
-        0.96;
-        text = latexstring("N: $(n0) \\rightarrow $(n1)\\;($(pct_str)\\%)"),
-        space = :relative,
-        align = (:right, :top),
-        fontsize = 16,
+        latexstring("N: $(n0) \\rightarrow $(n1)\\;($(pct_str)\\%)");
+        corner = :tr,
         color = _SEMANTIC_COLORS[:n_particles],
     )
 
@@ -185,21 +177,10 @@ function plot_particle_count(
         limits = (nothing, np_ylims),
     )
     lines!(ax2, t, np; color = _SEMANTIC_COLORS[:n_pairs])
-    if all_zero
-        text!(
-            ax2,
-            0.5,
-            0.55;
-            text = L"\mathrm{no\;KS\;binaries\;formed}",
-            space = :relative,
-            align = (:center, :center),
-            color = :gray30,
-            fontsize = 18,
-        )
-    end
+    all_zero && _no_data_note!(ax2, L"\mathrm{no\;KS\;binaries\;formed}")
 
     linkxaxes!(ax1, ax2)
-    rowgap!(fig.layout, 12)
+    rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
 
     _save_fig(cfg, filename, fig)
     return nothing

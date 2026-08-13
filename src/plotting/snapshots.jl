@@ -27,13 +27,7 @@ function plot_snapshot(
     ms = _marker_size(cfg, n)
 
     # Colour by mass (log scale for visual contrast)
-    m = Float64.(snap.mass)
-    log_m = log10.(max.(m, 1e-30))
-    cmin, cmax = extrema(log_m)
-    if cmin ≈ cmax
-        cmin -= 0.5
-        cmax += 0.5
-    end
+    log_m, cmin, cmax = _log_color_range(Float64.(snap.mass))
 
     for proj in projections
         fig = Figure(; size = _fig_with_colorbar(cfg))
@@ -58,15 +52,7 @@ function plot_snapshot(
             xgridvisible = false,
             ygridvisible = false,
         )
-        text!(
-            ax,
-            0.04,
-            0.96;
-            text = _time_annotation(t_val, physical),
-            space = :relative,
-            align = (:left, :top),
-            fontsize = 16,
-        )
+        _annotate!(ax, _time_annotation(t_val, physical))
 
         sc = scatter!(
             ax,
@@ -86,7 +72,7 @@ function plot_snapshot(
             ticks = _nice_colorbar_ticks(cmin, cmax),
         )
 
-        colgap!(fig.layout, 10)
+        colgap!(fig.layout, _COLORBAR_COLGAP)
 
         _save_fig(cfg, "$(filename)_$(proj)", fig)
     end
@@ -128,17 +114,12 @@ function plot_snapshot_evolution(
 
     # Global mass colour scale across all selected snapshots
     all_m = reduce(vcat, [Float64.(snaps[i].mass) for i in indices])
-    log_m_global = log10.(max.(all_m, 1e-30))
-    cmin, cmax = extrema(log_m_global)
-    if cmin ≈ cmax
-        cmin -= 0.5
-        cmax += 0.5
-    end
+    _, cmin, cmax = _log_color_range(all_m)
 
     for projection in projections
         # Extra width for the shared colorbar column
         pw, ph = _fig_multipanel(cfg, nrows, ncols)
-        fig = Figure(; size = (pw + 110, ph))
+        fig = Figure(; size = (pw + _COLORBAR_WIDTH, ph))
 
         ix, iy, xsym, ysym = _proj_indices(projection)
         xlab = _coord_label(xsym, unit_str)
@@ -196,15 +177,7 @@ function plot_snapshot_evolution(
                 xgridvisible = false,
                 ygridvisible = false,
             )
-            text!(
-                ax,
-                0.04,
-                0.96;
-                text = _time_annotation(t_val, physical),
-                space = :relative,
-                align = (:left, :top),
-                fontsize = 16,
-            )
+            _annotate!(ax, _time_annotation(t_val, physical))
 
             log_m = log10.(max.(Float64.(snap.mass), 1e-30))
             ms = _marker_size(cfg, nparticles(snap))

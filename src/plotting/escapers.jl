@@ -17,6 +17,46 @@ const _ESC_REMNANT_LABEL = L"\mathrm{Compact\;remnant}\;(K^* \geq 10)"
 _esc_is_remnant(r::EscaperRecord) = r.stellar_type ≥ _ESC_REMNANT_KSTAR_MIN
 
 """
+    _scatter_escaper_classes!(ax, records, xf, yf, ms) -> (elements, labels)
+
+Scatter `records` split into the two stellar classes (luminous vs compact
+remnant) with the shared colour + marker encoding, using `xf`/`yf` to
+extract the plotted quantities. Returns the legend elements and labels for
+the classes actually present.
+"""
+function _scatter_escaper_classes!(ax, records, xf, yf, ms)
+    legend_elems = Any[]
+    legend_labels = LaTeXString[]
+    for (sel, color, marker, label) in (
+        (
+            [r for r in records if !_esc_is_remnant(r)],
+            _ESC_LUMINOUS_COLOR,
+            :circle,
+            _ESC_LUMINOUS_LABEL,
+        ),
+        (
+            [r for r in records if _esc_is_remnant(r)],
+            _ESC_REMNANT_COLOR,
+            :utriangle,
+            _ESC_REMNANT_LABEL,
+        ),
+    )
+        isempty(sel) && continue
+        p = scatter!(
+            ax,
+            [xf(r) for r in sel],
+            [yf(r) for r in sel];
+            color = color,
+            marker = marker,
+            markersize = ms,
+        )
+        push!(legend_elems, p)
+        push!(legend_labels, label)
+    end
+    return legend_elems, legend_labels
+end
+
+"""
     plot_escapers(escapers::Vector{EscaperRecord}, cfg::VisualizationConfig;
                   filename = "escapers")
 
@@ -58,16 +98,11 @@ function plot_escapers(
     # The curve rises towards the lower right corner's diagonal — the
     # top-left corner stays free for the totals annotation.
     m_str = _fmt_latex_sig3(m_cum[end])
-    text!(
+    _annotate!(
         ax1,
-        0.04,
-        0.96;
-        text = latexstring(
+        latexstring(
             "N_\\mathrm{esc} = $(n_esc),\\;M_\\mathrm{esc} = $(m_str)\\;\\mathrm{M}_\\odot",
-        ),
-        space = :relative,
-        align = (:left, :top),
-        fontsize = 16,
+        );
         color = esc_color,
     )
 
@@ -85,51 +120,14 @@ function plot_escapers(
     )
 
     ms = _marker_size(cfg, length(vok))
-    legend_elems = Any[]
-    legend_labels = LaTeXString[]
-    lum = [r for r in vok if !_esc_is_remnant(r)]
-    rem = [r for r in vok if _esc_is_remnant(r)]
-    if !isempty(lum)
-        p = scatter!(
-            ax2,
-            [r.time_myr for r in lum],
-            [r.velocity_kms for r in lum];
-            color = _ESC_LUMINOUS_COLOR,
-            marker = :circle,
-            markersize = ms,
-        )
-        push!(legend_elems, p)
-        push!(legend_labels, _ESC_LUMINOUS_LABEL)
-    end
-    if !isempty(rem)
-        p = scatter!(
-            ax2,
-            [r.time_myr for r in rem],
-            [r.velocity_kms for r in rem];
-            color = _ESC_REMNANT_COLOR,
-            marker = :utriangle,
-            markersize = ms,
-        )
-        push!(legend_elems, p)
-        push!(legend_labels, _ESC_REMNANT_LABEL)
-    end
-    if isempty(vok)
-        text!(
-            ax2,
-            0.5,
-            0.55;
-            text = L"\mathrm{no\;valid\;escape\;velocities}",
-            space = :relative,
-            align = (:center, :center),
-            color = :gray30,
-            fontsize = 18,
-        )
-    end
+    legend_elems, legend_labels =
+        _scatter_escaper_classes!(ax2, vok, r -> r.time_myr, r -> r.velocity_kms, ms)
+    isempty(vok) && _no_data_note!(ax2, L"\mathrm{no\;valid\;escape\;velocities}")
     # Single-entry legends are suppressed per the house standard.
     length(legend_labels) ≥ 2 && _top_legend!(fig, legend_elems, legend_labels)
 
     linkxaxes!(ax1, ax2)
-    rowgap!(fig.layout, 12)
+    rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
 
     _save_fig(cfg, filename, fig)
     return nothing
@@ -178,46 +176,11 @@ function plot_escape_anisotropy(
     )
 
     ms = _marker_size(cfg, length(valid))
-    legend_elems = Any[]
-    legend_labels = LaTeXString[]
-    lum = [r for r in valid if !_esc_is_remnant(r)]
-    rem = [r for r in valid if _esc_is_remnant(r)]
-    if !isempty(lum)
-        p = scatter!(
-            ax,
-            [r.phi_deg for r in lum],
-            [r.theta_deg for r in lum];
-            color = _ESC_LUMINOUS_COLOR,
-            marker = :circle,
-            markersize = ms,
-        )
-        push!(legend_elems, p)
-        push!(legend_labels, _ESC_LUMINOUS_LABEL)
-    end
-    if !isempty(rem)
-        p = scatter!(
-            ax,
-            [r.phi_deg for r in rem],
-            [r.theta_deg for r in rem];
-            color = _ESC_REMNANT_COLOR,
-            marker = :utriangle,
-            markersize = ms,
-        )
-        push!(legend_elems, p)
-        push!(legend_labels, _ESC_REMNANT_LABEL)
-    end
+    legend_elems, legend_labels =
+        _scatter_escaper_classes!(ax, valid, r -> r.phi_deg, r -> r.theta_deg, ms)
     length(legend_labels) ≥ 2 && _top_legend!(fig, legend_elems, legend_labels)
 
-    text!(
-        ax,
-        0.04,
-        0.96;
-        text = latexstring("N_\\mathrm{esc} = $(length(valid))"),
-        space = :relative,
-        align = (:left, :top),
-        fontsize = 16,
-        color = :black,
-    )
+    _annotate!(ax, latexstring("N_\\mathrm{esc} = $(length(valid))"))
 
     _save_fig(cfg, filename, fig)
     return nothing

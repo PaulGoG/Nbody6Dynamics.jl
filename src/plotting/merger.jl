@@ -249,20 +249,7 @@ function plot_cluster_separation(
         n_lines ≥ 2 && _top_legend!(fig, ax; nbanks = min(3, cld(n_pairs, 4)))
     else
         # Envelope: show min/max band plus mean line
-        d_min = fill(NaN, n_t)
-        d_max = fill(NaN, n_t)
-        d_mean = fill(NaN, n_t)
-        for k in 1:n_t
-            vals = Float64[]
-            for p in 1:n_pairs
-                x = seps[p, k]
-                isnan(x) || push!(vals, x)
-            end
-            isempty(vals) && continue
-            d_min[k] = minimum(vals)
-            d_max[k] = maximum(vals)
-            d_mean[k] = sum(vals) / length(vals)
-        end
+        d_min, d_max, d_mean = _envelope_stats(seps)
 
         valid = .!isnan.(d_mean)
         sep_color = _SEMANTIC_COLORS[:separation]
@@ -504,20 +491,7 @@ function plot_cluster_virial(
             n_series += 1
         end
     else
-        q_min = fill(NaN, n_t)
-        q_max = fill(NaN, n_t)
-        q_mean = fill(NaN, n_t)
-        for k in 1:n_t
-            vals = Float64[]
-            for i in 1:n_cl
-                x = Q_plot[i, k]
-                isnan(x) || push!(vals, x)
-            end
-            isempty(vals) && continue
-            q_min[k] = minimum(vals)
-            q_max[k] = maximum(vals)
-            q_mean[k] = sum(vals) / length(vals)
-        end
+        q_min, q_max, q_mean = _envelope_stats(Q_plot)
         valid = .!isnan.(q_mean)
         vir_color = _SEMANTIC_COLORS[:virial]
         band!(

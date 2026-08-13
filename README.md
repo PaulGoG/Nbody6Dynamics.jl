@@ -152,7 +152,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | Simulation runner | Working | Launch script, live stdout monitoring, run summary; merger runs execute inside the IC output dir so `dat.10` is found |
 | I/O readers | Working | `conf.3` (standard + extended), `out1000` diagnostics (ADJUST + physical scaling; virial ratio Q = T/\|W\|, equilibrium at 0.5), `lagr.7`, and `esc.11` (incl. the ANGLE PHI / ANGLE THETA escape-direction columns) / `sev.83_*` in the fork's real formats; `STELLAR_TYPE_LABELS` follow the Hurley convention (13 = NS, 14 = BH); `UnitScaling.zmbar` is the total-mass scale factor M*, not the mean stellar mass. HDF5 reader removed — the fork's KZ(46) H5Part layout was never supported; `.h5part` files are detected and warned about |
 | Plotting / animation | Working | Publication theme: no titles, no minor ticks, Computer Modern fonts, dashed grey low-opacity grid on line plots; presentation knobs config-driven via `[visualization.style]` (`PlotStyle`); escaper suite (cumulative mass loss, velocity classes, escape anisotropy) and SSE-quantity plots (mass segregation, t/T_MS evolutionary clock, core-mass growth); existing figures are never overwritten (safesave-style `#1`, `#2`, … backups) |
-| Tests | Passing | 470/470 as of this commit, incl. physics validation and adversarial external-input tests |
+| Tests | Passing | 485/485 as of this commit, incl. physics validation and adversarial external-input tests |
 
 ## Testing
 

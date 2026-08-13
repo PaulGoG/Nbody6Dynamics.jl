@@ -1784,6 +1784,88 @@ truncate_jacobi = false
     end
 
     # =====================================================================
+    @testset "Merger plot suite smoke" begin
+        # plot_merger_ic on a small generated IC (all five figure families)
+        ic_dir = mktempdir()
+        rng_plot = StableRNG(4242)
+        cfg_ic = MergerConfig(
+            [
+                ClusterSpec(
+                    profile = PlummerProfile(),
+                    N = 60,
+                    rbar = 1.0,
+                    imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 600.0),
+                ),
+                ClusterSpec(
+                    profile = KingProfile(W0 = 5.0),
+                    N = 60,
+                    rbar = 1.0,
+                    imf = EqualMassIMF(particle_mass = 5.0),
+                ),
+            ],
+            "kepler",
+            OrbitSpec(apocentre = 10.0, eccentricity = 0.5),
+            MergerOutputSpec(format = "nbody", truncate_jacobi = false, output_dir = ic_dir),
+        )
+        ic_result = generate_merger_ic(cfg_ic; rng = rng_plot)
+        plots_dir = mktempdir()
+        vis_smoke = VisualizationConfig(; format = "png", output_dir = plots_dir)
+        plot_merger_ic(ic_result, vis_smoke)
+        for stem in (
+            "merger_ic_xy",
+            "merger_ic_xz",
+            "merger_ic_yz",
+            "merger_ic_overview",
+            "merger_ic_velocity",
+            "merger_ic_imf",
+            "merger_ic_density",
+        )
+            @test isfile(joinpath(plots_dir, stem * ".png"))
+        end
+
+        # Synthetic two-cluster snapshots: converging COMs, NB units
+        function _smoke_snapshot(t, d)
+            n_half = 40
+            params = zeros(Float32, 20)
+            params[1] = Float32(t)
+            pos = zeros(Float32, 3, 2 * n_half)
+            vel = Float32.(0.05 .* randn(rng_plot, 3, 2 * n_half))
+            pos[:, 1:n_half] .= Float32.(0.3 .* randn(rng_plot, 3, n_half))
+            pos[1, 1:n_half] .-= Float32(d)
+            pos[:, (n_half + 1):end] .= Float32.(0.3 .* randn(rng_plot, 3, n_half))
+            pos[1, (n_half + 1):end] .+= Float32(d)
+            Snapshot(
+                SnapshotHeader(Int32(2 * n_half), Int32(1), Int32(1), Int32(20), params),
+                Int32.(1:(2 * n_half)),
+                fill(Float32(1 / (2 * n_half)), 2 * n_half),
+                pos,
+                vel,
+                Float32[],
+                Float32[],
+            )
+        end
+        snaps = [_smoke_snapshot(t, d) for (t, d) in ((0.0, 4.0), (1.0, 2.0), (2.0, 0.5))]
+        ranges = [1:40, 41:80]
+
+        Q, n_mem = per_cluster_virial(snaps, ranges)
+        @test size(Q) == (2, 3)
+        @test all(n_mem .== 40)
+        @test all(isfinite, Q)
+
+        plot_cluster_separation(snaps, ranges, vis_smoke)
+        @test isfile(joinpath(plots_dir, "merger_cluster_separation.png"))
+        plot_cluster_virial(snaps, ranges, vis_smoke)
+        @test isfile(joinpath(plots_dir, "merger_cluster_virial.png"))
+
+        # Envelope statistics helper: NaNs are skipped, all-NaN columns stay NaN
+        env = [1.0 NaN 3.0; 5.0 NaN 1.0]
+        lo, hi, mean_vals = Nbody6Dynamics._envelope_stats(env)
+        @test lo == [1.0, NaN, 1.0] || (lo[1] == 1.0 && isnan(lo[2]) && lo[3] == 1.0)
+        @test hi[1] == 5.0 && isnan(hi[2]) && hi[3] == 3.0
+        @test mean_vals[1] == 3.0 && isnan(mean_vals[2]) && mean_vals[3] == 2.0
+    end
+
+    # =====================================================================
     @testset "export_for_paper provenance" begin
         src_dir = mktempdir()
         dest = mktempdir()

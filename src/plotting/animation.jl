@@ -67,12 +67,7 @@ function animate_cluster(
 
     # Mass colour scale — global across all frames for consistency
     all_m = reduce(vcat, [Float64.(snap.mass) for snap in snaps])
-    log_m_global = log10.(max.(all_m, 1e-30))
-    cmin, cmax = extrema(log_m_global)
-    if cmin ≈ cmax
-        cmin -= 0.5
-        cmax += 0.5
-    end
+    _, cmin, cmax = _log_color_range(all_m)
 
     outpaths = String[]
 
@@ -124,15 +119,7 @@ function animate_cluster(
             xgridvisible = false,
             ygridvisible = false,
         )
-        text!(
-            ax,
-            0.04,
-            0.96;
-            text = time_text,
-            space = :relative,
-            align = (:left, :top),
-            fontsize = 16,
-        )
+        _annotate!(ax, time_text)
 
         # Single source observable so positions and colours update atomically
         # even when the particle count changes between frames (Point2f handles
@@ -166,7 +153,7 @@ function animate_cluster(
             label = L"\log_{10}(m \, / \, M_\mathrm{tot})",
             ticks = _nice_colorbar_ticks(cmin, cmax),
         )
-        colgap!(fig.layout, 10)
+        colgap!(fig.layout, _COLORBAR_COLGAP)
 
         _backup_existing(outpath)
         record(fig, outpath, 1:nframes; framerate = fps) do i
@@ -213,18 +200,10 @@ function animate_hr(
     # Filter placeholder values per frame; use for both limits and plotted data
     valid_per_frame = [_hr_valid_records(sev.records) for sev in sevs]
 
-    # Compute global axis limits from valid records only
-    all_teff = reduce(vcat, [[r.log_teff for r in v] for v in valid_per_frame]; init = Float64[])
-    all_lum =
-        reduce(vcat, [[r.log_luminosity for r in v] for v in valid_per_frame]; init = Float64[])
-    isempty(all_teff) && error("No valid HR records in any snapshot")
-
-    tmin, tmax = extrema(all_teff)
-    lmin, lmax = extrema(all_lum)
-    dt = (tmax - tmin) * 0.06
-    dl = (lmax - lmin) * 0.06
-    xlims = (tmin - dt, tmax + dt)
-    ylims = (lmin - dl, lmax + dl)
+    # Global axis limits from valid records only
+    lims = _hr_limits(valid_per_frame)
+    lims === nothing && error("No valid HR records in any snapshot")
+    xlims, ylims = lims
 
     nframes = length(sevs)
     # HR frames are information-dense (stellar types, population structure);
@@ -265,15 +244,7 @@ function animate_hr(
     )
     # Top-right in-axis corner is empty on an HR diagram (the sequence
     # enters at top-left).
-    text!(
-        ax,
-        0.96,
-        0.96;
-        text = time_text,
-        space = :relative,
-        align = (:right, :top),
-        fontsize = 16,
-    )
+    _annotate!(ax, time_text; corner = :tr)
 
     # Single source observable so positions, colours, and markers update
     # atomically even when the star count changes between epochs (Point2f
@@ -331,7 +302,7 @@ function animate_lagrangian(
     isempty(lagr.time) && error("No Lagrangian data to animate")
 
     if isempty(selected_fractions)
-        selected_fractions = [0.01, 0.1, 0.5, 0.9, 1.0]
+        selected_fractions = _LAGR_DEFAULT_FRACTIONS
     end
 
     nt = length(lagr.time)
@@ -347,54 +318,26 @@ function animate_lagrangian(
         )
     )
 
-    physical = cfg.units == "physical" && units !== nothing && units.rbar > 0 && units.tscale > 0
-    ts = physical ? lagr.time .* units.tscale : lagr.time
-    r_scale = physical ? units.rbar : 1.0
-
-    # Closest available mass fractions and the plotted (positive, scaled)
-    # radii — the log-axis tick range comes from the actual data extents.
-    frac_indices = [argmin(abs.(lagr.mass_fractions .- f)) for f in selected_fractions]
-    r_pos = [r * r_scale for idx in frac_indices for r in @view(lagr.radii[idx, :]) if r > 0]
-
     fig = Figure(; size = _figsize_px(cfg))
-    ttk = _time_ticks(first(ts), last(ts))
-    ax = Axis(
-        fig[1, 1];
-        xlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]",
-        ylabel = physical ? L"r_\mathrm{L} \; [\mathrm{pc}]" : L"r_\mathrm{L} \; [\mathrm{NB}]",
-        yscale = log10,
-        xticks = ttk,
-        yticks = isempty(r_pos) ? Makie.automatic : _log_ticks(extrema(r_pos)...),
-    )
+    ax, ts, frac_indices, r_scale = _lagrangian_axis(fig, lagr, cfg, selected_fractions, units)
 
     # Pre-plot all lines (full data) in light gray as ghost background.
-    # Non-positive radii (empty shells) are invalid on the log axis → NaN.
     for idx in frac_indices
-        lines!(
-            ax,
-            ts,
-            [r > 0 ? r * r_scale : NaN for r in @view lagr.radii[idx, :]];
-            color = :gray82,
-            linewidth = 1.0,
-        )
+        lines!(ax, ts, _masked_radii(lagr, idx, r_scale); color = :gray82, linewidth = 1.0)
     end
 
     # Animated lines — use Point2f Observables to avoid x/y length mismatch
     frame_idx = Observable(1)
 
     for (ci, fidx) in enumerate(frac_indices)
-        actual_frac = lagr.mass_fractions[fidx]
-        pct_val = actual_frac * 100
-        pct = isinteger(pct_val) ? @sprintf("%d", Int(pct_val)) : @sprintf("%.1f", pct_val)
-
-        ys = [r > 0 ? r * r_scale : NaN for r in @view lagr.radii[fidx, :]]
+        ys = _masked_radii(lagr, fidx, r_scale)
         pts = @lift(Point2f.(ts[1:($frame_idx)], ys[1:($frame_idx)]))
 
         lines!(
             ax,
             pts;
             color = _OKABE_ITO[mod1(ci, length(_OKABE_ITO))],
-            label = latexstring("$(pct)\\%"),
+            label = _fraction_pct_label(lagr.mass_fractions[fidx]),
         )
     end
 

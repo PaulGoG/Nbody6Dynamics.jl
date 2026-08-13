@@ -34,6 +34,24 @@ _hr_color(kt::Integer) = get(_HR_COLORS, Int(kt), Makie.RGBAf(0.5, 0.5, 0.5, 1))
 _hr_marker(kt::Integer)::Symbol = Int(kt) < 8 ? :circle : :utriangle
 
 """
+    _hr_limits(valid_sets) -> ((t_lo, t_hi), (l_lo, l_hi)) or nothing
+
+Axis limits for HR diagrams: extrema of the valid records' (log Teff, log L)
+across one or more record subsets, with a 6 % data margin on each side.
+Returns `nothing` when no record survives the validity filter.
+"""
+function _hr_limits(valid_sets::Vector{<:Vector})
+    all_teff = reduce(vcat, [[r.log_teff for r in v] for v in valid_sets]; init = Float64[])
+    all_lum = reduce(vcat, [[r.log_luminosity for r in v] for v in valid_sets]; init = Float64[])
+    isempty(all_teff) && return nothing
+    tmin, tmax = extrema(all_teff)
+    lmin, lmax = extrema(all_lum)
+    dt = (tmax - tmin) * 0.06
+    dl = (lmax - lmin) * 0.06
+    return ((tmin - dt, tmax + dt), (lmin - dl, lmax + dl))
+end
+
+"""
     plot_hr(sev::StellarEvolutionSnapshot, cfg::VisualizationConfig;
             filename = "hr_diagram") -> String
 
@@ -54,13 +72,8 @@ function plot_hr(
 
     t_val = @sprintf("%.3g", sev.time_myr)
 
-    # Compute data ranges for tick placement
-    all_teff = [r.log_teff for r in valid]
-    all_lum = [r.log_luminosity for r in valid]
-    teff_min, teff_max = extrema(all_teff)
-    lum_min, lum_max = extrema(all_lum)
-    dt = (teff_max - teff_min) * 0.06
-    dl = (lum_max - lum_min) * 0.06
+    # Data ranges (with margin) for tick placement
+    tlims, llims = _hr_limits([valid])
 
     fig = Figure(; size = _figsize_px(cfg))
     ax = Axis(
@@ -68,22 +81,14 @@ function plot_hr(
         xlabel = L"\log_{10}(T_\mathrm{eff} \, / \, \mathrm{K})",
         ylabel = L"\log_{10}(L \, / \, L_\odot)",
         xreversed = true,   # hot → cool from left to right
-        xticks = _logval_ticks(teff_min - dt, teff_max + dt),
-        yticks = _logval_ticks(lum_min - dl, lum_max + dl),
+        xticks = _logval_ticks(tlims...),
+        yticks = _logval_ticks(llims...),
         xgridvisible = false,
         ygridvisible = false,
     )
     # sev.time_myr is in Myr, not NB units.  Top-right corner: the sequence
     # enters at top-left, so the upper-right above the ridge line is empty.
-    text!(
-        ax,
-        0.96,
-        0.96;
-        text = latexstring("t = $(t_val)\\;\\mathrm{Myr}"),
-        space = :relative,
-        align = (:right, :top),
-        fontsize = 16,
-    )
+    _annotate!(ax, latexstring("t = $(t_val)\\;\\mathrm{Myr}"); corner = :tr)
 
     # Group by stellar type for legend
     types_present = sort(unique(r.stellar_type for r in valid))
@@ -146,18 +151,11 @@ function plot_hr_evolution(
     # Precompute the valid-record subset for each panel once
     valid_per_panel = [_hr_valid_records(sevs[i].records) for i in indices]
 
-    # Consistent axis limits across panels (using valid records only)
-    all_teff = reduce(vcat, [[r.log_teff for r in v] for v in valid_per_panel]; init = Float64[])
-    all_lum =
-        reduce(vcat, [[r.log_luminosity for r in v] for v in valid_per_panel]; init = Float64[])
-    isempty(all_teff) && error("No valid HR records across any panel")
-    tmin, tmax = extrema(all_teff)
-    lmin, lmax = extrema(all_lum)
-    dt = (tmax - tmin) * 0.06
-    dl = (lmax - lmin) * 0.06
-    # Normal order for limits; xreversed handles the flip
-    tlims = (tmin - dt, tmax + dt)
-    llims = (lmin - dl, lmax + dl)
+    # Consistent axis limits across panels (using valid records only);
+    # normal order for limits — xreversed handles the flip
+    lims = _hr_limits(valid_per_panel)
+    lims === nothing && error("No valid HR records across any panel")
+    tlims, llims = lims
     xtk_hr = _logval_ticks(tlims[1], tlims[2]; target_n = 5)
     ytk_hr = _logval_ticks(llims[1], llims[2]; target_n = 5)
 
@@ -190,15 +188,7 @@ function plot_hr_evolution(
         )
         # sev.time_myr is in Myr, not NB units.  Top-right in-axis corner is
         # empty on an HR diagram (the sequence enters at top-left).
-        text!(
-            ax,
-            0.96,
-            0.96;
-            text = latexstring("t = $(t_val)\\;\\mathrm{Myr}"),
-            space = :relative,
-            align = (:right, :top),
-            fontsize = 16,
-        )
+        _annotate!(ax, latexstring("t = $(t_val)\\;\\mathrm{Myr}"); corner = :tr)
 
         v = valid_per_panel[panel_idx]
         isempty(v) || scatter!(

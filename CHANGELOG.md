@@ -31,6 +31,18 @@ changes; all numerical outputs unchanged).
   `w_hat`/`sqrt_w`/`abs_w`/`r_jacobi*`/`integral_ab`/`n_threads`
   replace camelCase/ad-hoc locals; code-unit velocity and Plummer
   r_hm/a factors are named constants.
+- Plotting layer deduplicated behind shared helpers (rendered output
+  unchanged, verified by figure QA): `_annotate!`/`_no_data_note!`
+  standard in-axis annotations (18 sites), `_log_color_range` mass colour
+  scale (4), `_envelope_stats` min/max/mean bands (2), `_hr_limits` (3),
+  `_scatter_escaper_classes!` two-class encoding (2), shared Lagrangian
+  axis prologue for plot + animation, and named layout constants
+  (`_COLORBAR_WIDTH`, `_COLORBAR_COLGAP`, `_TWO_PANEL_ROWGAP`) replacing
+  scattered literals; IMF reference slopes read the canonical
+  `_KROUPA_ALPHAS`/`_KROUPA_BREAKS`.
+- Test suite: smoke coverage added for the previously untested merger
+  plot functions (`plot_merger_ic`, `plot_cluster_separation`,
+  `plot_cluster_virial`, `per_cluster_virial`).
 
 ### Fixed
 - `Manifest.toml` self-entry still carried the pre-rename package name

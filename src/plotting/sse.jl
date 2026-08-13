@@ -50,15 +50,7 @@ function plot_mass_segregation(
     )
 
     t_val = _fmt_latex_sig3(sev.time_myr)
-    text!(
-        ax,
-        0.96,
-        0.96;
-        text = latexstring("t = $(t_val)\\;\\mathrm{Myr}"),
-        space = :relative,
-        align = (:right, :top),
-        fontsize = 16,
-    )
+    _annotate!(ax, latexstring("t = $(t_val)\\;\\mathrm{Myr}"); corner = :tr)
 
     _save_fig(cfg, filename, fig)
     return nothing
@@ -141,27 +133,15 @@ function plot_evolutionary_clock(
     end
 
     t_val = _fmt_latex_sig3(sev.time_myr)
-    text!(
-        ax,
-        0.04,
-        0.96;
-        text = latexstring("t = $(t_val)\\;\\mathrm{Myr}"),
-        space = :relative,
-        align = (:left, :top),
-        fontsize = 16,
-    )
+    _annotate!(ax, latexstring("t = $(t_val)\\;\\mathrm{Myr}"))
 
     n_over = count(>(1.0), frac)
     if n_over > 0
         pct_str = @sprintf("%.2g", 100 * n_over / n_ms)
-        text!(
+        _annotate!(
             ax,
-            0.96,
-            0.96;
-            text = latexstring("$(n_over)\\;($(pct_str)\\,\\%)\\;\\mathrm{past}\\;T_\\mathrm{MS}"),
-            space = :relative,
-            align = (:right, :top),
-            fontsize = 16,
+            latexstring("$(n_over)\\;($(pct_str)\\,\\%)\\;\\mathrm{past}\\;T_\\mathrm{MS}");
+            corner = :tr,
             color = _band_edge(hist_color),
         )
     end
@@ -225,16 +205,7 @@ function plot_core_mass(
     g_lo = min(m_lo, mc_lo) * 0.8
     g_hi = max(m_hi, mc_hi) * 1.2
     lines!(ax, [g_lo, g_hi], [g_lo, g_hi]; color = :gray50, linestyle = :dash, linewidth = 1.0)
-    text!(
-        ax,
-        0.96,
-        0.04;
-        text = L"M_\mathrm{c} = M",
-        space = :relative,
-        align = (:right, :bottom),
-        fontsize = 14,
-        color = :gray30,
-    )
+    _annotate!(ax, L"M_\mathrm{c} = M"; corner = :br, fontsize = 14, color = :gray30)
 
     types_present = sort(unique(Int(r.stellar_type) for r in evolved))
     ms = _marker_size(cfg, length(evolved))
@@ -255,15 +226,7 @@ function plot_core_mass(
     # Points accumulate along/below the identity diagonal — the upper-left
     # triangle (MC > M) is empty by construction, so the epoch goes there.
     t_val = _fmt_latex_sig3(sev.time_myr)
-    text!(
-        ax,
-        0.04,
-        0.96;
-        text = latexstring("t = $(t_val)\\;\\mathrm{Myr}"),
-        space = :relative,
-        align = (:left, :top),
-        fontsize = 16,
-    )
+    _annotate!(ax, latexstring("t = $(t_val)\\;\\mathrm{Myr}"))
 
     _save_fig(cfg, filename, fig)
     return nothing
