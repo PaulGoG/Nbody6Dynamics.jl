@@ -403,9 +403,9 @@ function _cluster_virial_snapshot(snap::Snapshot, rng::UnitRange{Int})
         end
     end
 
-    absW = abs(W)
-    absW > 0 || return (NaN, n_mem)
-    return (T / absW, n_mem)
+    abs_w = abs(W)
+    abs_w > 0 || return (NaN, n_mem)
+    return (T / abs_w, n_mem)
 end
 
 """

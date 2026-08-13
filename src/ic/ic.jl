@@ -20,7 +20,7 @@ include("plotting.jl")
 
 """
     run_merger_pipeline(config_path::AbstractString; rng=nothing,
-                        output_dir="", generate_plots=true) -> MergerICResult
+                        output_dir="", make_plots=true) -> MergerICResult
 
 One-call entry point for multi-cluster merger IC generation.
 
@@ -41,7 +41,7 @@ function run_merger_pipeline(
     config_path::AbstractString;
     rng::Union{AbstractRNG,Nothing} = nothing,
     output_dir::AbstractString = "",
-    generate_plots::Bool = true,
+    make_plots::Bool = true,
 )
     @info "═══ Merger IC Pipeline ═══"
     @info "Loading config: $config_path"
@@ -62,23 +62,17 @@ function run_merger_pipeline(
     @info "Output directory: $out"
     result = generate_merger_ic(cfg; rng = rng, output_dir = out)
 
-    if generate_plots
+    if make_plots
         @info "Generating diagnostic plots..."
-        plots_dir = joinpath(out, "plots")
-        vis = VisualizationConfig(;
-            enabled = true,
-            format = "png",
-            dpi = 300,
-            figsize = (8, 6),
-            output_dir = plots_dir,
-        )
+        # Project visualization defaults (PDF vector, single-column preset)
+        vis = VisualizationConfig(; output_dir = joinpath(out, "plots"))
         plot_merger_ic(result, vis)
     end
 
     @info "═══ Merger IC Pipeline Complete ═══"
     @info "  dat.10:     $(joinpath(out, "dat.10"))"
     @info "  merger.inp: $(joinpath(out, "merger.inp"))"
-    generate_plots && @info "  plots:      $(joinpath(out, "plots/"))"
+    make_plots && @info "  plots:      $(joinpath(out, "plots/"))"
 
     return result
 end

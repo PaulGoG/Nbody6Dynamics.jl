@@ -427,17 +427,20 @@ format = "pdf"
     @testset "Lagrangian radii reader" begin
         lagr_path = joinpath(TESTDIR, "lagr.7")
 
-        # Synthetic lagr.7: 3 time epochs, 5 radii columns, block_size=1 (simplified)
+        # Synthetic lagr.7 in the upstream lagr.f layout: ##/TIME header,
+        # then one row per epoch (3 epochs, 5 radii columns, simplified)
         write(
             lagr_path,
             """
+## Time, [Column number | Label]:    2 R_{lagr}   (synthetic)
+TIME   0.01  0.05  0.20  0.50  1.00
 0.0  0.01  0.05  0.20  0.50  1.00
 0.5  0.012 0.055 0.22  0.52  1.05
 1.0  0.015 0.060 0.25  0.55  1.10
 """,
         )
 
-        lagr = read_lagr(lagr_path; rows_per_block = 1)
+        lagr = read_lagr(lagr_path)
 
         @test length(lagr.time) == 3
         @test lagr.time ≈ [0.0, 0.5, 1.0]
@@ -637,6 +640,7 @@ format = "pdf"
 
         u = UnitScaling(2.0, 0.6, 8.0, 4.0)
         @test Nbody6Dynamics.to_pc(u, 1.0) ≈ 2.0
+        @test Nbody6Dynamics.to_msun(u, 1.0) ≈ 0.6
         @test Nbody6Dynamics.to_myr(u, 1.0) ≈ 8.0
         @test Nbody6Dynamics.to_kms(u, 1.0) ≈ 4.0
     end
@@ -1161,7 +1165,7 @@ format = "pdf"
         @test_throws ErrorException scan_output("/nonexistent/path")
 
         # --- postprocess_external (data only, no plots) ---
-        results = postprocess_external(ext_dir; generate_plots = false)
+        results = postprocess_external(ext_dir; make_plots = false)
         @test haskey(results, :scan)
         @test results[:scan] isa OutputScan
         @test haskey(results, :diagnostics)
@@ -1322,7 +1326,7 @@ format = "pdf"
                 v .-= sum(m' .* v, dims = 2) ./ sum(m)
             end
 
-            pos, vel, mass = Nbody6Dynamics.setup_two_cluster_orbit(
+            pos, vel, mass, ranges = Nbody6Dynamics.setup_two_cluster_orbit(
                 pos1,
                 vel1,
                 mass1,
@@ -1335,6 +1339,7 @@ format = "pdf"
             )
             @test length(mass) == N1 + N2
             @test size(pos, 2) == N1 + N2
+            @test ranges == [1:N1, (N1 + 1):(N1 + N2)]
             # Combined CM should be near origin
             M = sum(mass)
             cm = vec(sum(mass' .* pos, dims = 2)) ./ M
@@ -1634,23 +1639,16 @@ truncate_jacobi = false
             cfg = MergerConfig(
                 [
                     ClusterSpec(
-                        model = "plummer",
+                        profile = PlummerProfile(),
                         N = 100,
-                        mass_total = 1e3,
                         rbar = 1.0,
-                        imf_kind = "kroupa",
-                        body1 = 50.0,
-                        bodyn = 0.1,
+                        imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 1e3),
                     ),
                     ClusterSpec(
-                        model = "king",
+                        profile = KingProfile(W0 = 5.0),
                         N = 100,
-                        W0 = 5.0,
-                        mass_total = 1e3,
                         rbar = 1.0,
-                        imf_kind = "kroupa",
-                        body1 = 50.0,
-                        bodyn = 0.1,
+                        imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 1e3),
                     ),
                 ],
                 "kepler",
@@ -1684,36 +1682,26 @@ truncate_jacobi = false
             cfg = MergerConfig(
                 [
                     ClusterSpec(
-                        model = "plummer",
+                        profile = PlummerProfile(),
                         N = 80,
-                        mass_total = 800.0,
                         rbar = 1.0,
-                        imf_kind = "kroupa",
-                        body1 = 50.0,
-                        bodyn = 0.1,
+                        imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 800.0),
                         position = [-5.0, 0.0, 0.0],
                         velocity = [1.0, 0.0, 0.0],
                     ),
                     ClusterSpec(
-                        model = "king",
+                        profile = KingProfile(W0 = 5.0),
                         N = 80,
-                        W0 = 5.0,
-                        mass_total = 800.0,
                         rbar = 1.0,
-                        imf_kind = "kroupa",
-                        body1 = 50.0,
-                        bodyn = 0.1,
+                        imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 800.0),
                         position = [2.5, 4.33, 0.0],
                         velocity = [-0.5, -0.87, 0.0],
                     ),
                     ClusterSpec(
-                        model = "plummer",
+                        profile = PlummerProfile(),
                         N = 60,
-                        mass_total = 400.0,
                         rbar = 0.8,
-                        imf_kind = "equal",
-                        body1 = 50.0,
-                        bodyn = 0.1,
+                        imf = EqualMassIMF(particle_mass = 400.0 / 60),
                         position = [2.5, -4.33, 0.0],
                         velocity = [-0.5, 0.87, 0.0],
                     ),
@@ -1738,22 +1726,16 @@ truncate_jacobi = false
             cfg = MergerConfig(
                 [
                     ClusterSpec(
-                        model = "plummer",
+                        profile = PlummerProfile(),
                         N = 50,
-                        mass_total = 500.0,
                         rbar = 1.0,
-                        imf_kind = "equal",
-                        body1 = 50.0,
-                        bodyn = 0.1,
+                        imf = EqualMassIMF(particle_mass = 500.0 / 50),
                     ),
                     ClusterSpec(
-                        model = "plummer",
+                        profile = PlummerProfile(),
                         N = 50,
-                        mass_total = 500.0,
                         rbar = 1.0,
-                        imf_kind = "equal",
-                        body1 = 50.0,
-                        bodyn = 0.1,
+                        imf = EqualMassIMF(particle_mass = 500.0 / 50),
                     ),
                 ],
                 "kepler",
@@ -1771,21 +1753,16 @@ truncate_jacobi = false
             cfg = MergerConfig(
                 [
                     ClusterSpec(
-                        model = "king",
+                        profile = KingProfile(W0 = 5.0),
                         N = 150,
-                        W0 = 5.0,
-                        mass_total = 1e3,
                         rbar = 1.0,
-                        imf_kind = "kroupa",
-                        body1 = 50.0,
-                        bodyn = 0.1,
+                        imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 1e3),
                     ),
                     ClusterSpec(
-                        model = "plummer",
+                        profile = PlummerProfile(),
                         N = 100,
-                        mass_total = 8e2,
                         rbar = 1.0,
-                        imf_kind = "equal",
+                        imf = EqualMassIMF(particle_mass = 8e2 / 100),
                     ),
                 ],
                 "kepler",

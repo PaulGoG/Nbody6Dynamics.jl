@@ -5,7 +5,7 @@
 # Typical setup for studying core merger dynamics and IMBH formation.
 #
 # Usage (one-liner):
-#   using Nbody6Setup
+#   using Nbody6Dynamics
 #   result = run_merger_pipeline("input_files/merger_equal_mass.toml")
 #
 # Or via the main pipeline (set merger.config_file in config.toml):

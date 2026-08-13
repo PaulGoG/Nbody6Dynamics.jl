@@ -2,6 +2,10 @@
 # Cluster density profile samplers: Plummer and King models
 # =============================================================================
 
+# Plummer half-mass radius in units of the scale radius:
+# r_hm = a / sqrt(2^(2/3) − 1) ≈ 1.305 a.
+const _PLUMMER_RHM_OVER_A = 1 / sqrt(2^(2 / 3) - 1)
+
 """
     sample_plummer(N::Int, a::Float64; rng=Random.default_rng()) -> (pos, vel)
 
@@ -18,9 +22,9 @@ function sample_plummer(N::Int, a::Float64; rng::AbstractRNG = Random.default_rn
     vel = zeros(Float64, 3, N)
 
     for i in 1:N
-        # Inverse CDF for radius: r = a / sqrt(X^{-2/3} - 1)
-        X = rand(rng)
-        r = a / sqrt(X^(-2/3) - 1.0)
+        # Inverse CDF for radius: r = a / sqrt(u^{-2/3} - 1)
+        u = rand(rng)
+        r = a / sqrt(u^(-2/3) - 1.0)
 
         # Uniform direction on sphere
         cosθ = 2.0 * rand(rng) - 1.0
@@ -76,8 +80,8 @@ Zero for `W ≤ 0` (beyond the tidal radius).
 """
 function _king_density(W::Float64)::Float64
     W ≤ 0.0 && return 0.0
-    sqW = sqrt(W)
-    return exp(W) * erf(sqW) - sqrt(4.0 * W / π) * (1.0 + 2.0 * W / 3.0)
+    sqrt_w = sqrt(W)
+    return exp(W) * erf(sqrt_w) - sqrt(4.0 * W / π) * (1.0 + 2.0 * W / 3.0)
 end
 
 """
@@ -134,15 +138,15 @@ function _solve_king(W0::Float64; n_grid::Int = 2000)
     # Evaluate the dense solution on a log-spaced grid: resolves the core
     # (r ≪ r₀) and the edge for any concentration, unlike a uniform grid.
     rhat = vcat(0.0, 10.0 .^ range(log10(r_start), log10(rhat_t); length = n_grid))
-    What = similar(rhat)
-    What[1] = W0
+    w_hat = similar(rhat)
+    w_hat[1] = W0
     for i in 2:length(rhat)
-        What[i] = max(sol(rhat[i])[1], 0.0)
+        w_hat[i] = max(sol(rhat[i])[1], 0.0)
     end
-    What[end] = 0.0
-    ρ_arr = _king_density.(What)
+    w_hat[end] = 0.0
+    ρ_arr = _king_density.(w_hat)
 
-    return rhat, What, ρ_arr
+    return rhat, w_hat, ρ_arr
 end
 
 """
@@ -164,7 +168,7 @@ function sample_king(N::Int, W0::Float64, rt::Float64; rng::AbstractRNG = Random
     W0 > 0.0 || throw(ArgumentError("W0 must be positive, got $W0"))
     rt > 0.0 || throw(ArgumentError("rt must be positive, got $rt"))
 
-    rhat, What, ρ_arr = _solve_king(W0)
+    rhat, w_hat, ρ_arr = _solve_king(W0)
 
     rhat_t = rhat[end]  # dimensionless tidal radius
     scale = rt / rhat_t  # physical scale: r_phys = scale * r̂
@@ -202,7 +206,7 @@ function sample_king(N::Int, W0::Float64, rt::Float64; rng::AbstractRNG = Random
             rhat[mid] < r ? (lo = mid) : (hi = mid)
         end
         frac = (r - rhat[lo]) / (rhat[hi] - rhat[lo] + 1e-30)
-        return What[lo] + frac * (What[hi] - What[lo])
+        return w_hat[lo] + frac * (w_hat[hi] - w_hat[lo])
     end
 
     # σ² in physical units: from the King model, σ² = GM/(9 r_0) × (some factor)
@@ -260,12 +264,9 @@ function sample_king(N::Int, W0::Float64, rt::Float64; rng::AbstractRNG = Random
         end
     end
 
-    # Rescale velocities to be consistent with positions.
-    # In N-body units with G=1, M_total=1:
-    # σ² = M / (6 r_0) for King models, where r_0 = scale × 1
-    # But we need to set the velocity scale self-consistently.
-    # For now, velocities are in units of σ; the virialisation step in
-    # `combine_clusters!` will handle the final scaling.
+    # Velocities are returned in units of the local dispersion σ; the
+    # absolute scale is set by the caller's `virialise!` pass (Q = 0.5),
+    # which is how `_sample_cluster` consumes this sampler.
 
     return pos, vel
 end
@@ -364,12 +365,12 @@ function virialise!(
 
     # Potential energy: O(N²) pair sum, threaded over strided rows so each
     # task sees a balanced mix of long (small i) and short (large i) rows.
-    P = Threads.nthreads()
-    partials = zeros(Float64, P)
-    @sync for t in 1:P
+    n_threads = Threads.nthreads()
+    partials = zeros(Float64, n_threads)
+    @sync for t in 1:n_threads
         Threads.@spawn begin
             acc = 0.0
-            for i in t:P:N
+            for i in t:n_threads:N
                 @inbounds for j in (i + 1):N
                     dx = pos[1, i] - pos[1, j]
                     dy = pos[2, i] - pos[2, j]

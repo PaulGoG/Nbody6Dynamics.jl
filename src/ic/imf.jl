@@ -97,8 +97,8 @@ function sample_kroupa(
         if abs(α - 1.0) < 1e-10
             return a * exp(u * log(b / a))
         else
-            I_ab = (b^(1.0 - α) - a^(1.0 - α))
-            return (a^(1.0 - α) + u * I_ab)^(1.0 / (1.0 - α))
+            integral_ab = (b^(1.0 - α) - a^(1.0 - α))
+            return (a^(1.0 - α) + u * integral_ab)^(1.0 / (1.0 - α))
         end
     end
 
@@ -158,8 +158,7 @@ function sample_masses(imf::RescaledKroupaIMF, N::Int, rng::AbstractRNG)
         To get a natural Kroupa population, drop `mass_total` from the
         cluster spec (let it emerge as the sum of sampled masses, expected
         ≈ $(round(expected, digits=1)) M☉ for N=$N). If super-particles are
-        intended, silence this warning by setting imf="kroupa_rescaled"
-        explicitly.
+        intended, this warning documents the regime and can be ignored.
         """ _group=:Nbody6Dynamics
     end
     raw .* c

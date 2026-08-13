@@ -16,6 +16,7 @@ save_config
 setup_nbody6
 run_simulation
 generate_run_id
+export_for_paper
 ```
 
 ## External Post-Processing

@@ -2,9 +2,9 @@
 # Adversarial tests for external post-processing (included from runtests.jl)
 # =============================================================================
 # Tests scan_output, postprocess_external, and run_pipeline with incomplete,
-# corrupt, and edge-case Nbody6++ output data.
-
-const TDIR = mktempdir()
+# corrupt, and edge-case Nbody6++ output data. Uses the parent suite's
+# TESTDIR scratch directory (subdirectory names are disjoint from the
+# parent's).
 
 # Helper: build a minimal conf.3 snapshot file (N particles, time t)
 # Matches the Nbody6++ bulk-array format:
@@ -44,7 +44,7 @@ end
         @test_throws ErrorException scan_output("/this/does/not/exist/at/all")
 
         # --- Empty directory ---
-        d_empty = joinpath(TDIR, "empty")
+        d_empty = joinpath(TESTDIR, "empty")
         mkpath(d_empty)
         s = scan_output(d_empty)
         @test all(v -> v == false, values(s.available))
@@ -53,7 +53,7 @@ end
         @test isempty(s.stellar_evo_files)
 
         # --- Only a stdout file, nothing else ---
-        d_stdout_only = joinpath(TDIR, "stdout_only")
+        d_stdout_only = joinpath(TESTDIR, "stdout_only")
         mkpath(d_stdout_only)
         open(joinpath(d_stdout_only, "out1000"), "w") do io
             println(io, "some random text that is not ADJUST")
@@ -65,7 +65,7 @@ end
         @test s.available[:stellar_evo] == false
 
         # --- Decoy files: wrong naming convention ---
-        d_decoy = joinpath(TDIR, "decoy")
+        d_decoy = joinpath(TESTDIR, "decoy")
         mkpath(d_decoy)
         touch(joinpath(d_decoy, "conf3_0"))       # wrong: should be conf.3_0
         touch(joinpath(d_decoy, "CONF.3_0"))       # wrong case
@@ -77,7 +77,7 @@ end
         @test all(v -> v == false, values(s.available))
 
         # --- Mixed valid + invalid ---
-        d_mixed = joinpath(TDIR, "mixed")
+        d_mixed = joinpath(TESTDIR, "mixed")
         mkpath(d_mixed)
         write_fake_conf3(joinpath(d_mixed, "conf.3_0"), 100, 0.0)
         write_fake_conf3(joinpath(d_mixed, "conf.3_1"), 100, 1.0)
@@ -90,7 +90,7 @@ end
         @test s.available[:diagnostics] == false
 
         # --- Bare conf.3 (no suffix) ---
-        d_bare = joinpath(TDIR, "bare_conf3")
+        d_bare = joinpath(TESTDIR, "bare_conf3")
         mkpath(d_bare)
         write_fake_conf3(joinpath(d_bare, "conf.3"), 50, 0.0)
         s = scan_output(d_bare)
@@ -98,7 +98,7 @@ end
         @test length(s.conf3_files) == 1
 
         # --- HDF5 detection ---
-        d_hdf5 = joinpath(TDIR, "hdf5_decoy")
+        d_hdf5 = joinpath(TESTDIR, "hdf5_decoy")
         mkpath(d_hdf5)
         touch(joinpath(d_hdf5, "data.h5part"))
         touch(joinpath(d_hdf5, "backup.hdf5"))
@@ -109,7 +109,7 @@ end
 
         # --- Alternative stdout names ---
         for name in ["out1", "stdout", "output.log"]
-            d_alt = joinpath(TDIR, "alt_stdout_$name")
+            d_alt = joinpath(TESTDIR, "alt_stdout_$name")
             mkpath(d_alt)
             touch(joinpath(d_alt, name))
             s = scan_output(d_alt)
@@ -118,7 +118,7 @@ end
         end
 
         # --- Priority: out1000 preferred over out1 ---
-        d_prio = joinpath(TDIR, "stdout_priority")
+        d_prio = joinpath(TESTDIR, "stdout_priority")
         mkpath(d_prio)
         touch(joinpath(d_prio, "out1000"))
         touch(joinpath(d_prio, "out1"))
@@ -130,26 +130,26 @@ end
     @testset "postprocess_external with corrupt data" begin
 
         # --- Truncated conf.3 file ---
-        d_trunc = joinpath(TDIR, "truncated_conf3")
+        d_trunc = joinpath(TESTDIR, "truncated_conf3")
         mkpath(d_trunc)
         write_fake_conf3(joinpath(d_trunc, "conf.3_0"), 100, 0.0)
         open(joinpath(d_trunc, "conf.3_1"), "w") do io
             write(io, rand(UInt8, 20))
         end
-        results = postprocess_external(d_trunc; generate_plots = false)
+        results = postprocess_external(d_trunc; make_plots = false)
         @test haskey(results, :snapshots) || !haskey(results, :snapshots)
 
         # --- Empty stdout file ---
-        d_empty_stdout = joinpath(TDIR, "empty_stdout")
+        d_empty_stdout = joinpath(TESTDIR, "empty_stdout")
         mkpath(d_empty_stdout)
         touch(joinpath(d_empty_stdout, "out1000"))
-        results = postprocess_external(d_empty_stdout; generate_plots = false)
+        results = postprocess_external(d_empty_stdout; make_plots = false)
         @test haskey(results, :diagnostics)
         diag = results[:diagnostics]
         @test isempty(diag.adjust)
 
         # --- Garbage in stdout ---
-        d_garbage_stdout = joinpath(TDIR, "garbage_stdout")
+        d_garbage_stdout = joinpath(TESTDIR, "garbage_stdout")
         mkpath(d_garbage_stdout)
         open(joinpath(d_garbage_stdout, "out1000"), "w") do io
             println(io, "This is total nonsense")
@@ -158,112 +158,112 @@ end
             println(io, "RSCALE  not parseable either")
             println(io, "12345 random numbers 678.9")
         end
-        results = postprocess_external(d_garbage_stdout; generate_plots = false)
+        results = postprocess_external(d_garbage_stdout; make_plots = false)
         @test haskey(results, :diagnostics)
 
         # --- Valid ADJUST but no TIME[NB] lines (N=0 warning) ---
-        d_no_time = joinpath(TDIR, "no_timenb")
+        d_no_time = joinpath(TESTDIR, "no_timenb")
         mkpath(d_no_time)
         open(joinpath(d_no_time, "out1000"), "w") do io
             for t in 0:5
                 println(io, " ADJUST:    $(Float64(t))   0.0   0.50  1.0E-08  -0.250   0   0   0.0")
             end
         end
-        results = postprocess_external(d_no_time; generate_plots = false)
+        results = postprocess_external(d_no_time; make_plots = false)
         diag = results[:diagnostics]
         @test length(diag.adjust) == 6
         @test all(r -> r.n == 0, diag.adjust)
 
         # --- Empty lagr.7 ---
-        d_empty_lagr = joinpath(TDIR, "empty_lagr")
+        d_empty_lagr = joinpath(TESTDIR, "empty_lagr")
         mkpath(d_empty_lagr)
         touch(joinpath(d_empty_lagr, "lagr.7"))
-        results = postprocess_external(d_empty_lagr; generate_plots = false)
+        results = postprocess_external(d_empty_lagr; make_plots = false)
         if haskey(results, :lagr)
             @test isempty(results[:lagr].time)
         end
 
         # --- lagr.7 with only a header (no data rows) ---
-        d_hdr_lagr = joinpath(TDIR, "header_only_lagr")
+        d_hdr_lagr = joinpath(TESTDIR, "header_only_lagr")
         mkpath(d_hdr_lagr)
         open(joinpath(d_hdr_lagr, "lagr.7"), "w") do io
             println(io, "# TIME  0.01  0.10  0.50  1.00")
         end
-        results = postprocess_external(d_hdr_lagr; generate_plots = false)
+        results = postprocess_external(d_hdr_lagr; make_plots = false)
         if haskey(results, :lagr)
             @test isempty(results[:lagr].time)
         end
 
         # --- Empty esc.11 ---
-        d_empty_esc = joinpath(TDIR, "empty_esc")
+        d_empty_esc = joinpath(TESTDIR, "empty_esc")
         mkpath(d_empty_esc)
         touch(joinpath(d_empty_esc, "esc.11"))
-        results = postprocess_external(d_empty_esc; generate_plots = false)
+        results = postprocess_external(d_empty_esc; make_plots = false)
 
         # --- esc.11 with only comments ---
-        d_comment_esc = joinpath(TDIR, "comment_esc")
+        d_comment_esc = joinpath(TESTDIR, "comment_esc")
         mkpath(d_comment_esc)
         open(joinpath(d_comment_esc, "esc.11"), "w") do io
             println(io, "# This is a comment")
             println(io, "# Another comment")
             println(io, "")
         end
-        results = postprocess_external(d_comment_esc; generate_plots = false)
+        results = postprocess_external(d_comment_esc; make_plots = false)
 
         # --- Stellar evolution files that are empty ---
-        d_empty_sev = joinpath(TDIR, "empty_sev")
+        d_empty_sev = joinpath(TESTDIR, "empty_sev")
         mkpath(d_empty_sev)
         touch(joinpath(d_empty_sev, "sev.83_0"))
         touch(joinpath(d_empty_sev, "sev.83_1"))
-        results = postprocess_external(d_empty_sev; generate_plots = false)
+        results = postprocess_external(d_empty_sev; make_plots = false)
 
         # --- Stellar evolution with garbage content ---
-        d_garbage_sev = joinpath(TDIR, "garbage_sev")
+        d_garbage_sev = joinpath(TESTDIR, "garbage_sev")
         mkpath(d_garbage_sev)
         open(joinpath(d_garbage_sev, "sev.83_0"), "w") do io
             println(io, "not a valid stellar evolution file at all!")
             println(io, "banana apple")
         end
-        results = postprocess_external(d_garbage_sev; generate_plots = false)
+        results = postprocess_external(d_garbage_sev; make_plots = false)
     end
 
     # =====================================================================
     @testset "Sanity checks: snapshots" begin
 
         # --- Non-monotonic time ---
-        d_nonmono = joinpath(TDIR, "nonmono_snaps")
+        d_nonmono = joinpath(TESTDIR, "nonmono_snaps")
         mkpath(d_nonmono)
         write_fake_conf3(joinpath(d_nonmono, "conf.3_0"), 100, 0.0)
         write_fake_conf3(joinpath(d_nonmono, "conf.3_1"), 100, 5.0)
         write_fake_conf3(joinpath(d_nonmono, "conf.3_2"), 100, 3.0)  # out of order!
         write_fake_conf3(joinpath(d_nonmono, "conf.3_3"), 100, 10.0)
-        results = postprocess_external(d_nonmono; generate_plots = false)
+        results = postprocess_external(d_nonmono; make_plots = false)
         @test haskey(results, :snapshots)
         @test length(results[:snapshots]) == 4
 
         # --- Duplicate snapshot times ---
-        d_dup = joinpath(TDIR, "dup_snaps")
+        d_dup = joinpath(TESTDIR, "dup_snaps")
         mkpath(d_dup)
         write_fake_conf3(joinpath(d_dup, "conf.3_0"), 100, 0.0)
         write_fake_conf3(joinpath(d_dup, "conf.3_1"), 100, 5.0)
         write_fake_conf3(joinpath(d_dup, "conf.3_2"), 100, 5.0)  # duplicate!
-        results = postprocess_external(d_dup; generate_plots = false)
+        results = postprocess_external(d_dup; make_plots = false)
         @test haskey(results, :snapshots)
         @test length(results[:snapshots]) == 3
 
         # --- Massive particle loss (>50%) ---
-        d_loss = joinpath(TDIR, "particle_loss")
+        d_loss = joinpath(TESTDIR, "particle_loss")
         mkpath(d_loss)
         write_fake_conf3(joinpath(d_loss, "conf.3_0"), 1000, 0.0)
         write_fake_conf3(joinpath(d_loss, "conf.3_1"), 400, 50.0)  # 60% loss!
-        results = postprocess_external(d_loss; generate_plots = false)
+        results = postprocess_external(d_loss; make_plots = false)
         @test haskey(results, :snapshots)
 
         # --- Single snapshot (no evolution possible) ---
-        d_single = joinpath(TDIR, "single_snap")
+        d_single = joinpath(TESTDIR, "single_snap")
         mkpath(d_single)
         write_fake_conf3(joinpath(d_single, "conf.3_0"), 500, 0.0)
-        results = postprocess_external(d_single; generate_plots = false)
+        results = postprocess_external(d_single; make_plots = false)
         @test haskey(results, :snapshots)
         @test length(results[:snapshots]) == 1
     end
@@ -272,24 +272,24 @@ end
     @testset "Sanity checks: diagnostics" begin
 
         # --- Huge energy error ---
-        d_huge_de = joinpath(TDIR, "huge_de")
+        d_huge_de = joinpath(TESTDIR, "huge_de")
         mkpath(d_huge_de)
         open(joinpath(d_huge_de, "out1000"), "w") do io
             println(io, " ADJUST:    1.0   0.0   0.50  0.5  -0.250   1000   0   0.0")
             println(io, " ADJUST:    2.0   0.0   0.50  0.5  -0.250   1000   0   0.0")
         end
-        results = postprocess_external(d_huge_de; generate_plots = false)
+        results = postprocess_external(d_huge_de; make_plots = false)
         diag = results[:diagnostics]
         @test length(diag.adjust) == 2
 
         # --- Wild virial ratio ---
-        d_wild_q = joinpath(TDIR, "wild_qvir")
+        d_wild_q = joinpath(TESTDIR, "wild_qvir")
         mkpath(d_wild_q)
         open(joinpath(d_wild_q, "out1000"), "w") do io
             println(io, " ADJUST:    1.0   0.0   50.0  1e-8  -0.250   1000   0   0.0")
             println(io, " ADJUST:    2.0   0.0   100.0 1e-8  -0.250   1000   0   0.0")
         end
-        results = postprocess_external(d_wild_q; generate_plots = false)
+        results = postprocess_external(d_wild_q; make_plots = false)
     end
 
     # =====================================================================
@@ -309,7 +309,7 @@ end
         @test_throws ErrorException run_pipeline(cfg)
 
         # --- data_dir with only diagnostics (no snapshots) ---
-        d_diag_only = joinpath(TDIR, "diag_only_pipeline")
+        d_diag_only = joinpath(TESTDIR, "diag_only_pipeline")
         mkpath(d_diag_only)
         open(joinpath(d_diag_only, "out1000"), "w") do io
             println(io, " ADJUST:    1.0   0.5   0.50  1e-8  -0.250   500   10   1.2")
@@ -337,7 +337,8 @@ end
 
         # --- run_test=false, no data_dir, no runs/ directory ---
         pp3 = PostprocessConfig(; enabled = true, data_dir = "")
-        sim3 = SimulationConfig(; run_test = false, runs_dir = joinpath(TDIR, "nonexistent_runs"))
+        sim3 =
+            SimulationConfig(; run_test = false, runs_dir = joinpath(TESTDIR, "nonexistent_runs"))
         cfg3 = Nbody6Config(
             InstallConfig(; enabled = false),
             BuildConfig(),
@@ -350,7 +351,7 @@ end
         @test isempty(results)
 
         # --- Full synthetic pipeline: snapshots + diagnostics + lagr ---
-        d_full = joinpath(TDIR, "full_synthetic")
+        d_full = joinpath(TESTDIR, "full_synthetic")
         mkpath(d_full)
         write_fake_conf3(joinpath(d_full, "conf.3_0"), 200, 0.0)
         write_fake_conf3(joinpath(d_full, "conf.3_1"), 195, 10.0)
@@ -398,7 +399,7 @@ end
 
     # =====================================================================
     @testset "OutputScan display" begin
-        d_display = joinpath(TDIR, "display_test")
+        d_display = joinpath(TESTDIR, "display_test")
         mkpath(d_display)
         write_fake_conf3(joinpath(d_display, "conf.3_0"), 50, 0.0)
         touch(joinpath(d_display, "lagr.7"))

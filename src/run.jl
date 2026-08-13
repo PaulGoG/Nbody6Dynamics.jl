@@ -55,13 +55,9 @@ Returns the path to the run directory.
 """
 function run_simulation(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROOT)::String
     sim = cfg.simulation
-    inst = cfg.install
 
-    # --- Locate binary ---
-    src_dir = joinpath(base_dir, inst.install_dir)
-    binary = _find_binary(src_dir, sim.binary_name)
-
-    # --- Resolve input file ---
+    # --- Resolve input file (relative to the backend source tree) ---
+    src_dir = joinpath(base_dir, cfg.install.install_dir)
     input_path = abspath(joinpath(src_dir, sim.input_file))
     isfile(input_path) || error("Input file not found: $input_path")
 
@@ -77,6 +73,34 @@ function run_simulation(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_R
 
     @info "Run ID:  $run_id"
     @info "Run dir: $run_dir"
+
+    return _execute_simulation(cfg, run_dir, out_dir, input_path; base_dir = base_dir)
+end
+
+"""
+    _execute_simulation(cfg, run_dir, out_dir, input_path;
+                        base_dir = _PROJECT_ROOT, label = "simulation") -> String
+
+Shared execution core for [`run_simulation`](@ref) and the merger pipeline:
+locates the binary, freezes the config into `run_dir`, copies the binary
+into `out_dir` for reproducibility, writes the launch script, and runs it
+under the teed run log (§9) with the opt-in live monitor. `input_path` must
+be absolute (the launch script executes from `out_dir`). Returns `run_dir`.
+"""
+function _execute_simulation(
+    cfg::Nbody6Config,
+    run_dir::AbstractString,
+    out_dir::AbstractString,
+    input_path::AbstractString;
+    base_dir::AbstractString = _PROJECT_ROOT,
+    label::AbstractString = "simulation",
+)::String
+    sim = cfg.simulation
+    run_id = basename(run_dir)
+
+    # --- Locate binary ---
+    src_dir = joinpath(base_dir, cfg.install.install_dir)
+    binary = _find_binary(src_dir, sim.binary_name)
 
     # --- Save frozen config ---
     save_config(cfg, joinpath(run_dir, "config.toml"))
@@ -95,7 +119,7 @@ function run_simulation(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_R
     # --- Execute, teeing pipeline logs to the run directory (§9) ---
     _with_run_log(run_dir) do
         t_start = time()
-        @info "Starting simulation..."
+        @info "Starting $label..."
         process = cd(out_dir) do
             run(`bash $launch_script`; wait = false)
         end

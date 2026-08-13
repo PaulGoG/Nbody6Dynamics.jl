@@ -155,7 +155,21 @@ end
     SnapshotHeader
 
 Header metadata from a conf.3 snapshot file.  The `params` vector stores the
-full AS(1:NK) Fortran array (NK = 20 by convention).
+full AS(1:NK) Fortran array (NK = 20 by convention). Slot map (accessors
+exist for the starred entries):
+
+| AS  | Quantity                              | AS  | Quantity                     |
+|:----|:--------------------------------------|:----|:-----------------------------|
+| 1*  | TTOT, time [NB] (`time_nb`)           | 11* | TSCALE, NB time → Myr        |
+| 2   | NPAIRS, KS pair count                 | 12* | VSTAR, NB velocity → km/s    |
+| 3*  | RBAR, NB length → pc                  | 13* | RC, core radius [NB]         |
+| 4*  | ZMBAR, NB mass → M☉ (total-mass)      | 14  | NC, core member count        |
+| 5   | RTIDE, tidal radius [NB]              | 15  | VC, core velocity dispersion |
+| 6   | TIDAL(4), tidal-field coefficient     | 16  | RHOM, mean core density      |
+| 7–9 | RDENS(1:3), density centre [NB]       | 17  | CMAX                         |
+| 10  | TTOT/TCR, time in crossing times      | 18* | RSCALE, half-mass radius [NB]|
+|     |                                       | 19  | RSMIN                        |
+|     |                                       | 20  | DMIN1                        |
 """
 struct SnapshotHeader
     ntot::Int32
@@ -169,10 +183,6 @@ end
 Simulation time in N-body units."""
 time_nb(h::SnapshotHeader) = Float64(h.params[1])
 
-"""    npairs(h::SnapshotHeader) -> Int
-Number of KS regularised binary pairs."""
-npairs(h::SnapshotHeader) = round(Int, h.params[2])
-
 """    rbar(h::SnapshotHeader) -> Float64
 Length scaling factor: 1 NB length unit = `rbar` pc."""
 rbar(h::SnapshotHeader) = Float64(h.params[3])
@@ -183,11 +193,6 @@ NOT the mean stellar mass — Nbody6++ redefines ZMBAR as the total-mass
 scale factor at startup (`start.F`); the mean mass is printed separately
 as `<M>` in the PHYSICAL SCALING line."""
 zmbar(h::SnapshotHeader) = Float64(h.params[4])
-
-rtide(h::SnapshotHeader) = Float64(h.params[5])
-tidal4(h::SnapshotHeader) = Float64(h.params[6])
-rdens(h::SnapshotHeader) = Float64.(h.params[7:9])
-time_tcr(h::SnapshotHeader) = Float64(h.params[10])
 
 """    tscale(h::SnapshotHeader) -> Float64
 Time scaling factor: 1 NB time unit = `tscale` Myr."""
@@ -201,17 +206,9 @@ vstar(h::SnapshotHeader) = Float64(h.params[12])
 Core radius in N-body units."""
 rc(h::SnapshotHeader) = Float64(h.params[13])
 
-nc(h::SnapshotHeader) = round(Int, h.params[14])
-vc(h::SnapshotHeader) = Float64(h.params[15])
-rhom(h::SnapshotHeader) = Float64(h.params[16])
-cmax(h::SnapshotHeader) = Float64(h.params[17])
-
 """    rscale(h::SnapshotHeader) -> Float64
 Half-mass radius in N-body units."""
 rscale(h::SnapshotHeader) = Float64(h.params[18])
-
-rsmin(h::SnapshotHeader) = Float64(h.params[19])
-dmin1(h::SnapshotHeader) = Float64(h.params[20])
 
 """    time_myr(h::SnapshotHeader) -> Float64
 Physical time in Myr, computed as `time_nb(h) * tscale(h)`."""
@@ -224,7 +221,7 @@ time_myr(h::SnapshotHeader) = time_nb(h) * tscale(h)
 """
     Snapshot
 
-Particle data from a single snapshot (conf.3 or HDF5).
+Particle data from a single conf.3 snapshot.
 Positions and velocities are stored column-major: `pos[:, i]` gives particle i.
 """
 struct Snapshot

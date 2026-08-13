@@ -2,6 +2,11 @@
 # dat.10 writer and .inp generator for Nbody6++ merger ICs
 # =============================================================================
 
+# Velocity unit of the internal (G = 1, M☉, pc) code-unit system:
+# sqrt(G M☉ / pc) in km/s. Sampled and Kepler velocities carry this unit
+# until the NB-unit conversion for dat.10.
+const _CODE_VSTAR_KMS = 0.06557
+
 """
     write_dat10(path, mass, pos, vel)
 
@@ -50,9 +55,8 @@ Convert from physical units (M☉, pc, km/s) to Hénon N-body units
 # N-body scaling
 - Mass: `m_nb = m_solar / M_total_solar`
 - Length: `r_nb = r_pc / rbar_pc` (rbar = virial radius in pc)
-- Velocity: `v_nb = v_kms / vstar` where `vstar = 0.06557 × sqrt(M_total / rbar)` km/s
-
-The factor 0.06557 comes from `sqrt(G M☉ / pc)` in km/s.
+- Velocity: `v_nb = v_kms / vstar` where `vstar = sqrt(G M_total / rbar)`
+  in km/s, i.e. `_CODE_VSTAR_KMS × sqrt(M_total / rbar)`.
 """
 function to_nbody_units!(
     mass::Vector{Float64},
@@ -61,7 +65,7 @@ function to_nbody_units!(
     M_total_solar::Float64,
     rbar_pc::Float64,
 )
-    vstar = 0.06557 * sqrt(M_total_solar / rbar_pc)
+    vstar = _CODE_VSTAR_KMS * sqrt(M_total_solar / rbar_pc)
     mass ./= M_total_solar
     pos ./= rbar_pc
     vel ./= vstar
@@ -69,17 +73,17 @@ function to_nbody_units!(
 end
 
 """
-    generate_merger_inp(path, N_total, rbar, zmbar; kz22=2, kz14=0)
+    generate_merger_inp(path, N_total, rbar, zmbar; kz14=0)
 
 Generate an Nbody6++ `.inp` file configured for external particle
-input via `dat.10`.
+input via `dat.10` in N-body units (`KZ(22) = 2`, the only supported
+input mode).
 
 Follows the Fortran NAMELIST read order expected by `nbody6.F → start.F`:
   `&INNBODY6` → `&ININPUT` → `&INSSE` → `&INBSE` → `&INCOLL` →
   `&INDATA` → `&INSCALE` (→ `&INXTRNL0` if KZ(14)>0).
 
 # Key settings
-- `KZ(22) = kz22`: 2 for N-body units, 10 for astrophysical units
 - `KZ(14) = kz14`: tidal field option (0 = isolated)
 """
 function generate_merger_inp(
@@ -87,7 +91,6 @@ function generate_merger_inp(
     N_total::Int,
     rbar::Float64,
     zmbar::Float64;
-    kz22::Int = 2,
     kz14::Int = 0,
     tcrit::Float64 = 100.0,
     dtadj::Float64 = 1.0,
@@ -102,7 +105,7 @@ function generate_merger_inp(
     kz[12] = 1
     kz[14] = kz14
     kz[19] = 3
-    kz[22] = kz22
+    kz[22] = 2
     kz[23] = 2
     kz[26] = 1
     kz[30] = 1
@@ -156,6 +159,8 @@ function generate_merger_inp(
         println(io)
 
         # --- 6. &INDATA: IMF and mass function ---
+        # Inert under KZ(22)=2: masses come from dat.10, so the IMF fields
+        # here are never sampled; they are namelist boilerplate only.
         println(io, "&INDATA")
         println(
             io,
@@ -185,7 +190,7 @@ function generate_merger_inp(
         # --- No binaries (NBIN0=0) or hierarchical triples ---
     end
 
-    @info "Wrote .inp file: $path (N=$N_total, KZ(22)=$kz22, RBAR=$rbar, ZMBAR=$zmbar)"
+    @info "Wrote .inp file: $path (N=$N_total, KZ(22)=2, RBAR=$rbar, ZMBAR=$zmbar)"
     return nothing
 end
 
@@ -198,8 +203,8 @@ function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rn
     masses = sample_masses(spec.imf, spec.N, rng)
 
     pos, vel = if spec.profile isa PlummerProfile
-        # r_hm = 1.305 a for a Plummer sphere → scale radius from target r_hm
-        sample_plummer(spec.N, spec.rbar / 1.305; rng = rng)
+        # Scale radius from the target half-mass radius (r_hm = 1.305 a)
+        sample_plummer(spec.N, spec.rbar / _PLUMMER_RHM_OVER_A; rng = rng)
     elseif spec.profile isa KingProfile
         # Sampled with unit tidal radius; the empirical rescale below sets r_hm
         sample_king(spec.N, spec.profile.W0, 1.0; rng = rng)
@@ -260,10 +265,11 @@ function generate_merger_ic(
         end for (i, spec) in enumerate(cfg.clusters)
     ]
 
-    # Combine clusters according to orbit mode
+    # Combine clusters according to orbit mode; both paths return the
+    # combined arrays plus per-cluster (post-truncation) index ranges.
     pos_combined, vel_combined, mass_combined, cluster_ranges = if cfg.orbit_mode == "kepler"
         c1, c2 = cluster_data[1], cluster_data[2]
-        p, v, m = setup_two_cluster_orbit(
+        setup_two_cluster_orbit(
             c1.pos,
             c1.vel,
             c1.mass,
@@ -274,31 +280,6 @@ function generate_merger_ic(
             cfg.orbit.eccentricity;
             truncate_jacobi_flag = cfg.output.truncate_jacobi,
         )
-        # Reconstruct ranges from the returned combined array
-        # cluster 1 occupies 1:n1, cluster 2 n1+1:end
-        # But truncation may have changed counts — infer from total
-        # setup_two_cluster_orbit concatenates: first N1' then N2'
-        # We need to know how many survived truncation. Since cluster_data
-        # is NOT modified in-place by setup_two_cluster_orbit (it copies),
-        # we must infer: if truncation is on, re-truncate to count.
-        if cfg.output.truncate_jacobi
-            M1, M2 = sum(c1.mass), sum(c2.mass)
-            rJ1 = jacobi_radius(cfg.orbit.apocentre, M1, M2)
-            rJ2 = jacobi_radius(cfg.orbit.apocentre, M2, M1)
-            n1 = count(
-                j -> sqrt(c1.pos[1, j]^2+c1.pos[2, j]^2+c1.pos[3, j]^2) ≤ rJ1,
-                1:length(c1.mass),
-            )
-            n2 = count(
-                j -> sqrt(c2.pos[1, j]^2+c2.pos[2, j]^2+c2.pos[3, j]^2) ≤ rJ2,
-                1:length(c2.mass),
-            )
-        else
-            n1 = length(c1.mass)
-            n2 = length(c2.mass)
-        end
-        ranges = [1:n1, (n1 + 1):(n1 + n2)]
-        (p, v, m, ranges)
     elseif cfg.orbit_mode == "explicit"
         combine_clusters_explicit(
             cluster_data,
@@ -317,23 +298,20 @@ function generate_merger_ic(
     # written to the .inp file and used for the NB-unit conversion of dat.10.
     rbar = half_mass_radius(mass_combined, pos_combined)
 
-    # Keep physical-unit copies before conversion.
-    # All sampled & Kepler velocities are in "code units" where G=1 with
-    # (M_sun, pc) bases, so 1 code unit = sqrt(G M_sun / pc) = 0.06557 km/s.
+    # Keep physical-unit copies before conversion (sampled and Kepler
+    # velocities carry the (G = 1, M☉, pc) code unit, _CODE_VSTAR_KMS km/s).
     mass_phys = copy(mass_combined)
     pos_phys = copy(pos_combined)
-    vel_phys = vel_combined .* 0.06557  # code units → km/s
+    vel_phys = vel_combined .* _CODE_VSTAR_KMS  # code units → km/s
 
-    # Convert to N-body units for dat.10. `to_nbody_units!` expects velocity
-    # in km/s, so we must convert from code units first.
-    # NB-unit dat.10 (KZ(22)=2) is the only supported output format; the
-    # untested "astro"/KZ(22)=10 branch was removed (decision D4).
+    # Convert to N-body units for dat.10 (KZ(22)=2, the only supported
+    # output format; decision D4). `to_nbody_units!` expects velocity in
+    # km/s, so convert from code units first.
     cfg.output.format == "nbody" || error(
         "Unsupported output format \"$(cfg.output.format)\"; only \"nbody\" (KZ(22)=2) is supported.",
     )
-    vel_combined .*= 0.06557  # code units → km/s (match to_nbody_units! API)
+    vel_combined .*= _CODE_VSTAR_KMS  # code units → km/s (match to_nbody_units! API)
     to_nbody_units!(mass_combined, pos_combined, vel_combined, M_total, rbar)
-    kz22 = 2
 
     # Write files
     write_dat10(joinpath(out_dir, "dat.10"), mass_combined, pos_combined, vel_combined)
@@ -342,7 +320,6 @@ function generate_merger_ic(
         N_total,
         rbar,
         zmbar;
-        kz22 = kz22,
         tcrit = cfg.output.tcrit,
         dtadj = cfg.output.dtadj,
         deltat = cfg.output.deltat,
@@ -359,7 +336,6 @@ function generate_merger_ic(
         M_total,
         rbar,
         zmbar,
-        kz22,
     )
 
     # Structured metadata for post-hoc regeneration of IC plots
@@ -510,9 +486,13 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
         eccentricity = Float64(orbit_raw["eccentricity"]),
     )
 
-    # Read dat.10 — format depends on the output format. "nbody" stores NB
-    # units; "astro" stores physical. We always reconstruct physical copies.
+    # Read dat.10 (NB units, the only supported output format) and
+    # reconstruct physical-unit copies from the stored scaling.
     format = String(raw["output"]["format"])
+    format == "nbody" || error(
+        "Unsupported output format \"$format\" in merger_ic.toml; " *
+        "only \"nbody\" (KZ(22)=2) is supported.",
+    )
     lines = readlines(dat_path)
     N = length(lines)
     N == N_total || @warn "dat.10 row count ($N) differs from metadata N_total ($N_total)"
@@ -527,23 +507,9 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
         vel[:, k] = parts[5:7]
     end
 
-    mass_phys = if format == "nbody"
-        mass .* M_total                  # NB mass fraction → M☉
-    else
-        mass                             # already M☉
-    end
-    pos_phys = if format == "nbody"
-        pos .* rbar                      # NB length → pc
-    else
-        pos                              # already pc
-    end
-    vel_phys = if format == "nbody"
-        # NB velocity → km/s: v_nb × vstar_kms, vstar = 0.06557 √(M_tot/rbar)
-        vstar_kms = 0.06557 * sqrt(M_total / rbar)
-        vel .* vstar_kms
-    else
-        vel                              # already km/s
-    end
+    mass_phys = mass .* M_total                              # NB mass fraction → M☉
+    pos_phys = pos .* rbar                                   # NB length → pc
+    vel_phys = vel .* (_CODE_VSTAR_KMS * sqrt(M_total / rbar))  # NB velocity → km/s
 
     return MergerICResult(
         abspath(dir),
@@ -570,7 +536,6 @@ function _write_merger_summary(
     M_total,
     rbar,
     zmbar,
-    kz22,
 )
     n_clusters = length(cfg.clusters)
     _backup_existing(path)
@@ -633,7 +598,7 @@ function _write_merger_summary(
         @printf(io, "Combined: N_total = %d, M_total = %.1f M☉\n", N_total, M_total)
         @printf(io, "          RBAR = %.4f pc, ZMBAR = %.4f M☉\n", rbar, zmbar)
         println(io)
-        println(io, "Output format: ", cfg.output.format, " (KZ(22)=$kz22)")
+        println(io, "Output format: ", cfg.output.format, " (KZ(22)=2)")
         println(io, "Jacobi truncation: ", cfg.output.truncate_jacobi)
         println(io)
         println(io, "Files:")

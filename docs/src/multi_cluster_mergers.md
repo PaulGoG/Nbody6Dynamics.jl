@@ -107,7 +107,7 @@ Sampling and orbit placement happen in internal code units: `G = 1` with masses 
 `generate_merger_ic` writes four files (all protected by the never-overwrite `name#k.ext` backup policy):
 
 - **`dat.10`** — one line per particle, `MASS X Y Z VX VY VZ` at full precision. The arrays are converted with `to_nbody_units!` to Hénon units (`G = 1`, `M_total = 1`).
-- **`merger.inp`** — matching NAMELIST input file: `N` = post-truncation total, `KZ(22) = 2` (nbody) or `10` (astro), `KZ(14) = 0` (isolated), `NRAND` = effective seed, `NNBOPT = clamp(round(√N), 20, 300)`, `TCRIT`/`DTADJ`/`DELTAT` from `[merger.output]`, and:
+- **`merger.inp`** — matching NAMELIST input file: `N` = post-truncation total, `KZ(22) = 2` (N-body-unit `dat.10` input, the only supported mode), `KZ(14) = 0` (isolated), `NRAND` = effective seed, `NNBOPT = clamp(round(√N), 20, 300)`, `TCRIT`/`DTADJ`/`DELTAT` from `[merger.output]`, and:
   - **`RBAR` = the combined system's mass-weighted half-mass radius [pc]** — this is the NB length unit used for the `dat.10` conversion, so the physical scaling in Nbody6++ is self-consistent
   - **`ZMBAR` = mean particle mass `M_total/N_total` [M☉]**
 - **`merger_summary.txt`** — human-readable summary: per-cluster profile/IMF/N (before and after truncation)/mass/`r_hm`/`W0`/COM state, orbit parameters, combined totals, output format. Parsed later by `parse_merger_summary` to recover the per-cluster particle index ranges.

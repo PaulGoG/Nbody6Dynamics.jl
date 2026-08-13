@@ -211,27 +211,30 @@ end
 """
     postprocess_external(dir::AbstractString;
                          output_dir::AbstractString = "",   # default: <dir>/../plots
-                         format::AbstractString = "png",
+                         format::AbstractString = "pdf",
                          dpi::Int = 300,
-                         figsize::Tuple{Int,Int} = (10, 8),
-                         generate_plots::Bool = true,
-                         generate_animations::Bool = true) -> Dict{Symbol,Any}
+                         column::AbstractString = "single",
+                         units::AbstractString = "physical",
+                         make_plots::Bool = true,
+                         make_animations::Bool = true) -> Dict{Symbol,Any}
 
 Post-process Nbody6++ output from an arbitrary directory.
 
 This is the **config-free** entry point: no `Nbody6Config` or `config.toml`
-required.  The function scans `dir` for all recognised output files, reads
-whatever is available, runs sanity checks, and optionally generates plots
-and animations.
+required.  The function scans `dir` for all recognised output files (using
+the standard Nbody6++ file names), reads whatever is available, runs sanity
+checks, and optionally generates plots and animations through the same
+[`generate_plots`](@ref) dispatcher as the config-driven pipeline.
 
 # Arguments
 - `dir`: directory containing Nbody6++ output files (conf.3_*, out1000, lagr.7, etc.)
 - `output_dir`: where to save plots (default: `<dir>/../plots/`)
-- `format`: plot format — `"png"`, `"pdf"`, `"svg"`
-- `dpi`: output resolution
-- `figsize`: figure size in inches `(width, height)`
-- `generate_plots`: set `false` to skip plot generation (returns data only)
-- `generate_animations`: set `false` to skip GIF animations (faster)
+- `format`: plot format — `"pdf"` (vector default), `"svg"`, `"png"`
+- `dpi`: raster resolution at final print size (`png` only)
+- `column`: `"single"` | `"double"` journal-width preset
+- `units`: `"physical"` | `"nbody"` axis units
+- `make_plots`: set `false` to skip plot generation (returns data only)
+- `make_animations`: set `false` to skip GIF animations (faster)
 
 # Returns
 A `Dict{Symbol,Any}` with keys `:scan`, `:snapshots`, `:diagnostics`,
@@ -245,7 +248,7 @@ using Nbody6Dynamics
 results = postprocess_external("/scratch/sim42/output")
 
 # Or data-only (no plots):
-results = postprocess_external("/scratch/sim42/output"; generate_plots=false)
+results = postprocess_external("/scratch/sim42/output"; make_plots=false)
 
 # Inspect what was found:
 results[:scan]  # OutputScan with availability info
@@ -254,12 +257,22 @@ results[:scan]  # OutputScan with availability info
 function postprocess_external(
     dir::AbstractString;
     output_dir::AbstractString = "",
-    format::AbstractString = "png",
+    format::AbstractString = "pdf",
     dpi::Int = 300,
-    figsize::Tuple{Real,Real} = (10, 8),
-    generate_plots::Bool = true,
-    generate_animations::Bool = true,
+    column::AbstractString = "single",
+    units::AbstractString = "physical",
+    make_plots::Bool = true,
+    make_animations::Bool = true,
 )::Dict{Symbol,Any}
+    # Fail fast on values the plot layer cannot honor (mirrors _validate).
+    format in ("pdf", "svg", "png") ||
+        error("postprocess_external: format must be \"pdf\", \"svg\", or \"png\"; got \"$format\"")
+    column in ("single", "double", "") || error(
+        "postprocess_external: column must be \"single\", \"double\", or \"\"; got \"$column\"",
+    )
+    units in ("physical", "nbody") ||
+        error("postprocess_external: units must be \"physical\" or \"nbody\"; got \"$units\"")
+
     # ── Scan ──
     scan = scan_output(dir)
     show(stdout, MIME("text/plain"), scan)
@@ -321,98 +334,19 @@ function postprocess_external(
         end
     end
 
-    # ── Generate plots ──
-    if generate_plots
+    # ── Generate plots via the shared dispatcher ──
+    if make_plots
         out = isempty(output_dir) ? joinpath(dirname(scan.dir), "plots") : output_dir
         vis = VisualizationConfig(;
             enabled = true,
             format = String(format),
             dpi = dpi,
-            figsize = figsize,
+            column = String(column),
+            units = String(units),
             output_dir = out,
         )
-
-        set_publication_theme!()
         @info "Generating plots → $out"
-
-        # Static plots
-        if haskey(results, :snapshots)
-            snaps = results[:snapshots]::Vector{Snapshot}
-            if !isempty(snaps)
-                plot_snapshot(snaps[end], vis; filename = "snapshot_final")
-                length(snaps) > 1 && plot_snapshot_evolution(snaps, vis)
-
-                # Merger-specific: inter-cluster separation and virial ratio
-                summary_path = joinpath(scan.dir, "merger_summary.txt")
-                if isfile(summary_path)
-                    ranges = parse_merger_summary(summary_path)
-                    if !isempty(ranges) && length(snaps) ≥ 2
-                        length(ranges) ≥ 2 && plot_cluster_separation(snaps, ranges, vis)
-                        plot_cluster_virial(snaps, ranges, vis)
-                    end
-                end
-            end
-        end
-
-        if haskey(results, :diagnostics)
-            diag = results[:diagnostics]::DiagnosticsData
-            if !isempty(diag.adjust)
-                plot_energy(diag, vis)
-                plot_particle_count(diag, vis)
-            end
-        end
-
-        if haskey(results, :lagr)
-            lagr = results[:lagr]::LagrangianData
-            ext_scaling =
-                haskey(results, :diagnostics) ?
-                extract_scaling(results[:diagnostics]::DiagnosticsData) : nothing
-            !isempty(lagr.time) && plot_lagrangian(lagr, vis; units = ext_scaling)
-        end
-
-        if haskey(results, :escapers)
-            escs = results[:escapers]::Vector{EscaperRecord}
-            if !isempty(escs)
-                plot_escapers(escs, vis)
-                plot_escape_anisotropy(escs, vis)
-            end
-        end
-
-        if haskey(results, :stellar_evo)
-            sevs = results[:stellar_evo]::Vector{StellarEvolutionSnapshot}
-            if !isempty(sevs)
-                mid = max(1, length(sevs) ÷ 2)
-                for (idx, fname) in [
-                    (1, "hr_diagram_early"),
-                    (mid, "hr_diagram_mid"),
-                    (length(sevs), "hr_diagram_final"),
-                ]
-                    plot_hr(sevs[idx], vis; filename = fname)
-                end
-                length(sevs) > 1 && plot_hr_evolution(sevs, vis)
-                plot_mass_segregation(sevs[end], vis)
-                plot_evolutionary_clock(sevs[end], vis)
-                plot_core_mass(sevs, vis)
-            end
-        end
-
-        # Animations
-        if generate_animations
-            if haskey(results, :snapshots) && length(results[:snapshots]) > 1
-                animate_cluster(results[:snapshots], vis)
-            end
-            if haskey(results, :lagr) && length(results[:lagr].time) > 1
-                anim_scaling =
-                    haskey(results, :diagnostics) ?
-                    extract_scaling(results[:diagnostics]::DiagnosticsData) : nothing
-                animate_lagrangian(results[:lagr], vis; units = anim_scaling)
-            end
-            if haskey(results, :stellar_evo) && length(results[:stellar_evo]) > 1
-                animate_hr(results[:stellar_evo], vis)
-            end
-        end
-
-        @info "All plots saved to: $out"
+        generate_plots(results, vis; sim_dir = scan.dir, animations = make_animations)
     end
 
     return results
@@ -421,6 +355,11 @@ end
 # ---------------------------------------------------------------------------
 # Sanity checks — warnings for unusual or suspicious data
 # ---------------------------------------------------------------------------
+
+# Alarm thresholds for the sanity warnings below.
+const _SANITY_PARTICLE_LOSS_FRAC = 0.5   # fraction of initial N lost → dissolution alarm
+const _SANITY_DE_SEVERE = 1e-2           # max |ΔE/E| → "very large energy error"
+const _SANITY_DE_ELEVATED = 1e-4         # max |ΔE/E| → "elevated energy errors"
 
 function _sanity_snapshots(results::Dict{Symbol,Any})
     haskey(results, :snapshots) || return
@@ -448,9 +387,10 @@ function _sanity_snapshots(results::Dict{Symbol,Any})
         end
 
         # Large particle loss
-        if n_last < 0.5 * n_first
+        if n_last < (1 - _SANITY_PARTICLE_LOSS_FRAC) * n_first
             @warn @sprintf(
-                "  >50%% particle loss: %d → %d (check for dissolution or escaper flood)",
+                "  >%.0f%% particle loss: %d → %d (check for dissolution or escaper flood)",
+                100 * _SANITY_PARTICLE_LOSS_FRAC,
                 n_first,
                 n_last
             )
@@ -469,10 +409,10 @@ function _sanity_diagnostics(diag::DiagnosticsData)
             de_max = maximum(de_vals)
             de_med = sort(de_vals)[max(1, length(de_vals) ÷ 2)]
             @info @sprintf("  Energy error: median=%.2e, max=%.2e", de_med, de_max)
-            if de_max > 1e-2
-                @warn "  Very large energy error detected (max |ΔE/E| > 1e-2) — check simulation stability"
-            elseif de_max > 1e-4
-                @warn "  Elevated energy errors (max |ΔE/E| > 1e-4) — possibly strong encounters"
+            if de_max > _SANITY_DE_SEVERE
+                @warn "  Very large energy error detected (max |ΔE/E| > $(_SANITY_DE_SEVERE)) — check simulation stability"
+            elseif de_max > _SANITY_DE_ELEVATED
+                @warn "  Elevated energy errors (max |ΔE/E| > $(_SANITY_DE_ELEVATED)) — possibly strong encounters"
             end
         end
 

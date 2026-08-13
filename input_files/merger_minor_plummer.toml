@@ -5,7 +5,7 @@
 # friction-dominated inspiral relevant to nuclear star cluster assembly.
 #
 # Usage (one-liner):
-#   using Nbody6Setup
+#   using Nbody6Dynamics
 #   result = run_merger_pipeline("input_files/merger_minor_plummer.toml")
 
 [merger]

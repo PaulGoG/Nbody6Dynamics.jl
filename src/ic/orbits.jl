@@ -82,7 +82,7 @@ end
 """
     setup_two_cluster_orbit(pos1, vel1, mass1, pos2, vel2, mass2,
                             d_apo, ecc; truncate_jacobi_flag=true)
-        -> (pos, vel, mass)
+        -> (pos, vel, mass, cluster_ranges)
 
 Place two clusters on a Keplerian orbit at apocentre.
 
@@ -93,7 +93,10 @@ cluster 2 at `(+d2, 0, 0)` with velocity `(0, -v2, 0)`, where
 If `truncate_jacobi_flag=true`, each cluster is truncated at its
 instantaneous Jacobi radius before combining.
 
-Returns combined `(pos, vel, mass)` arrays in the system CM frame.
+Returns combined `(pos, vel, mass)` arrays in the system CM frame plus a
+vector of `UnitRange{Int}` giving each cluster's (post-truncation) particle
+index range in the output — the same contract as
+[`combine_clusters_explicit`](@ref).
 """
 function setup_two_cluster_orbit(
     pos1::Matrix{Float64},
@@ -112,10 +115,10 @@ function setup_two_cluster_orbit(
 
     # Optional Jacobi truncation
     if truncate_jacobi_flag
-        rJ1 = jacobi_radius(d_apo, M1, M2)
-        rJ2 = jacobi_radius(d_apo, M2, M1)
-        pos1, vel1, mass1 = truncate_jacobi(pos1, vel1, mass1, rJ1)
-        pos2, vel2, mass2 = truncate_jacobi(pos2, vel2, mass2, rJ2)
+        r_jacobi_1 = jacobi_radius(d_apo, M1, M2)
+        r_jacobi_2 = jacobi_radius(d_apo, M2, M1)
+        pos1, vel1, mass1 = truncate_jacobi(pos1, vel1, mass1, r_jacobi_1)
+        pos2, vel2, mass2 = truncate_jacobi(pos2, vel2, mass2, r_jacobi_2)
         # Update totals after truncation
         M1 = sum(mass1)
         M2 = sum(mass2)
@@ -160,7 +163,7 @@ function setup_two_cluster_orbit(
         mass_out[j] = mass2[i]
     end
 
-    return pos_out, vel_out, mass_out
+    return pos_out, vel_out, mass_out, [1:N1, (N1 + 1):N_total]
 end
 
 """
@@ -209,8 +212,8 @@ function combine_clusters_explicit(
                 end
             end
 
-            rJ = jacobi_radius(d_min, M_self, M_nearest)
-            pos_t, vel_t, mass_t = truncate_jacobi(cd.pos, cd.vel, cd.mass, rJ)
+            r_jacobi = jacobi_radius(d_min, M_self, M_nearest)
+            pos_t, vel_t, mass_t = truncate_jacobi(cd.pos, cd.vel, cd.mass, r_jacobi)
             push!(truncated, (pos = pos_t, vel = vel_t, mass = mass_t))
         else
             push!(truncated, cd)

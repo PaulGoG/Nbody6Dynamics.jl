@@ -20,11 +20,14 @@
 #                             prescriptions are not physical in this regime.
 #   - `EqualMassIMF`        — all bodies have the same mass.
 #
-# The TOML loader accepts both the structured form (preferred) and the flat
-# legacy form (`imf = "kroupa"`, `mass_total`, `bodyn`, `body1` at the
-# cluster level). The legacy form with `mass_total` set translates to
-# `RescaledKroupaIMF` and emits a warning at sample time when the rescale
-# factor falls outside ×[0.7, 1.4].
+# The TOML loader accepts two equivalent schemas (decision D6): the flat
+# form (`imf = "kroupa"`, `mass_total`, `bodyn`, `body1` at the cluster
+# level) is the canonical user-facing one — all shipped configs use it —
+# while the structured table form (`profile = {type=...}`, `imf =
+# {type=...}`) exists for the lossless metadata round-trip of merger_ic.toml.
+# The flat form with `mass_total` set translates to `RescaledKroupaIMF`,
+# which warns at sample time when the rescale factor falls outside
+# ×[0.7, 1.4].
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -91,8 +94,7 @@ A warning is emitted at sample time when the rescale factor is outside
 ×[0.7, 1.4]: in that regime the individual body masses no longer correspond
 to real stars and downstream stellar-evolution output is non-physical.
 
-This is the legacy behaviour of the pre-v2 API; use it deliberately when
-constructing super-particle simulations.
+Use this mode deliberately when constructing super-particle simulations.
 """
 Base.@kwdef struct RescaledKroupaIMF <: IMFSpec
     bodyn::Float64 = 0.08
@@ -136,12 +138,9 @@ Specification for a single star cluster.
   (G = 1 with masses in M☉ and lengths in pc, so 1 unit ≈ 0.0656 km/s). For
   `orbit_mode = "kepler"` this is auto-computed and may be left empty.
 
-# Legacy flat kwargs
-
-For backward compatibility with the pre-v2 API, the keyword constructor also
-accepts the flat kwargs (`model`, `W0`, `mass_total`, `imf::String`, `bodyn`,
-`body1`). These are translated into the structured fields; specifying the
-legacy form together with the structured form raises an error.
+The keyword constructor takes the structured (tag-typed) fields only; the
+flat TOML schema is the concern of [`load_merger_config`](@ref), which
+translates it into these types.
 """
 struct ClusterSpec
     N::Int
@@ -152,84 +151,15 @@ struct ClusterSpec
     velocity::Vector{Float64}
 end
 
-# Single keyword constructor covering both the structured form
-# (`profile = KingProfile(...)`, `imf = KroupaIMF(...)`) and the legacy flat
-# form (`model = "king"`, `imf = "kroupa"`, `mass_total`, `bodyn`, `body1`).
-# Keyword arguments do not participate in dispatch in Julia, so a second
-# kwarg-only method would silently replace this one — the legacy String
-# `imf` is therefore accepted here and routed to `imf_kind` internally.
 function ClusterSpec(;
     N::Int = 50000,
     rbar::Real = 2.0,
-    profile::Union{DensityProfile,Nothing} = nothing,
-    imf::Union{IMFSpec,AbstractString,Nothing} = nothing,
+    profile::DensityProfile = KingProfile(),
+    imf::IMFSpec = KroupaIMF(),
     position::AbstractVector = Float64[],
     velocity::AbstractVector = Float64[],
-    # legacy flat kwargs
-    model::Union{AbstractString,Nothing} = nothing,
-    W0::Union{Real,Nothing} = nothing,
-    mass_total::Union{Real,Nothing} = nothing,
-    bodyn::Union{Real,Nothing} = nothing,
-    body1::Union{Real,Nothing} = nothing,
-    imf_kind::Union{AbstractString,Nothing} = nothing,
 )
-    # Route the legacy String `imf` through `imf_kind`.
-    if imf isa AbstractString
-        imf_kind === nothing ||
-            error("ClusterSpec: pass either `imf=\"...\"` or `imf_kind=\"...\"`, not both.")
-        imf_kind = String(imf)
-        imf = nothing
-    end
-    resolved_profile = if profile !== nothing
-        model === nothing || error(
-            "ClusterSpec: pass either `profile=...` (new) or `model=...` (legacy), not both.",
-        )
-        profile
-    elseif model !== nothing
-        if model == "king"
-            KingProfile(W0 = W0 === nothing ? 6.0 : Float64(W0))
-        elseif model == "plummer"
-            W0 === nothing || @warn "ClusterSpec: W0 ignored for Plummer profile"
-            PlummerProfile()
-        else
-            error("Unknown density profile '$model'. Supported: 'king', 'plummer'.")
-        end
-    else
-        W0 === nothing ? KingProfile() : KingProfile(W0 = Float64(W0))
-    end
-
-    resolved_imf = if imf !== nothing
-        imf_kind === nothing || error(
-            "ClusterSpec: pass either `imf=...` (structured) or `imf_kind=...` (legacy), not both.",
-        )
-        imf
-    else
-        kind = imf_kind === nothing ? "kroupa" : imf_kind
-        bodyn_eff = bodyn === nothing ? 0.08 : Float64(bodyn)
-        body1_eff = body1 === nothing ? 100.0 : Float64(body1)
-        mt_eff = mass_total === nothing ? nothing : Float64(mass_total)
-        if kind == "kroupa"
-            mt_eff === nothing ? KroupaIMF(bodyn = bodyn_eff, body1 = body1_eff) :
-            RescaledKroupaIMF(bodyn = bodyn_eff, body1 = body1_eff, target_mass = mt_eff)
-        elseif kind == "kroupa_rescaled"
-            mt_eff === nothing && error("imf='kroupa_rescaled' requires mass_total")
-            RescaledKroupaIMF(bodyn = bodyn_eff, body1 = body1_eff, target_mass = mt_eff)
-        elseif kind == "equal"
-            mt_eff === nothing && error("imf='equal' requires mass_total")
-            EqualMassIMF(particle_mass = mt_eff / N)
-        else
-            error("Unknown IMF kind '$kind'. Supported: 'kroupa', 'kroupa_rescaled', 'equal'.")
-        end
-    end
-
-    return ClusterSpec(
-        N,
-        Float64(rbar),
-        resolved_profile,
-        resolved_imf,
-        Float64.(position),
-        Float64.(velocity),
-    )
+    return ClusterSpec(N, Float64(rbar), profile, imf, Float64.(position), Float64.(velocity))
 end
 
 # -----------------------------------------------------------------------------
@@ -291,9 +221,7 @@ end
     MergerOutputSpec(; format = "nbody", truncate_jacobi = true,
                        output_dir = ".", tcrit = 100.0, dtadj = 1.0, deltat = 1.0)
 
-Output + integration parameters for merger ICs. `tcrit`/`dtadj`/`deltat`
-are integration parameters kept here for back-compat; a dedicated
-`MergerIntegrationSpec` will take over in a follow-up phase.
+Output and integration parameters for merger ICs.
 
 # Fields
 - `format::String`: `"nbody"` (KZ(22)=2, N-body units) — the only supported format.
@@ -401,8 +329,8 @@ end
 """
     load_merger_config(path::AbstractString) -> MergerConfig
 
-Load a merger IC configuration from a TOML file. Accepts the flat legacy
-schema and the new structured schema interchangeably. Parsed values are
+Load a merger IC configuration from a TOML file. Accepts the canonical flat
+schema and the structured metadata schema interchangeably. Parsed values are
 validated fail-fast (N ≥ 2, rbar > 0, W0 > 0, IMF mass bounds, Kepler orbit
 parameters, positive integration intervals); violations raise an error
 naming the offending `merger.*` key.
@@ -433,7 +361,7 @@ eccentricity = 0.7
 
 Each cluster provides `position = [x, y, z]` and `velocity = [vx, vy, vz]`.
 
-# Structured form (equivalent to flat, preferred for new configs)
+# Structured form (equivalent to flat; used by the merger_ic.toml metadata round-trip)
 
 ```toml
 [merger.cluster1]

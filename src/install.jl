@@ -19,9 +19,9 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
     # 1. Dependency check
     # ------------------------------------------------------------------
     @info "Checking build dependencies..."
-    missing = check_dependencies(cfg)
-    if !isempty(missing)
-        error("Missing dependencies: $(join(missing, ", ")). Install them before proceeding.")
+    missing_deps = check_dependencies(cfg)
+    if !isempty(missing_deps)
+        error("Missing dependencies: $(join(missing_deps, ", ")). Install them before proceeding.")
     end
     @info "All dependencies satisfied."
 

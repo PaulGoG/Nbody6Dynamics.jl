@@ -126,7 +126,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | Key          | Type    | Default | Description |
 |--------------|---------|---------|-------------|
 | `enabled`    | Bool    | `true`  | Enable plot generation |
-| `format`     | String  | `"png"` | Static plot format; one of `"pdf"`, `"svg"`, `"png"` (animations are always GIF) |
+| `format`     | String  | `"pdf"` | Static plot format; one of `"pdf"`, `"svg"`, `"png"` (animations are always GIF) |
 | `dpi`        | Int     | `300`   | Resolution for raster formats; must be ≥ 72 |
 | `column`     | String  | `"single"` | Journal-width preset; one of `"single"`, `"double"`, `""` (empty = free-form `figsize`) |
 | `figsize`    | [Float] | `[8.0, 6.0]` | Figure size in inches `[width, height]`; both entries must be > 0 |
@@ -370,7 +370,7 @@ The merger plots (`plot_cluster_separation`, `plot_cluster_virial`) are generate
 All plot functions accept a `VisualizationConfig` and a `filename` keyword:
 
 ```julia
-vis = VisualizationConfig(format = "pdf", dpi = 600, figsize = (10.0, 8.0),
+vis = VisualizationConfig(format = "pdf", dpi = 600, column = "double",
                           output_dir = "my_plots", style = Nbody6Dynamics.PlotStyle())
 plot_snapshot(snap, vis; filename = "cluster_final")
 ```

@@ -4,9 +4,7 @@ backend/
 # Run outputs (simulation data, plots, animations)
 runs/
 
-# Legacy layout (safe to remove)
-Nbody6PPGPU-beijing/
-simulation-output/
+# Root-level plot output (default output_dir when no run directory is given)
 plots/
 
 *.h5part

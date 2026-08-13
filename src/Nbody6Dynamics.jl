@@ -94,9 +94,8 @@ function postprocess(
     # Resolve the directory containing simulation output files.
     # run_dir (explicit argument) takes priority over pp.data_dir (config).
     sim_dir = if !isempty(run_dir)
-        # run_dir points to runs/<run_id>/ — look inside output/
-        out = joinpath(run_dir, "output")
-        isdir(out) ? out : run_dir   # fallback for legacy flat layout
+        # run_dir points to runs/<run_id>/ — the data lives in output/
+        joinpath(run_dir, "output")
     elseif !isempty(pp.data_dir)
         # Explicit external directory from config
         abspath(pp.data_dir)
@@ -107,27 +106,17 @@ function postprocess(
             joinpath(base_dir, cfg.simulation.runs_dir),
         )
         @info "Post-processing most recent run: $(basename(latest))"
-        out = joinpath(latest, "output")
-        isdir(out) ? out : latest
+        joinpath(latest, "output")
     end
 
     isdir(sim_dir) || error("Data directory does not exist: $sim_dir")
 
     results = Dict{Symbol,Any}()
 
-    # Snapshots
+    # Snapshots (snapshot_format is validated to "conf3" at config load)
     if pp.snapshot_format == "conf3"
         snaps = read_all_conf3(sim_dir, pp.snapshot_pattern)
         isempty(snaps) || (results[:snapshots] = snaps)
-    elseif pp.snapshot_format == "hdf5"
-        # The HDF5 reader was removed: it targeted dataset names this fork
-        # never writes (the KZ(46) writer produces snap.40_*.h5part with
-        # 'Step#i' groups and numbered datasets). Re-adding support means
-        # porting to that layout — see git history for the old reader.
-        error(
-            "snapshot_format=\"hdf5\" is no longer supported; use \"conf3\". " *
-            "The fork's KZ(46) H5Part layout was never readable by the old code.",
-        )
     end
 
     # Diagnostics from stdout
@@ -170,36 +159,25 @@ function postprocess(
 end
 
 """
-    generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
-                   run_dir::AbstractString = "")
+    generate_plots(results::Dict{Symbol,Any}, vis::VisualizationConfig;
+                   sim_dir::AbstractString = "", animations::Bool = true)
 
-Generate all available plots from post-processing results.
+Generate all available plots (and, when `animations = true`, GIF
+animations) from post-processing results, saving into `vis.output_dir`.
+`sim_dir` names the directory holding the raw simulation output; when given,
+it is searched for `merger_summary.txt` to produce the merger-specific
+figures (inter-cluster separation, per-cluster virial ratio).
 
-When `run_dir` is provided (e.g. `runs/run_XXXX/`), plots are saved to
-`run_dir/<visualization.output_dir>/` (typically `runs/run_XXXX/plots/`).
-Otherwise, falls back to `visualization.output_dir` relative to the package root.
+This is the single plot dispatcher — both the config-driven pipeline
+(via the `Nbody6Config` method) and [`postprocess_external`](@ref) route
+through it.
 """
-function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config; run_dir::AbstractString = "")
-    # Build a VisualizationConfig with the output_dir resolved to the run
-    vis = if !isempty(run_dir)
-        plots_dir = joinpath(run_dir, cfg.visualization.output_dir)
-        # Forward EVERY field except output_dir — a missed field here means
-        # the user's [visualization] settings are silently dropped on the
-        # main pipeline path (this has happened twice; see git history).
-        VisualizationConfig(;
-            enabled = cfg.visualization.enabled,
-            format = cfg.visualization.format,
-            dpi = cfg.visualization.dpi,
-            column = cfg.visualization.column,
-            figsize = cfg.visualization.figsize,
-            units = cfg.visualization.units,
-            output_dir = plots_dir,
-            style = cfg.visualization.style,
-        )
-    else
-        cfg.visualization
-    end
-
+function generate_plots(
+    results::Dict{Symbol,Any},
+    vis::VisualizationConfig;
+    sim_dir::AbstractString = "",
+    animations::Bool = true,
+)
     set_publication_theme!()
 
     if haskey(results, :snapshots)
@@ -213,10 +191,9 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config; run_dir::A
             end
 
             # Merger-specific: inter-cluster separation and per-cluster virial.
-            # Look in the simulation output directory (where merger_summary.txt is written).
-            sim_out_dir = !isempty(run_dir) ? joinpath(run_dir, "output") : ""
-            if !isempty(sim_out_dir) && isdir(sim_out_dir)
-                summary_path = joinpath(sim_out_dir, "merger_summary.txt")
+            # merger_summary.txt lives in the simulation output directory.
+            if !isempty(sim_dir) && isdir(sim_dir)
+                summary_path = joinpath(sim_dir, "merger_summary.txt")
                 if isfile(summary_path) && length(snaps) ≥ 2
                     ranges = parse_merger_summary(summary_path)
                     if !isempty(ranges)
@@ -290,27 +267,29 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config; run_dir::A
     end
 
     # --- Animations (GIF) ---
-    if haskey(results, :snapshots)
-        snaps = results[:snapshots]::Vector{Snapshot}
-        if length(snaps) > 1
-            @info "Animating cluster evolution..."
-            animate_cluster(snaps, vis; filename = "cluster_evolution")
+    if animations
+        if haskey(results, :snapshots)
+            snaps = results[:snapshots]::Vector{Snapshot}
+            if length(snaps) > 1
+                @info "Animating cluster evolution..."
+                animate_cluster(snaps, vis; filename = "cluster_evolution")
+            end
         end
-    end
 
-    if haskey(results, :lagr)
-        lagr = results[:lagr]::LagrangianData
-        if length(lagr.time) > 1
-            @info "Animating Lagrangian radii..."
-            animate_lagrangian(lagr, vis; filename = "lagrangian_anim", units = scaling)
+        if haskey(results, :lagr)
+            lagr = results[:lagr]::LagrangianData
+            if length(lagr.time) > 1
+                @info "Animating Lagrangian radii..."
+                animate_lagrangian(lagr, vis; filename = "lagrangian_anim", units = scaling)
+            end
         end
-    end
 
-    if haskey(results, :stellar_evo)
-        sevs = results[:stellar_evo]::Vector{StellarEvolutionSnapshot}
-        if length(sevs) > 1
-            @info "Animating HR diagram evolution..."
-            animate_hr(sevs, vis; filename = "hr_evolution_anim")
+        if haskey(results, :stellar_evo)
+            sevs = results[:stellar_evo]::Vector{StellarEvolutionSnapshot}
+            if length(sevs) > 1
+                @info "Animating HR diagram evolution..."
+                animate_hr(sevs, vis; filename = "hr_evolution_anim")
+            end
         end
     end
 
@@ -323,6 +302,41 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config; run_dir::A
 
     @info "All plots and animations saved to: $(vis.output_dir)"
     return nothing
+end
+
+"""
+    generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
+                   run_dir::AbstractString = "")
+
+Config-driven wrapper around the `VisualizationConfig` method.
+
+When `run_dir` is provided (e.g. `runs/run_XXXX/`), plots are saved to
+`run_dir/<visualization.output_dir>/` (typically `runs/run_XXXX/plots/`) and
+`run_dir/output/` is searched for merger metadata. Otherwise, falls back to
+`visualization.output_dir` relative to the package root.
+"""
+function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config; run_dir::AbstractString = "")
+    # Build a VisualizationConfig with the output_dir resolved to the run
+    vis = if !isempty(run_dir)
+        plots_dir = joinpath(run_dir, cfg.visualization.output_dir)
+        # Forward EVERY field except output_dir — a missed field here means
+        # the user's [visualization] settings are silently dropped on the
+        # main pipeline path (this has happened twice; see git history).
+        VisualizationConfig(;
+            enabled = cfg.visualization.enabled,
+            format = cfg.visualization.format,
+            dpi = cfg.visualization.dpi,
+            column = cfg.visualization.column,
+            figsize = cfg.visualization.figsize,
+            units = cfg.visualization.units,
+            output_dir = plots_dir,
+            style = cfg.visualization.style,
+        )
+    else
+        cfg.visualization
+    end
+    sim_dir = !isempty(run_dir) ? joinpath(run_dir, "output") : ""
+    return generate_plots(results, vis; sim_dir = sim_dir)
 end
 
 """
@@ -458,24 +472,17 @@ function run_pipeline(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
 end
 
 """
-Run Nbody6++ inside the merger IC output directory so `dat.10` is found
-in the working directory.  Reuses the launch-script infrastructure from
-`run_simulation` but points at `merger.inp` instead of the config's input file.
+Run Nbody6++ inside the merger IC output directory so `dat.10` is found in
+the working directory: thin wrapper around [`_execute_simulation`](@ref)
+pointing at `merger.inp` instead of the config's input file.
 """
 function _run_merger_simulation(
     cfg::Nbody6Config,
     merger_result::MergerICResult;
     base_dir::AbstractString = _PROJECT_ROOT,
 )::String
-    inst = cfg.install
-    sim = cfg.simulation
-
-    # Locate binary
-    src_dir = joinpath(base_dir, inst.install_dir)
-    binary = _find_binary(src_dir, sim.binary_name)
-
-    # The run directory is the merger's parent (merger writes to run_dir/output/)
-    # Absolute paths required — launch script runs from out_dir via cd()
+    # The run directory is the merger's parent (merger writes to run_dir/output/).
+    # Absolute paths required — the launch script runs from out_dir via cd().
     run_dir = abspath(dirname(merger_result.output_dir))
     out_dir = abspath(merger_result.output_dir)  # contains dat.10 and merger.inp
     input_path = joinpath(out_dir, "merger.inp")
@@ -483,43 +490,14 @@ function _run_merger_simulation(
     @info "Run dir: $run_dir"
     @info "Input:   $input_path"
 
-    # Save frozen config
-    save_config(cfg, joinpath(run_dir, "config.toml"))
-
-    # Copy binary
-    local_binary = joinpath(out_dir, basename(binary))
-    cp(binary, local_binary; force = true)
-    chmod(local_binary, 0o755)
-
-    # Build launch script
-    stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
-    stderr_path = joinpath(out_dir, "err1000")
-    launch_script =
-        _write_launch_script(out_dir, local_binary, input_path, stdout_path, stderr_path, cfg)
-
-    # Execute, teeing pipeline logs to the run directory (§9)
-    _with_run_log(run_dir) do
-        t_start = time()
-        @info "Starting merger simulation..."
-        process = cd(out_dir) do
-            run(`bash $launch_script`; wait = false)
-        end
-
-        if cfg.simulation.monitor && stderr isa Base.TTY
-            _monitor_stdout_file(stdout_path, process, t_start)
-        end
-        wait(process)
-
-        elapsed = time() - t_start
-
-        if !success(process)
-            @warn "Simulation exited with non-zero status ($(process.exitcode)) after $(_format_elapsed(elapsed))"
-        end
-
-        _write_run_summary(run_dir, basename(run_dir), stdout_path, out_dir, elapsed)
-        @info "Simulation complete ($(_format_elapsed(elapsed)))"
-    end
-    return run_dir
+    return _execute_simulation(
+        cfg,
+        run_dir,
+        out_dir,
+        input_path;
+        base_dir = base_dir,
+        label = "merger simulation",
+    )
 end
 
 """Find the most recent run directory under `base_dir/runs_dir/`.
