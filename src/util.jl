@@ -8,7 +8,7 @@
 Short commit hash of the git repository at `dir`, with a `-dirty` suffix
 when the working tree has uncommitted changes; `"unknown"` when `dir` is not
 a repository or git is unavailable. Used to stamp run provenance
-(tagsave-equivalent) into RUN_INFO.txt and merger_ic.toml.
+(tagsave-equivalent) into RUN_INFO.toml and merger_ic.toml.
 """
 function _git_commit(dir::AbstractString)::String
     try
@@ -52,7 +52,7 @@ end
 Copy finished figures to a manuscript figures directory with provenance
 attached (§6): each file is copied as `<run_id>__<name>` and a TOML sidecar
 `<run_id>__<name>.provenance.toml` records the producing run, the package
-and backend commits (from the run's RUN_INFO.txt when `run_dir` is given),
+and backend commits (from the run's RUN_INFO.toml when `run_dir` is given),
 and the export date. `dest_dir` is caller-supplied — the package never
 hardcodes paths outside its own tree. Existing files are backed up, never
 overwritten. Returns the destination paths.
@@ -64,15 +64,14 @@ function export_for_paper(
 )
     mkpath(dest_dir)
     run_id = run_dir === nothing ? "unattributed" : basename(abspath(run_dir))
-    # Provenance from RUN_INFO.txt when available
+    # Provenance from the run's RUN_INFO.toml when available
     commits = Dict{String,String}()
     if run_dir !== nothing
-        info_path = joinpath(run_dir, "RUN_INFO.txt")
+        info_path = joinpath(run_dir, "RUN_INFO.toml")
         if isfile(info_path)
-            for line in eachline(info_path)
-                m = match(r"^(Commit|Backend):\s+(\S+)", line)
-                m === nothing && continue
-                commits[lowercase(something(m.captures[1]))] = String(something(m.captures[2]))
+            prov = get(TOML.parsefile(info_path), "provenance", Dict{String,Any}())
+            for (short, key) in (("commit", "package_commit"), ("backend", "backend_commit"))
+                haskey(prov, key) && (commits[short] = String(prov[key]))
             end
         end
     end

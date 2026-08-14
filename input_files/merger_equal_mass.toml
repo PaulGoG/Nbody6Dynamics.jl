@@ -2,15 +2,6 @@
 # Equal-mass King model merger (q = 1)
 # =============================================================================
 # Two identical globular clusters on an eccentric bound orbit.
-# Typical setup for studying core merger dynamics and IMBH formation.
-#
-# Usage (one-liner):
-#   using Nbody6Dynamics
-#   result = run_merger_pipeline("input_files/merger_equal_mass.toml")
-#
-# Or via the main pipeline (set merger.config_file in config.toml):
-#   cfg = load_config("config.toml")  # with [merger] enabled=true
-#   results = run_pipeline(cfg)
 
 [merger]
 n_clusters = 2

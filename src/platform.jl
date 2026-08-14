@@ -184,6 +184,49 @@ function check_fedora_h5pfc()
 end
 
 # ---------------------------------------------------------------------------
+# Hardware fingerprint (run provenance, §6)
+# ---------------------------------------------------------------------------
+
+"""
+    _hardware_fingerprint(; gpu_probe = false) -> Dict{String,Any}
+
+Platform fingerprint for run metadata, using Julia's own introspection:
+host, OS/kernel, CPU model and logical core count, total memory, Julia
+version, Julia and BLAS thread counts. With `gpu_probe = true` an
+`nvidia-smi` query records the GPU name, VRAM, and driver version
+(`"unavailable"` when the tool or a device is absent). Together with the
+config and the git commits this makes every result attributable to
+config + commit + hardware.
+"""
+function _hardware_fingerprint(; gpu_probe::Bool = false)::Dict{String,Any}
+    cpu = Sys.cpu_info()
+    d = Dict{String,Any}(
+        "host" => gethostname(),
+        "os" => "$(Sys.KERNEL) $(Sys.MACHINE)",
+        "cpu_model" => isempty(cpu) ? "unknown" : cpu[1].model,
+        "cpu_threads" => Sys.CPU_THREADS,
+        "total_memory_gib" => round(Sys.total_memory() / 2^30; digits = 1),
+        "julia_version" => string(VERSION),
+        "julia_threads" => Threads.nthreads(),
+        "blas_threads" => BLAS.get_num_threads(),
+    )
+    if gpu_probe
+        gpu = try
+            strip(
+                read(
+                    `nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader`,
+                    String,
+                ),
+            )
+        catch
+            ""
+        end
+        d["gpu"] = isempty(gpu) ? "unavailable" : String(gpu)
+    end
+    return d
+end
+
+# ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------
 

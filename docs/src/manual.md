@@ -226,7 +226,7 @@ Each run gets a unique ID `{prefix}_YYYYMMDD_HHMMSS_{4hex}` (e.g. `run_20260325_
 ```
 runs/run_20260325_143022_a1f3/
 ├── config.toml          # frozen snapshot of the configuration used
-├── RUN_INFO.txt         # summary with timestamps, hostname, file listing
+├── RUN_INFO.toml        # run summary: identity/timing, package + backend commits, hardware fingerprint, file inventory
 ├── output/              # all simulation artefacts
 │   ├── nbody6++         # binary copy (reproducibility)
 │   ├── _launch.sh       # generated bash launch script

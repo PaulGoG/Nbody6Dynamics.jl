@@ -11,6 +11,7 @@ using SpecialFunctions
 using OrdinaryDiffEqTsit5
 using Logging
 using LoggingExtras: FormatLogger, MinLevelLogger, TeeLogger
+using LinearAlgebra: BLAS
 using MathTeXEngine: texfont
 
 # Package root directory — all relative config paths resolve against this.

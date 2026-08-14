@@ -1,3 +1,10 @@
+# Self-activating (§3): the docs environment consumes the package by path,
+# so the build always runs against the local source.
+using Pkg
+Pkg.activate(@__DIR__; io = devnull)
+Pkg.develop(; path = joinpath(@__DIR__, ".."), io = devnull)
+Pkg.instantiate(; io = devnull)
+
 using Documenter
 using Nbody6Dynamics
 

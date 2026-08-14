@@ -138,7 +138,7 @@ function _execute_simulation(
         end
 
         # --- Write run summary ---
-        _write_run_summary(run_dir, run_id, stdout_path, out_dir, elapsed)
+        _write_run_summary(cfg, run_dir, run_id, stdout_path, out_dir, elapsed)
 
         @info "Simulation complete. Run: $run_id  ($(_format_elapsed(elapsed)))"
     end
@@ -347,36 +347,48 @@ function _print_monitor_line(line::AbstractString, t_start::Float64 = time())::B
 end
 
 """
-Write a brief human-readable run summary including elapsed wall-clock time.
+    _write_run_summary(cfg, run_dir, run_id, stdout_path, out_dir, elapsed)
+
+Write the machine-readable run summary `RUN_INFO.toml` into `run_dir`:
+run identity and wall-clock time, provenance (package and backend commits),
+the hardware fingerprint (§6; GPU probed when `build.enable_gpu`), and the
+output file inventory.
 """
 function _write_run_summary(
+    cfg::Nbody6Config,
     run_dir::String,
     run_id::String,
     stdout_path::String,
     out_dir::String = run_dir,
     elapsed::Float64 = 0.0,
 )
-    open(joinpath(run_dir, "RUN_INFO.txt"), "w") do io
-        println(io, "Run ID:    $run_id")
-        println(io, "Date:      $(Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"))")
-        println(io, "Host:      $(gethostname())")
-        println(io, "Julia:     $(VERSION)")
-        println(io, "Commit:    $(_git_commit(_PROJECT_ROOT))")
-        println(
-            io,
-            "Backend:   $(_git_commit(joinpath(_PROJECT_ROOT, "backend", "Nbody6PPGPU-beijing")))",
+    run_table = Dict{String,Any}(
+        "id" => run_id,
+        "date" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
+        "elapsed_seconds" => round(elapsed; digits = 1),
+        "elapsed" => _format_elapsed(elapsed),
+    )
+    isfile(stdout_path) && (run_table["stdout_lines"] = countlines(stdout_path))
+
+    d = Dict{String,Any}(
+        "run" => run_table,
+        "provenance" => Dict{String,Any}(
+            "package_commit" => _git_commit(_PROJECT_ROOT),
+            "backend_commit" =>
+                _git_commit(joinpath(_PROJECT_ROOT, "backend", "Nbody6PPGPU-beijing")),
+        ),
+        "hardware" => _hardware_fingerprint(; gpu_probe = cfg.build.enable_gpu),
+    )
+    if isdir(out_dir)
+        files = sort(readdir(out_dir))
+        d["output"] = Dict{String,Any}(
+            "files" => files,
+            "total_bytes" => sum(f -> filesize(joinpath(out_dir, f)), files; init = 0),
         )
-        println(io, "Elapsed:   $(_format_elapsed(elapsed))")
-        if isfile(stdout_path)
-            println(io, "Stdout:    $(countlines(stdout_path)) lines")
-        end
-        println(io, "")
-        println(io, "Output files:")
-        if isdir(out_dir)
-            for f in sort(readdir(out_dir))
-                sz = filesize(joinpath(out_dir, f))
-                println(io, "  output/$f  ($(Base.format_bytes(sz)))")
-            end
-        end
     end
+
+    open(joinpath(run_dir, "RUN_INFO.toml"), "w") do io
+        TOML.print(io, d)
+    end
+    return nothing
 end

@@ -43,6 +43,21 @@ changes; all numerical outputs unchanged).
 - Test suite: smoke coverage added for the previously untested merger
   plot functions (`plot_merger_ic`, `plot_cluster_separation`,
   `plot_cluster_virial`, `per_cluster_virial`).
+- Run summary is machine-readable: `RUN_INFO.txt` replaced by
+  `RUN_INFO.toml` (run identity/timing, package + backend commits, output
+  inventory) extended with a hardware fingerprint — host, OS, CPU model
+  and logical cores, total memory, Julia version, Julia/BLAS thread
+  counts, and the GPU (nvidia-smi probe) on `enable_gpu` builds. The same
+  fingerprint is stored in `merger_ic.toml`; `export_for_paper` reads the
+  TOML provenance instead of scraping text. Adds the `LinearAlgebra`
+  stdlib dependency (BLAS thread count).
+- `docs/make.jl` self-activates its environment and develops the package
+  by path (`julia docs/make.jl` with no `--project` flag); the Docs
+  workflow simplified accordingly.
+- README: consolidated entry-points table (instantiate, pipeline,
+  verification suite, tests, benchmarks, docs build) and a `TestEnv.jl`
+  note; config headers trimmed to the one-line form the config comment
+  policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
 - `Manifest.toml` self-entry still carried the pre-rename package name

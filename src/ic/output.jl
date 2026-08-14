@@ -401,6 +401,7 @@ function _write_merger_ic_metadata(
             "rbar" => rbar,
             "zmbar" => zmbar,
         ),
+        "hardware" => _hardware_fingerprint(),
         "orbit_mode" => cfg.orbit_mode,
         "orbit" => Dict{String,Any}(
             "apocentre" => cfg.orbit.apocentre,

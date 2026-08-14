@@ -1866,6 +1866,60 @@ truncate_jacobi = false
     end
 
     # =====================================================================
+    @testset "Run summary and hardware provenance" begin
+        hw = Nbody6Dynamics._hardware_fingerprint()
+        for key in (
+            "host",
+            "os",
+            "cpu_model",
+            "cpu_threads",
+            "total_memory_gib",
+            "julia_version",
+            "julia_threads",
+            "blas_threads",
+        )
+            @test haskey(hw, key)
+        end
+        @test hw["cpu_threads"] ≥ 1
+        @test hw["total_memory_gib"] > 0
+        @test hw["blas_threads"] ≥ 1
+        @test !haskey(hw, "gpu")   # probed only on request
+        hw_gpu = Nbody6Dynamics._hardware_fingerprint(; gpu_probe = true)
+        @test haskey(hw_gpu, "gpu") && !isempty(hw_gpu["gpu"])
+
+        # RUN_INFO.toml writer: structure and round-trip
+        run_dir = mktempdir()
+        out_dir = joinpath(run_dir, "output")
+        mkpath(out_dir)
+        write(joinpath(out_dir, "out1000"), "line1\nline2\n")
+        cfg_info = Nbody6Config(
+            InstallConfig(),
+            BuildConfig(),
+            SimulationConfig(),
+            PostprocessConfig(),
+            VisualizationConfig(),
+            MergerPipelineConfig(),
+        )
+        Nbody6Dynamics._write_run_summary(
+            cfg_info,
+            run_dir,
+            "testrun_a1b2",
+            joinpath(out_dir, "out1000"),
+            out_dir,
+            42.5,
+        )
+        info = Nbody6Dynamics.TOML.parsefile(joinpath(run_dir, "RUN_INFO.toml"))
+        @test info["run"]["id"] == "testrun_a1b2"
+        @test info["run"]["elapsed_seconds"] == 42.5
+        @test info["run"]["stdout_lines"] == 2
+        @test haskey(info["provenance"], "package_commit")
+        @test haskey(info["provenance"], "backend_commit")
+        @test info["hardware"]["cpu_threads"] ≥ 1
+        @test "out1000" in info["output"]["files"]
+        @test info["output"]["total_bytes"] > 0
+    end
+
+    # =====================================================================
     @testset "export_for_paper provenance" begin
         src_dir = mktempdir()
         dest = mktempdir()
@@ -1873,8 +1927,12 @@ truncate_jacobi = false
         mkpath(dirname(fig_path))
         write(fig_path, "pdfbytes")
         write(
-            joinpath(src_dir, "RUN_INFO.txt"),
-            "Run ID:    testrun_x\nCommit:    abc1234\nBackend:   def5678-dirty\n",
+            joinpath(src_dir, "RUN_INFO.toml"),
+            """
+            [provenance]
+            package_commit = "abc1234"
+            backend_commit = "def5678-dirty"
+            """,
         )
         out = export_for_paper([fig_path], dest; run_dir = src_dir)
         @test length(out) == 1

@@ -1,15 +1,8 @@
 # =============================================================================
 # Triple cluster merger (explicit positions)
 # =============================================================================
-# Three clusters in a triangular configuration, converging toward a common
-# centre. Demonstrates the explicit orbit mode for N > 2 clusters.
-#
-# Geometry: equilateral triangle with side length 20 pc, centred at origin.
-# Each cluster has inward radial velocity to initiate inspiral.
-#
-# Usage:
-#   using Nbody6Dynamics
-#   result = run_merger_pipeline("input_files/merger_triple_cluster.toml")
+# Three converging clusters on an equilateral 20 pc triangle
+# (explicit orbit mode for N > 2 clusters).
 
 [merger]
 n_clusters = 3

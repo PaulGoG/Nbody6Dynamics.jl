@@ -102,6 +102,19 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
 `Manifest.toml` is version-controlled, so `instantiate` reproduces the exact dependency set on any machine. Building the Fortran backend additionally needs `git`, `gfortran`/`make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
 
+## Entry Points
+
+One invocation each; details in the sections below. The docs and benchmark scripts self-activate their own environments (and develop the package by path), so no `--project` flag is needed there.
+
+| Task | Invocation |
+|------|------------|
+| Instantiate the package environment | `julia --project=. -e 'using Pkg; Pkg.instantiate()'` |
+| Run the main pipeline | `julia --project=. scripts/run_setup.jl [config.toml]` |
+| Run the verification suite | `julia --project=. scripts/run_verif_suite.jl` |
+| Execute the test suite | `julia --project=. -e 'using Pkg; Pkg.test()'` |
+| Run the benchmarks | `julia bench/benchmarks.jl` |
+| Build the documentation | `julia docs/make.jl` |
+
 ## Usage
 
 `run_pipeline(cfg)` is the single entry point; `config.toml` flags select which phases run. Six modes:
@@ -152,7 +165,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | Simulation runner | Working | Launch script, live stdout monitoring, run summary; merger runs execute inside the IC output dir so `dat.10` is found |
 | I/O readers | Working | `conf.3` (standard + extended), `out1000` diagnostics (ADJUST + physical scaling; virial ratio Q = T/\|W\|, equilibrium at 0.5), `lagr.7`, and `esc.11` (incl. the ANGLE PHI / ANGLE THETA escape-direction columns) / `sev.83_*` in the fork's real formats; `STELLAR_TYPE_LABELS` follow the Hurley convention (13 = NS, 14 = BH); `UnitScaling.zmbar` is the total-mass scale factor M*, not the mean stellar mass. HDF5 reader removed — the fork's KZ(46) H5Part layout was never supported; `.h5part` files are detected and warned about |
 | Plotting / animation | Working | Publication theme: no titles, no minor ticks, Computer Modern fonts, dashed grey low-opacity grid on line plots; presentation knobs config-driven via `[visualization.style]` (`PlotStyle`); escaper suite (cumulative mass loss, velocity classes, escape anisotropy) and SSE-quantity plots (mass segregation, t/T_MS evolutionary clock, core-mass growth); existing figures are never overwritten (safesave-style `#1`, `#2`, … backups) |
-| Tests | Passing | 485/485 as of this commit, incl. physics validation and adversarial external-input tests |
+| Tests | Passing | 506/506 as of this commit, incl. physics validation and adversarial external-input tests |
 
 ## Testing
 
@@ -161,6 +174,8 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
 The suite covers config round-trips, all I/O readers (synthetic binaries plus real fork output fixtures under `test/fixtures/`), plotting/animation smoke tests, external post-processing (including adversarial malformed inputs), and the merger IC generator. Physics-validation tests check King concentration c(W0) against published values, the Plummer half-mass relation r_hm = 1.305 a, the Kroupa mean mass, virial equilibrium Q = T/|W| = 0.5 after `virialise!`, and the Keplerian orbital energy of generated two-cluster orbits.
+
+For interactive work against the test dependencies, activate the test environment with [`TestEnv.jl`](https://github.com/JuliaTesting/TestEnv.jl): `julia --project=. -e 'using TestEnv; TestEnv.activate()'` in a REPL session.
 
 ## Verification Suite
 

@@ -1,9 +1,7 @@
 # =============================================================================
 # Nbody6Dynamics Configuration
 # =============================================================================
-# 27-cluster cubic grid merger: 3×3×3 lattice, mixed King + Plummer,
-# Kroupa IMF, all clusters converging inward.  Total N ≈ 27 000.
-# Full pipeline: merger IC → simulation → post-processing → plots.
+# Full-pipeline configuration for the 27-cluster cubic-grid merger scenario.
 
 [install]
 enabled        = false           # binary already built

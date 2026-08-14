@@ -2,7 +2,7 @@
 
 julia_version = "1.12.6"
 manifest_format = "2.0"
-project_hash = "dca92750edebe5729a0fc76e360bd2635fbaaea7"
+project_hash = "1ce029f84c69d9680bd94e740d1f7a961cf424fb"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "0a81a018463de6c3f4f2c9360121c562e5add9e4"
@@ -1145,7 +1145,7 @@ uuid = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
 version = "1.1.3"
 
 [[deps.Nbody6Dynamics]]
-deps = ["CairoMakie", "Dates", "LaTeXStrings", "Logging", "LoggingExtras", "MathTeXEngine", "OrdinaryDiffEqTsit5", "Printf", "ProgressMeter", "Random", "SpecialFunctions", "TOML"]
+deps = ["CairoMakie", "Dates", "LaTeXStrings", "LinearAlgebra", "Logging", "LoggingExtras", "MathTeXEngine", "OrdinaryDiffEqTsit5", "Printf", "ProgressMeter", "Random", "SpecialFunctions", "TOML"]
 path = "."
 uuid = "7d8e9f0a-1b2c-4d3e-8f6a-7b8c9d0e1f2a"
 version = "0.2.0"
