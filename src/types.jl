@@ -39,7 +39,14 @@ end
     SimulationConfig
 
 Configuration for the simulation execution phase.
-Controls input file, run directory, MPI ranks, and run ID generation.
+Controls input file, run directory, MPI ranks, backend OpenMP thread count,
+run ID generation, and runtime telemetry.
+
+# Fields
+- `omp_threads`: OpenMP threads for the backend; `0` leaves the runtime
+  default (an inherited `OMP_NUM_THREADS`, else every logical CPU)
+- `telemetry_interval`: sampling interval of the process-tree/GPU telemetry
+  [s]; `0` disables the sampler (exact CPU accounting stays on)
 """
 Base.@kwdef struct SimulationConfig
     run_test::Bool = true
@@ -47,8 +54,10 @@ Base.@kwdef struct SimulationConfig
     runs_dir::String = "runs"
     binary_name::String = "nbody6++"
     mpi_ranks::Int = 1
+    omp_threads::Int = 0
     run_id_prefix::String = "run"
     monitor::Bool = false   # opt-in live progress ticker (§9); interactive stderr only
+    telemetry_interval::Float64 = 5.0
 end
 
 """

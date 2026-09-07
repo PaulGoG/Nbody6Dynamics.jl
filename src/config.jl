@@ -80,8 +80,10 @@ function _parse_simulation(d::Dict)
         runs_dir = get(d, "runs_dir", "runs"),
         binary_name = get(d, "binary_name", "nbody6++"),
         mpi_ranks = get(d, "mpi_ranks", 1),
+        omp_threads = get(d, "omp_threads", 0),
         run_id_prefix = get(d, "run_id_prefix", "run"),
         monitor = get(d, "monitor", false),
+        telemetry_interval = Float64(get(d, "telemetry_interval", 5.0)),
     )
 end
 
@@ -172,6 +174,11 @@ function _validate(cfg::Nbody6Config)
             "a multi-rank launch needs an MPI-enabled binary",
         )
     end
+    sim.omp_threads ≥ 0 ||
+        error("config: simulation.omp_threads must be ≥ 0; got $(sim.omp_threads)")
+    sim.telemetry_interval ≥ 0 || error(
+        "config: simulation.telemetry_interval must be ≥ 0 [s]; got $(sim.telemetry_interval)",
+    )
     isempty(sim.runs_dir) && error("config: simulation.runs_dir must be nonempty")
     isempty(sim.run_id_prefix) && error("config: simulation.run_id_prefix must be nonempty")
     isempty(sim.input_file) && error("config: simulation.input_file must be nonempty")

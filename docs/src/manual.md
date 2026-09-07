@@ -92,7 +92,10 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `runs_dir`      | String | `"runs"` | Base directory for run output; must be nonempty |
 | `binary_name`   | String | `"nbody6++"` | Expected binary name |
 | `mpi_ranks`     | Int    | `1`     | Number of MPI ranks; must be ≥ 1, and > 1 requires `build.enable_mpi = true` |
+| `omp_threads`   | Int    | `0`     | OpenMP threads for the backend, exported as `OMP_NUM_THREADS`; must be ≥ 0. `0` leaves the OpenMP runtime default: an inherited `OMP_NUM_THREADS`, else every logical CPU. Oversubscription (`omp_threads × mpi_ranks` above the host's logical CPUs) warns at launch |
 | `run_id_prefix` | String | `"run"` | Prefix for run directory names; must be nonempty |
+| `monitor`       | Bool   | `false` | Live ADJUST ticker on stderr; interactive terminals only |
+| `telemetry_interval` | Float | `5.0` | Sampling interval of the process-tree/GPU telemetry [s]; must be ≥ 0. `0` disables the sampler; the exact CPU accounting stays on |
 
 ### `[postprocess]`
 
@@ -226,7 +229,9 @@ Each run gets a unique ID `{prefix}_YYYYMMDD_HHMMSS_{4hex}` (e.g. `run_20260325_
 ```
 runs/run_20260325_143022_a1f3/
 ├── config.toml          # frozen snapshot of the configuration used
-├── RUN_INFO.toml        # run summary: identity/timing, package + backend commits, hardware fingerprint, file inventory
+├── RUN_INFO.toml        # run summary: identity/timing/thread layout, commits, hardware fingerprint, telemetry summary, file inventory
+├── telemetry.csv        # hardware telemetry time series (when telemetry_interval > 0)
+├── nbody6dynamics.log   # teed pipeline log
 ├── output/              # all simulation artefacts
 │   ├── nbody6++         # binary copy (reproducibility)
 │   ├── _launch.sh       # generated bash launch script
@@ -243,7 +248,7 @@ Merger runs additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, a
 
 ### Launch script
 
-The generated `_launch.sh` sets `ulimit -s unlimited` (Fortran stack), `OMP_STACKSIZE=4096M`, CUDA environment variables (if GPU enabled), and `stdbuf -oL` for line-buffered output where available.
+The generated `_launch.sh` sets `ulimit -s unlimited` (Fortran stack), `OMP_STACKSIZE=4096M`, `OMP_NUM_THREADS` when `simulation.omp_threads > 0`, CUDA environment variables (if GPU enabled), and `stdbuf -oL` for line-buffered output where available. The backend takes its thread count from the OpenMP runtime alone (there is no input parameter for it) and echoes it at start-up; that echoed value is recorded as `run.omp_threads_reported` in `RUN_INFO.toml` next to the configured `run.omp_threads` and `run.mpi_ranks`.
 
 ### Real-time monitoring
 
@@ -252,6 +257,14 @@ During execution, ADJUST summaries are echoed live:
 ```
 [ Info:   t_NB=0.0500  t_Myr=0.4  N=9998  |ΔE/E|=1.23e-06  Q_vir=0.987
 ```
+
+### Hardware telemetry
+
+Every run records the exact CPU consumption of the backend process tree from `getrusage(RUSAGE_CHILDREN)` deltas: `cpu_user_s`, `cpu_system_s`, `threads_total` (effective OpenMP threads × MPI ranks), and `cpu_efficiency = (user + system) / (elapsed × threads_total)`, the fraction of the reserved CPU capacity the integration actually used. These land in the `[telemetry]` table of `RUN_INFO.toml`.
+
+With `simulation.telemetry_interval > 0` (default 5 s) an asynchronous sampler additionally writes `runs/<run_id>/telemetry.csv`, one row per interval, with the columns of `TelemetrySample`: elapsed time, process count, resident memory and high-water mark summed over the tree (from `/proc/<pid>/status`), cumulative CPU time and the derived cores-busy rate (from `/proc/<pid>/stat`), the 1-minute load average, and — when `build.enable_gpu` — one `nvidia-smi --query-gpu` sample per interval (utilization, memory utilization, memory used, power, temperature; mean, sum, or maximum over devices). The summary adds `peak_rss_mib`, `mean_cores_busy`, `peak_cores_busy`, `peak_load_1min`, and the GPU means and peaks when GPU samples exist. Sampling is Linux-only; a failing `nvidia-smi` disables GPU sampling for the rest of the run after one warning, and a sampler failure never aborts the run.
+
+The backend's own performance report is captured as well. The last timing table it prints to stdout (one per `DTADJ`, cumulative CPU seconds per code section: regular and irregular force, prediction, KS, adjust, output, communication, …) becomes the `[telemetry.backend_timing]` sub-table with lower-case keys (`total`, `reg`, `irr`, `ks`, `reg_gpu_s`, …), and the `Perf.(Gflops)` lines of the AVX/SSE or GPU regular-force profiles on stderr are summarised as `[telemetry.force_kernel_gflops]` (`samples`, `mean`, `peak`).
 
 ---
 

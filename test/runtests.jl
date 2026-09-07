@@ -92,6 +92,8 @@ cuda_path = "/opt/cuda"
 
 [simulation]
 run_id_prefix = "bench"
+omp_threads = 6
+telemetry_interval = 2.5
 
 [postprocess]
 enabled = true
@@ -110,6 +112,8 @@ figsize = [12, 9]
         @test cfg2.build.enable_gpu == cfg.build.enable_gpu
         @test cfg2.build.cuda_path == cfg.build.cuda_path
         @test cfg2.simulation.run_id_prefix == cfg.simulation.run_id_prefix
+        @test cfg2.simulation.omp_threads == 6
+        @test cfg2.simulation.telemetry_interval == 2.5
         @test cfg2.visualization.dpi == cfg.visualization.dpi
         @test cfg2.visualization.figsize == cfg.visualization.figsize
     end
@@ -136,6 +140,12 @@ format = "pdf"
             ("install_dir", "[install]\ninstall_dir = \"\"\n", "install.install_dir"),
             ("nproc", "[build]\nnproc = -1\n", "build.nproc"),
             ("mpi_ranks", "[simulation]\nmpi_ranks = 0\n", "simulation.mpi_ranks"),
+            ("omp_threads", "[simulation]\nomp_threads = -1\n", "simulation.omp_threads"),
+            (
+                "telemetry_interval",
+                "[simulation]\ntelemetry_interval = -0.5\n",
+                "simulation.telemetry_interval",
+            ),
             (
                 "mpi_no_mpi_build",
                 "[build]\nenable_mpi = false\n\n[simulation]\nmpi_ranks = 4\n",
@@ -1995,6 +2005,203 @@ truncate_jacobi = false
 
     # =====================================================================
     # Static QA (§8): ships with the tests.
+    # =====================================================================
+    @testset "Backend thread control" begin
+        sim0 = SimulationConfig()
+        @test sim0.omp_threads == 0
+        @test sim0.telemetry_interval == 5.0
+        @test Nbody6Dynamics._effective_omp_threads(SimulationConfig(; omp_threads = 3)) == 3
+        withenv("OMP_NUM_THREADS" => nothing) do
+            @test Nbody6Dynamics._effective_omp_threads(sim0) == Sys.CPU_THREADS
+        end
+        withenv("OMP_NUM_THREADS" => "4") do
+            @test Nbody6Dynamics._effective_omp_threads(sim0) == 4
+            @test Nbody6Dynamics._effective_omp_threads(SimulationConfig(; omp_threads = 2)) == 2
+        end
+        withenv("OMP_NUM_THREADS" => "junk") do
+            @test Nbody6Dynamics._effective_omp_threads(sim0) == Sys.CPU_THREADS
+        end
+
+        # Launch script: OMP_NUM_THREADS exported only for an explicit cap
+        launch_dir = mktempdir()
+        make_cfg(n) = Nbody6Config(
+            InstallConfig(),
+            BuildConfig(),
+            SimulationConfig(; omp_threads = n),
+            PostprocessConfig(),
+            VisualizationConfig(),
+            MergerPipelineConfig(),
+        )
+        args = (joinpath(launch_dir, "nbody6++"), "in.inp", "out1000", "err1000")
+        script0 =
+            read(Nbody6Dynamics._write_launch_script(launch_dir, args..., make_cfg(0)), String)
+        @test !occursin("OMP_NUM_THREADS", script0)
+        @test occursin("OMP_STACKSIZE", script0)
+        script4 =
+            read(Nbody6Dynamics._write_launch_script(launch_dir, args..., make_cfg(4)), String)
+        @test occursin("export OMP_NUM_THREADS=4\n", script4)
+
+        # Reported thread count from the backend's start-up banner
+        out_path = joinpath(launch_dir, "out1000")
+        write(out_path, "header\n RANK:  0  OpenMP Number of Threads:  12\n ADJUST: ...\n")
+        @test Nbody6Dynamics._reported_omp_threads(out_path) == 12
+        write(out_path, "no banner here\n")
+        @test Nbody6Dynamics._reported_omp_threads(out_path) === nothing
+        @test Nbody6Dynamics._reported_omp_threads(joinpath(launch_dir, "absent")) === nothing
+    end
+
+    # =====================================================================
+    @testset "Hardware telemetry" begin
+        # /proc stat parser: command names may contain spaces and parentheses
+        rec =
+            "4242 (my (odd) proc) S 17 4242 4242 0 -1 4194560 100 0 0 0 350 25 0 0 20 0 8 0 100 " *
+            "12345678 2048 18446744073709551615 1 1 0 0 0 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0 0 0 0 0 0 0 0 0"
+        @test Nbody6Dynamics._parse_proc_stat(rec) == (17, 350, 25)
+        @test_throws ArgumentError Nbody6Dynamics._parse_proc_stat("garbage without parens")
+        @test_throws ArgumentError Nbody6Dynamics._parse_proc_stat("1 (x) S 2 3")
+
+        # nvidia-smi aggregation: means, sums, max; [N/A] → NaN
+        two = "45, 10, 1234, 120.50, 60\n55, 30, 766, 79.50, 70\n"
+        u, mu, mem, pw, tc = Nbody6Dynamics._parse_nvidia_smi(two)
+        @test u ≈ 50.0 && mu ≈ 20.0 && mem ≈ 2000.0 && pw ≈ 200.0 && tc == 70.0
+        na = Nbody6Dynamics._parse_nvidia_smi("12, 3, 500, [N/A], 41\n")
+        @test na[1] == 12.0 && isnan(na[4]) && na[5] == 41.0
+        @test all(isnan, Nbody6Dynamics._parse_nvidia_smi(""))
+        @test_throws ArgumentError Nbody6Dynamics._parse_nvidia_smi("1, 2, 3\n")
+
+        # Exact child accounting is monotone across a child launch
+        cpu0 = Nbody6Dynamics._children_cpu_times()
+        wait(run(`sleep 0.1`; wait = false))
+        cpu1 = Nbody6Dynamics._children_cpu_times()
+        if Sys.islinux()
+            @test cpu1[1] ≥ cpu0[1] && cpu1[2] ≥ cpu0[2]
+        else
+            @test all(isnan, cpu1)
+        end
+
+        # Sampler on a live child process
+        tele_dir = mktempdir()
+        t0 = time()
+        child = run(`sleep 1.2`; wait = false)
+        @test_throws ArgumentError Nbody6Dynamics._start_telemetry(
+            tele_dir,
+            getpid(child),
+            t0;
+            interval = 0.0,
+            gpu_probe = false,
+        )
+        mon = Nbody6Dynamics._start_telemetry(
+            tele_dir,
+            getpid(child),
+            t0;
+            interval = 0.2,
+            gpu_probe = false,
+        )
+        wait(child)
+        summary = Nbody6Dynamics._finish_telemetry(
+            mon,
+            cpu0,
+            Nbody6Dynamics._children_cpu_times(),
+            time() - t0,
+            2,
+        )
+        @test summary["samples"] == length(mon.samples) ≥ 3
+        @test summary["sampling_interval_s"] == 0.2
+        @test summary["threads_total"] == 2
+        csv_lines = readlines(joinpath(tele_dir, "telemetry.csv"))
+        @test csv_lines[1] == join(string.(fieldnames(Nbody6Dynamics.TelemetrySample)), ",")
+        @test length(csv_lines) == summary["samples"] + 1
+        @test all(
+            l -> count(==(','), l) == fieldcount(Nbody6Dynamics.TelemetrySample) - 1,
+            csv_lines,
+        )
+        if Sys.islinux()
+            @test mon.samples[1].n_processes ≥ 1
+            @test summary["peak_rss_mib"] > 0
+            @test haskey(summary, "cpu_user_s") && haskey(summary, "cpu_efficiency")
+            @test summary["cpu_efficiency"] ≥ 0
+            @test haskey(summary, "peak_load_1min")
+        end
+        @test !haskey(summary, "mean_gpu_util_pct")   # no GPU probe requested
+
+        # Backend-reported performance: stdout timing table and stderr Gflops
+        @test Nbody6Dynamics._timing_key("Reg.GPU.S") == "reg_gpu_s"
+        @test Nbody6Dynamics._timing_key("KS.Init.B") == "ks_init_b"
+        @test Nbody6Dynamics._timing_key("Total") == "total"
+        perf_dir = mktempdir()
+        out_perf = joinpath(perf_dir, "out1000")
+        err_perf = joinpath(perf_dir, "err1000")
+        header = "  rank   PE   N        Total     Init.    Intgrt      Reg.      Irr.        KS    Adjust       OUT Reg.GPU.S    xtsub1   itides3"
+        write(
+            out_perf,
+            "noise\n" *
+            header *
+            "\n" *
+            "   0  0    1000      1.00000      0.10      0.80      0.30      0.40      0.05      0.02      0.01      0.00  0.00000E+00         0\n" *
+            "ADJUST: ...\n" *
+            header *
+            "\n" *
+            "   0  0     998      3.12553      0.19      2.86      0.83      1.14      0.15      0.11      0.00      0.83  0.00000E+00         2\n" *
+            "   short line\n",
+        )
+        timing = Nbody6Dynamics._backend_timing_table(out_perf)
+        @test timing["n_particles"] == 998        # last table wins
+        @test timing["total"] ≈ 3.12553
+        @test timing["reg"] ≈ 0.83 && timing["irr"] ≈ 1.14 && timing["ks"] ≈ 0.15
+        @test timing["reg_gpu_s"] ≈ 0.83 && timing["xtsub1"] == 0.0 && timing["itides3"] == 2
+        @test !haskey(timing, "rank") && !haskey(timing, "pe")
+        write(out_perf, "no table\n")
+        @test Nbody6Dynamics._backend_timing_table(out_perf) === nothing
+        @test Nbody6Dynamics._backend_timing_table(joinpath(perf_dir, "absent")) === nothing
+        write(
+            err_perf,
+            "[R.0 AVX Pot.A] Ni 1000  NTOT 1000  pot(s) 0.000796\n" *
+            "[R.0 AVX Reg.F ] Nsend 1  Ngrav 1  <Ni> 1000   send(s) 0.000033 grav(s) 0.002927  Perf.(Gflops) 20.500020\n" *
+            "# Open AVX regular force - rank: 0; threads: 4\n" *
+            "[R.0 AVX Reg.F ] Nsend 3  Ngrav 3  <Ni> 900   send(s) 0.000040 grav(s) 0.003000  Perf.(Gflops) 30.5\n",
+        )
+        gf = Nbody6Dynamics._force_kernel_gflops(err_perf)
+        @test gf["samples"] == 2 && gf["mean"] ≈ 25.5 && gf["peak"] ≈ 30.5
+        write(err_perf, "nothing here\n")
+        @test Nbody6Dynamics._force_kernel_gflops(err_perf) === nothing
+        perf = Nbody6Dynamics._backend_performance(joinpath(perf_dir, "absent"), err_perf)
+        @test isempty(perf)
+
+        # Disabled sampler still carries the exact accounting
+        none = Nbody6Dynamics._finish_telemetry(nothing, cpu0, cpu1, 10.0, 4)
+        @test none["samples"] == 0 && none["sampling_interval_s"] == 0.0
+        @test none["threads_total"] == 4
+
+        # Run summary carries the thread layout and the telemetry table
+        run_dir = mktempdir()
+        out_dir = joinpath(run_dir, "output")
+        mkpath(out_dir)
+        write(joinpath(out_dir, "out1000"), " RANK:  0  OpenMP Number of Threads:  8\n")
+        cfg_t = Nbody6Config(
+            InstallConfig(),
+            BuildConfig(),
+            SimulationConfig(; omp_threads = 8, mpi_ranks = 1),
+            PostprocessConfig(),
+            VisualizationConfig(),
+            MergerPipelineConfig(),
+        )
+        Nbody6Dynamics._write_run_summary(
+            cfg_t,
+            run_dir,
+            "testrun_tele",
+            joinpath(out_dir, "out1000"),
+            out_dir,
+            3.0;
+            telemetry = summary,
+        )
+        info = Nbody6Dynamics.TOML.parsefile(joinpath(run_dir, "RUN_INFO.toml"))
+        @test info["run"]["omp_threads"] == 8
+        @test info["run"]["omp_threads_reported"] == 8
+        @test info["run"]["mpi_ranks"] == 1
+        @test info["telemetry"]["samples"] == summary["samples"]
+        @test info["telemetry"]["threads_total"] == 2
+    end
+
     # =====================================================================
     @testset "Static QA — Aqua" begin
         using Aqua

@@ -5,6 +5,24 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 
 ## [Unreleased]
 
+### Added
+- `[simulation] omp_threads`: OpenMP thread cap for the backend, exported
+  as `OMP_NUM_THREADS` by the launch script (`0` = runtime default);
+  oversubscription against the host's logical CPUs warns at launch. The
+  effective and the backend-reported thread counts and the MPI rank count
+  are recorded in `RUN_INFO.toml [run]`.
+- Runtime hardware telemetry (`src/telemetry.jl`): exact child CPU
+  accounting through `getrusage(RUSAGE_CHILDREN)` (user/system seconds,
+  CPU efficiency against the reserved threads) for every run, plus an
+  opt-out sampler (`[simulation] telemetry_interval`, default 5 s) of the
+  backend process tree (resident memory, high-water mark, cores busy, load
+  average) and, with `build.enable_gpu`, `nvidia-smi` utilization, memory,
+  power, and temperature. Time series in `runs/<id>/telemetry.csv`,
+  summary in `RUN_INFO.toml [telemetry]`, together with the backend's own
+  last cumulative timing table (`[telemetry.backend_timing]`) and the
+  regular-force kernel throughput from its stderr profile
+  (`[telemetry.force_kernel_gflops]`).
+
 Structural audit: redundancy, dead-code, and naming sweep (no physics
 changes; all numerical outputs unchanged).
 

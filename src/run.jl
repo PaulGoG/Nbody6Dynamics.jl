@@ -118,10 +118,33 @@ function _execute_simulation(
 
     # --- Execute, teeing pipeline logs to the run directory (§9) ---
     _with_run_log(run_dir) do
+        omp_threads = _effective_omp_threads(sim)
+        threads_total = omp_threads * sim.mpi_ranks
+        if threads_total > Sys.CPU_THREADS
+            @warn "CPU oversubscription: $(sim.mpi_ranks) rank(s) × $omp_threads OpenMP threads " *
+                  "exceed the $(Sys.CPU_THREADS) logical CPUs of this host"
+        end
+        @info "Backend threads: $omp_threads OpenMP × $(sim.mpi_ranks) MPI rank(s)"
+
+        cpu_before = _children_cpu_times()
         t_start = time()
         @info "Starting $label..."
         process = cd(out_dir) do
             run(`bash $launch_script`; wait = false)
+        end
+
+        # The launch script execs the binary, so its PID is the process PID;
+        # an mpirun launcher is handled through the process-tree scan.
+        monitor = if sim.telemetry_interval > 0
+            _start_telemetry(
+                run_dir,
+                getpid(process),
+                t_start;
+                interval = sim.telemetry_interval,
+                gpu_probe = cfg.build.enable_gpu,
+            )
+        else
+            nothing
         end
 
         # Live ticker is opt-in and interactive-only; the Fortran stdout is
@@ -132,13 +155,33 @@ function _execute_simulation(
         wait(process)
 
         elapsed = time() - t_start
+        telemetry =
+            _finish_telemetry(monitor, cpu_before, _children_cpu_times(), elapsed, threads_total)
+        merge!(telemetry, _backend_performance(stdout_path, stderr_path))
 
         if !success(process)
             @warn "Simulation exited with non-zero status ($(process.exitcode)) after $(_format_elapsed(elapsed))"
         end
 
         # --- Write run summary ---
-        _write_run_summary(cfg, run_dir, run_id, stdout_path, out_dir, elapsed)
+        _write_run_summary(
+            cfg,
+            run_dir,
+            run_id,
+            stdout_path,
+            out_dir,
+            elapsed;
+            telemetry = telemetry,
+        )
+        if haskey(telemetry, "cpu_efficiency")
+            @info @sprintf(
+                "CPU: %.1f s user + %.1f s system on %d thread(s); efficiency %.2f",
+                telemetry["cpu_user_s"],
+                telemetry["cpu_system_s"],
+                threads_total,
+                telemetry["cpu_efficiency"]
+            )
+        end
 
         @info "Simulation complete. Run: $run_id  ($(_format_elapsed(elapsed)))"
     end
@@ -176,6 +219,9 @@ function _write_launch_script(
         println(io, "set -o pipefail")
         println(io, "ulimit -s unlimited")
         println(io, "export OMP_STACKSIZE=4096M")
+        # OpenMP thread cap; 0 leaves the runtime default (inherited
+        # OMP_NUM_THREADS or every logical CPU).
+        sim.omp_threads > 0 && println(io, "export OMP_NUM_THREADS=$(sim.omp_threads)")
 
         # CUDA environment
         if build.enable_gpu
@@ -347,11 +393,42 @@ function _print_monitor_line(line::AbstractString, t_start::Float64 = time())::B
 end
 
 """
-    _write_run_summary(cfg, run_dir, run_id, stdout_path, out_dir, elapsed)
+    _effective_omp_threads(sim::SimulationConfig) -> Int
+
+OpenMP thread count the backend will run with: `sim.omp_threads` when set,
+otherwise an inherited positive `OMP_NUM_THREADS`, otherwise every logical
+CPU (`Sys.CPU_THREADS`, the OpenMP runtime default).
+"""
+function _effective_omp_threads(sim::SimulationConfig)::Int
+    sim.omp_threads > 0 && return sim.omp_threads
+    inherited = tryparse(Int, get(ENV, "OMP_NUM_THREADS", ""))
+    return (inherited === nothing || inherited < 1) ? Sys.CPU_THREADS : inherited
+end
+
+"""
+    _reported_omp_threads(stdout_path) -> Union{Nothing,Int}
+
+OpenMP thread count the backend itself reports at start-up (`nbody6.F`
+prints `RANK: <r> OpenMP Number of Threads: <n>` from the OpenMP runtime).
+`nothing` when the stdout capture is absent or carries no such line.
+"""
+function _reported_omp_threads(stdout_path::AbstractString)::Union{Nothing,Int}
+    isfile(stdout_path) || return nothing
+    for line in eachline(stdout_path)
+        m = match(r"OpenMP Number of Threads:\s*(\d+)", line)
+        m === nothing || return parse(Int, m.captures[1])
+    end
+    return nothing
+end
+
+"""
+    _write_run_summary(cfg, run_dir, run_id, stdout_path, out_dir, elapsed; telemetry = nothing)
 
 Write the machine-readable run summary `RUN_INFO.toml` into `run_dir`:
-run identity and wall-clock time, provenance (package and backend commits),
-the hardware fingerprint (§6; GPU probed when `build.enable_gpu`), and the
+run identity, wall-clock time, and the backend thread layout (effective
+OpenMP threads, MPI ranks); provenance (package and backend commits); the
+hardware fingerprint (§6; GPU probed when `build.enable_gpu`); the
+`[telemetry]` table from [`_finish_telemetry`](@ref) when given; and the
 output file inventory.
 """
 function _write_run_summary(
@@ -360,15 +437,20 @@ function _write_run_summary(
     run_id::String,
     stdout_path::String,
     out_dir::String = run_dir,
-    elapsed::Float64 = 0.0,
+    elapsed::Float64 = 0.0;
+    telemetry::Union{Nothing,Dict{String,Any}} = nothing,
 )
     run_table = Dict{String,Any}(
         "id" => run_id,
         "date" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
         "elapsed_seconds" => round(elapsed; digits = 1),
         "elapsed" => _format_elapsed(elapsed),
+        "omp_threads" => _effective_omp_threads(cfg.simulation),
+        "mpi_ranks" => cfg.simulation.mpi_ranks,
     )
     isfile(stdout_path) && (run_table["stdout_lines"] = countlines(stdout_path))
+    reported = _reported_omp_threads(stdout_path)
+    reported === nothing || (run_table["omp_threads_reported"] = reported)
 
     d = Dict{String,Any}(
         "run" => run_table,
@@ -379,6 +461,7 @@ function _write_run_summary(
         ),
         "hardware" => _hardware_fingerprint(; gpu_probe = cfg.build.enable_gpu),
     )
+    telemetry === nothing || (d["telemetry"] = telemetry)
     if isdir(out_dir)
         files = sort(readdir(out_dir))
         d["output"] = Dict{String,Any}(
