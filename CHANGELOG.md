@@ -6,6 +6,19 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- `[merger.nbody6]` (`Nbody6ParameterSpec`): the integration parameters
+  of `merger.inp` (`QE`, `ETAI`, `ETAR`, `NNBOPT`, `RS0`, `RMIN`, `DTMIN`,
+  `KZ(16)`) are configurable; the derivable ones default to values scaled
+  to the smallest member cluster (`resolve_nbody6_parameters`) instead of
+  the former fixed single-cluster constants, and `QE` defaults to
+  `2e-4` instead of the former `1.0` (which disabled the energy check).
+- Generation-time regime diagnostics: the combined virial ratio `T/|W|`
+  and `RBAR/r_hm,min` are computed, printed in `merger_summary.txt`, and
+  stored in `merger_ic.toml`; cold-collapse (`Q < 0.3`) and unresolved
+  members (`RBAR/r_hm,min > 5`) warn, an `rs0` wider than the smallest
+  member is refused.
+- Fail-fast bound on the rescaled Kroupa IMF: a rescale factor outside
+  ×[0.5, 2] is refused at load time, outside ×[0.7, 1.4] warned.
 - `[simulation] omp_threads`: OpenMP thread cap for the backend, exported
   as `OMP_NUM_THREADS` by the launch script (`0` = runtime default);
   oversubscription against the host's logical CPUs warns at launch. The
@@ -30,10 +43,21 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   configurations, and the recommended 2–5 cluster regime; checked against
   the engine source and two small confirmation runs.
 
+### Changed
+- Shipped merger configurations sample the natural Kroupa IMF (no
+  `mass_total`); explicit-orbit velocities were rescaled by the square
+  root of the mass ratio to preserve each configuration's virial state.
+  `verif_triorbit.toml` uses equal 0.6 M☉ bodies (`m = 900` M☉ per
+  cluster, `|v| = 9.306` code units) so the Lagrange equilibrium is exact.
+- `MergerConfig` carries an `nbody6::Nbody6ParameterSpec` field;
+  `generate_merger_inp` requires a resolved `nbody6` keyword.
+- `virialise!` shares its energy evaluation with the new
+  `_kinetic_and_potential` helper.
+
 Structural audit: redundancy, dead-code, and naming sweep (no physics
 changes; all numerical outputs unchanged).
 
-### Changed
+### Changed (audit)
 - One plot dispatcher: `generate_plots(results, vis::VisualizationConfig;
   sim_dir, animations)` is the single dispatch core; the `Nbody6Config`
   method and `postprocess_external` both route through it (removes a

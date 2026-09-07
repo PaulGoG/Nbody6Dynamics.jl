@@ -6,9 +6,11 @@
 # configuration is bound and persistent (no radial infall).
 #
 #   ω² = G m / (√3 r³)
-#   with G = 1, m = 1.5e4 M☉, r = 6 pc  →  ω ≈ 6.332,  |v| = ω r ≈ 37.99 code
-#   units (≈ 2.49 km/s per cluster). Velocity of cluster i at position
-#   (x_i, y_i): v_i = ω (−y_i, x_i, 0)  [counter-clockwise].
+#   with G = 1, m = 900 M☉ (N = 1500 equal bodies of 0.6 M☉, so the
+#   equilibrium is exact and no massive stars evolve within the run),
+#   r = 6 pc  →  ω ≈ 1.551,  |v| = ω r ≈ 9.306 code units (≈ 0.61 km/s per
+#   cluster). Velocity of cluster i at position (x_i, y_i):
+#   v_i = ω (−y_i, x_i, 0)  [counter-clockwise].
 #
 # Expected behaviour: the three cluster COMs trace a slowly rotating,
 # near-equilateral triangle while each cluster relaxes internally. With
@@ -29,39 +31,33 @@ seed       = 7
 model      = "king"
 N          = 1500
 W0         = 6.0
-mass_total = 1.5e4
+mass_total = 900.0
 rbar       = 1.0
-imf        = "kroupa"
-body1      = 100.0
-bodyn      = 0.08
+imf        = "equal"
 position   = [6.0, 0.0, 0.0]
-velocity   = [0.0, 37.99, 0.0]
+velocity   = [0.0, 9.306, 0.0]
 
 # Cluster 2 — at (-3, +5.196, 0), v = ω(−y, x, 0) = (-32.90, -19.00, 0)
 [merger.cluster2]
 model      = "king"
 N          = 1500
 W0         = 6.0
-mass_total = 1.5e4
+mass_total = 900.0
 rbar       = 1.0
-imf        = "kroupa"
-body1      = 100.0
-bodyn      = 0.08
+imf        = "equal"
 position   = [-3.0, 5.196, 0.0]
-velocity   = [-32.90, -19.00, 0.0]
+velocity   = [-8.059, -4.653, 0.0]
 
 # Cluster 3 — at (-3, -5.196, 0), v = ω(−y, x, 0) = (+32.90, -19.00, 0)
 [merger.cluster3]
 model      = "king"
 N          = 1500
 W0         = 6.0
-mass_total = 1.5e4
+mass_total = 900.0
 rbar       = 1.0
-imf        = "kroupa"
-body1      = 100.0
-bodyn      = 0.08
+imf        = "equal"
 position   = [-3.0, -5.196, 0.0]
-velocity   = [32.90, -19.00, 0.0]
+velocity   = [8.059, -4.653, 0.0]
 
 [merger.output]
 format          = "nbody"

@@ -1400,7 +1400,8 @@ TIME   0.01  0.05  0.20  0.50  1.00
             path = joinpath(@__DIR__, "..", "input_files", "verif_triorbit.toml")
             cfg = load_merger_config(path)
             @test length(cfg.clusters) == 3
-            m = 1.5e4
+            m = expected_mass(cfg.clusters[1].imf, cfg.clusters[1].N)   # 900 M☉, equal bodies
+            @test m ≈ 900.0
             rc = 6.0
             ω = sqrt(m / (sqrt(3) * rc^3))
             for spec in cfg.clusters
@@ -1458,14 +1459,14 @@ orbit_mode = "kepler"
 [merger.cluster1]
 model = "plummer"
 N = 100
-mass_total = 1000.0
+mass_total = 60.0
 rbar = 1.0
 
 [merger.cluster2]
 model = "king"
 N = 100
 W0 = 5.0
-mass_total = 1000.0
+mass_total = 60.0
 rbar = 1.0
 
 [merger.orbit]
@@ -1502,7 +1503,7 @@ orbit_mode = "explicit"
 [merger.cluster1]
 model = "plummer"
 N = 50
-mass_total = 500.0
+mass_total = 30.0
 rbar = 1.0
 position = [-5.0, 0.0, 0.0]
 velocity = [1.0, 0.0, 0.0]
@@ -1511,7 +1512,7 @@ velocity = [1.0, 0.0, 0.0]
 model = "king"
 N = 50
 W0 = 4.0
-mass_total = 500.0
+mass_total = 30.0
 rbar = 1.0
 position = [2.5, 4.33, 0.0]
 velocity = [-0.5, -0.87, 0.0]
@@ -1519,7 +1520,7 @@ velocity = [-0.5, -0.87, 0.0]
 [merger.cluster3]
 model = "plummer"
 N = 50
-mass_total = 300.0
+mass_total = 30.0
 rbar = 0.8
 position = [2.5, -4.33, 0.0]
 velocity = [-0.5, 0.87, 0.0]
@@ -1635,12 +1636,145 @@ truncate_jacobi = false
                     _merger_toml(output = "tcrit = 10.0\ndtadj = 1.0\ndeltat = 0.0"),
                     "merger.output.deltat",
                 ),
+                ("nbody6_qe", _merger_toml() * "\n[merger.nbody6]\nqe = 0.0\n", "merger.nbody6.qe"),
+                (
+                    "nbody6_kz16",
+                    _merger_toml() * "\n[merger.nbody6]\nkz16 = 5\n",
+                    "merger.nbody6.kz16",
+                ),
+                (
+                    "nbody6_rs0",
+                    _merger_toml() * "\n[merger.nbody6]\nrs0 = -0.1\n",
+                    "merger.nbody6.rs0",
+                ),
+                (
+                    "imf_rescale_factor",
+                    _merger_toml(
+                        cluster1 = "model = \"king\"\nN = 100\nrbar = 1.0\n" *
+                                   "imf = \"kroupa\"\nmass_total = 5000.0",
+                    ),
+                    "rescale factor",
+                ),
             ]
             for (label, body, expected) in cases
                 path = joinpath(TESTDIR, "merger_val_bad_$label.toml")
                 write(path, body)
                 @test_throws expected load_merger_config(path)
             end
+
+            # Moderate rescale factors load with a warning (×1.6 here)
+            warn_path = joinpath(TESTDIR, "merger_val_warn_rescale.toml")
+            write(
+                warn_path,
+                _merger_toml(
+                    cluster1 = "model = \"king\"\nN = 100\nrbar = 1.0\nimf = \"kroupa\"\n" *
+                               "mass_total = $(round(1.6 * 100 * kroupa_mean_mass(0.08, 100.0); digits = 1))",
+                ),
+            )
+            @test_logs (:warn, r"rescales the Kroupa IMF") match_mode = :any load_merger_config(
+                warn_path,
+            )
+        end
+
+        # --- [merger.nbody6] integration parameters and regime guards ---
+        @testset "Nbody6 integration parameters" begin
+            p0 = Nbody6ParameterSpec()
+            @test p0.qe == 2.0e-4 && p0.nnbopt == 0 && p0.rs0 == 0.0 && p0.kz16 == 0
+            ρ̂_plummer = Nbody6Dynamics._central_density_contrast(PlummerProfile())
+            @test ρ̂_plummer ≈ 2 * 1.305^3 rtol = 0.01
+            c6 = Nbody6Dynamics._central_density_contrast(KingProfile(W0 = 6.0))
+            c3 = Nbody6Dynamics._central_density_contrast(KingProfile(W0 = 3.0))
+            @test isfinite(c6) && c6 > c3 > 1        # monotonic in W0 (3.3 and 9.3)
+            @test c3 < ρ̂_plummer < c6                # Plummer's extended halo sits between W0 = 3 and 6
+
+            clusters = [
+                ClusterSpec(profile = PlummerProfile(), N = 100, rbar = 1.0, imf = KroupaIMF()),
+                ClusterSpec(
+                    profile = KingProfile(W0 = 6.0),
+                    N = 120,
+                    rbar = 2.0,
+                    imf = KroupaIMF(),
+                ),
+            ]
+            ranges = [1:100, 101:220]
+            r = resolve_nbody6_parameters(p0, clusters, ranges, 220, 4.0)
+            @test r.nnbopt == 20                          # clamp(round(√220) = 15, 20, 300)
+            @test r.rs0 ≈ 0.25 * cbrt(2 * 20 / 100)        # smallest member: r_h = 1/4, N_min = 100
+            @test r.rmin ≈ 4 * 0.25 / (100 * cbrt(ρ̂_plummer))
+            @test r.dtmin ≈ 0.04 * sqrt(r.rmin^3 * 220)
+            @test r.qe == 2.0e-4 && r.kz16 == 0
+            user = Nbody6ParameterSpec(;
+                qe = 1e-3,
+                nnbopt = 50,
+                rs0 = 0.1,
+                rmin = 1e-4,
+                dtmin = 1e-6,
+                kz16 = 2,
+            )
+            ru = resolve_nbody6_parameters(user, clusters, ranges, 220, 4.0)
+            @test ru.nnbopt == 50 && ru.rs0 == 0.1 && ru.rmin == 1e-4 && ru.dtmin == 1e-6
+            @test ru.kz16 == 2 && ru.qe == 1e-3
+            @test_throws ArgumentError Nbody6Dynamics._assert_resolved(p0)
+
+            # Guards: oversized RS0 refused, cold collapse and unresolved members warned
+            wide = Nbody6ParameterSpec(; nnbopt = 20, rs0 = 0.5, rmin = 1e-4, dtmin = 1e-6)
+            @test_throws ErrorException Nbody6Dynamics._check_multicluster_regime(
+                0.5,
+                2.0,
+                wide,
+                0.25,
+            )
+            @test_logs (:warn, r"cold-collapse") Nbody6Dynamics._check_multicluster_regime(
+                0.1,
+                2.0,
+                r,
+                0.25,
+            )
+            @test_logs (:warn, r"unresolved") Nbody6Dynamics._check_multicluster_regime(
+                0.5,
+                8.0,
+                r,
+                0.25,
+            )
+            @test_logs Nbody6Dynamics._check_multicluster_regime(0.5, 2.0, r, 0.25)
+
+            # Writer: unresolved specs refused, resolved values written
+            inp = joinpath(mktempdir(), "t.inp")
+            @test_throws ArgumentError generate_merger_inp(inp, 220, 4.0, 0.6; nbody6 = p0)
+            generate_merger_inp(inp, 220, 4.0, 0.6; nbody6 = ru, tcrit = 5.0)
+            txt = read(inp, String)
+            @test occursin("NNBOPT=50,", txt) && occursin("QE=1.000E-03", txt)
+            @test occursin("RS0=0.1,", txt) && occursin("DTMIN=1.000E-06,RMIN=1.000E-04,", txt)
+            @test occursin("KZ(11:20)=0 1 0 0 0 2 0 0 3 0", txt)
+
+            # [merger.nbody6] round trip
+            nb_path = joinpath(TESTDIR, "merger_nbody6.toml")
+            write(
+                nb_path,
+                """
+[merger]
+n_clusters = 2
+orbit_mode = "kepler"
+
+[merger.cluster1]
+model = "king"
+N = 100
+rbar = 1.0
+
+[merger.cluster2]
+model = "plummer"
+N = 100
+rbar = 1.0
+
+[merger.nbody6]
+qe = 1.0e-3
+nnbopt = 30
+kz16 = 1
+""",
+            )
+            cfg_nb = load_merger_config(nb_path)
+            @test cfg_nb.nbody6.qe == 1.0e-3 && cfg_nb.nbody6.nnbopt == 30
+            @test cfg_nb.nbody6.kz16 == 1 && cfg_nb.nbody6.rs0 == 0.0
         end
 
         # --- Full pipeline — kepler mode (small N) ---
@@ -1652,13 +1786,21 @@ truncate_jacobi = false
                         profile = PlummerProfile(),
                         N = 100,
                         rbar = 1.0,
-                        imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 1e3),
+                        imf = RescaledKroupaIMF(
+                            bodyn = 0.1,
+                            body1 = 50.0,
+                            target_mass = 100 * kroupa_mean_mass(0.1, 50.0),
+                        ),
                     ),
                     ClusterSpec(
                         profile = KingProfile(W0 = 5.0),
                         N = 100,
                         rbar = 1.0,
-                        imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 1e3),
+                        imf = RescaledKroupaIMF(
+                            bodyn = 0.1,
+                            body1 = 50.0,
+                            target_mass = 100 * kroupa_mean_mass(0.1, 50.0),
+                        ),
                     ),
                 ],
                 "kepler",
@@ -1681,9 +1823,18 @@ truncate_jacobi = false
             masses = [parse(Float64, split(l)[1]) for l in lines]
             @test sum(masses) ≈ 1.0 atol = 1e-10
 
-            # Verify .inp has KZ(22)=2
+            # Verify .inp has KZ(22)=2 and the resolved integration parameters
             inp_text = read(joinpath(result.output_dir, "merger.inp"), String)
-            @test occursin("KZ(21:30)", inp_text)
+            @test occursin("KZ(21:30)=0 2 2 0 0 1 0 0 0 1", inp_text)
+            @test occursin("QE=2.000E-04", inp_text) && !occursin("RS0=0.5,", inp_text)
+            ic_meta = Nbody6Dynamics.TOML.parsefile(joinpath(result.output_dir, "merger_ic.toml"))
+            @test 0 < ic_meta["nbody6"]["rs0"] ≤ minimum(c.rbar for c in cfg.clusters) / result.rbar
+            @test ic_meta["nbody6"]["rmin"] > 0 && ic_meta["nbody6"]["dtmin"] > 0
+            @test isfinite(ic_meta["meta"]["q_virial"]) && ic_meta["meta"]["q_virial"] > 0
+            @test ic_meta["meta"]["rbar_over_rhm_min"] > 1
+            summary_text = read(joinpath(result.output_dir, "merger_summary.txt"), String)
+            @test occursin("virial ratio Q = T/|W|", summary_text)
+            @test occursin("Integration (merger.inp", summary_text)
         end
 
         # --- Full pipeline — explicit mode (3 clusters) ---
@@ -1695,7 +1846,11 @@ truncate_jacobi = false
                         profile = PlummerProfile(),
                         N = 80,
                         rbar = 1.0,
-                        imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 800.0),
+                        imf = RescaledKroupaIMF(
+                            bodyn = 0.1,
+                            body1 = 50.0,
+                            target_mass = 80 * kroupa_mean_mass(0.1, 50.0),
+                        ),
                         position = [-5.0, 0.0, 0.0],
                         velocity = [1.0, 0.0, 0.0],
                     ),
@@ -1703,7 +1858,11 @@ truncate_jacobi = false
                         profile = KingProfile(W0 = 5.0),
                         N = 80,
                         rbar = 1.0,
-                        imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 800.0),
+                        imf = RescaledKroupaIMF(
+                            bodyn = 0.1,
+                            body1 = 50.0,
+                            target_mass = 80 * kroupa_mean_mass(0.1, 50.0),
+                        ),
                         position = [2.5, 4.33, 0.0],
                         velocity = [-0.5, -0.87, 0.0],
                     ),
@@ -1766,7 +1925,11 @@ truncate_jacobi = false
                         profile = KingProfile(W0 = 5.0),
                         N = 150,
                         rbar = 1.0,
-                        imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 1e3),
+                        imf = RescaledKroupaIMF(
+                            bodyn = 0.1,
+                            body1 = 50.0,
+                            target_mass = 150 * kroupa_mean_mass(0.1, 50.0),
+                        ),
                     ),
                     ClusterSpec(
                         profile = PlummerProfile(),
@@ -1804,7 +1967,11 @@ truncate_jacobi = false
                     profile = PlummerProfile(),
                     N = 60,
                     rbar = 1.0,
-                    imf = RescaledKroupaIMF(bodyn = 0.1, body1 = 50.0, target_mass = 600.0),
+                    imf = RescaledKroupaIMF(
+                        bodyn = 0.1,
+                        body1 = 50.0,
+                        target_mass = 60 * kroupa_mean_mass(0.1, 50.0),
+                    ),
                 ),
                 ClusterSpec(
                     profile = KingProfile(W0 = 5.0),

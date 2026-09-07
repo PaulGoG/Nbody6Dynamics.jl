@@ -240,12 +240,46 @@ Base.@kwdef struct MergerOutputSpec
     deltat::Float64 = 1.0
 end
 
+"""
+    Nbody6ParameterSpec(; qe = 2.0e-4, etai = 0.02, etar = 0.02, nnbopt = 0,
+                          rs0 = 0.0, rmin = 0.0, dtmin = 0.0, kz16 = 0)
+
+Integration parameters written to `merger.inp` (`[merger.nbody6]`), in the
+N-body units of the combined system. A zero for `nnbopt`, `rs0`, `rmin`, or
+`dtmin` means "derive from the member clusters at generation time"; see
+[`resolve_nbody6_parameters`](@ref) for the rules.
+
+# Fields
+- `qe`: energy-error tolerance per adjustment interval (`QE`); must be > 0
+- `etai`, `etar`: irregular and regular time-step factors; must be > 0
+- `nnbopt`: target neighbour number; `0` = `clamp(round(√N_total), 20, 300)`
+- `rs0`: initial neighbour-sphere radius; `0` = derived; must not exceed
+  the smallest member half-mass radius
+- `rmin`: KS regularisation distance; `0` = derived
+- `dtmin`: KS time-step threshold; `0` = derived
+- `kz16`: `KZ(16)`, the engine's re-derivation of `RMIN`, `DTMIN`, and
+  `ECLOSE` from its global scale radius and core density every `DTADJ`;
+  `0` keeps the written values (recommended for multi-cluster systems, whose
+  global quantities do not describe the members); 0–3 as in the Nbody6++
+  manual
+"""
+Base.@kwdef struct Nbody6ParameterSpec
+    qe::Float64 = 2.0e-4
+    etai::Float64 = 0.02
+    etar::Float64 = 0.02
+    nnbopt::Int = 0
+    rs0::Float64 = 0.0
+    rmin::Float64 = 0.0
+    dtmin::Float64 = 0.0
+    kz16::Int = 0
+end
+
 # -----------------------------------------------------------------------------
 # MergerConfig
 # -----------------------------------------------------------------------------
 
 """
-    MergerConfig(clusters, orbit_mode, orbit, output[, seed])
+    MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, seed])
 
 Top-level configuration for multi-cluster merger initial conditions.
 
@@ -263,6 +297,7 @@ Top-level configuration for multi-cluster merger initial conditions.
 - `orbit_mode::String`: `"kepler"` or `"explicit"`
 - `orbit::OrbitSpec`
 - `output::MergerOutputSpec`
+- `nbody6::Nbody6ParameterSpec`: integration parameters for `merger.inp`
 - `seed::Union{Int, Nothing}`: RNG seed. `nothing` = non-deterministic.
 """
 struct MergerConfig
@@ -270,18 +305,20 @@ struct MergerConfig
     orbit_mode::String
     orbit::OrbitSpec
     output::MergerOutputSpec
+    nbody6::Nbody6ParameterSpec
     seed::Union{Int,Nothing}
 end
 
-# Convenience form: seed defaults to nothing (non-deterministic; the drawn
-# seed is still recorded in the run metadata).
+# Convenience form: derived integration parameters and a non-deterministic
+# seed (the drawn seed is still recorded in the run metadata).
 MergerConfig(
     clusters::Vector{ClusterSpec},
     orbit_mode::AbstractString,
     orbit::OrbitSpec,
     output::MergerOutputSpec;
+    nbody6::Nbody6ParameterSpec = Nbody6ParameterSpec(),
     seed::Union{Int,Nothing} = nothing,
-) = MergerConfig(clusters, String(orbit_mode), orbit, output, seed)
+) = MergerConfig(clusters, String(orbit_mode), orbit, output, nbody6, seed)
 
 # -----------------------------------------------------------------------------
 # MergerICResult
@@ -411,6 +448,18 @@ function load_merger_config(path::AbstractString)::MergerConfig
         deltat = Float64(get(out_raw, "deltat", 1.0)),
     )
 
+    nb_raw = get(m, "nbody6", Dict{String,Any}())
+    nbody6 = Nbody6ParameterSpec(;
+        qe = Float64(get(nb_raw, "qe", 2.0e-4)),
+        etai = Float64(get(nb_raw, "etai", 0.02)),
+        etar = Float64(get(nb_raw, "etar", 0.02)),
+        nnbopt = Int(get(nb_raw, "nnbopt", 0)),
+        rs0 = Float64(get(nb_raw, "rs0", 0.0)),
+        rmin = Float64(get(nb_raw, "rmin", 0.0)),
+        dtmin = Float64(get(nb_raw, "dtmin", 0.0)),
+        kz16 = Int(get(nb_raw, "kz16", 0)),
+    )
+
     seed_raw = get(m, "seed", nothing)
     seed::Union{Int,Nothing} = if seed_raw === nothing
         nothing
@@ -434,8 +483,22 @@ function load_merger_config(path::AbstractString)::MergerConfig
     output.tcrit > 0 || error("config: merger.output.tcrit must be > 0; got $(output.tcrit)")
     output.dtadj > 0 || error("config: merger.output.dtadj must be > 0; got $(output.dtadj)")
     output.deltat > 0 || error("config: merger.output.deltat must be > 0; got $(output.deltat)")
+    _validate_nbody6(nbody6)
 
-    return MergerConfig(clusters, orbit_mode, orbit, output, seed)
+    return MergerConfig(clusters, orbit_mode, orbit, output, nbody6, seed)
+end
+
+"""Fail-fast bounds of `[merger.nbody6]`: positive tolerances and step factors, non-negative derivable entries, `kz16` in 0–3."""
+function _validate_nbody6(p::Nbody6ParameterSpec)
+    p.qe > 0 || error("config: merger.nbody6.qe must be > 0; got $(p.qe)")
+    p.etai > 0 || error("config: merger.nbody6.etai must be > 0; got $(p.etai)")
+    p.etar > 0 || error("config: merger.nbody6.etar must be > 0; got $(p.etar)")
+    p.nnbopt ≥ 0 || error("config: merger.nbody6.nnbopt must be ≥ 0 (0 = derived); got $(p.nnbopt)")
+    p.rs0 ≥ 0 || error("config: merger.nbody6.rs0 must be ≥ 0 (0 = derived); got $(p.rs0)")
+    p.rmin ≥ 0 || error("config: merger.nbody6.rmin must be ≥ 0 (0 = derived); got $(p.rmin)")
+    p.dtmin ≥ 0 || error("config: merger.nbody6.dtmin must be ≥ 0 (0 = derived); got $(p.dtmin)")
+    p.kz16 in 0:3 || error("config: merger.nbody6.kz16 must be one of 0, 1, 2, 3; got $(p.kz16)")
+    return nothing
 end
 
 # Parse one [merger.clusterN] table handling both flat and structured forms.
@@ -514,7 +577,7 @@ function _validate_cluster_spec(spec::ClusterSpec, idx::Int)
     spec.N ≥ 2 || error("config: $key.N must be ≥ 2; got $(spec.N)")
     spec.rbar > 0 || error("config: $key.rbar must be > 0; got $(spec.rbar)")
     _validate_profile(spec.profile, key)
-    _validate_imf(spec.imf, key)
+    _validate_imf(spec.imf, spec.N, key)
     return nothing
 end
 
@@ -526,14 +589,20 @@ end
 _validate_profile(::PlummerProfile, ::String) = nothing
 
 "Validate an IMF tag; `key` names the owning cluster table."
-function _validate_imf(i::KroupaIMF, key::String)
+function _validate_imf(i::KroupaIMF, ::Int, key::String)
     (0 < i.bodyn < i.body1) || error(
         "config: $key.imf must satisfy 0 < bodyn < body1; " *
         "got bodyn = $(i.bodyn), body1 = $(i.body1)",
     )
     return nothing
 end
-function _validate_imf(i::RescaledKroupaIMF, key::String)
+# Rescale factor c = target_mass / (N ⟨m⟩) of the rescaled Kroupa mode: bodies
+# stop corresponding to stars beyond a factor of two either way (refused);
+# beyond 1.4 the stellar-evolution output is already unreliable (warned).
+const _IMF_RESCALE_WARN = 1.4
+const _IMF_RESCALE_MAX = 2.0
+
+function _validate_imf(i::RescaledKroupaIMF, N::Int, key::String)
     (0 < i.bodyn < i.body1) || error(
         "config: $key.imf must satisfy 0 < bodyn < body1; " *
         "got bodyn = $(i.bodyn), body1 = $(i.body1)",
@@ -542,9 +611,25 @@ function _validate_imf(i::RescaledKroupaIMF, key::String)
         "config: $key.imf target_mass (flat form: mass_total) must be > 0; " *
         "got $(i.target_mass)",
     )
+    mean_m = kroupa_mean_mass(i.bodyn, i.body1)
+    c = i.target_mass / (N * mean_m)
+    if !(1 / _IMF_RESCALE_MAX ≤ c ≤ _IMF_RESCALE_MAX)
+        error(
+            "config: $key requests a Kroupa rescale factor of ×$(round(c; digits = 2)) " *
+            "(target_mass = $(i.target_mass) M☉ against an expected natural mass of " *
+            "$(round(N * mean_m; digits = 1)) M☉ for N = $N); factors outside " *
+            "×[$(1 / _IMF_RESCALE_MAX), $(_IMF_RESCALE_MAX)] produce bodies that are not stars. " *
+            "Drop mass_total for a natural Kroupa population, choose N and mass_total " *
+            "consistent with the IMF mean $(round(mean_m; digits = 2)) M☉, or use " *
+            "imf = \"equal\" for a collisionless super-particle model.",
+        )
+    elseif !(1 / _IMF_RESCALE_WARN ≤ c ≤ _IMF_RESCALE_WARN)
+        @warn "config: $key rescales the Kroupa IMF by ×$(round(c; digits = 2)); " *
+              "stellar-evolution output will not correspond to real stars"
+    end
     return nothing
 end
-function _validate_imf(i::EqualMassIMF, key::String)
+function _validate_imf(i::EqualMassIMF, ::Int, key::String)
     i.particle_mass > 0 || error(
         "config: $key.imf particle_mass (flat form: mass_total / N) must be > 0; " *
         "got $(i.particle_mass)",

@@ -307,6 +307,45 @@ function half_mass_radius(
     return r[order[end]]
 end
 
+# Largest N for which the exact O(N²) pair sum is evaluated by default.
+const _VIRIAL_NMAX = 200_000
+
+"""
+    _kinetic_and_potential(mass, pos, vel) -> (T, W)
+
+Kinetic energy `T = Σ ½ m v²` and exact pairwise potential energy
+`W = −Σ_{i<j} m_i m_j / r_ij` with `G = 1`. The O(N²) pair sum is threaded
+over strided rows so each task sees a balanced mix of long (small `i`) and
+short (large `i`) rows; the summation order, and hence the last bits of
+`W`, depend on `Threads.nthreads()`.
+"""
+function _kinetic_and_potential(mass::Vector{Float64}, pos::Matrix{Float64}, vel::Matrix{Float64})
+    N = length(mass)
+    T = 0.0
+    for i in 1:N
+        v2 = vel[1, i]^2 + vel[2, i]^2 + vel[3, i]^2
+        T += 0.5 * mass[i] * v2
+    end
+    n_threads = Threads.nthreads()
+    partials = zeros(Float64, n_threads)
+    @sync for t in 1:n_threads
+        Threads.@spawn begin
+            acc = 0.0
+            for i in t:n_threads:N
+                @inbounds for j in (i + 1):N
+                    dx = pos[1, i] - pos[1, j]
+                    dy = pos[2, i] - pos[2, j]
+                    dz = pos[3, i] - pos[3, j]
+                    r = sqrt(dx^2 + dy^2 + dz^2)
+                    acc -= mass[i] * mass[j] / r
+                end
+            end
+            partials[t] = acc
+        end
+    end
+    return T, sum(partials)
+end
+
 """
     virialise!(mass, pos, vel; nmax = 200_000)
 
@@ -327,7 +366,7 @@ function virialise!(
     mass::Vector{Float64},
     pos::Matrix{Float64},
     vel::Matrix{Float64};
-    nmax::Int = 200_000,
+    nmax::Int = _VIRIAL_NMAX,
 )
     N = length(mass)
     N ≤ nmax || error(
@@ -356,33 +395,7 @@ function virialise!(
         end
     end
 
-    # Kinetic energy
-    T = 0.0
-    for i in 1:N
-        v2 = vel[1, i]^2 + vel[2, i]^2 + vel[3, i]^2
-        T += 0.5 * mass[i] * v2
-    end
-
-    # Potential energy: O(N²) pair sum, threaded over strided rows so each
-    # task sees a balanced mix of long (small i) and short (large i) rows.
-    n_threads = Threads.nthreads()
-    partials = zeros(Float64, n_threads)
-    @sync for t in 1:n_threads
-        Threads.@spawn begin
-            acc = 0.0
-            for i in t:n_threads:N
-                @inbounds for j in (i + 1):N
-                    dx = pos[1, i] - pos[1, j]
-                    dy = pos[2, i] - pos[2, j]
-                    dz = pos[3, i] - pos[3, j]
-                    r = sqrt(dx^2 + dy^2 + dz^2)
-                    acc -= mass[i] * mass[j] / r
-                end
-            end
-            partials[t] = acc
-        end
-    end
-    W = sum(partials)
+    T, W = _kinetic_and_potential(mass, pos, vel)
 
     # Scale velocities: Q_target = 0.5 → T_new = 0.5 |W|
     # v_new = v_old × sqrt(0.5 |W| / T)

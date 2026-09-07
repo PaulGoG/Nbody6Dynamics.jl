@@ -102,6 +102,23 @@ In `"explicit"` mode this section is ignored (a warning is emitted if present).
 | `dtadj` | Float | `1.0` | ADJUST diagnostic interval |
 | `deltat` | Float | `1.0` | Snapshot (conf.3) interval |
 
+### `[merger.nbody6]`
+
+Integration parameters written to `merger.inp`, in N-body units of the combined system (length unit `RBAR`, mass unit `M_total`). A zero for a derivable key means "derive from the member clusters at generation time": with `r_h` the smallest member half-mass radius in those units, `N_min` the smallest post-truncation membership, and `ρ̂` the central density contrast of that member's profile, the rules are those of the engine's own `adjust.F` evaluated for the member cluster instead of the whole configuration.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `qe` | Float | `2.0e-4` | Energy-error tolerance per adjustment interval (`QE`); must be > 0 |
+| `etai` | Float | `0.02` | Irregular time-step factor; must be > 0 |
+| `etar` | Float | `0.02` | Regular time-step factor; must be > 0 |
+| `nnbopt` | Int | `0` | Target neighbour number; `0` = `clamp(round(√N_total), 20, 300)`; must be ≥ 0 |
+| `rs0` | Float | `0.0` | Initial neighbour-sphere radius; `0` = `r_h (2 NNBOPT / N_min)^{1/3}`; must be ≥ 0 and, when set, no larger than the smallest member half-mass radius |
+| `rmin` | Float | `0.0` | KS regularisation distance; `0` = `4 r_h / (N_min ρ̂^{1/3})`; must be ≥ 0 |
+| `dtmin` | Float | `0.0` | KS time-step threshold; `0` = `0.04 √(ETAI/0.02) √(RMIN³ N_total)`; must be ≥ 0 |
+| `kz16` | Int | `0` | `KZ(16)`: the engine's re-derivation of `RMIN`, `DTMIN`, and `ECLOSE` from its global scale radius and core density every `DTADJ`; `0` keeps the written values (recommended for multi-cluster systems); one of 0, 1, 2, 3 |
+
+The resolved values appear in `merger_summary.txt` and in `merger_ic.toml` (`[nbody6]`), next to the combined virial ratio `Q = T/|W|` and the ratio `RBAR/r_hm,min` (`[meta]`). Generation warns when `Q < 0.3` (cold-collapse regime: global infall dominates and the engine's global diagnostics are meaningless until the remnant forms) or when `RBAR/r_hm,min > 5` (members unresolved by the single-centre diagnostics), and refuses an `rs0` wider than the smallest member.
+
 ### Flat legacy cluster form
 
 Fully annotated example (Kepler mode):
@@ -147,8 +164,8 @@ deltat          = 0.5
 **IMF resolution in the flat form:**
 
 - `imf = "kroupa"` **without** `mass_total` → natural Kroupa sampling in `[bodyn, body1]`; the total mass is an *output* (the sum of the samples)
-- `imf = "kroupa"` **with** `mass_total` → rescaled Kroupa ("super-particle" mode): samples are uniformly rescaled so the sum equals `mass_total`. A warning is emitted at sample time when the rescale factor falls outside ×[0.7, 1.4], since individual body masses then no longer correspond to real stars and stellar-evolution output is non-physical
-- `imf = "kroupa_rescaled"` → same as above but explicit (silences nothing by itself, but documents intent); requires `mass_total`
+- `imf = "kroupa"` **with** `mass_total` → rescaled Kroupa: samples are uniformly rescaled so the sum equals `mass_total`. The rescale factor `mass_total / (N ⟨m⟩)` is checked when the file is loaded: outside ×[0.7, 1.4] the loader warns, outside ×[0.5, 2] it refuses the configuration, because the bodies would no longer be stars while stellar evolution is always active in merger runs. Choose `N` and `mass_total` consistent with the IMF mean (about 0.58 M☉ over 0.08–100 M☉), drop `mass_total`, or use `imf = "equal"` for a collisionless super-particle model
+- `imf = "kroupa_rescaled"` → same as above but explicit (documents intent; the same bounds apply); requires `mass_total`
 - `imf = "equal"` → all bodies get mass `mass_total / N`; requires `mass_total`
 
 In `"explicit"` orbit mode each cluster table additionally requires:
@@ -212,7 +229,7 @@ The metadata file `merger_ic.toml` written next to `dat.10` stores cluster specs
 
 ## `verif_triorbit.toml` — Lagrange-equilibrium triangle
 
-Three equal-mass clusters (`m = 1.5×10⁴` M☉ each) on an equilateral triangle at radius `r = 6` pc from the centre of mass, given tangential (counter-clockwise) velocities so the configuration rotates rigidly as a bound Lagrange solution instead of falling inward.
+Three equal-mass clusters (`m = 900` M☉ each: 1500 equal bodies of 0.6 M☉, so the equilibrium is exact and no massive star evolves within the run) on an equilateral triangle at radius `r = 6` pc from the centre of mass, given tangential (counter-clockwise) velocities so the configuration rotates rigidly as a bound Lagrange solution instead of falling inward.
 
 For three equal masses `m` on an equilateral triangle of circumradius `r`, the net force on each body points at the centre with magnitude `G m² / (√3 r²)`; setting this equal to `m ω² r` gives the equilibrium angular velocity
 
@@ -222,7 +239,7 @@ For three equal masses `m` on an equilateral triangle of circumradius `r`, the n
 \mathbf{v}_i = \omega\, (-y_i,\ x_i,\ 0).
 ```
 
-With `G = 1` (code units), `m = 1.5e4`, `r = 6`: `ω ≈ 6.332` and `|v| = ω r ≈ 37.99` code units (≈ 2.49 km/s) per cluster — exactly the `velocity` entries in the file.
+With `G = 1` (code units), `m = 900`, `r = 6`: `ω ≈ 1.551` and `|v| = ω r ≈ 9.306` code units (≈ 0.61 km/s) per cluster — exactly the `velocity` entries in the file.
 
 Expected behaviour: the three cluster COMs trace a slowly rotating triangle while each cluster relaxes internally. This verifies the COM-trajectory tracking and the per-cluster virial diagnostic (`per_cluster_virial`) for *separated, stable* clusters; the config's equilibrium condition is also asserted in the test suite.
 
