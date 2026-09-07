@@ -321,9 +321,10 @@ function _start_telemetry(
     t_start::Float64;
     interval::Float64,
     gpu_probe::Bool,
+    csv_name::AbstractString = "telemetry.csv",
 )::TelemetryMonitor
     interval > 0 || throw(ArgumentError("telemetry interval must be > 0 s; got $interval"))
-    csv_path = joinpath(run_dir, "telemetry.csv")
+    csv_path = joinpath(run_dir, csv_name)
     mon = TelemetryMonitor(
         Int(pid),
         t_start,

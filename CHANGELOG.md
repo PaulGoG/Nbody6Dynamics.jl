@@ -6,6 +6,12 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Restarts: `restart_simulation(run_dir; tcrit_extra, dump, tcrtp0)`
+  continues a run from an engine COMMON dump (`KSTART = 2`) in the same
+  output directory with appended outputs; the original input is copied
+  into `output/` at launch and recorded in `RUN_INFO.toml`, which now
+  keeps a `segments` list (one entry per launch) with accumulated elapsed
+  time and per-segment telemetry CSVs.
 - `[merger.nbody6]` (`Nbody6ParameterSpec`): the integration parameters
   of `merger.inp` (`QE`, `ETAI`, `ETAR`, `NNBOPT`, `RS0`, `RMIN`, `DTMIN`,
   `KZ(16)`) are configurable; the derivable ones default to values scaled

@@ -2424,6 +2424,100 @@ dtplot = 2.0
     end
 
     # =====================================================================
+    @testset "Restart bookkeeping" begin
+        # Dump selection by time suffix
+        d = mktempdir()
+        for f in ("comm.1_0.0", "comm.2_2.0", "comm.1_4.0", "comm.1", "conf.3_1", "comm.2_x")
+            touch(joinpath(d, f))
+        end
+        @test Nbody6Dynamics._dump_time("comm.1_12.5") == 12.5
+        @test isnan(Nbody6Dynamics._dump_time("comm.1")) &&
+              isnan(Nbody6Dynamics._dump_time("conf.3_1"))
+        @test Nbody6Dynamics._latest_dump(d) == "comm.1_4.0"
+        @test Nbody6Dynamics._latest_dump(mktempdir()) === nothing
+
+        # Restart input from an original merger input: KSTART=2, TCRIT as increment,
+        # only the first two namelists
+        orig = joinpath(d, "merger.inp")
+        write(
+            orig,
+            "&INNBODY6\nKSTART=1,TCOMP=1E+08,TCRTP0=3600,isernb=40,iserreg=40,iserks=0 /\n\n" *
+            "&ININPUT\nN=1957,NFIX=1,NCRIT=10,NRAND=7,NNBOPT=44,NRUN=1,NCOMM=10,\n" *
+            "ETAI=0.02,ETAR=0.02,RS0=0.1415,DTADJ=0.5000,DELTAT=1.0000,TCRIT=5.00,QE=2.000E-04,RBAR=6.3,ZMBAR=0.6,\n" *
+            "KZ(1:10)=1 -1 2 0 0 0 3 0 0 0\nKZ(11:20)=0 1 0 0 0 0 0 0 3 0\n" *
+            "DTMIN=2.698E-05,RMIN=6.128E-04,ETAU=0.1,ECLOSE=1,GMIN=1.000E-06,GMAX=0.01,SMAX=1,\n" *
+            "Level='C' /\n\n&INSSE /\n\n&INDATA\nALPHAS=2.35 /\n",
+        )
+        rin = joinpath(d, "restart.inp")
+        Nbody6Dynamics._write_restart_inp(rin, orig, 3.0; tcrtp0 = 900.0)
+        txt = read(rin, String)
+        @test occursin("KSTART=2,TCOMP=1E+08,TCRTP0=900,isernb=40", txt)
+        @test occursin("TCRIT=3.0000,QE=2.000E-04", txt)
+        @test occursin("KZ(11:20)=0 1 0 0 0 0 0 0 3 0", txt) && occursin("Level='C' /", txt)
+        @test !occursin("&INSSE", txt) && !occursin("&INDATA", txt)
+        @test_throws ArgumentError Nbody6Dynamics._write_restart_inp(rin, orig, 0.0)
+
+        # RUN_INFO segments accumulate across launches
+        run_dir = mktempdir()
+        out_dir = joinpath(run_dir, "output")
+        mkpath(out_dir)
+        write(joinpath(out_dir, "out1000"), "x\n")
+        cfg_r = Nbody6Config(
+            InstallConfig(),
+            BuildConfig(),
+            SimulationConfig(),
+            PostprocessConfig(),
+            VisualizationConfig(),
+            MergerPipelineConfig(),
+        )
+        seg(i, kind, el) = Dict{String,Any}(
+            "index" => i,
+            "kind" => kind,
+            "elapsed_seconds" => el,
+            "dump" => kind == "restart" ? "comm.1_4.0" : "",
+        )
+        Nbody6Dynamics._write_run_summary(
+            cfg_r,
+            run_dir,
+            "r1",
+            joinpath(out_dir, "out1000"),
+            out_dir,
+            10.0;
+            input_file = "merger.inp",
+            segment = seg(1, "initial", 10.0),
+        )
+        @test Nbody6Dynamics._segment_count(joinpath(run_dir, "RUN_INFO.toml")) == 1
+        Nbody6Dynamics._write_run_summary(
+            cfg_r,
+            run_dir,
+            "r1",
+            joinpath(out_dir, "out1000"),
+            out_dir,
+            5.0;
+            input_file = "restart.inp",
+            segment = seg(2, "restart", 5.0),
+        )
+        info = Nbody6Dynamics.TOML.parsefile(joinpath(run_dir, "RUN_INFO.toml"))
+        @test info["run"]["segments"] == 2
+        @test info["run"]["input_file"] == "merger.inp"   # original kept across restarts
+        @test info["run"]["elapsed_seconds"] == 15.0
+        @test length(info["segments"]) == 2 && info["segments"][2]["dump"] == "comm.1_4.0"
+
+        # Launch script append mode for restarts
+        args = (joinpath(run_dir, "nbody6++"), "in.inp", "out1000", "err1000")
+        s_app = read(
+            Nbody6Dynamics._write_launch_script(run_dir, args..., cfg_r; append = true),
+            String,
+        )
+        @test occursin(">> \"out1000\" 2>> \"err1000\"", s_app)
+        s_new = read(Nbody6Dynamics._write_launch_script(run_dir, args..., cfg_r), String)
+        @test occursin("> \"out1000\" 2> \"err1000\"", s_new) && !occursin(">>", s_new)
+
+        # restart_simulation refuses runs without the bookkeeping it needs
+        @test_throws ErrorException restart_simulation(mktempdir(); tcrit_extra = 1.0)
+    end
+
+    # =====================================================================
     @testset "Hardware telemetry" begin
         # /proc stat parser: command names may contain spaces and parentheses
         rec =

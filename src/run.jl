@@ -77,15 +77,152 @@ function run_simulation(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_R
     return _execute_simulation(cfg, run_dir, out_dir, input_path; base_dir = base_dir)
 end
 
+# ---------------------------------------------------------------------------
+# Restarts from the engine's COMMON dumps
+# ---------------------------------------------------------------------------
+
+"""
+    _dump_time(name) -> Float64
+
+Time suffix of a COMMON dump file name (`comm.1_12.5` → 12.5); `NaN` for
+names that are not dumps.
+"""
+function _dump_time(name::AbstractString)::Float64
+    m = match(r"^comm\.[12]_([0-9.eE+-]+)$", name)
+    m === nothing && return NaN
+    return something(tryparse(Float64, m.captures[1]), NaN)
+end
+
+"""
+    _latest_dump(out_dir) -> Union{Nothing,String}
+
+File name of the COMMON dump with the largest time suffix in `out_dir`
+(`comm.1_<t>` / `comm.2_<t>`, written every `NCOMM × DELTAT`), or
+`nothing` when none exists.
+"""
+function _latest_dump(out_dir::AbstractString)::Union{Nothing,String}
+    isdir(out_dir) || return nothing
+    best = nothing
+    best_t = -Inf
+    for f in readdir(out_dir)
+        t = _dump_time(f)
+        isnan(t) && continue
+        if t > best_t
+            best_t = t
+            best = f
+        end
+    end
+    return best
+end
+
+"""
+    _write_restart_inp(path, original_inp, tcrit_extra; tcrtp0 = nothing)
+
+Write the restart input for `KSTART = 2` from the original input file: the
+`&INNBODY6` block with `KSTART=2` (and `TCRTP0` replaced when given) and
+the original `&ININPUT` block with `TCRIT` set to `tcrit_extra`, which the
+engine adds to the saved time (`modify.F`: `TCRIT = TTOT + TCRIT`). Later
+namelists are not read on restart and are omitted.
+"""
+function _write_restart_inp(
+    path::AbstractString,
+    original_inp::AbstractString,
+    tcrit_extra::Real;
+    tcrtp0::Union{Nothing,Real} = nothing,
+)
+    tcrit_extra > 0 || throw(ArgumentError("tcrit_extra must be > 0; got $tcrit_extra"))
+    text = read(original_inp, String)
+    m6 = match(r"&INNBODY6\s*\n(.*?)/", text)
+    mi = match(r"&ININPUT\s*\n(.*?Level='[^']*')\s*/"ms, text)
+    (m6 === nothing || mi === nothing) &&
+        error("restart: could not locate &INNBODY6 and &ININPUT blocks in $original_inp")
+    b6 = replace(m6.captures[1], r"KSTART\s*=\s*\d+" => "KSTART=2")
+    if tcrtp0 !== nothing
+        b6 = replace(b6, r"TCRTP0\s*=\s*[0-9.eE+-]+" => @sprintf("TCRTP0=%.6G", tcrtp0))
+    end
+    bi = replace(mi.captures[1], r"TCRIT\s*=\s*[0-9.eE+-]+" => @sprintf("TCRIT=%.4f", tcrit_extra))
+    occursin("TCRIT=", bi) ||
+        error("restart: no TCRIT entry found in the &ININPUT block of $original_inp")
+    open(path, "w") do io
+        println(io, "&INNBODY6")
+        print(io, rstrip(b6), " /\n\n")
+        println(io, "&ININPUT")
+        print(io, rstrip(bi), " /\n")
+    end
+    return path
+end
+
+"""
+    restart_simulation(run_dir; tcrit_extra, dump = nothing, tcrtp0 = nothing,
+                       base_dir = _PROJECT_ROOT) -> String
+
+Continue a finished or interrupted run from one of the engine's COMMON
+dumps for `tcrit_extra` further N-body time units. The chosen dump
+(default: the latest `comm.[12]_<t>` in `output/`) is copied to
+`output/comm.1`, which is what `KSTART = 2` reads; a restart input is
+written from the run's original input file; the engine runs in the same
+output directory with stdout and stderr appended, so `out1000`, `lagr.7`,
+`esc.11`, and the time-stamped snapshot and stellar-evolution files
+continue. `RUN_INFO.toml` gains one entry in its `segments` list per
+launch and the telemetry of each segment goes to its own CSV. Returns
+`run_dir`.
+"""
+function restart_simulation(
+    run_dir::AbstractString;
+    tcrit_extra::Real,
+    dump::Union{Nothing,AbstractString} = nothing,
+    tcrtp0::Union{Nothing,Real} = nothing,
+    base_dir::AbstractString = _PROJECT_ROOT,
+)::String
+    run_dir = abspath(run_dir)
+    out_dir = joinpath(run_dir, "output")
+    isdir(out_dir) || error("restart: $out_dir does not exist")
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(info_path) || error("restart: $info_path not found; only pipeline runs can be restarted")
+    info = TOML.parsefile(info_path)
+    original_inp = joinpath(out_dir, get(info["run"], "input_file", ""))
+    isfile(original_inp) || error(
+        "restart: original input file not recorded or missing (run.input_file in RUN_INFO.toml)",
+    )
+    cfg = load_config(joinpath(run_dir, "config.toml"))
+
+    chosen = dump === nothing ? _latest_dump(out_dir) : String(dump)
+    chosen === nothing && error("restart: no COMMON dump (comm.[12]_<t>) in $out_dir")
+    dump_path = joinpath(out_dir, chosen)
+    isfile(dump_path) || error("restart: dump not found: $dump_path")
+    target = joinpath(out_dir, "comm.1")
+    _backup_existing(target)
+    cp(dump_path, target; force = true)
+    @info "Restart from $chosen (t = $(_dump_time(chosen))) for $tcrit_extra more N-body time units"
+
+    restart_inp = joinpath(out_dir, "restart.inp")
+    _backup_existing(restart_inp)
+    _write_restart_inp(restart_inp, original_inp, tcrit_extra; tcrtp0 = tcrtp0)
+
+    return _execute_simulation(
+        cfg,
+        run_dir,
+        out_dir,
+        restart_inp;
+        base_dir = base_dir,
+        label = "restart",
+        restart = (dump = chosen, tcrit_extra = Float64(tcrit_extra)),
+    )
+end
+
 """
     _execute_simulation(cfg, run_dir, out_dir, input_path;
-                        base_dir = _PROJECT_ROOT, label = "simulation") -> String
+                        base_dir = _PROJECT_ROOT, label = "simulation",
+                        restart = nothing) -> String
 
-Shared execution core for [`run_simulation`](@ref) and the merger pipeline:
-locates the binary, freezes the config into `run_dir`, copies the binary
-into `out_dir` for reproducibility, writes the launch script, and runs it
-under the teed run log (§9) with the opt-in live monitor. `input_path` must
-be absolute (the launch script executes from `out_dir`). Returns `run_dir`.
+Shared execution core for [`run_simulation`](@ref), the merger pipeline,
+and [`restart_simulation`](@ref): locates the binary, freezes the config
+into `run_dir`, copies the binary and the input file into `out_dir` for
+reproducibility, writes the launch script, and runs it under the teed run
+log (§9) with the opt-in live monitor. `input_path` must be absolute (the
+launch script executes from `out_dir`). With `restart = (; dump,
+tcrit_extra)` the binary copy is reused, stdout and stderr are appended,
+and the run summary records a further segment. Returns `run_dir`.
 """
 function _execute_simulation(
     cfg::Nbody6Config,
@@ -94,27 +231,40 @@ function _execute_simulation(
     input_path::AbstractString;
     base_dir::AbstractString = _PROJECT_ROOT,
     label::AbstractString = "simulation",
+    restart::Union{Nothing,NamedTuple} = nothing,
 )::String
     sim = cfg.simulation
     run_id = basename(run_dir)
+    is_restart = restart !== nothing
 
     # --- Locate binary ---
     src_dir = joinpath(base_dir, cfg.install.install_dir)
     binary = _find_binary(src_dir, sim.binary_name)
 
     # --- Save frozen config ---
-    save_config(cfg, joinpath(run_dir, "config.toml"))
+    is_restart || save_config(cfg, joinpath(run_dir, "config.toml"))
 
-    # --- Copy binary for reproducibility ---
+    # --- Copy binary and input for reproducibility (kept on restart) ---
     local_binary = joinpath(out_dir, basename(binary))
-    cp(binary, local_binary; force = true)
-    chmod(local_binary, 0o755)
+    if !(is_restart && isfile(local_binary))
+        cp(binary, local_binary; force = true)
+        chmod(local_binary, 0o755)
+    end
+    input_copy = joinpath(out_dir, basename(input_path))
+    abspath(input_path) == abspath(input_copy) || cp(input_path, input_copy; force = true)
 
     # --- Build launch script ---
     stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
     stderr_path = joinpath(out_dir, "err1000")
-    launch_script =
-        _write_launch_script(out_dir, local_binary, input_path, stdout_path, stderr_path, cfg)
+    launch_script = _write_launch_script(
+        out_dir,
+        local_binary,
+        input_path,
+        stdout_path,
+        stderr_path,
+        cfg;
+        append = is_restart,
+    )
 
     # --- Execute, teeing pipeline logs to the run directory (§9) ---
     _with_run_log(run_dir) do
@@ -133,6 +283,9 @@ function _execute_simulation(
             run(`bash $launch_script`; wait = false)
         end
 
+        # Segment index: 1 for the initial launch, one more per restart.
+        segment = 1 + _segment_count(joinpath(run_dir, "RUN_INFO.toml"))
+
         # The launch script execs the binary, so its PID is the process PID;
         # an mpirun launcher is handled through the process-tree scan.
         monitor = if sim.telemetry_interval > 0
@@ -142,6 +295,7 @@ function _execute_simulation(
                 t_start;
                 interval = sim.telemetry_interval,
                 gpu_probe = cfg.build.enable_gpu,
+                csv_name = segment == 1 ? "telemetry.csv" : "telemetry_$(segment).csv",
             )
         else
             nothing
@@ -172,6 +326,17 @@ function _execute_simulation(
             out_dir,
             elapsed;
             telemetry = telemetry,
+            input_file = basename(input_copy),
+            segment = Dict{String,Any}(
+                "index" => segment,
+                "kind" => is_restart ? "restart" : "initial",
+                "date" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
+                "elapsed_seconds" => round(elapsed; digits = 1),
+                "exit_status" => process.exitcode,
+                "input" => basename(input_copy),
+                "dump" => is_restart ? restart.dump : "",
+                "tcrit_extra" => is_restart ? restart.tcrit_extra : 0.0,
+            ),
         )
         if haskey(telemetry, "cpu_efficiency")
             @info @sprintf(
@@ -207,8 +372,11 @@ function _write_launch_script(
     input::AbstractString,
     stdout_file::AbstractString,
     stderr_file::AbstractString,
-    cfg::Nbody6Config,
+    cfg::Nbody6Config;
+    append::Bool = false,
 )::String
+    redir_out = append ? ">>" : ">"
+    redir_err = append ? "2>>" : "2>"
     path = joinpath(run_dir, "_launch.sh")
     sim = cfg.simulation
     build = cfg.build
@@ -241,12 +409,12 @@ function _write_launch_script(
             println(
                 io,
                 "exec mpirun --bind-to none -np $(sim.mpi_ranks) " *
-                "\$STDBUF \"$binary\" < \"$input\" > \"$stdout_file\" 2> \"$stderr_file\"",
+                "\$STDBUF \"$binary\" < \"$input\" $redir_out \"$stdout_file\" $redir_err \"$stderr_file\"",
             )
         else
             println(
                 io,
-                "exec \$STDBUF \"$binary\" < \"$input\" > \"$stdout_file\" 2> \"$stderr_file\"",
+                "exec \$STDBUF \"$binary\" < \"$input\" $redir_out \"$stdout_file\" $redir_err \"$stderr_file\"",
             )
         end
     end
@@ -421,15 +589,25 @@ function _reported_omp_threads(stdout_path::AbstractString)::Union{Nothing,Int}
     return nothing
 end
 
+"""Number of entries in the `segments` list of an existing `RUN_INFO.toml` (0 without the file)."""
+function _segment_count(info_path::AbstractString)::Int
+    isfile(info_path) || return 0
+    return length(get(TOML.parsefile(info_path), "segments", Any[]))
+end
+
 """
-    _write_run_summary(cfg, run_dir, run_id, stdout_path, out_dir, elapsed; telemetry = nothing)
+    _write_run_summary(cfg, run_dir, run_id, stdout_path, out_dir, elapsed;
+                       telemetry = nothing, input_file = "", segment = nothing)
 
 Write the machine-readable run summary `RUN_INFO.toml` into `run_dir`:
 run identity, wall-clock time, and the backend thread layout (effective
 OpenMP threads, MPI ranks); provenance (package and backend commits); the
 hardware fingerprint (§6; GPU probed when `build.enable_gpu`); the
-`[telemetry]` table from [`_finish_telemetry`](@ref) when given; and the
-output file inventory.
+`[telemetry]` table from [`_finish_telemetry`](@ref) when given; the
+output file inventory; and the `segments` list, one entry per launch
+(initial run and restarts). On a restart the previous segments are kept,
+`run.elapsed_seconds` accumulates, and the latest telemetry replaces the
+table (per-segment CSVs remain).
 """
 function _write_run_summary(
     cfg::Nbody6Config,
@@ -439,15 +617,32 @@ function _write_run_summary(
     out_dir::String = run_dir,
     elapsed::Float64 = 0.0;
     telemetry::Union{Nothing,Dict{String,Any}} = nothing,
+    input_file::AbstractString = "",
+    segment::Union{Nothing,Dict{String,Any}} = nothing,
 )
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    previous = isfile(info_path) ? TOML.parsefile(info_path) : Dict{String,Any}()
+    segments = Vector{Any}(get(previous, "segments", Any[]))
+    segment === nothing || push!(segments, segment)
+    elapsed_total =
+        elapsed + sum(
+            Float64(get(s, "elapsed_seconds", 0.0)) for
+            s in segments[1:(end - (segment === nothing ? 0 : 1))];
+            init = 0.0,
+        )
     run_table = Dict{String,Any}(
         "id" => run_id,
         "date" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
-        "elapsed_seconds" => round(elapsed; digits = 1),
-        "elapsed" => _format_elapsed(elapsed),
+        "elapsed_seconds" => round(elapsed_total; digits = 1),
+        "elapsed" => _format_elapsed(elapsed_total),
         "omp_threads" => _effective_omp_threads(cfg.simulation),
         "mpi_ranks" => cfg.simulation.mpi_ranks,
+        "segments" => length(segments),
     )
+    # The original input is recorded once; restarts must not replace it.
+    previous_input = get(get(previous, "run", Dict{String,Any}()), "input_file", "")
+    recorded_input = isempty(previous_input) ? String(input_file) : String(previous_input)
+    isempty(recorded_input) || (run_table["input_file"] = recorded_input)
     isfile(stdout_path) && (run_table["stdout_lines"] = countlines(stdout_path))
     reported = _reported_omp_threads(stdout_path)
     reported === nothing || (run_table["omp_threads_reported"] = reported)
@@ -462,6 +657,7 @@ function _write_run_summary(
         "hardware" => _hardware_fingerprint(; gpu_probe = cfg.build.enable_gpu),
     )
     telemetry === nothing || (d["telemetry"] = telemetry)
+    isempty(segments) || (d["segments"] = segments)
     if isdir(out_dir)
         files = sort(readdir(out_dir))
         d["output"] = Dict{String,Any}(
@@ -470,7 +666,7 @@ function _write_run_summary(
         )
     end
 
-    open(joinpath(run_dir, "RUN_INFO.toml"), "w") do io
+    open(info_path, "w") do io
         TOML.print(io, d)
     end
     return nothing

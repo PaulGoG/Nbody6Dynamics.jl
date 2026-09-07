@@ -258,6 +258,14 @@ During execution, ADJUST summaries are echoed live:
 [ Info:   t_NB=0.0500  t_Myr=0.4  N=9998  |ΔE/E|=1.23e-06  Q_vir=0.987
 ```
 
+### Restarting a run
+
+The engine writes a COMMON dump every `ncomm × deltat` N-body time units (`output/comm.1_<t>`, `output/comm.2_<t>`, alternating). `restart_simulation(run_dir; tcrit_extra = 5.0)` continues the run from the latest dump (or a chosen one, `dump = "comm.2_20.0"`) for `tcrit_extra` more N-body time units: the dump is copied to `output/comm.1`, which `KSTART = 2` reads; the original input recorded in `RUN_INFO.toml` (`run.input_file`, copied into `output/` at launch) supplies the `&ININPUT` block of the restart input, with `TCRIT` set to the increment the engine adds to the saved time; the termination time in Myr can be raised with `tcrtp0`. The engine runs in the same output directory with stdout and stderr appended, so the diagnostics, Lagrangian-radii, and escaper files continue and the time-stamped snapshot and stellar-evolution files carry on; post-processing reads the concatenated run as one. `RUN_INFO.toml` keeps one entry per launch in `segments` (kind, dump, extra time, elapsed, exit status), `run.elapsed_seconds` accumulates, and each segment's telemetry goes to `telemetry_<k>.csv`.
+
+```julia
+restart_simulation("runs/merger_demo_20260907_181355_2b7f"; tcrit_extra = 5.0)
+```
+
 ### Hardware telemetry
 
 Every run records the exact CPU consumption of the backend process tree from `getrusage(RUSAGE_CHILDREN)` deltas: `cpu_user_s`, `cpu_system_s`, `threads_total` (effective OpenMP threads × MPI ranks), and `cpu_efficiency = (user + system) / (elapsed × threads_total)`, the fraction of the reserved CPU capacity the integration actually used. These land in the `[telemetry]` table of `RUN_INFO.toml`.

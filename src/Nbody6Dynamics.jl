@@ -571,7 +571,7 @@ export plot_cluster_separation, plot_cluster_virial, per_cluster_virial, parse_m
 export ClusterStructure, cluster_structure, plot_cluster_structure
 export animate_cluster, animate_hr, animate_lagrangian
 export set_publication_theme!
-export generate_run_id, export_for_paper
+export generate_run_id, restart_simulation, export_for_paper
 export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 export detect_platform, check_dependencies, detect_cuda_path
 export ClusterSpec,
