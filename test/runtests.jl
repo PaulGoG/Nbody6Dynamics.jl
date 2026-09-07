@@ -1403,7 +1403,7 @@ TIME   0.01  0.05  0.20  0.50  1.00
             m = expected_mass(cfg.clusters[1].imf, cfg.clusters[1].N)   # 900 M☉, equal bodies
             @test m ≈ 900.0
             rc = 6.0
-            ω = sqrt(m / (sqrt(3) * rc^3))
+            ω = sqrt(Nbody6Dynamics._G_PC_KMS2_MSUN * m / (sqrt(3) * rc^3))   # km s⁻¹ pc⁻¹
             for spec in cfg.clusters
                 r⃗ = spec.position
                 v⃗ = spec.velocity

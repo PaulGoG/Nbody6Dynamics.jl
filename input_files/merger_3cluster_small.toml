@@ -17,7 +17,7 @@ imf = "kroupa"
 body1 = 50.0
 bodyn = 0.1
 position = [-8.0, 0.0, 0.0]
-velocity = [0.3034, 0, 0]
+velocity = [0.0199, 0, 0]
 
 [merger.cluster2]
 model = "king"
@@ -28,7 +28,7 @@ imf = "kroupa"
 body1 = 50.0
 bodyn = 0.1
 position = [4.0, 6.93, 0.0]
-velocity = [-0.1517, -0.263, 0]
+velocity = [-0.009949, -0.01725, 0]
 
 [merger.cluster3]
 model = "plummer"
@@ -38,7 +38,7 @@ imf = "kroupa"
 body1 = 50.0
 bodyn = 0.1
 position = [4.0, -6.93, 0.0]
-velocity = [-0.1517, 0.263, 0]
+velocity = [-0.009949, 0.01725, 0]
 
 [merger.output]
 format = "nbody"

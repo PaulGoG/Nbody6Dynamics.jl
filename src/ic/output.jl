@@ -5,12 +5,8 @@
 # Velocity unit of the internal (G = 1, M☉, pc) code-unit system:
 # sqrt(G M☉ / pc) in km/s. Sampled and Kepler velocities carry this unit
 # until the NB-unit conversion for dat.10.
-const _CODE_VSTAR_KMS = 0.06557
-# Code time unit pc / (km s⁻¹) / _CODE_VSTAR_KMS in Myr (≈ 14.91 Myr), the
-# crossing-time unit of a 1 M☉, 1 pc system with G = 1.
-const _PC_KM = 3.0857e13
-const _MYR_S = 3.15576e13
-const _CODE_TIME_MYR = _PC_KM / _MYR_S / _CODE_VSTAR_KMS
+# Code-unit constants (_G_PC_KMS2_MSUN, _CODE_VSTAR_KMS, _CODE_TIME_MYR)
+# are defined in orbits.jl.
 
 """
     crossing_time(M, E) -> Float64
@@ -669,7 +665,7 @@ function _write_merger_ic_metadata(
     d = Dict{String,Any}(
         "meta" => Dict{String,Any}(
             "generated_at" => Dates.format(now(), "yyyy-mm-dd HH:MM:SS"),
-            "schema_version" => 2,
+            "schema_version" => 3,   # 3: explicit-orbit velocities in km s⁻¹
             "commit" => _git_commit(_PROJECT_ROOT),
             "seed" => seed,
             "external_rng" => external_rng,
@@ -863,7 +859,7 @@ function _write_merger_summary(
                 )
                 @printf(
                     io,
-                    "  vel=[%.2f, %.2f, %.2f]",
+                    "  vel=[%.3f, %.3f, %.3f] km/s",
                     spec.velocity[1],
                     spec.velocity[2],
                     spec.velocity[3]

@@ -63,6 +63,13 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   the engine source and two small confirmation runs.
 
 ### Changed
+- Explicit-orbit `velocity` entries of the merger TOML are in km s⁻¹
+  (formerly the generator's code unit, 0.0656 km s⁻¹); the conversion
+  happens in `combine_clusters_explicit`, `merger_ic.toml` stores km s⁻¹
+  (schema version 3), and the shipped explicit configurations were
+  converted. The code velocity unit derives from an explicit
+  `G = 4.30091e-3 pc (km/s)² M☉⁻¹` (0.06558 km s⁻¹ instead of the rounded
+  0.06557).
 - Shipped merger configurations sample the natural Kroupa IMF (no
   `mass_total`); explicit-orbit velocities were rescaled by the square
   root of the mass ratio to preserve each configuration's virial state.

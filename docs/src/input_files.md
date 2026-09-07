@@ -204,8 +204,7 @@ In `"explicit"` orbit mode each cluster table additionally requires:
 
 ```toml
 position = [x, y, z]        # centre-of-mass position [pc]
-velocity = [vx, vy, vz]     # centre-of-mass velocity in code units (G = 1 with
-                            # M☉ and pc bases; 1 code unit ≈ 0.0656 km/s)
+velocity = [vx, vy, vz]     # centre-of-mass velocity [km/s]
 ```
 
 ### Structured cluster form (preferred for new configs)
@@ -271,7 +270,7 @@ For three equal masses `m` on an equilateral triangle of circumradius `r`, the n
 \mathbf{v}_i = \omega\, (-y_i,\ x_i,\ 0).
 ```
 
-With `G = 1` (code units), `m = 900`, `r = 6`: `ω ≈ 1.551` and `|v| = ω r ≈ 9.306` code units (≈ 0.61 km/s) per cluster — exactly the `velocity` entries in the file.
+With `G = 4.30091×10⁻³ pc (km s⁻¹)² M☉⁻¹`, `m = 900 M☉`, `r = 6 pc`: `ω ≈ 0.1017 km s⁻¹ pc⁻¹` and `|v| = ω r ≈ 0.6103 km s⁻¹` per cluster — exactly the `velocity` entries in the file.
 
 Expected behaviour: the three cluster COMs trace a slowly rotating triangle while each cluster relaxes internally. This verifies the COM-trajectory tracking and the per-cluster virial diagnostic (`per_cluster_virial`) for *separated, stable* clusters; the config's equilibrium condition is also asserted in the test suite.
 

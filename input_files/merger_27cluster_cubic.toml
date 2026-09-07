@@ -18,7 +18,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [-8.0, -8.0, -8.0]
-velocity = [0.1136, 0.1136, 0.1136]
+velocity = [0.00745, 0.00745, 0.00745]
 
 [merger.cluster2]
 model = "king"
@@ -29,7 +29,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [0.0, -8.0, -8.0]
-velocity = [-0, 0.1392, 0.1392]
+velocity = [-0, 0.009129, 0.009129]
 
 [merger.cluster3]
 model = "king"
@@ -40,7 +40,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [8.0, -8.0, -8.0]
-velocity = [-0.1136, 0.1136, 0.1136]
+velocity = [-0.00745, 0.00745, 0.00745]
 
 [merger.cluster4]
 model = "king"
@@ -51,7 +51,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [-8.0, 0.0, -8.0]
-velocity = [0.1392, -0, 0.1392]
+velocity = [0.009129, -0, 0.009129]
 
 [merger.cluster5]
 model = "plummer"
@@ -61,7 +61,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [0.0, 0.0, -8.0]
-velocity = [-0, -0, 0.1968]
+velocity = [-0, -0, 0.01291]
 
 [merger.cluster6]
 model = "king"
@@ -72,7 +72,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [8.0, 0.0, -8.0]
-velocity = [-0.1392, -0, 0.1392]
+velocity = [-0.009129, -0, 0.009129]
 
 [merger.cluster7]
 model = "king"
@@ -83,7 +83,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [-8.0, 8.0, -8.0]
-velocity = [0.1136, -0.1136, 0.1136]
+velocity = [0.00745, -0.00745, 0.00745]
 
 [merger.cluster8]
 model = "king"
@@ -94,7 +94,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [0.0, 8.0, -8.0]
-velocity = [-0, -0.1392, 0.1392]
+velocity = [-0, -0.009129, 0.009129]
 
 [merger.cluster9]
 model = "king"
@@ -105,7 +105,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [8.0, 8.0, -8.0]
-velocity = [-0.1136, -0.1136, 0.1136]
+velocity = [-0.00745, -0.00745, 0.00745]
 
 [merger.cluster10]
 model = "king"
@@ -116,7 +116,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [-8.0, -8.0, 0.0]
-velocity = [0.1392, 0.1392, -0]
+velocity = [0.009129, 0.009129, -0]
 
 [merger.cluster11]
 model = "plummer"
@@ -126,7 +126,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [0.0, -8.0, 0.0]
-velocity = [-0, 0.1968, -0]
+velocity = [-0, 0.01291, -0]
 
 [merger.cluster12]
 model = "king"
@@ -137,7 +137,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [8.0, -8.0, 0.0]
-velocity = [-0.1392, 0.1392, -0]
+velocity = [-0.009129, 0.009129, -0]
 
 [merger.cluster13]
 model = "plummer"
@@ -147,7 +147,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [-8.0, 0.0, 0.0]
-velocity = [0.1968, -0, -0]
+velocity = [0.01291, -0, -0]
 
 [merger.cluster14]
 model = "plummer"
@@ -167,7 +167,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [8.0, 0.0, 0.0]
-velocity = [-0.1968, -0, -0]
+velocity = [-0.01291, -0, -0]
 
 [merger.cluster16]
 model = "king"
@@ -178,7 +178,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [-8.0, 8.0, 0.0]
-velocity = [0.1392, -0.1392, -0]
+velocity = [0.009129, -0.009129, -0]
 
 [merger.cluster17]
 model = "plummer"
@@ -188,7 +188,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [0.0, 8.0, 0.0]
-velocity = [-0, -0.1968, -0]
+velocity = [-0, -0.01291, -0]
 
 [merger.cluster18]
 model = "king"
@@ -199,7 +199,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [8.0, 8.0, 0.0]
-velocity = [-0.1392, -0.1392, -0]
+velocity = [-0.009129, -0.009129, -0]
 
 [merger.cluster19]
 model = "king"
@@ -210,7 +210,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [-8.0, -8.0, 8.0]
-velocity = [0.1136, 0.1136, -0.1136]
+velocity = [0.00745, 0.00745, -0.00745]
 
 [merger.cluster20]
 model = "king"
@@ -221,7 +221,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [0.0, -8.0, 8.0]
-velocity = [-0, 0.1392, -0.1392]
+velocity = [-0, 0.009129, -0.009129]
 
 [merger.cluster21]
 model = "king"
@@ -232,7 +232,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [8.0, -8.0, 8.0]
-velocity = [-0.1136, 0.1136, -0.1136]
+velocity = [-0.00745, 0.00745, -0.00745]
 
 [merger.cluster22]
 model = "king"
@@ -243,7 +243,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [-8.0, 0.0, 8.0]
-velocity = [0.1392, -0, -0.1392]
+velocity = [0.009129, -0, -0.009129]
 
 [merger.cluster23]
 model = "plummer"
@@ -253,7 +253,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [0.0, 0.0, 8.0]
-velocity = [-0, -0, -0.1968]
+velocity = [-0, -0, -0.01291]
 
 [merger.cluster24]
 model = "king"
@@ -264,7 +264,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [8.0, 0.0, 8.0]
-velocity = [-0.1392, -0, -0.1392]
+velocity = [-0.009129, -0, -0.009129]
 
 [merger.cluster25]
 model = "king"
@@ -275,7 +275,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [-8.0, 8.0, 8.0]
-velocity = [0.1136, -0.1136, -0.1136]
+velocity = [0.00745, -0.00745, -0.00745]
 
 [merger.cluster26]
 model = "king"
@@ -286,7 +286,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [0.0, 8.0, 8.0]
-velocity = [-0, -0.1392, -0.1392]
+velocity = [-0, -0.009129, -0.009129]
 
 [merger.cluster27]
 model = "king"
@@ -297,7 +297,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [8.0, 8.0, 8.0]
-velocity = [-0.1136, -0.1136, -0.1136]
+velocity = [-0.00745, -0.00745, -0.00745]
 
 [merger.output]
 format = "nbody"

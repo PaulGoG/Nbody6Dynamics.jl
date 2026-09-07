@@ -17,7 +17,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [-10.0, 0.0, 0.0]    # [pc] — left vertex
-velocity = [0.7013, 0, 0]      # inward toward centre
+velocity = [0.04599, 0, 0]      # inward toward centre
 
 [merger.cluster2]
 model = "king"
@@ -28,7 +28,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [5.0, 8.66, 0.0]     # [pc] — upper-right vertex
-velocity = [-0.3507, -0.6078, 0]   # inward
+velocity = [-0.023, -0.03986, 0]   # inward
 
 [merger.cluster3]
 model = "plummer"
@@ -38,7 +38,7 @@ imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 position = [5.0, -8.66, 0.0]    # [pc] — lower-right vertex
-velocity = [-0.3507, 0.6078, 0]    # inward
+velocity = [-0.023, 0.03986, 0]    # inward
 
 [merger.output]
 format = "nbody"

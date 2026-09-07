@@ -2,6 +2,22 @@
 # Orbital mechanics and multi-cluster assembly
 # =============================================================================
 
+# ---------------------------------------------------------------------------
+# Code units of the IC generator: G = 1 with masses in M☉ and lengths in pc.
+# ---------------------------------------------------------------------------
+
+"""Gravitational constant in pc (km s⁻¹)² M☉⁻¹ (CODATA 2018 G with the IAU 2015 nominal solar mass parameter)."""
+const _G_PC_KMS2_MSUN = 4.30091e-3
+
+"""Code velocity unit √(G M☉ / pc) in km s⁻¹ (≈ 0.06558)."""
+const _CODE_VSTAR_KMS = sqrt(_G_PC_KMS2_MSUN)
+
+# Code time unit pc / (km s⁻¹) / _CODE_VSTAR_KMS in Myr (≈ 14.91 Myr), the
+# crossing-time unit of a 1 M☉, 1 pc system with G = 1.
+const _PC_KM = 3.0857e13
+const _MYR_S = 3.15576e13
+const _CODE_TIME_MYR = _PC_KM / _MYR_S / _CODE_VSTAR_KMS
+
 """
     kepler_velocity(M1, M2, d_apo, ecc) -> (v1, v2)
 
@@ -237,7 +253,7 @@ function combine_clusters_explicit(
         push!(cluster_ranges, rng)
 
         cm_pos = specs[i].position
-        cm_vel = specs[i].velocity
+        cm_vel = specs[i].velocity ./ _CODE_VSTAR_KMS   # km s⁻¹ → code units (G = 1)
 
         for j in 1:Ni
             idx = offset + j

@@ -88,7 +88,7 @@ decomposed into centre-of-mass frame speeds `v₁ = (M₂/M) v_apo`, `v₂ = (M�
 
 ### Explicit mode (N ≥ 2 clusters)
 
-Each cluster specifies its own COM `position` [pc] and `velocity` (code units, `G = 1` with M☉/pc bases; 1 unit ≈ 0.0656 km/s). `combine_clusters_explicit` applies the offsets and shifts the combined system to its centre-of-mass frame.
+Each cluster specifies its own COM `position` [pc] and `velocity` [km s⁻¹]. `combine_clusters_explicit` converts the velocities to the generator's code units, applies the offsets, and shifts the combined system to its centre-of-mass frame.
 
 ## Jacobi truncation
 
@@ -102,7 +102,7 @@ r_J = d \left(\frac{M_{\rm self}}{3\,M_{\rm other}}\right)^{1/3}
 
 ## Units and output files
 
-Sampling and orbit placement happen in internal code units: `G = 1` with masses in M☉ and lengths in pc, so one code velocity unit is `√(G M☉/pc) = 0.06557` km/s.
+Sampling and orbit placement happen in internal code units: `G = 1` with masses in M☉ and lengths in pc, so one code velocity unit is `√(G M☉/pc) = 0.06558` km s⁻¹ (with `G = 4.30091×10⁻³ pc (km s⁻¹)² M☉⁻¹`) and the code time unit is 14.91 Myr. User-facing quantities (positions, velocities, masses, times of the summary) are physical.
 
 `generate_merger_ic` writes four files (all protected by the never-overwrite `name#k.ext` backup policy):
 
@@ -117,7 +117,7 @@ The returned `MergerICResult` carries everything downstream plotting needs witho
 
 ## Reloading ICs — `load_merger_ic_result`
 
-`load_merger_ic_result(dir)` reconstructs a `MergerICResult` from `dat.10` + `merger_ic.toml` without re-sampling — e.g. to regenerate `plot_merger_ic` output after a plotting fix without touching the particle data. NB-unit files are converted back to physical units using the stored `rbar` and mass scale (`vstar = 0.06557 √(M_total/rbar)` km/s).
+`load_merger_ic_result(dir)` reconstructs a `MergerICResult` from `dat.10` + `merger_ic.toml` without re-sampling — e.g. to regenerate `plot_merger_ic` output after a plotting fix without touching the particle data. NB-unit files are converted back to physical units using the stored `rbar` and mass scale (`vstar = 0.06558 √(M_total/rbar)` km s⁻¹).
 
 ## Running and diagnosing merger simulations
 

@@ -134,7 +134,7 @@ Specification for a single star cluster.
   [`RescaledKroupaIMF`](@ref), or [`EqualMassIMF`](@ref)).
 - `position::Vector{Float64}`: centre-of-mass position [pc] (length 3). For
   `orbit_mode = "kepler"` this is auto-computed and may be left empty.
-- `velocity::Vector{Float64}`: centre-of-mass velocity in internal code units
+- `velocity::Vector{Float64}`: centre-of-mass velocity in internal code units [km s⁻¹]
   (G = 1 with masses in M☉ and lengths in pc, so 1 unit ≈ 0.0656 km/s). For
   `orbit_mode = "kepler"` this is auto-computed and may be left empty.
 
