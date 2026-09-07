@@ -2,7 +2,11 @@
 # so the build always runs against the local source.
 using Pkg
 Pkg.activate(@__DIR__; io = devnull)
-Pkg.develop(; path = joinpath(@__DIR__, ".."), io = devnull)
+# Develop with a path relative to this directory so the tracked Manifest
+# records `path = ".."` and stays portable across machines.
+cd(@__DIR__) do
+    Pkg.develop(; path = "..", io = devnull)
+end
 Pkg.instantiate(; io = devnull)
 
 using Documenter
