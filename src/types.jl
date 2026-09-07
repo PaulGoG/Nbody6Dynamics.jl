@@ -10,11 +10,14 @@
     InstallConfig
 
 Configuration for the Nbody6++ source installation phase.
-Controls git clone, reinstall behaviour, and clean builds.
+Controls git clone, the checked-out reference (`ref`: commit, tag, or
+branch of the backend; the default is the validated commit), reinstall
+behaviour, and clean builds.
 """
 Base.@kwdef struct InstallConfig
     enabled::Bool = true
     source_url::String = "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
+    ref::String = "618d7a4"   # validated backend commit (upstream v2026.07); "" = clone default branch
     install_dir::String = joinpath("backend", "Nbody6PPGPU-beijing")
     reinstall::Bool = false
     clean_build::Bool = true
@@ -47,6 +50,9 @@ run ID generation, and runtime telemetry.
   default (an inherited `OMP_NUM_THREADS`, else every logical CPU)
 - `telemetry_interval`: sampling interval of the process-tree/GPU telemetry
   [s]; `0` disables the sampler (exact CPU accounting stays on)
+- `startup_timeout`: wall-clock seconds within which the engine must report
+  its first adjustment beyond t = 0; otherwise the run is terminated with an
+  error (start-up hangs on particular initial conditions). `0` disables
 """
 Base.@kwdef struct SimulationConfig
     run_test::Bool = true
@@ -58,6 +64,7 @@ Base.@kwdef struct SimulationConfig
     run_id_prefix::String = "run"
     monitor::Bool = false   # opt-in live progress ticker (§9); interactive stderr only
     telemetry_interval::Float64 = 5.0
+    startup_timeout::Float64 = 0.0
 end
 
 """

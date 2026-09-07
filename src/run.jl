@@ -301,20 +301,33 @@ function _execute_simulation(
             nothing
         end
 
+        # Start-up watchdog: terminate a run that never advances past t = 0.
+        watchdog =
+            sim.startup_timeout > 0 ?
+            _start_startup_watchdog(stdout_path, process, sim.startup_timeout) : nothing
+
         # Live ticker is opt-in and interactive-only; the Fortran stdout is
         # captured to out1000 regardless.
         if sim.monitor && stderr isa Base.TTY
             _monitor_stdout_file(stdout_path, process, t_start)
         end
         wait(process)
+        watchdog === nothing || (watchdog.stop[] = true)
 
         elapsed = time() - t_start
         telemetry =
             _finish_telemetry(monitor, cpu_before, _children_cpu_times(), elapsed, threads_total)
         merge!(telemetry, _backend_performance(stdout_path, stderr_path))
 
+        if watchdog !== nothing && watchdog.fired[]
+            error(
+                "Simulation terminated by the start-up watchdog: no adjustment beyond t = 0 within " *
+                "$(sim.startup_timeout) s (the engine hung after initialisation; re-seed the initial " *
+                "conditions or raise simulation.startup_timeout for large N)",
+            )
+        end
         if !success(process)
-            @warn "Simulation exited with non-zero status ($(process.exitcode)) after $(_format_elapsed(elapsed))"
+            @warn "Simulation exited with non-zero status ($(_exit_status(process))) after $(_format_elapsed(elapsed))"
         end
 
         # --- Write run summary ---
@@ -332,7 +345,7 @@ function _execute_simulation(
                 "kind" => is_restart ? "restart" : "initial",
                 "date" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
                 "elapsed_seconds" => round(elapsed; digits = 1),
-                "exit_status" => process.exitcode,
+                "exit_status" => _exit_status(process),
                 "input" => basename(input_copy),
                 "dump" => is_restart ? restart.dump : "",
                 "tcrit_extra" => is_restart ? restart.tcrit_extra : 0.0,
@@ -420,6 +433,49 @@ function _write_launch_script(
     end
     chmod(path, 0o755)
     return path
+end
+
+"""
+    _adjust_advanced(stdout_path) -> Bool
+
+Whether the captured stdout carries an `ADJUST:` line with `TIME > 0`, the
+sign that the integration has advanced past initialisation.
+"""
+function _adjust_advanced(stdout_path::AbstractString)::Bool
+    isfile(stdout_path) || return false
+    for line in eachline(stdout_path)
+        m = match(r"^\s*ADJUST:\s+TIME\s+([0-9.E+-]+)", line)
+        m === nothing && continue
+        t = tryparse(Float64, m.captures[1])
+        t !== nothing && t > 0 && return true
+    end
+    return false
+end
+
+"""
+    _start_startup_watchdog(stdout_path, process, timeout) -> (; stop, fired, task)
+
+Asynchronous watchdog: unless the stdout shows an adjustment beyond t = 0
+within `timeout` seconds, the process is terminated (SIGTERM) and `fired`
+is set. Setting `stop` ends the watchdog quietly.
+"""
+function _start_startup_watchdog(stdout_path::AbstractString, process::Base.Process, timeout::Real)
+    stop = Ref(false)
+    fired = Ref(false)
+    task = @async begin
+        deadline = time() + timeout
+        while !stop[] && process_running(process)
+            _adjust_advanced(stdout_path) && return nothing
+            if time() > deadline
+                fired[] = true
+                @warn "Start-up watchdog: no adjustment beyond t = 0 after $(timeout) s; terminating the engine"
+                kill(process)
+                return nothing
+            end
+            sleep(min(2.0, timeout))
+        end
+    end
+    return (stop = stop, fired = fired, task = task)
 end
 
 """
@@ -588,6 +644,9 @@ function _reported_omp_threads(stdout_path::AbstractString)::Union{Nothing,Int}
     end
     return nothing
 end
+
+"""Exit status of a finished process: its exit code, or the negated signal number when it was terminated by a signal (Julia reports exit code 0 in that case)."""
+_exit_status(p::Base.Process)::Int = p.termsignal != 0 ? -Int(p.termsignal) : Int(p.exitcode)
 
 """Number of entries in the `segments` list of an existing `RUN_INFO.toml` (0 without the file)."""
 function _segment_count(info_path::AbstractString)::Int

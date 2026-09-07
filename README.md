@@ -167,12 +167,18 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | Simulation runner | Working | Launch script with `OMP_NUM_THREADS` control, live stdout monitoring, run summary with exact CPU accounting and sampled CPU/memory/GPU telemetry (`telemetry.csv`); restarts from the engine's COMMON dumps (`restart_simulation`) with per-segment bookkeeping; merger runs execute inside the IC output dir so `dat.10` is found |
 | I/O readers | Working | `conf.3` (standard + extended), `out1000` diagnostics (ADJUST + physical scaling; virial ratio Q = T/\|W\|, equilibrium at 0.5), `lagr.7`, and `esc.11` (incl. the ANGLE PHI / ANGLE THETA escape-direction columns) / `sev.83_*` in the fork's real formats; `STELLAR_TYPE_LABELS` follow the Hurley convention (13 = NS, 14 = BH); `UnitScaling.zmbar` is the total-mass scale factor M*, not the mean stellar mass. HDF5 reader removed — the fork's KZ(46) H5Part layout was never supported; `.h5part` files are detected and warned about |
 | Plotting / animation | Working | Publication theme: no titles, no minor ticks, Computer Modern fonts, dashed grey low-opacity grid on line plots; presentation knobs config-driven via `[visualization.style]` (`PlotStyle`); escaper suite (cumulative mass loss, velocity classes, escape anisotropy) and SSE-quantity plots (mass segregation, t/T_MS evolutionary clock, core-mass growth); existing figures are never overwritten (safesave-style `#1`, `#2`, … backups) |
-| Tests | Passing | 619/619 as of this commit, incl. physics validation, adversarial external-input tests, telemetry/thread-control tests, and per-cluster structure tests on synthetic clusters |
+| Tests | Passing | 704/704 as of this commit (plus 18 engine-dependent tests behind `NBODY6_BINARY_TESTS=1`), incl. physics validation, adversarial external-input tests, telemetry/thread-control, per-cluster structure, restart, and tidal-field tests |
 
 ## Testing
 
 ```bash
 julia --project=. -e 'using Pkg; Pkg.test()'
+```
+
+The default suite needs no Fortran binary. The engine-dependent tests (build, launch, restart, tidal field, live telemetry) run when `NBODY6_BINARY_TESTS=1` is set; without `NBODY6_BACKEND_ROOT` they clone and build the backend in a temporary directory (what the weekly `Backend` workflow does), with it they use the build under `<root>/backend/Nbody6PPGPU-beijing`:
+
+```bash
+NBODY6_BINARY_TESTS=1 NBODY6_BACKEND_ROOT=$PWD julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
 The suite covers config round-trips, all I/O readers (synthetic binaries plus real fork output fixtures under `test/fixtures/`), plotting/animation smoke tests, external post-processing (including adversarial malformed inputs), and the merger IC generator. Physics-validation tests check King concentration c(W0) against published values, the Plummer half-mass relation r_hm = 1.305 a, the Kroupa mean mass, virial equilibrium Q = T/|W| = 0.5 after `virialise!`, and the Keplerian orbital energy of generated two-cluster orbits.

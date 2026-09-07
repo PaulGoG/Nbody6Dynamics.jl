@@ -59,8 +59,12 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
     if !isdir(src_dir)
         @info "Cloning $(install.source_url) → $src_dir"
         run(`git clone $(install.source_url) $src_dir`)
+        if !isempty(install.ref)
+            @info "Checking out backend reference $(install.ref)"
+            _run_quiet(`git -C $src_dir checkout --quiet $(install.ref)`; label = "checkout")
+        end
     else
-        @info "Source directory already exists: $src_dir"
+        @info "Source directory already exists: $src_dir (reference left as is)"
     end
 
     # ------------------------------------------------------------------

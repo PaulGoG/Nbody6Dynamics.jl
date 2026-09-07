@@ -55,6 +55,7 @@ function _parse_install(d::Dict)
     InstallConfig(;
         enabled = get(d, "enabled", true),
         source_url = get(d, "source_url", "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"),
+        ref = get(d, "ref", "618d7a4"),
         install_dir = get(d, "install_dir", joinpath("backend", "Nbody6PPGPU-beijing")),
         reinstall = get(d, "reinstall", false),
         clean_build = get(d, "clean_build", true),
@@ -84,6 +85,7 @@ function _parse_simulation(d::Dict)
         run_id_prefix = get(d, "run_id_prefix", "run"),
         monitor = get(d, "monitor", false),
         telemetry_interval = Float64(get(d, "telemetry_interval", 5.0)),
+        startup_timeout = Float64(get(d, "startup_timeout", 0.0)),
     )
 end
 
@@ -179,6 +181,8 @@ function _validate(cfg::Nbody6Config)
     sim.telemetry_interval ≥ 0 || error(
         "config: simulation.telemetry_interval must be ≥ 0 [s]; got $(sim.telemetry_interval)",
     )
+    sim.startup_timeout ≥ 0 ||
+        error("config: simulation.startup_timeout must be ≥ 0 [s]; got $(sim.startup_timeout)")
     isempty(sim.runs_dir) && error("config: simulation.runs_dir must be nonempty")
     isempty(sim.run_id_prefix) && error("config: simulation.run_id_prefix must be nonempty")
     isempty(sim.input_file) && error("config: simulation.input_file must be nonempty")

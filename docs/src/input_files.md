@@ -112,7 +112,7 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 | `etai` | Float | `0.02` | Irregular time-step factor; must be > 0 |
 | `etar` | Float | `0.02` | Regular time-step factor; must be > 0 |
 | `nnbopt` | Int | `0` | Target neighbour number; `0` = `clamp(round(√N_total), 20, 300)`; must be ≥ 0 |
-| `rs0` | Float | `0.0` | Initial neighbour-sphere radius; `0` = `r_h (2 NNBOPT / N_min)^{1/3}`; must be ≥ 0 and, when set, no larger than the smallest member half-mass radius |
+| `rs0` | Float | `0.0` | Initial neighbour-sphere radius; `0` = `2 r_h (2 NNBOPT / N_min)^{1/3}` capped at `r_h` (the factor 2 follows the engine's example inputs; a smaller radius left outer stars without neighbours and hung the engine's start-up on one of three realisations); must be ≥ 0 and, when set, no larger than the smallest member half-mass radius |
 | `rmin` | Float | `0.0` | KS regularisation distance; `0` = `4 r_h / (N_min ρ̂^{1/3})`; must be ≥ 0 |
 | `dtmin` | Float | `0.0` | KS time-step threshold; `0` = `0.04 √(ETAI/0.02) √(RMIN³ N_total)`; must be ≥ 0 |
 | `kz16` | Int | `0` | `KZ(16)`: the engine's re-derivation of `RMIN`, `DTMIN`, and `ECLOSE` from its global scale radius and core density every `DTADJ`; `0` keeps the written values (recommended for multi-cluster systems); one of 0, 1, 2, 3 |

@@ -6,6 +6,18 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- `[simulation] startup_timeout`: a start-up watchdog that terminates a run
+  which reports no adjustment beyond t = 0 within the given wall-clock time.
+  Signal terminations are recorded in `RUN_INFO.toml` as negative signal
+  numbers.
+- `install.ref`: the backend commit, tag, or branch checked out after
+  cloning (default: the validated upstream v2026.07 commit `618d7a4`),
+  so a fresh install builds the version the package was verified against.
+- Engine-dependent tests behind `NBODY6_BINARY_TESTS=1` (build in a
+  temporary tree or reuse `NBODY6_BACKEND_ROOT`; single run, merger run
+  with restart, point-mass tidal field, telemetry on the live process)
+  and a weekly/manual `Backend` GitHub workflow that builds the backend
+  from source and runs them.
 - `[merger.tidal]` (`TidalSpec`): external galactic field for merger runs —
   `KZ(14) = 1` solar-neighbourhood tide, `2` point-mass galaxy (`gmg`,
   `rg0`), `5` MWPotential2014 (`rg`, `vg`), with the `&INXTRNL0` namelist
@@ -77,6 +89,12 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   the engine source and two small confirmation runs.
 
 ### Changed
+- The derived initial neighbour radius is `2 r_h (2 NNBOPT/N_min)^{1/3}`
+  (capped at the member half-mass radius): the undoubled value hung the
+  engine's neighbour-list initialisation on one of three random
+  realisations of the two-cluster demo (outer stars without neighbours),
+  independent of the tidal field, the thread count, and the KS parameters;
+  six seeds ran with the doubled value.
 - Explicit-orbit `velocity` entries of the merger TOML are in km s⁻¹
   (formerly the generator's code unit, 0.0656 km s⁻¹); the conversion
   happens in `combine_clusters_explicit`, `merger_ic.toml` stores km s⁻¹

@@ -6,6 +6,7 @@
 [install]
 enabled        = false           # binary already built
 source_url     = "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
+ref            = "618d7a4"       # backend commit, tag, or branch checked out after cloning; "" = default branch
 install_dir    = "backend/Nbody6PPGPU-beijing"   # nonempty
 reinstall      = false
 clean_build    = true
@@ -28,6 +29,7 @@ omp_threads   = 0               # ≥ 0; 0 = OpenMP runtime default (all logical
 run_id_prefix = "cubic27"       # nonempty
 monitor       = true            # live progress ticker (interactive terminals only)
 telemetry_interval = 5.0        # s; ≥ 0; 0 disables the process/GPU sampler
+startup_timeout    = 0.0        # s; ≥ 0; 0 disables the start-up watchdog
 
 [postprocess]
 enabled              = true

@@ -124,8 +124,13 @@ membership, and `ρ̂` the central density contrast of that cluster's profile
 ([`_central_density_contrast`](@ref)):
 
 - `NNBOPT = clamp(round(√N_total), 20, 300)`
-- `RS0 = r_h (2 NNBOPT / N_min)^{1/3}`, the radius enclosing about `NNBOPT`
-  stars at the mean density of the half-mass sphere, capped at `r_h`
+- `RS0 = 2 r_h (2 NNBOPT / N_min)^{1/3}`, twice the radius enclosing about
+  `NNBOPT` stars at the mean density of the half-mass sphere, capped at
+  `r_h`. The factor 2 matches the engine's own example inputs
+  (`RS0 ≈ 0.5 r_h` for `NNBOPT ≈ √N`) and is empirical: with the undoubled
+  radius one of three random realisations of the two-cluster demo hung the
+  engine's neighbour-list initialisation at start-up (outer stars without
+  neighbours), whereas the doubled radius ran every realisation tried.
 - `RMIN = 4 r_h / (N_min ρ̂^{1/3})`, the functional form of the engine's own
   re-derivation (`adjust.F`) evaluated for the member cluster instead of the
   whole configuration
@@ -151,7 +156,7 @@ function resolve_nbody6_parameters(
         ),
     )
     nnbopt = spec.nnbopt > 0 ? spec.nnbopt : clamp(round(Int, sqrt(N_total)), 20, 300)
-    rs0 = spec.rs0 > 0 ? spec.rs0 : min(r_h * cbrt(2 * nnbopt / N_min), r_h)
+    rs0 = spec.rs0 > 0 ? spec.rs0 : min(2 * r_h * cbrt(2 * nnbopt / N_min), r_h)
     ρ̂ = _central_density_contrast(clusters[i_min].profile)
     rmin = spec.rmin > 0 ? spec.rmin : 4 * r_h / (N_min * cbrt(ρ̂))
     dtmin = spec.dtmin > 0 ? spec.dtmin : 0.04 * sqrt(spec.etai / 0.02) * sqrt(rmin^3 * N_total)

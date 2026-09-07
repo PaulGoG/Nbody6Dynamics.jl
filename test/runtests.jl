@@ -85,6 +85,7 @@ figsize = [10, 8]
             """
 [install]
 enabled = true
+ref = "v2026.07"
 
 [build]
 enable_gpu = true
@@ -109,6 +110,8 @@ figsize = [12, 9]
         save_config(cfg, save_path)
 
         cfg2 = load_config(save_path)
+        @test cfg2.install.ref == "v2026.07"
+        @test InstallConfig().ref == "618d7a4"
         @test cfg2.build.enable_gpu == cfg.build.enable_gpu
         @test cfg2.build.cuda_path == cfg.build.cuda_path
         @test cfg2.simulation.run_id_prefix == cfg.simulation.run_id_prefix
@@ -145,6 +148,11 @@ format = "pdf"
                 "telemetry_interval",
                 "[simulation]\ntelemetry_interval = -0.5\n",
                 "simulation.telemetry_interval",
+            ),
+            (
+                "startup_timeout",
+                "[simulation]\nstartup_timeout = -1.0\n",
+                "simulation.startup_timeout",
             ),
             (
                 "mpi_no_mpi_build",
@@ -1760,7 +1768,7 @@ truncate_jacobi = false
             ranges = [1:100, 101:220]
             r = resolve_nbody6_parameters(p0, clusters, ranges, 220, 4.0)
             @test r.nnbopt == 20                          # clamp(round(√220) = 15, 20, 300)
-            @test r.rs0 ≈ 0.25 * cbrt(2 * 20 / 100)        # smallest member: r_h = 1/4, N_min = 100
+            @test r.rs0 ≈ min(2 * 0.25 * cbrt(2 * 20 / 100), 0.25)   # r_h = 1/4, N_min = 100, doubled rule
             @test r.rmin ≈ 4 * 0.25 / (100 * cbrt(ρ̂_plummer))
             @test r.dtmin ≈ 0.04 * sqrt(r.rmin^3 * 220)
             @test r.qe == 2.0e-4 && r.kz16 == 0
@@ -2399,6 +2407,18 @@ dtplot = 2.0
     # =====================================================================
     # Edge cases for pure helpers and degenerate reader inputs
     # =====================================================================
+    @testset "Degenerate axis ranges" begin
+        # Identical stars (equal-mass, unevolved) give zero-span HR data
+        @test Nbody6Dynamics._padded_range(3.678, 3.678) == (3.578, 3.778)
+        lo, hi = Nbody6Dynamics._padded_range(3.0, 4.0)
+        @test lo ≈ 2.94 && hi ≈ 4.06
+        @test !isempty(Nbody6Dynamics._logval_ticks(3.62, 3.74))
+        @test Nbody6Dynamics._logval_ticks(3.678, 3.678) == [3.678]
+        @test !isempty(Nbody6Dynamics._nice_ticks(1.0, 1.0001))
+        @test Nbody6Dynamics._nice_ticks(0.0, 10.0) == collect(0.0:1.0:10.0) ||
+              !isempty(Nbody6Dynamics._nice_ticks(0.0, 10.0))
+    end
+
     @testset "Log-tick generator edge cases" begin
         # >2 in-range decades → decades only
         vals, _ = Nbody6Dynamics._log_ticks(0.05, 50.0)
@@ -2578,6 +2598,38 @@ dtplot = 2.0
         s_new = read(Nbody6Dynamics._write_launch_script(run_dir, args..., cfg_r), String)
         @test occursin("> \"out1000\" 2> \"err1000\"", s_new) && !occursin(">>", s_new)
 
+        # Signal terminations are recorded as negative signal numbers
+        p_sig = run(`sleep 5`; wait = false)
+        kill(p_sig)
+        wait(p_sig)
+        @test Nbody6Dynamics._exit_status(p_sig) == -15
+        p_ok = run(`true`)
+        @test Nbody6Dynamics._exit_status(p_ok) == 0
+
+        # Start-up watchdog: stdout progress detection and termination of a stalled process
+        wd_out = joinpath(run_dir, "wd_out1000")
+        write(wd_out, " ADJUST:  TIME    0.00000E+00  T[Myr]   0.000E+00  Q   0.450E+00\n")
+        @test !Nbody6Dynamics._adjust_advanced(wd_out)
+        write(
+            wd_out,
+            read(wd_out, String) *
+            " ADJUST:  TIME    5.00000E-01  T[Myr]   0.338E+01  Q   0.457E+00\n",
+        )
+        @test Nbody6Dynamics._adjust_advanced(wd_out)
+        @test !Nbody6Dynamics._adjust_advanced(joinpath(run_dir, "absent"))
+        stalled = run(`sleep 30`; wait = false)
+        wd = Nbody6Dynamics._start_startup_watchdog(joinpath(run_dir, "absent"), stalled, 1.0)
+        wait(stalled)
+        wait(wd.task)
+        @test wd.fired[] && !process_running(stalled)
+        @test Nbody6Dynamics._exit_status(stalled) == -15
+        fine = run(`sleep 2`; wait = false)
+        wd2 = Nbody6Dynamics._start_startup_watchdog(wd_out, fine, 30.0)
+        wait(wd2.task)
+        @test !wd2.fired[]
+        wd2.stop[] = true
+        wait(fine)
+
         # restart_simulation refuses runs without the bookkeeping it needs
         @test_throws ErrorException restart_simulation(mktempdir(); tcrit_extra = 1.0)
     end
@@ -2732,6 +2784,164 @@ dtplot = 2.0
         @test info["run"]["mpi_ranks"] == 1
         @test info["telemetry"]["samples"] == summary["samples"]
         @test info["telemetry"]["threads_total"] == 2
+    end
+
+    # =====================================================================
+    # Engine-dependent tests: opt in with NBODY6_BINARY_TESTS=1. Without
+    # NBODY6_BACKEND_ROOT the backend is cloned and built in a temporary
+    # directory (what the Backend workflow does); with it, an existing
+    # build under <root>/backend/Nbody6PPGPU-beijing is used.
+    if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
+        @testset "Backend build and run (binary-gated)" begin
+            work = mktempdir()
+            root = get(ENV, "NBODY6_BACKEND_ROOT", "")
+            artifacts = get(ENV, "NBODY6_BINARY_TEST_ARTIFACTS", "")
+            isempty(artifacts) || mkpath(artifacts)
+            function _keep(run_dir, tag)
+                isempty(artifacts) && return
+                for f in ("RUN_INFO.toml", "telemetry.csv", "telemetry_2.csv", "nbody6dynamics.log")
+                    src = joinpath(run_dir, f)
+                    isfile(src) && cp(src, joinpath(artifacts, "$(tag)_$(f)"); force = true)
+                end
+            end
+            base_toml(
+                runs_dir,
+                extra_sim = "",
+                merger = "enabled = false\nconfig_file = \"\"",
+            ) = """
+[install]
+enabled = $(isempty(root))
+install_dir = "backend/Nbody6PPGPU-beijing"
+reinstall = false
+clean_build = false
+
+[build]
+configure_flags = ["--enable-mcmodel=large", "--with-par=b1m"]
+enable_mpi = false
+enable_hdf5 = false
+enable_gpu = false
+nproc = 0
+
+[simulation]
+run_test = true
+input_file = "../../input_files/N1k_quick.inp"
+runs_dir = "$(runs_dir)"
+binary_name = "nbody6++"
+mpi_ranks = 1
+omp_threads = 2
+run_id_prefix = "bt"
+monitor = false
+telemetry_interval = 1.0
+startup_timeout = 300.0
+$(extra_sim)
+
+[postprocess]
+enabled = true
+
+[visualization]
+enabled = false
+
+[merger]
+$(merger)
+"""
+            base = isempty(root) ? work : root
+            if isempty(root)
+                cp(joinpath(@__DIR__, "..", "input_files"), joinpath(work, "input_files"))
+            end
+            runs_dir = joinpath(work, "runs")
+
+            # 1. Build (temporary tree only) and a single-cluster run
+            cfg_path = joinpath(work, "single.toml")
+            write(cfg_path, base_toml(runs_dir))
+            cfg = load_config(cfg_path)
+            t0 = time()
+            results = run_pipeline(cfg; base_dir = base)
+            @info "binary test: single run + build in $(round(time() - t0; digits = 1)) s"
+            run_dir = Nbody6Dynamics._find_latest_run(cfg, base)
+            @test isdir(run_dir)
+            info = Nbody6Dynamics.TOML.parsefile(joinpath(run_dir, "RUN_INFO.toml"))
+            @test info["run"]["omp_threads"] == 2 && info["run"]["omp_threads_reported"] == 2
+            @test info["run"]["segments"] == 1 && info["segments"][1]["exit_status"] == 0
+            @test info["telemetry"]["cpu_user_s"] > 0 && info["telemetry"]["samples"] ≥ 1
+            @test haskey(info["telemetry"], "backend_timing") &&
+                  info["telemetry"]["backend_timing"]["total"] > 0
+            @test isfile(joinpath(run_dir, "telemetry.csv"))
+            @test haskey(results, :snapshots) && length(results[:snapshots]) ≥ 2
+            @test haskey(results, :diagnostics) && length(results[:diagnostics].adjust) ≥ 2
+            _keep(run_dir, "single")
+
+            # 2. Merger demo with frequent dumps, then a restart
+            mtoml = read(joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml"), String)
+            # Fixed seed for reproducibility of the engine-dependent runs
+            mtoml = replace(mtoml, r"tcrit = [0-9.]+" => "tcrit = 2.0")
+            mtoml =
+                replace(mtoml, "[merger]\n" => "[merger]\nseed = 11\n"; count = 1) *
+                "\n[merger.nbody6]\nncomm = 2\n"
+            mpath = joinpath(work, "merger_demo.toml")
+            write(mpath, mtoml)
+            cfg_m_path = joinpath(work, "merger.toml")
+            write(cfg_m_path, base_toml(runs_dir, "", "enabled = true\nconfig_file = \"$(mpath)\""))
+            cfg_m = load_config(cfg_m_path)
+            # the backend is built now: never rebuild
+            cfg_m = Nbody6Config(
+                InstallConfig(; enabled = false, install_dir = cfg_m.install.install_dir),
+                cfg_m.build,
+                cfg_m.simulation,
+                cfg_m.postprocess,
+                cfg_m.visualization,
+                cfg_m.merger,
+            )
+            run_pipeline(cfg_m; base_dir = base)
+            mrun = Nbody6Dynamics._find_latest_run(cfg_m, base)
+            out = joinpath(mrun, "output")
+            adjust_times(p) = [
+                parse(Float64, match(r"TIME\s+([0-9.E+-]+)", l).captures[1]) for
+                l in eachline(p) if startswith(lstrip(l), "ADJUST:")
+            ]
+            t_first = adjust_times(joinpath(out, "out1000"))
+            @test maximum(t_first) ≈ 2.0
+            @test Nbody6Dynamics._latest_dump(out) !== nothing
+            restart_simulation(mrun; tcrit_extra = 1.0, base_dir = base)
+            t_all = adjust_times(joinpath(out, "out1000"))
+            @test maximum(t_all) ≈ 3.0 && length(t_all) > length(t_first)
+            info_m = Nbody6Dynamics.TOML.parsefile(joinpath(mrun, "RUN_INFO.toml"))
+            @test info_m["run"]["segments"] == 2 && info_m["segments"][2]["kind"] == "restart"
+            @test info_m["run"]["input_file"] == "merger.inp"
+            @test isfile(joinpath(mrun, "telemetry_2.csv"))
+            @test any(startswith("conf.3_3"), readdir(out))
+            _keep(mrun, "merger_restart")
+
+            # 3. Point-mass tidal field
+            ttoml = replace(
+                mtoml,
+                "[merger.nbody6]\nncomm = 2\n" => "[merger.nbody6]\nqe = 0.05\n\n[merger.tidal]\nkz14 = 2\ngmg = 1.0e11\nrg0 = 8.5\n",
+            )
+            ttoml = replace(ttoml, r"tcrit = [0-9.]+" => "tcrit = 1.0")
+            tpath = joinpath(work, "merger_tidal.toml")
+            write(tpath, ttoml)
+            cfg_t_path = joinpath(work, "tidal.toml")
+            write(cfg_t_path, base_toml(runs_dir, "", "enabled = true\nconfig_file = \"$(tpath)\""))
+            cfg_t = load_config(cfg_t_path)
+            cfg_t = Nbody6Config(
+                InstallConfig(; enabled = false, install_dir = cfg_t.install.install_dir),
+                cfg_t.build,
+                cfg_t.simulation,
+                cfg_t.postprocess,
+                cfg_t.visualization,
+                cfg_t.merger,
+            )
+            run_pipeline(cfg_t; base_dir = base)
+            trun = Nbody6Dynamics._find_latest_run(cfg_t, base)
+            tout = read(joinpath(trun, "output", "out1000"), String)
+            @test occursin("POINT-MASS MODEL", tout)
+            @test occursin(
+                "KZ(11:20)=0 1 0 2 0 0 0 0 3 0",
+                read(joinpath(trun, "output", "merger.inp"), String),
+            )
+            @test Nbody6Dynamics.TOML.parsefile(joinpath(trun, "RUN_INFO.toml"))["segments"][1]["exit_status"] ==
+                  0
+            _keep(trun, "merger_tidal")
+        end
     end
 
     # =====================================================================

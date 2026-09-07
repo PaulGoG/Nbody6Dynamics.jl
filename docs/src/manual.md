@@ -68,6 +68,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 |---------------|--------|---------|-------------|
 | `enabled`     | Bool   | `true`  | Enable the install/build phase |
 | `source_url`  | String | `"https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"` | Git repository to clone |
+| `ref`         | String | `"618d7a4"` | Commit, tag, or branch checked out after cloning (the default is the validated upstream v2026.07 commit); `""` keeps the default branch. An existing source directory is left as is |
 | `install_dir` | String | `"backend/Nbody6PPGPU-beijing"` | Source directory, relative to the package root; must be nonempty |
 | `reinstall`   | Bool   | `false` | Delete and re-clone if `true` |
 | `clean_build` | Bool   | `true`  | Run `make clean` before building |
@@ -96,6 +97,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `run_id_prefix` | String | `"run"` | Prefix for run directory names; must be nonempty |
 | `monitor`       | Bool   | `false` | Live ADJUST ticker on stderr; interactive terminals only |
 | `telemetry_interval` | Float | `5.0` | Sampling interval of the process-tree/GPU telemetry [s]; must be ≥ 0. `0` disables the sampler; the exact CPU accounting stays on |
+| `startup_timeout` | Float | `0.0` | Start-up watchdog [s]; must be ≥ 0. When set, a run that reports no adjustment beyond t = 0 within this wall-clock time is terminated with an error (the engine's neighbour-list initialisation can hang on a too-small `RS0`). `0` disables; large-N runs need a generous value |
 
 ### `[postprocess]`
 

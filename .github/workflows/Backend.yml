@@ -1,0 +1,40 @@
+name: Backend
+# Builds Nbody6++GPU-beijing from source and runs the engine-dependent test
+# suite (install, launch, restart, tidal field, telemetry on a live process).
+on:
+  schedule:
+    - cron: '0 4 * * 1'   # weekly, Monday 04:00 UTC
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages for the Fortran build and the Cairo/Makie stack
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gfortran build-essential libglib2.0-0 libcairo2 libpango-1.0-0 libpangocairo-1.0-0
+      - name: Resolve fresh on CI
+        run: rm -f Manifest.toml
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+        with:
+          cache-name: julia-cache-backend
+      - uses: julia-actions/julia-buildpkg@v1
+      - name: Build the backend and run the binary-gated tests
+        env:
+          NBODY6_BINARY_TESTS: '1'
+          NBODY6_BINARY_TEST_ARTIFACTS: ${{ github.workspace }}/binary-test-artifacts
+          OMP_NUM_THREADS: '2'
+        run: julia --project=. -e 'using Pkg; Pkg.test()'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: binary-test-artifacts
+          path: binary-test-artifacts
+          if-no-files-found: ignore
