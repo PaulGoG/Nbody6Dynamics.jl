@@ -37,18 +37,28 @@ _hr_marker(kt::Integer)::Symbol = Int(kt) < 8 ? :circle : :utriangle
     _hr_limits(valid_sets) -> ((t_lo, t_hi), (l_lo, l_hi)) or nothing
 
 Axis limits for HR diagrams: extrema of the valid records' (log Teff, log L)
-across one or more record subsets, with a 6 % data margin on each side.
+across one or more record subsets, with a 6 % data margin on each side and
+a minimum span of `_HR_MIN_SPAN_DEX` per axis, so a population of identical
+stars (equal-mass bodies, no evolution) still yields a finite axis.
 Returns `nothing` when no record survives the validity filter.
 """
 function _hr_limits(valid_sets::Vector{<:Vector})
     all_teff = reduce(vcat, [[r.log_teff for r in v] for v in valid_sets]; init = Float64[])
     all_lum = reduce(vcat, [[r.log_luminosity for r in v] for v in valid_sets]; init = Float64[])
     isempty(all_teff) && return nothing
-    tmin, tmax = extrema(all_teff)
-    lmin, lmax = extrema(all_lum)
-    dt = (tmax - tmin) * 0.06
-    dl = (lmax - lmin) * 0.06
-    return ((tmin - dt, tmax + dt), (lmin - dl, lmax + dl))
+    return (_padded_range(extrema(all_teff)...), _padded_range(extrema(all_lum)...))
+end
+
+const _HR_MIN_SPAN_DEX = 0.2
+
+"""`(lo, hi)` widened by 6 % on each side, or to `_HR_MIN_SPAN_DEX` about the midpoint when narrower."""
+function _padded_range(lo::Real, hi::Real)
+    span = hi - lo
+    if span < _HR_MIN_SPAN_DEX
+        mid = 0.5 * (lo + hi)
+        return (mid - 0.5 * _HR_MIN_SPAN_DEX, mid + 0.5 * _HR_MIN_SPAN_DEX)
+    end
+    return (lo - 0.06 * span, hi + 0.06 * span)
 end
 
 """

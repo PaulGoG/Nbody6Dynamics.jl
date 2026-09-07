@@ -147,7 +147,9 @@ function _nice_ticks(lo::Real, hi::Real; target_n::Int = 8)
     step = pow * candidates[argmin(abs.(candidates .* pow .- raw_step))]
     t0 = ceil(lo / step) * step
     t1 = floor(hi / step) * step
-    return collect(t0:step:t1)
+    ticks = collect(t0:step:t1)
+    # A range narrower than one step holds no rounded tick: use its ends.
+    return isempty(ticks) ? [Float64(lo), Float64(hi)] : ticks
 end
 
 """
@@ -189,7 +191,13 @@ function _logval_ticks(lo::Real, hi::Real; target_n::Int = 8)
     step = candidates[argmin(abs.(candidates .- raw_step))]
     t0 = ceil(lo / step) * step
     t1 = floor(hi / step) * step
-    return collect(t0:step:t1)
+    ticks = collect(t0:step:t1)
+    # Narrow log-value ranges (identical stars) fall between multiples of the
+    # coarsest step: fall back to a finer step, then to the range ends.
+    if isempty(ticks)
+        ticks = collect((ceil(lo / 0.1) * 0.1):0.1:(floor(hi / 0.1) * 0.1))
+    end
+    return isempty(ticks) ? [Float64(lo), Float64(hi)] : ticks
 end
 
 """
