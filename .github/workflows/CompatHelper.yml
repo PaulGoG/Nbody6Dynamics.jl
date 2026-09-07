@@ -7,6 +7,11 @@ jobs:
   CompatHelper:
     runs-on: ubuntu-latest
     steps:
+      # CompatHelper on the current stable Julia rejects the Random stdlib
+      # compat entry ("not found in any of the registries"); the LTS handles it.
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
       - name: Run CompatHelper
         run: |
           julia -e '

@@ -15,6 +15,7 @@ save_config
 ```@docs
 setup_nbody6
 run_simulation
+restart_simulation
 generate_run_id
 export_for_paper
 ```
@@ -146,6 +147,9 @@ kroupa_mean_mass
 ClusterSpec
 OrbitSpec
 MergerOutputSpec
+Nbody6ParameterSpec
+StellarSpec
+TidalSpec
 MergerConfig
 MergerICResult
 load_merger_config
@@ -176,6 +180,8 @@ jacobi_radius
 ```@docs
 write_dat10
 generate_merger_inp
+crossing_time
+resolve_nbody6_parameters
 to_nbody_units!
 ```
 
@@ -184,6 +190,19 @@ to_nbody_units!
 ```@docs
 parse_merger_summary
 per_cluster_virial
+bound_fraction
+plot_cluster_structure
+ClusterStructure
+cluster_structure
 plot_cluster_separation
 plot_cluster_virial
+```
+
+## Internals referenced from the public docstrings
+
+```@docs
+Nbody6Dynamics._validate
+Nbody6Dynamics._bound_members
+Nbody6Dynamics._kinetic_and_potential
+Nbody6Dynamics._central_density_contrast
 ```

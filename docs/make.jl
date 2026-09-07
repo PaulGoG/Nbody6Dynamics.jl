@@ -25,5 +25,5 @@ makedocs(;
         "Cluster Mergers" => "multi_cluster_mergers.md",
         "API Reference" => "api.md",
     ],
-    warnonly = [:missing_docs, :cross_references],
+    warnonly = [:missing_docs],
 )
