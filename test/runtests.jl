@@ -1687,6 +1687,27 @@ truncate_jacobi = false
                     _merger_toml() * "\n[merger.stellar]\nepoch0 = 5.0\n",
                     "merger.stellar.epoch0",
                 ),
+                ("tidal_kz14_3", _merger_toml() * "\n[merger.tidal]\nkz14 = 3\n", "not supported"),
+                (
+                    "tidal_kz14_bad",
+                    _merger_toml() * "\n[merger.tidal]\nkz14 = 7\n",
+                    "merger.tidal.kz14",
+                ),
+                (
+                    "tidal_qe",
+                    _merger_toml() * "\n[merger.tidal]\nkz14 = 2\ngmg = 1.0e11\nrg0 = 8.5\n",
+                    "tidal work",
+                ),
+                (
+                    "tidal_gmg",
+                    _merger_toml() * "\n[merger.tidal]\nkz14 = 2\nrg0 = 8.5\n",
+                    "merger.tidal.gmg",
+                ),
+                (
+                    "tidal_rg",
+                    _merger_toml() * "\n[merger.tidal]\nkz14 = 5\nvg = [0.0, 220.0, 0.0]\n",
+                    "merger.tidal.rg",
+                ),
                 (
                     "imf_rescale_factor",
                     _merger_toml(
@@ -1878,6 +1899,46 @@ dtplot = 2.0
             @test occursin("KZ(11:20)=0 0 0 0 0 1 0 0 4 0", txt2)   # KZ(12) off with kz19 = 0; override 19 → 4
             @test occursin("KZ(31:40)=0 0 0 0 0 0 0 0 0 2", txt2)
             @test occursin("BODY1=20,BODYN=0.5,NBIN0=0,NHI0=0,ZMET=0.02,EPOCH0=-1,DTPLOT=2 /", txt2)
+
+            # Tidal field: point-mass and MWPotential2014 namelists, isolated by default
+            @test cfg_nb.tidal.kz14 == 0
+            td2 = TidalSpec(; kz14 = 2, gmg = 1.0e11, rg0 = 8.5)
+            inp3 = joinpath(mktempdir(), "t3.inp")
+            generate_merger_inp(inp3, 220, 4.0, 0.6; nbody6 = ru, tidal = td2)
+            txt3 = read(inp3, String)
+            @test occursin("KZ(11:20)=0 1 0 2 0 2 0 0 3 0", txt3)
+            @test occursin("&INXTRNL0\nGMG=1E+11,RG0=8.5 /", txt3)
+            td5 = TidalSpec(; kz14 = 5, rg = [8.0, 0.0, 0.0], vg = [0.0, 220.0, 0.0])
+            generate_merger_inp(inp3, 220, 4.0, 0.6; nbody6 = ru, tidal = td5)
+            txt5 = read(inp3, String)
+            @test occursin("KZ(11:20)=0 1 0 5 0 2 0 0 3 0", txt5)
+            @test occursin("&INXTRNL0\nRG=8,0,0,VG=0,220,0 /", txt5)
+            generate_merger_inp(inp3, 220, 4.0, 0.6; nbody6 = ru, tidal = TidalSpec(; kz14 = 1))
+            @test !occursin("&INXTRNL0", read(inp3, String))
+            @test_throws ErrorException generate_merger_inp(
+                inp3,
+                220,
+                4.0,
+                0.6;
+                nbody6 = ru,
+                tidal = TidalSpec(; kz14 = 4),
+            )
+            @test_throws ErrorException Nbody6Dynamics._validate_tidal(
+                TidalSpec(; kz14 = 2, gmg = 1e11),
+            )
+            @test_throws ErrorException Nbody6Dynamics._validate_tidal(
+                TidalSpec(; kz14 = 5, rg = [8.0, 0, 0]),
+            )
+            @test_throws ErrorException Nbody6Dynamics._validate_tidal_tolerance(
+                td2,
+                Nbody6ParameterSpec(),
+            )
+            @test Nbody6Dynamics._validate_tidal_tolerance(
+                td2,
+                Nbody6ParameterSpec(; qe = 0.05),
+            ) === nothing
+            @test Nbody6Dynamics._validate_tidal_tolerance(TidalSpec(), Nbody6ParameterSpec()) ===
+                  nothing
 
             # Crossing time: G = 1 virial system with E = -M²/(4 r_v) has t_cr = (2 r_v)^{3/2}/√M
             @test crossing_time(1.0, -0.25) ≈ 2.0^1.5
@@ -2141,6 +2202,10 @@ dtplot = 2.0
         @test nm[1, 1] == N1
         st_all = cluster_structure(snaps, ranges; bound_only = false)
         @test st_all.n_bound[1, 1] == N1 && st_all.bound_mass_fraction[1, 1] == 1.0
+
+        # Whole-system bound fraction: the 20 kicked stars are unbound to the pair as well
+        fb = bound_fraction(snaps[1])
+        @test 0.9 ≤ fb ≤ 0.98
 
         # Figure: with and without the engine overlay (NB units, raster draft)
         vis_s = VisualizationConfig(;

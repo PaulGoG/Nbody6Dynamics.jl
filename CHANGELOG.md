@@ -6,6 +6,14 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- `[merger.tidal]` (`TidalSpec`): external galactic field for merger runs —
+  `KZ(14) = 1` solar-neighbourhood tide, `2` point-mass galaxy (`gmg`,
+  `rg0`), `5` MWPotential2014 (`rg`, `vg`), with the `&INXTRNL0` namelist
+  written accordingly; options 3 and 4 are refused because the engine
+  rescales all velocities on those paths, and a tidal configuration with
+  `qe < 0.01` is refused because the engine's energy check omits the tidal
+  potential energy and would halt the run. `bound_fraction(snap)`: the
+  snapshot-based bound mass fraction of the whole system.
 - Restarts: `restart_simulation(run_dir; tcrit_extra, dump, tcrtp0)`
   continues a run from an engine COMMON dump (`KSTART = 2`) in the same
   output directory with appended outputs; the original input is copied

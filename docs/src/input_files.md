@@ -149,6 +149,18 @@ The resolved values appear in `merger_summary.txt` and in `merger_ic.toml` (`[nb
 | `epoch0` | Float | `0.0` | Formation time of the population [Myr]; must be ≤ 0 (the age at start is `−epoch0`) |
 | `dtplot` | Float | `1.0` | Interval of the stellar-evolution diagnostics (`sev.83_*`) [NB]; must be > 0 and ≥ `deltat` |
 
+### `[merger.tidal]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `kz14` | Int | `0` | `KZ(14)`: `0` isolated; `1` standard solar-neighbourhood linearised tide (no parameters); `2` point-mass galaxy on a circular orbit; `5` MWPotential2014 with the configuration on a galactocentric orbit. `3` and `4` are refused (see below); one of 0, 1, 2, 5 |
+| `gmg` | Float | `0.0` | Galaxy mass [M☉] for `kz14 = 2`; must be > 0 |
+| `rg0` | Float | `0.0` | Galactocentric distance of the circular orbit [kpc] for `kz14 = 2`; must be > 0 |
+| `rg` | [Float] | `[0, 0, 0]` | Galactocentric position of the configuration's centre of mass [kpc] for `kz14 = 5`; non-zero |
+| `vg` | [Float] | `[0, 0, 0]` | Galactocentric velocity [km/s] for `kz14 = 5`; non-zero |
+
+Options `3` (point mass + Miyamoto–Nagai disk + logarithmic halo + bulge) and `4` (Plummer potential) are refused: on those paths the engine rescales every velocity to the `&INSCALE` virial ratio including the external potential (`xtrnl0.F`), which destroys the prescribed orbital kinematics of a multi-cluster configuration. The `&INSCALE` tidal radius stays `0` so the engine derives it from the field with the generator's `RBAR`; a non-zero value would override `RBAR`. In a tidal field the engine removes escapers on the distance criterion alone, and because it does not evaluate the tidal potential energy its energy check measures the tidal work: a tidal configuration requires `merger.nbody6.qe ≥ 0.01` (see the merger documentation).
+
 The `&INDATA` mass bounds `BODY1`/`BODYN` are written from the clusters' IMF specifications (inert under `KZ(22) = 2`, where masses come from `dat.10`); `ALPHAS` is inert for the same reason. `NBIN0 = NHI0 = 0`: no primordial binaries or hierarchies are generated.
 
 ### Flat legacy cluster form

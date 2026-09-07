@@ -332,12 +332,42 @@ Base.@kwdef struct StellarSpec
     dtplot::Float64 = 1.0
 end
 
+"""
+    TidalSpec(; kz14 = 0, gmg = 0.0, rg0 = 0.0, rg = zeros(3), vg = zeros(3))
+
+External galactic field of `merger.inp` (`[merger.tidal]`, `KZ(14)` and the
+`&INXTRNL0` namelist):
+
+- `kz14`: `0` isolated; `1` standard solar-neighbourhood linearised tide
+  (no parameters); `2` point-mass galaxy on a circular orbit (`gmg`,
+  `rg0`); `5` MWPotential2014 with the cluster on a galactocentric orbit
+  (`rg`, `vg`). Options `3` (point mass + disk + halo + bulge) and `4`
+  (Plummer potential) are refused: the engine rescales every velocity to
+  the `&INSCALE` virial ratio including the external potential on those
+  paths (`xtrnl0.F`), which would destroy the prescribed orbital
+  kinematics of a multi-cluster configuration.
+- `gmg`: galaxy mass [M☉] (`kz14 = 2`); > 0
+- `rg0`: galactocentric distance of the circular orbit [kpc] (`kz14 = 2`); > 0
+- `rg`, `vg`: galactocentric position [kpc] and velocity [km s⁻¹] of the
+  configuration's centre of mass (`kz14 = 5`); both non-zero
+
+The `&INSCALE` tidal radius stays 0 so the engine derives it from the field
+with the generator's `RBAR` (a non-zero value would override `RBAR`).
+"""
+Base.@kwdef struct TidalSpec
+    kz14::Int = 0
+    gmg::Float64 = 0.0
+    rg0::Float64 = 0.0
+    rg::Vector{Float64} = zeros(3)
+    vg::Vector{Float64} = zeros(3)
+end
+
 # -----------------------------------------------------------------------------
 # MergerConfig
 # -----------------------------------------------------------------------------
 
 """
-    MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, stellar, seed])
+    MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, stellar, tidal, seed])
 
 Top-level configuration for multi-cluster merger initial conditions.
 
@@ -357,6 +387,7 @@ Top-level configuration for multi-cluster merger initial conditions.
 - `output::MergerOutputSpec`
 - `nbody6::Nbody6ParameterSpec`: integration and run-control parameters
 - `stellar::StellarSpec`: stellar-evolution settings
+- `tidal::TidalSpec`: external galactic field
 - `seed::Union{Int, Nothing}`: RNG seed. `nothing` = non-deterministic.
 """
 struct MergerConfig
@@ -366,6 +397,7 @@ struct MergerConfig
     output::MergerOutputSpec
     nbody6::Nbody6ParameterSpec
     stellar::StellarSpec
+    tidal::TidalSpec
     seed::Union{Int,Nothing}
 end
 
@@ -379,8 +411,9 @@ MergerConfig(
     output::MergerOutputSpec;
     nbody6::Nbody6ParameterSpec = Nbody6ParameterSpec(),
     stellar::StellarSpec = StellarSpec(),
+    tidal::TidalSpec = TidalSpec(),
     seed::Union{Int,Nothing} = nothing,
-) = MergerConfig(clusters, String(orbit_mode), orbit, output, nbody6, stellar, seed)
+) = MergerConfig(clusters, String(orbit_mode), orbit, output, nbody6, stellar, tidal, seed)
 
 # -----------------------------------------------------------------------------
 # MergerICResult
@@ -553,6 +586,19 @@ function load_merger_config(path::AbstractString)::MergerConfig
         dtplot = Float64(get(st_raw, "dtplot", 1.0)),
     )
 
+    td_raw = get(m, "tidal", Dict{String,Any}())
+    rg_raw = get(td_raw, "rg", [0.0, 0.0, 0.0])
+    vg_raw = get(td_raw, "vg", [0.0, 0.0, 0.0])
+    (length(rg_raw) == 3 && length(vg_raw) == 3) ||
+        error("config: merger.tidal.rg and merger.tidal.vg must have length 3")
+    tidal = TidalSpec(;
+        kz14 = Int(get(td_raw, "kz14", 0)),
+        gmg = Float64(get(td_raw, "gmg", 0.0)),
+        rg0 = Float64(get(td_raw, "rg0", 0.0)),
+        rg = Float64.(rg_raw),
+        vg = Float64.(vg_raw),
+    )
+
     seed_raw = get(m, "seed", nothing)
     seed::Union{Int,Nothing} = if seed_raw === nothing
         nothing
@@ -578,8 +624,57 @@ function load_merger_config(path::AbstractString)::MergerConfig
     output.deltat > 0 || error("config: merger.output.deltat must be > 0; got $(output.deltat)")
     _validate_nbody6(nbody6)
     _validate_stellar(stellar, output)
+    _validate_tidal(tidal)
+    _validate_tidal_tolerance(tidal, nbody6)
 
-    return MergerConfig(clusters, orbit_mode, orbit, output, nbody6, stellar, seed)
+    return MergerConfig(clusters, orbit_mode, orbit, output, nbody6, stellar, tidal, seed)
+end
+
+# Energy tolerance below which a tidal-field run halts at its first adjustment:
+# this fork never evaluates the tidal potential energy (the XTRNLV call in
+# energy.F is commented out), so the engine's DE measures the tidal work.
+const _QE_MIN_TIDAL = 0.01
+
+"""
+    _validate_tidal_tolerance(t::TidalSpec, p::Nbody6ParameterSpec)
+
+Refuse an external field with an energy tolerance below `$(_QE_MIN_TIDAL)`:
+the engine's energy bookkeeping omits the tidal potential energy, so the
+relative energy change it checks against `QE` is the work done by the field
+(10⁻⁴ to 10⁻² per adjustment interval for realistic fields) and the run
+would halt at its first adjustment.
+"""
+function _validate_tidal_tolerance(t::TidalSpec, p::Nbody6ParameterSpec)
+    if t.kz14 > 0 && p.qe < _QE_MIN_TIDAL
+        error(
+            "config: merger.nbody6.qe = $(p.qe) with merger.tidal.kz14 = $(t.kz14): the engine does " *
+            "not evaluate the tidal potential energy (energy.F), so its energy check measures the " *
+            "tidal work and halts the run at the first adjustment; set qe ≥ $(_QE_MIN_TIDAL) for " *
+            "tidal-field runs and assess the integration accuracy against an isolated control run",
+        )
+    end
+    return nothing
+end
+
+"""Fail-fast checks of `[merger.tidal]`: supported `kz14` and the parameters each option needs."""
+function _validate_tidal(t::TidalSpec)
+    if t.kz14 in (3, 4)
+        error(
+            "config: merger.tidal.kz14 = $(t.kz14) is not supported: on these options the engine " *
+            "rescales all velocities to the &INSCALE virial ratio including the external potential, " *
+            "which destroys the prescribed orbital kinematics; use 1, 2, or 5",
+        )
+    end
+    t.kz14 in (0, 1, 2, 5) ||
+        error("config: merger.tidal.kz14 must be one of 0, 1, 2, 5; got $(t.kz14)")
+    if t.kz14 == 2
+        t.gmg > 0 || error("config: merger.tidal.gmg must be > 0 [M☉] for kz14 = 2; got $(t.gmg)")
+        t.rg0 > 0 || error("config: merger.tidal.rg0 must be > 0 [kpc] for kz14 = 2; got $(t.rg0)")
+    elseif t.kz14 == 5
+        any(!=(0.0), t.rg) || error("config: merger.tidal.rg must be non-zero [kpc] for kz14 = 5")
+        any(!=(0.0), t.vg) || error("config: merger.tidal.vg must be non-zero [km/s] for kz14 = 5")
+    end
+    return nothing
 end
 
 """Fail-fast bounds of `[merger.stellar]` (the engine's own limits on `zmet`; `level` one of A, B, C, 0)."""

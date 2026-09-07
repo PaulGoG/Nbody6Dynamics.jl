@@ -160,6 +160,23 @@ function _lagrangian_radii(
 end
 
 """
+    bound_fraction(snap::Snapshot) -> Float64
+
+Mass fraction of the particles bound to the whole system in its own frame
+(self-consistent negative-energy selection, [`_bound_members`](@ref)):
+a snapshot-based escaper measure independent of the engine's escape
+sphere. O(N²) per pass; intended for N ≲ 3×10⁴.
+"""
+function bound_fraction(snap::Snapshot)::Float64
+    pos = Float64.(snap.pos)
+    vel = Float64.(snap.vel)
+    mass = Float64.(snap.mass)
+    isempty(mass) && return NaN
+    sel = _bound_members(pos, vel, mass)
+    return sum(mass[sel]) / sum(mass)
+end
+
+"""
     cluster_structure(snaps, cluster_ranges; bound_only = true) -> ClusterStructure
 
 Structure of every initial cluster at every snapshot, measured about the

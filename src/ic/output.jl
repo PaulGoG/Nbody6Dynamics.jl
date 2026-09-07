@@ -252,7 +252,8 @@ Follows the Fortran NAMELIST read order expected by `nbody6.F → start.F`:
   `kz` overrides are applied last.
 - `stellar`: [`StellarSpec`](@ref) (`KZ(19)`, `Level`, `ZMET`, `EPOCH0`,
   `DTPLOT`); `KZ(12)` HR diagnostics are switched off with `kz19 = 0`
-- `KZ(14) = kz14`: tidal field option (0 = isolated)
+- `tidal`: [`TidalSpec`](@ref) (`KZ(14)` and the `&INXTRNL0` namelist for
+  options 2 and 5)
 - `mass_bounds`: `(BODYN, BODY1)` of `&INDATA`, inert under `KZ(22) = 2`
   but kept consistent with the sampled population
 """
@@ -263,7 +264,7 @@ function generate_merger_inp(
     zmbar::Float64;
     nbody6::Nbody6ParameterSpec,
     stellar::StellarSpec = StellarSpec(),
-    kz14::Int = 0,
+    tidal::TidalSpec = TidalSpec(),
     tcrit::Float64 = 100.0,
     dtadj::Float64 = 1.0,
     deltat::Float64 = 1.0,
@@ -271,6 +272,8 @@ function generate_merger_inp(
     mass_bounds::Tuple{Float64,Float64} = (0.08, 100.0),
 )
     _assert_resolved(nbody6)
+    _validate_tidal(tidal)
+    kz14 = tidal.kz14
     kz = zeros(Int, 50)
     kz[1] = 1
     kz[2] = -1
@@ -387,12 +390,22 @@ function generate_merger_inp(
         println(io, "Q=0.5,VXROT=0.0,VZROT=0.0,RTIDE=0.0 /")
         println(io)
 
-        # --- 9. External potential (only needed if KZ(14)>0) ---
-        if kz14 > 0
+        # --- 9. External potential: read by the engine for KZ(14) = 2 and 5 ---
+        if kz14 == 2
             println(io, "&INXTRNL0")
-            println(
+            @printf(io, "GMG=%.6G,RG0=%.6G /\n", tidal.gmg, tidal.rg0)
+            println(io)
+        elseif kz14 == 5
+            println(io, "&INXTRNL0")
+            @printf(
                 io,
-                "GMG=1.78E11,RG0=13.3,DISK=,A=,B=,VCIRC=,RCIRC=,GMB=,AR=,GAM=,RG=,,,VG=,,,MP=,AP2=,MPDOT=,TDELAY= /",
+                "RG=%.6G,%.6G,%.6G,VG=%.6G,%.6G,%.6G /\n",
+                tidal.rg[1],
+                tidal.rg[2],
+                tidal.rg[3],
+                tidal.vg[1],
+                tidal.vg[2],
+                tidal.vg[3]
             )
             println(io)
         end
@@ -400,7 +413,7 @@ function generate_merger_inp(
         # --- No binaries (NBIN0=0) or hierarchical triples ---
     end
 
-    @info "Wrote .inp file: $path (N=$N_total, KZ(22)=2, RBAR=$rbar, ZMBAR=$zmbar)"
+    @info "Wrote .inp file: $path (N=$N_total, KZ(22)=2, KZ(14)=$kz14, RBAR=$rbar, ZMBAR=$zmbar)"
     return nothing
 end
 
@@ -460,6 +473,8 @@ function generate_merger_ic(
     end
     _validate_nbody6(cfg.nbody6)
     _validate_stellar(cfg.stellar, cfg.output)
+    _validate_tidal(cfg.tidal)
+    _validate_tidal_tolerance(cfg.tidal, cfg.nbody6)
 
     # Resolve RNG and effective seed. When the caller supplies an RNG the
     # sampling is NOT reproducible from `effective_seed`; the metadata records
@@ -586,6 +601,7 @@ function generate_merger_ic(
         zmbar;
         nbody6 = nbody6,
         stellar = cfg.stellar,
+        tidal = cfg.tidal,
         tcrit = cfg.output.tcrit,
         dtadj = cfg.output.dtadj,
         deltat = cfg.output.deltat,
@@ -683,6 +699,7 @@ function _write_merger_ic_metadata(
         ),
         "nbody6" => _nbody6_table(regime.nbody6),
         "stellar" => _struct_to_dict(cfg.stellar),
+        "tidal" => _struct_to_dict(cfg.tidal),
         "hardware" => _hardware_fingerprint(),
         "orbit_mode" => cfg.orbit_mode,
         "orbit" => Dict{String,Any}(
@@ -920,6 +937,30 @@ function _write_merger_summary(
             st.epoch0,
             st.dtplot
         )
+        td = cfg.tidal
+        if td.kz14 == 0
+            println(io, "External field: none (KZ(14)=0, isolated)")
+        elseif td.kz14 == 1
+            println(io, "External field: KZ(14)=1 solar-neighbourhood linearised tide")
+        elseif td.kz14 == 2
+            @printf(
+                io,
+                "External field: KZ(14)=2 point-mass galaxy GMG=%.4g M☉ at RG0=%.4g kpc\n",
+                td.gmg,
+                td.rg0
+            )
+        else
+            @printf(
+                io,
+                "External field: KZ(14)=5 MWPotential2014, RG=[%.3g, %.3g, %.3g] kpc VG=[%.3g, %.3g, %.3g] km/s\n",
+                td.rg[1],
+                td.rg[2],
+                td.rg[3],
+                td.vg[1],
+                td.vg[2],
+                td.vg[3]
+            )
+        end
         println(io)
         println(io, "Output format: ", cfg.output.format, " (KZ(22)=2)")
         println(io, "Jacobi truncation: ", cfg.output.truncate_jacobi)

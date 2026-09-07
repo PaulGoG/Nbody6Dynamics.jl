@@ -568,14 +568,20 @@ export plot_hr, plot_hr_evolution
 export plot_escapers, plot_escape_anisotropy
 export plot_mass_segregation, plot_evolutionary_clock, plot_core_mass
 export plot_cluster_separation, plot_cluster_virial, per_cluster_virial, parse_merger_summary
-export ClusterStructure, cluster_structure, plot_cluster_structure
+export ClusterStructure, cluster_structure, plot_cluster_structure, bound_fraction
 export animate_cluster, animate_hr, animate_lagrangian
 export set_publication_theme!
 export generate_run_id, restart_simulation, export_for_paper
 export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 export detect_platform, check_dependencies, detect_cuda_path
 export ClusterSpec,
-    OrbitSpec, MergerOutputSpec, Nbody6ParameterSpec, StellarSpec, MergerConfig, MergerICResult
+    OrbitSpec,
+    MergerOutputSpec,
+    Nbody6ParameterSpec,
+    StellarSpec,
+    TidalSpec,
+    MergerConfig,
+    MergerICResult
 export DensityProfile,
     KingProfile,
     PlummerProfile,
