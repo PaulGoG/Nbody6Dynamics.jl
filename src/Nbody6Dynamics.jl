@@ -59,6 +59,11 @@ include("run.jl")
 include("io/io.jl")
 
 # ---------------------------------------------------------------------------
+# Per-cluster structure from snapshots (used by the merger plots)
+# ---------------------------------------------------------------------------
+include("cluster_structure.jl")
+
+# ---------------------------------------------------------------------------
 # Plotting (sets publication theme on load)
 # ---------------------------------------------------------------------------
 include("plotting/plotting.jl")
@@ -209,6 +214,13 @@ function generate_plots(
                         end
                         @info "Plotting per-cluster virial ratio..."
                         plot_cluster_virial(snaps, ranges, vis)
+                        @info "Plotting per-cluster structure..."
+                        plot_cluster_structure(
+                            snaps,
+                            ranges,
+                            vis;
+                            lagr = get(results, :lagr, nothing),
+                        )
                     end
                 end
             end
@@ -556,6 +568,7 @@ export plot_hr, plot_hr_evolution
 export plot_escapers, plot_escape_anisotropy
 export plot_mass_segregation, plot_evolutionary_clock, plot_core_mass
 export plot_cluster_separation, plot_cluster_virial, per_cluster_virial, parse_merger_summary
+export ClusterStructure, cluster_structure, plot_cluster_structure
 export animate_cluster, animate_hr, animate_lagrangian
 export set_publication_theme!
 export generate_run_id, export_for_paper

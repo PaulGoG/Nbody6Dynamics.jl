@@ -19,6 +19,14 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   member is refused.
 - Fail-fast bound on the rescaled Kroupa IMF: a rescale factor outside
   ×[0.5, 2] is refused at load time, outside ×[0.7, 1.4] warned.
+- Per-cluster structure from snapshots (`cluster_structure`,
+  `ClusterStructure`): self-consistently bound members, shrinking-sphere
+  centre, 10/50/90 % radii, velocity dispersion, bound mass fraction, and
+  virial ratio per initial cluster and snapshot; `plot_cluster_structure`
+  (bound half-mass radius with the engine's global `r₅₀` overlaid, bound
+  mass fraction) joins the merger plot suite. `per_cluster_virial` and
+  `plot_cluster_virial` use the bound members by default
+  (`bound_only = false` restores the all-member ratio).
 - `[simulation] omp_threads`: OpenMP thread cap for the backend, exported
   as `OMP_NUM_THREADS` by the launch script (`0` = runtime default);
   oversubscription against the host's logical CPUs warns at launch. The

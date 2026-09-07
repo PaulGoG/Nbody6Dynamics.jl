@@ -335,76 +335,59 @@ end
 # -----------------------------------------------------------------------------
 
 """
-    _cluster_virial_snapshot(snap, rng) -> (Q, n_mem)
+    _cluster_virial_snapshot(snap, rng; bound_only = true) -> (Q, n_mem)
 
-Compute the virial ratio Q = T/|W| for the members of an initial cluster in a
-single snapshot, after subtracting the cluster centre-of-mass velocity. Only
-self-gravity between cluster members contributes to W. Returns `(NaN, n_mem)`
-if the cluster has < 3 members or |W| is not positive.
-
-N-body units are assumed (G = 1).
+Virial ratio `Q = T/|W|` of the members of an initial cluster in one
+snapshot, with the centre-of-mass velocity subtracted and only the
+self-gravity among the selected members in `W`. With `bound_only` the
+selection is the self-consistently bound subset ([`_bound_members`](@ref)),
+which removes tidally stripped stars and kicked stellar remnants; otherwise
+every present member counts. `n_mem` is the number of present members.
+Returns `(NaN, n_mem)` with fewer than 3 selected members or a
+non-negative `W`. N-body units (`G = 1`).
 """
-function _cluster_virial_snapshot(snap::Snapshot, rng::UnitRange{Int})
-    names_k = Int.(snap.name)
-    mask = [n in rng for n in names_k]
-    n_mem = count(mask)
+function _cluster_virial_snapshot(snap::Snapshot, rng::UnitRange{Int}; bound_only::Bool = true)
+    idx = _member_indices(snap, rng)
+    n_mem = length(idx)
     n_mem < 3 && return (NaN, n_mem)
-
-    m = Float64.(snap.mass[mask])
-    M = sum(m)
+    pos = Float64.(snap.pos[:, idx])
+    vel = Float64.(snap.vel[:, idx])
+    m = Float64.(snap.mass[idx])
+    sel = bound_only ? _bound_members(pos, vel, m) : collect(1:n_mem)
+    length(sel) < 3 && return (NaN, n_mem)
+    p = pos[:, sel]
+    v = vel[:, sel]
+    ms = m[sel]
+    M = sum(ms)
     M > 0 || return (NaN, n_mem)
-
-    # Positions and velocities for cluster members
-    x = Float64.(@view snap.pos[1, mask])
-    y = Float64.(@view snap.pos[2, mask])
-    z = Float64.(@view snap.pos[3, mask])
-    vx = Float64.(@view snap.vel[1, mask])
-    vy = Float64.(@view snap.vel[2, mask])
-    vz = Float64.(@view snap.vel[3, mask])
-
-    # COM velocity (subtract bulk motion so Q measures internal kinetic energy)
-    vcx = sum(m .* vx) / M
-    vcy = sum(m .* vy) / M
-    vcz = sum(m .* vz) / M
-
-    # Internal kinetic energy
+    vc = vec(sum(v .* ms'; dims = 2)) ./ M
     T = 0.0
-    @inbounds for i in eachindex(m)
-        dvx = vx[i] - vcx
-        dvy = vy[i] - vcy
-        dvz = vz[i] - vcz
-        T += 0.5 * m[i] * (dvx*dvx + dvy*dvy + dvz*dvz)
+    @inbounds for i in eachindex(ms)
+        T += 0.5 * ms[i] * ((v[1, i] - vc[1])^2 + (v[2, i] - vc[2])^2 + (v[3, i] - vc[3])^2)
     end
-
-    # Self-gravitational potential energy of the cluster (G = 1)
-    W = 0.0
-    @inbounds for i in 1:(n_mem - 1)
-        xi, yi, zi, mi = x[i], y[i], z[i], m[i]
-        for j in (i + 1):n_mem
-            dx = xi - x[j]
-            dy = yi - y[j]
-            dz = zi - z[j]
-            r = sqrt(dx*dx + dy*dy + dz*dz)
-            r > 0 || continue
-            W -= mi * m[j] / r
-        end
-    end
-
-    abs_w = abs(W)
-    abs_w > 0 || return (NaN, n_mem)
-    return (T / abs_w, n_mem)
+    W = 0.5 * sum(ms .* _self_potential(p, ms))
+    W < 0 || return (NaN, n_mem)
+    return (T / abs(W), n_mem)
 end
 
 """
-    per_cluster_virial(snaps, cluster_ranges) -> (Q::Matrix{Float64}, n_mem::Matrix{Int})
+    per_cluster_virial(snaps, cluster_ranges; bound_only = true)
+        -> (Q::Matrix{Float64}, n_mem::Matrix{Int})
 
-Compute the internal virial ratio of every initial cluster at every snapshot.
-`Q[i, k]` is the ratio for cluster `i` at snapshot `k`; `NaN` when the cluster
-has < 3 members left.
+Internal virial ratio of every initial cluster at every snapshot, `Q[i, k]`
+for cluster `i` at snapshot `k` (`NaN` with fewer than 3 selected members).
+By default only the members bound to the cluster enter `T` and `W`
+([`_bound_members`](@ref)); `bound_only = false` uses every present member
+and is dominated by kicked remnants after the first supernovae.
 
-Complexity: O(Σ_i N_i²) per snapshot. Manageable for N_i ≲ few × 10³.
+Complexity: O(Σ_i N_i²) per snapshot and bound-selection pass; manageable
+for N_i ≲ 10⁴.
 """
-function per_cluster_virial(snaps::Vector{Snapshot}, cluster_ranges::Vector{UnitRange{Int}})
+function per_cluster_virial(
+    snaps::Vector{Snapshot},
+    cluster_ranges::Vector{UnitRange{Int}};
+    bound_only::Bool = true,
+)
     n_cl = length(cluster_ranges)
     n_t = length(snaps)
     Q = fill(NaN, n_cl, n_t)
@@ -412,7 +395,7 @@ function per_cluster_virial(snaps::Vector{Snapshot}, cluster_ranges::Vector{Unit
 
     for (k, snap) in enumerate(snaps)
         for (i, rng) in enumerate(cluster_ranges)
-            q, nm = _cluster_virial_snapshot(snap, rng)
+            q, nm = _cluster_virial_snapshot(snap, rng; bound_only = bound_only)
             Q[i, k] = q
             n_mem[i, k] = nm
         end
@@ -431,12 +414,14 @@ equilibrium.  The time axis is in Myr when `cfg.units == "physical"`
 (Q is dimensionless).
 
 **Interpretation note:** the metric tracks particles by their original
-cluster ID, not spatial membership. It is physically meaningful *before*
-coalescence (diagnosing which clusters are still in virial equilibrium vs
-undergoing violent relaxation). After merger, the same ID-group is spread
-throughout the merged system, so T/|W| for its self-gravity only diverges —
-this is expected, not a bug, and provides a rough proxy for "time of
-coalescence" as the point where Q_i saturates at a large constant.
+cluster ID and, by default, only those still bound to that group
+(`per_cluster_virial(...; bound_only = true)`), so stripped stars and
+kicked stellar remnants do not enter. It is physically meaningful *before*
+coalescence (which clusters are still in virial equilibrium, which undergo
+violent relaxation). After merger the bound subset of an ID-group is
+whatever remains self-bound inside the remnant, so the curve loses its
+meaning as a cluster diagnostic; the departure from `Q ≈ 0.5` is a rough
+proxy for the time of coalescence.
 """
 function plot_cluster_virial(
     snaps::Vector{Snapshot},
@@ -529,6 +514,138 @@ function plot_cluster_virial(
 
     # ≥ 2 legend entries whenever at least one data series was drawn
     n_series ≥ 1 && _top_legend!(fig, ax; nbanks = detail ? min(3, cld(n_cl + 1, 4)) : 1)
+
+    return _save_fig(cfg, filename, fig)
+end
+
+# -----------------------------------------------------------------------------
+# Per-cluster structure: bound half-mass radius and bound mass fraction
+# -----------------------------------------------------------------------------
+
+"""
+    plot_cluster_structure(snaps, cluster_ranges, cfg; lagr = nothing,
+                           filename = "merger_cluster_structure")
+
+Two stacked panels sharing the time axis: the half-mass radius of every
+initial cluster measured about its own centre from its bound members
+([`cluster_structure`](@ref)), and the bound mass fraction. With `lagr`
+given, the engine's global 50 % Lagrangian radius about its single density
+centre is overlaid dashed grey on the radius panel, which makes the
+difference between the configuration and its members visible. For more
+than five clusters the min–max envelope and mean are drawn. Radii in pc and
+times in Myr when `cfg.units == "physical"`.
+"""
+function plot_cluster_structure(
+    snaps::Vector{Snapshot},
+    cluster_ranges::Vector{UnitRange{Int}},
+    cfg::VisualizationConfig;
+    lagr::Union{Nothing,LagrangianData} = nothing,
+    filename::AbstractString = "merger_cluster_structure",
+)
+    n_cl = length(cluster_ranges)
+    n_cl ≥ 1 || (@info "Skipping cluster structure plot: no cluster ranges"; return nothing)
+    n_t = length(snaps)
+    n_t ≥ 2 || (@info "Skipping cluster structure plot: need ≥ 2 snapshots"; return nothing)
+
+    physical = cfg.units == "physical" && all(_has_physical_scaling(s.header) for s in snaps)
+    t = physical ? [time_myr(s.header) for s in snaps] : [time_nb(s.header) for s in snaps]
+    r_unit = physical ? rbar(snaps[1].header) : 1.0
+    @info "Computing per-cluster structure ($(n_cl) clusters × $(n_t) snapshots)..."
+    st = cluster_structure(snaps, cluster_ranges)
+    r_h = st.r_lagr[2, :, :] .* r_unit
+    f_bound = st.bound_mass_fraction
+
+    fig = Figure(; size = _fig_two_panel(cfg))
+    ttk = _time_ticks(first(t), last(t))
+    ax1 = Axis(
+        fig[1, 1];
+        ylabel = physical ? L"r_{h,i} \; [\mathrm{pc}]" : L"r_{h,i} \; [\mathrm{NB}]",
+        xticklabelsvisible = false,
+        xticks = ttk,
+    )
+    ax2 = Axis(
+        fig[2, 1];
+        xlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]",
+        ylabel = L"M_{\mathrm{bound},i} \, / \, M_i",
+        xticks = ttk,
+    )
+
+    detail = n_cl ≤ 5
+    n_series = 0
+    if detail
+        for i in 1:n_cl
+            valid = .!isnan.(@view r_h[i, :])
+            any(valid) || continue
+            color = _OKABE_ITO[mod1(i, length(_OKABE_ITO))]
+            lines!(
+                ax1,
+                t[valid],
+                r_h[i, valid];
+                color = color,
+                linewidth = 1.8,
+                label = latexstring("\\mathrm{cluster}\\;$(i)"),
+            )
+            lines!(ax2, t[valid], f_bound[i, valid]; color = color, linewidth = 1.8)
+            n_series += 1
+        end
+    else
+        sep_color = _SEMANTIC_COLORS[:separation]
+        sep_edge = _band_edge(sep_color)
+        for (ax, data, labelled) in ((ax1, r_h, true), (ax2, f_bound, false))
+            lo, hi, mean = _envelope_stats(data)
+            valid = .!isnan.(mean)
+            any(valid) || continue
+            if labelled
+                band!(
+                    ax,
+                    t[valid],
+                    lo[valid],
+                    hi[valid];
+                    color = (sep_color, 0.25),
+                    label = L"\min\;-\;\max\;\mathrm{range}",
+                )
+                lines!(
+                    ax,
+                    t[valid],
+                    mean[valid];
+                    color = sep_color,
+                    linewidth = 2.4,
+                    label = L"\mathrm{mean}",
+                )
+                n_series = 2
+            else
+                band!(ax, t[valid], lo[valid], hi[valid]; color = (sep_color, 0.25))
+                lines!(ax, t[valid], mean[valid]; color = sep_color, linewidth = 2.4)
+            end
+            lines!(ax, t[valid], lo[valid]; color = sep_edge, linewidth = 1.0)
+            lines!(ax, t[valid], hi[valid]; color = sep_edge, linewidth = 1.0)
+        end
+    end
+
+    # Engine's global 50 % radius about its single density centre
+    if lagr !== nothing && !isempty(lagr.time)
+        i50 = findfirst(==(0.5), lagr.mass_fractions)
+        if i50 !== nothing
+            t_l = physical ? lagr.time .* tscale(snaps[1].header) : lagr.time
+            lines!(
+                ax1,
+                t_l,
+                lagr.radii[i50, :] .* r_unit;
+                color = :gray40,
+                linestyle = :dash,
+                linewidth = 1.4,
+                label = L"\mathrm{engine}\;r_{50}\;\mathrm{(global\;centre)}",
+            )
+            n_series += 1
+        end
+    end
+
+    hlines!(ax2, [1.0]; color = :gray50, linestyle = :dash, linewidth = 1.0)
+    _annotate!(ax2, L"M_{\mathrm{bound},i} = M_i"; corner = :tl, dy = 0.10, color = :gray40)
+    ylims!(ax2, 0.0, 1.08)
+    linkxaxes!(ax1, ax2)
+    rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
+    n_series ≥ 2 && _top_legend!(fig, ax1; nbanks = min(3, cld(n_series, 4)))
 
     return _save_fig(cfg, filename, fig)
 end

@@ -1957,6 +1957,96 @@ kz16 = 1
     end
 
     # =====================================================================
+    @testset "Per-cluster structure" begin
+        rng_s = StableRNG(2024)
+        function _synthetic_cluster(N, a, centre, vcm, rng)
+            pos, vel = sample_plummer(N, a; rng = rng)
+            mass = fill(1.0 / N, N)
+            virialise!(mass, pos, vel)
+            pos .+= centre
+            vel .+= vcm
+            return pos, vel, mass
+        end
+        N1, N2 = 400, 300
+        p1, v1, m1 = _synthetic_cluster(N1, 0.2, [-3.0, 0.0, 0.0], [0.0, 0.3, 0.0], rng_s)
+        p2, v2, m2 = _synthetic_cluster(N2, 0.15, [3.0, 0.0, 0.0], [0.0, -0.3, 0.0], rng_s)
+        # Unbind the last 5 % of cluster 1: radial speed well above escape (√(2/a) ≈ 3.2)
+        n_unb = 20
+        for j in (N1 - n_unb + 1):N1
+            dir = p1[:, j] .- [-3.0, 0.0, 0.0]
+            dir ./= max(sqrt(sum(dir .^ 2)), 1e-6)
+            v1[:, j] .= [0.0, 0.3, 0.0] .+ 5.0 .* dir
+        end
+        pos = hcat(p1, p2)
+        vel = hcat(v1, v2)
+        mass = vcat(m1, m2)
+        names = Int32.(1:(N1 + N2))
+        function _snap(t)
+            params = zeros(Float32, 20)
+            params[1] = t
+            params[3] = 1.0f0
+            params[4] = 1.0f0
+            params[11] = 1.0f0
+            params[12] = 1.0f0
+            Snapshot(
+                SnapshotHeader(Int32(N1 + N2), Int32(1), Int32(1), Int32(20), params),
+                names,
+                Float32.(mass),
+                Float32.(pos),
+                Float32.(vel),
+                Float32[],
+                Float32[],
+            )
+        end
+        snaps = [_snap(0.0), _snap(1.0)]
+        ranges = [1:N1, (N1 + 1):(N1 + N2)]
+
+        st = cluster_structure(snaps, ranges)
+        @test st isa ClusterStructure
+        @test st.time == [0.0, 1.0]
+        @test st.n_members[:, 1] == [N1, N2]
+        @test N1 - n_unb - 20 ≤ st.n_bound[1, 1] ≤ N1 - n_unb
+        @test st.n_bound[2, 1] ≥ 0.9 * N2
+        @test 0.88 ≤ st.bound_mass_fraction[1, 1] ≤ 0.95
+        @test isapprox(st.centre[:, 1, 1], [-3.0, 0.0, 0.0]; atol = 0.05)
+        @test isapprox(st.centre[:, 2, 1], [3.0, 0.0, 0.0]; atol = 0.05)
+        @test isapprox(st.r_lagr[2, 1, 1], 1.305 * 0.2; rtol = 0.15)
+        @test isapprox(st.r_lagr[2, 2, 1], 1.305 * 0.15; rtol = 0.15)
+        @test st.r_lagr[1, 1, 1] < st.r_lagr[2, 1, 1] < st.r_lagr[3, 1, 1]
+        @test 0.4 ≤ st.q_virial[2, 1] ≤ 0.6
+        @test isfinite(st.sigma_1d[1, 1]) && st.sigma_1d[1, 1] > 0
+        @test st.sigma_1d[1, 1] > st.sigma_1d[2, 1] * 0.5   # both of order √(M/r)
+
+        # Unbound fast members inflate the all-member ratio; the bound selection removes them
+        Q_all, _ = per_cluster_virial(snaps, ranges; bound_only = false)
+        Q_bound, nm = per_cluster_virial(snaps, ranges)
+        @test Q_all[1, 1] > Q_bound[1, 1]
+        @test 0.4 ≤ Q_bound[1, 1] ≤ 0.65
+        @test nm[1, 1] == N1
+        st_all = cluster_structure(snaps, ranges; bound_only = false)
+        @test st_all.n_bound[1, 1] == N1 && st_all.bound_mass_fraction[1, 1] == 1.0
+
+        # Figure: with and without the engine overlay (NB units, raster draft)
+        vis_s = VisualizationConfig(;
+            format = "png",
+            column = "single",
+            units = "nbody",
+            output_dir = mktempdir(),
+        )
+        path = plot_cluster_structure(snaps, ranges, vis_s)
+        @test isfile(path)
+        lagr_s = LagrangianData([0.0, 1.0], [0.1, 0.5, 0.9], [0.5 0.5; 3.0 3.0; 6.0 6.0])
+        path2 = plot_cluster_structure(
+            snaps,
+            ranges,
+            vis_s;
+            lagr = lagr_s,
+            filename = "structure_overlay",
+        )
+        @test isfile(path2)
+    end
+
+    # =====================================================================
     @testset "Merger plot suite smoke" begin
         # plot_merger_ic on a small generated IC (all five figure families)
         ic_dir = mktempdir()

@@ -362,6 +362,9 @@ Static plots take the extension from `visualization.format`; animations are alwa
 | `plot_energy(diag, vis)` | Two panels: log `\|ΔE/E\|` and virial ratio with `Q = 0.5` reference | `energy` |
 | `plot_particle_count(diag, vis)` | Two panels: bound N and KS pairs, integer ticks | `particle_count` |
 | `plot_lagrangian(lagr, vis)` | Selected mass-fraction radii vs time, log y | `lagrangian_radii` |
+| `plot_cluster_separation(snaps, ranges, vis)` | Pairwise centre-of-mass separations of the initial clusters (merger runs) | `merger_cluster_separation` |
+| `plot_cluster_virial(snaps, ranges, vis)` | Virial ratio of each initial cluster from its bound members, `Q = 0.5` reference | `merger_cluster_virial` |
+| `plot_cluster_structure(snaps, ranges, vis)` | Two panels: bound half-mass radius per cluster with the engine's global `r₅₀` overlaid, and bound mass fraction | `merger_cluster_structure` |
 | `plot_hr(sev, vis)` | HR diagram coloured by stellar type K*, reversed Teff axis | `hr_diagram_{early,mid,final}` |
 | `plot_hr_evolution(sevs, vis)` | HR panel grid across up to 6 epochs | `hr_evolution` |
 | `plot_escapers(escs, vis)` | Two panels: cumulative escaped mass step curve with totals annotation, and escape velocity vs time (log y) split into luminous / compact-remnant classes | `escapers` |
