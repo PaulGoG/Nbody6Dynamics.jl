@@ -22,6 +22,13 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   last cumulative timing table (`[telemetry.backend_timing]`) and the
   regular-force kernel throughput from its stderr profile
   (`[telemetry.force_kernel_gflops]`).
+- Documentation of what the engine can and cannot do with multi-cluster
+  initial conditions ("Feasibility and limitations" in the merger docs):
+  single-centre diagnostics, escape-radius behaviour and the `escape.F`
+  format overflow, hardcoded integration parameters, the `QE = 1.0`
+  choice, the super-particle mass caveat of the shipped small
+  configurations, and the recommended 2–5 cluster regime; checked against
+  the engine source and two small confirmation runs.
 
 Structural audit: redundancy, dead-code, and naming sweep (no physics
 changes; all numerical outputs unchanged).

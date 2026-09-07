@@ -506,6 +506,10 @@ The same factors are available per snapshot from the conf.3 header via the acces
 
 Fortran code requires a large stack. The launch script sets `ulimit -s unlimited`; if running manually, set this in your shell first.
 
+### Simulation exits with status 2 after a burst of escapers
+
+`err1000` ends with `Fortran runtime error: Expected REAL for item ... in formatted transfer` at `escape.F`. The engine's escaper summary `WRITE` has a fixed item list, and a single adjustment interval that flags on the order of a thousand escapers overflows it. This happens in isolated multi-cluster runs, where the escape radius is `2 × 10 RSCALE` about the global density centre and ejecta from an early collapse cross it together many crossing times later. Shorten `DTADJ`, run in an external tidal field, or treat escapers in post-processing from the snapshots; the output written before the failure is intact.
+
 ### "CUDA not found" during build
 
 Set `cuda_path` explicitly in `[build]`, or export one of `CUDA_HOME`, `CUDA_PATH`, `CUDA_ROOT`.
