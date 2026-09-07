@@ -241,37 +241,95 @@ Base.@kwdef struct MergerOutputSpec
 end
 
 """
-    Nbody6ParameterSpec(; qe = 2.0e-4, etai = 0.02, etar = 0.02, nnbopt = 0,
-                          rs0 = 0.0, rmin = 0.0, dtmin = 0.0, kz16 = 0)
+    Nbody6ParameterSpec(; qe = 2.0e-4, etai = 0.02, etar = 0.02, etau = 0.1,
+                          nnbopt = 0, rs0 = 0.0, rmin = 0.0, dtmin = 0.0,
+                          eclose = 1.0, gmin = 1.0e-6, gmax = 0.01, smax = 1.0,
+                          kz16 = 0, tcomp = 1.0e8, tcrtp0 = 3600.0,
+                          isernb = 40, iserreg = 40, iserks = 0,
+                          nfix = 1, ncrit = 10, nrun = 1, ncomm = 10,
+                          kz = Dict{Int,Int}())
 
-Integration parameters written to `merger.inp` (`[merger.nbody6]`), in the
-N-body units of the combined system. A zero for `nnbopt`, `rs0`, `rmin`, or
-`dtmin` means "derive from the member clusters at generation time"; see
-[`resolve_nbody6_parameters`](@ref) for the rules.
+Every numerical field of the `&INNBODY6` and `&ININPUT` namelists that the
+merger input writer emits (`[merger.nbody6]`), in the N-body units of the
+combined system. A zero for `nnbopt`, `rs0`, `rmin`, or `dtmin` means
+"derive from the member clusters at generation time"
+([`resolve_nbody6_parameters`](@ref)). Meanings follow the Nbody6++GPU
+input manual.
 
 # Fields
-- `qe`: energy-error tolerance per adjustment interval (`QE`); must be > 0
-- `etai`, `etar`: irregular and regular time-step factors; must be > 0
+- `qe`: energy-error tolerance per adjustment interval; > 0
+- `etai`, `etar`, `etau`: irregular, regular, and regularised time-step
+  factors; > 0
 - `nnbopt`: target neighbour number; `0` = `clamp(round(√N_total), 20, 300)`
 - `rs0`: initial neighbour-sphere radius; `0` = derived; must not exceed
   the smallest member half-mass radius
-- `rmin`: KS regularisation distance; `0` = derived
-- `dtmin`: KS time-step threshold; `0` = derived
-- `kz16`: `KZ(16)`, the engine's re-derivation of `RMIN`, `DTMIN`, and
-  `ECLOSE` from its global scale radius and core density every `DTADJ`;
-  `0` keeps the written values (recommended for multi-cluster systems, whose
-  global quantities do not describe the members); 0–3 as in the Nbody6++
-  manual
+- `rmin`, `dtmin`: KS regularisation distance and time step; `0` = derived
+- `eclose`: binding energy per unit mass of a hard binary; > 0
+- `gmin`, `gmax`: relative perturbation for unperturbed KS motion and the
+  soft-binary termination parameter; `0 < gmin < gmax`
+- `smax`: maximum time step (a power of two commensurate with 1); > 0
+- `kz16`: `KZ(16)`, engine re-derivation of `RMIN`, `DTMIN`, `ECLOSE` every
+  `DTADJ`; `0` keeps the written values (recommended for multi-cluster
+  systems); 0–3
+- `tcomp`: run-time limit [s]; > 0
+- `tcrtp0`: termination time [Myr]; > 0
+- `isernb`, `iserreg`, `iserks`: MPI block-size thresholds for serial
+  execution of irregular, regular, and KS blocks; ≥ 0
+- `nfix`: multiplier of `DELTAT` for `conf.3` and binary output; ≥ 1
+- `ncrit`: minimum particle number, alternative termination criterion; ≥ 1
+- `nrun`: run identification index; ≥ 1
+- `ncomm`: multiplier of `DELTAT` for the restart (`COMMON`) dump interval; ≥ 1
+- `kz`: explicit `KZ(i) = v` overrides applied last (`[merger.nbody6.kz]`,
+  keys 1–50); an override of an index that also has a named key (14, 16,
+  19) warns
 """
 Base.@kwdef struct Nbody6ParameterSpec
     qe::Float64 = 2.0e-4
     etai::Float64 = 0.02
     etar::Float64 = 0.02
+    etau::Float64 = 0.1
     nnbopt::Int = 0
     rs0::Float64 = 0.0
     rmin::Float64 = 0.0
     dtmin::Float64 = 0.0
+    eclose::Float64 = 1.0
+    gmin::Float64 = 1.0e-6
+    gmax::Float64 = 0.01
+    smax::Float64 = 1.0
     kz16::Int = 0
+    tcomp::Float64 = 1.0e8
+    tcrtp0::Float64 = 3600.0
+    isernb::Int = 40
+    iserreg::Int = 40
+    iserks::Int = 0
+    nfix::Int = 1
+    ncrit::Int = 10
+    nrun::Int = 1
+    ncomm::Int = 10
+    kz::Dict{Int,Int} = Dict{Int,Int}()
+end
+
+"""
+    StellarSpec(; kz19 = 3, level = "C", zmet = 0.001, epoch0 = 0.0, dtplot = 1.0)
+
+Stellar-evolution settings of `merger.inp` (`[merger.stellar]`):
+
+- `kz19`: `KZ(19)`, evolution and mass-loss scheme; `0` = off, `1`–`2`
+  supernova schemes, `≥ 3` Eggleton–Tout–Hurley (SSE); ≥ 0
+- `level`: SSE/BSE parameter level (Kamlah et al. 2022): `"A"`, `"B"`,
+  `"C"`, or `"0"` (no level; the engine's independent defaults)
+- `zmet`: metal abundance; `0.0001 ≤ zmet ≤ 0.03` (the engine's own bounds)
+- `epoch0`: formation time of the population [Myr]; ≤ 0 (age at start is
+  `−epoch0`)
+- `dtplot`: interval of the stellar-evolution diagnostics [NB]; > 0 and,
+  per the manual, ≥ `deltat`
+"""
+Base.@kwdef struct StellarSpec
+    kz19::Int = 3
+    level::String = "C"
+    zmet::Float64 = 0.001
+    epoch0::Float64 = 0.0
+    dtplot::Float64 = 1.0
 end
 
 # -----------------------------------------------------------------------------
@@ -279,7 +337,7 @@ end
 # -----------------------------------------------------------------------------
 
 """
-    MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, seed])
+    MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, stellar, seed])
 
 Top-level configuration for multi-cluster merger initial conditions.
 
@@ -297,7 +355,8 @@ Top-level configuration for multi-cluster merger initial conditions.
 - `orbit_mode::String`: `"kepler"` or `"explicit"`
 - `orbit::OrbitSpec`
 - `output::MergerOutputSpec`
-- `nbody6::Nbody6ParameterSpec`: integration parameters for `merger.inp`
+- `nbody6::Nbody6ParameterSpec`: integration and run-control parameters
+- `stellar::StellarSpec`: stellar-evolution settings
 - `seed::Union{Int, Nothing}`: RNG seed. `nothing` = non-deterministic.
 """
 struct MergerConfig
@@ -306,19 +365,22 @@ struct MergerConfig
     orbit::OrbitSpec
     output::MergerOutputSpec
     nbody6::Nbody6ParameterSpec
+    stellar::StellarSpec
     seed::Union{Int,Nothing}
 end
 
-# Convenience form: derived integration parameters and a non-deterministic
-# seed (the drawn seed is still recorded in the run metadata).
+# Convenience form: derived integration parameters, default stellar
+# evolution, and a non-deterministic seed (the drawn seed is still recorded
+# in the run metadata).
 MergerConfig(
     clusters::Vector{ClusterSpec},
     orbit_mode::AbstractString,
     orbit::OrbitSpec,
     output::MergerOutputSpec;
     nbody6::Nbody6ParameterSpec = Nbody6ParameterSpec(),
+    stellar::StellarSpec = StellarSpec(),
     seed::Union{Int,Nothing} = nothing,
-) = MergerConfig(clusters, String(orbit_mode), orbit, output, nbody6, seed)
+) = MergerConfig(clusters, String(orbit_mode), orbit, output, nbody6, stellar, seed)
 
 # -----------------------------------------------------------------------------
 # MergerICResult
@@ -449,15 +511,46 @@ function load_merger_config(path::AbstractString)::MergerConfig
     )
 
     nb_raw = get(m, "nbody6", Dict{String,Any}())
+    kz_raw = get(nb_raw, "kz", Dict{String,Any}())
+    kz_over = Dict{Int,Int}()
+    for (k, v) in kz_raw
+        idx = tryparse(Int, String(k))
+        idx === nothing && error("config: merger.nbody6.kz keys must be integers 1–50; got \"$k\"")
+        v isa Integer || error("config: merger.nbody6.kz[\"$k\"] must be an integer; got $v")
+        kz_over[idx] = Int(v)
+    end
     nbody6 = Nbody6ParameterSpec(;
         qe = Float64(get(nb_raw, "qe", 2.0e-4)),
         etai = Float64(get(nb_raw, "etai", 0.02)),
         etar = Float64(get(nb_raw, "etar", 0.02)),
+        etau = Float64(get(nb_raw, "etau", 0.1)),
         nnbopt = Int(get(nb_raw, "nnbopt", 0)),
         rs0 = Float64(get(nb_raw, "rs0", 0.0)),
         rmin = Float64(get(nb_raw, "rmin", 0.0)),
         dtmin = Float64(get(nb_raw, "dtmin", 0.0)),
+        eclose = Float64(get(nb_raw, "eclose", 1.0)),
+        gmin = Float64(get(nb_raw, "gmin", 1.0e-6)),
+        gmax = Float64(get(nb_raw, "gmax", 0.01)),
+        smax = Float64(get(nb_raw, "smax", 1.0)),
         kz16 = Int(get(nb_raw, "kz16", 0)),
+        tcomp = Float64(get(nb_raw, "tcomp", 1.0e8)),
+        tcrtp0 = Float64(get(nb_raw, "tcrtp0", 3600.0)),
+        isernb = Int(get(nb_raw, "isernb", 40)),
+        iserreg = Int(get(nb_raw, "iserreg", 40)),
+        iserks = Int(get(nb_raw, "iserks", 0)),
+        nfix = Int(get(nb_raw, "nfix", 1)),
+        ncrit = Int(get(nb_raw, "ncrit", 10)),
+        nrun = Int(get(nb_raw, "nrun", 1)),
+        ncomm = Int(get(nb_raw, "ncomm", 10)),
+        kz = kz_over,
+    )
+    st_raw = get(m, "stellar", Dict{String,Any}())
+    stellar = StellarSpec(;
+        kz19 = Int(get(st_raw, "kz19", 3)),
+        level = String(get(st_raw, "level", "C")),
+        zmet = Float64(get(st_raw, "zmet", 0.001)),
+        epoch0 = Float64(get(st_raw, "epoch0", 0.0)),
+        dtplot = Float64(get(st_raw, "dtplot", 1.0)),
     )
 
     seed_raw = get(m, "seed", nothing)
@@ -484,8 +577,25 @@ function load_merger_config(path::AbstractString)::MergerConfig
     output.dtadj > 0 || error("config: merger.output.dtadj must be > 0; got $(output.dtadj)")
     output.deltat > 0 || error("config: merger.output.deltat must be > 0; got $(output.deltat)")
     _validate_nbody6(nbody6)
+    _validate_stellar(stellar, output)
 
-    return MergerConfig(clusters, orbit_mode, orbit, output, nbody6, seed)
+    return MergerConfig(clusters, orbit_mode, orbit, output, nbody6, stellar, seed)
+end
+
+"""Fail-fast bounds of `[merger.stellar]` (the engine's own limits on `zmet`; `level` one of A, B, C, 0)."""
+function _validate_stellar(s::StellarSpec, output::MergerOutputSpec)
+    s.kz19 ≥ 0 || error("config: merger.stellar.kz19 must be ≥ 0; got $(s.kz19)")
+    s.level in ("A", "B", "C", "0") || error(
+        "config: merger.stellar.level must be one of \"A\", \"B\", \"C\", \"0\"; got \"$(s.level)\"",
+    )
+    (0.0001 ≤ s.zmet ≤ 0.03) ||
+        error("config: merger.stellar.zmet must satisfy 0.0001 ≤ zmet ≤ 0.03; got $(s.zmet)")
+    s.epoch0 ≤ 0 || error("config: merger.stellar.epoch0 must be ≤ 0 [Myr]; got $(s.epoch0)")
+    s.dtplot > 0 || error("config: merger.stellar.dtplot must be > 0 [NB]; got $(s.dtplot)")
+    s.dtplot ≥ output.deltat || error(
+        "config: merger.stellar.dtplot must be ≥ merger.output.deltat; got dtplot = $(s.dtplot), deltat = $(output.deltat)",
+    )
+    return nothing
 end
 
 """Fail-fast bounds of `[merger.nbody6]`: positive tolerances and step factors, non-negative derivable entries, `kz16` in 0–3."""
@@ -498,6 +608,23 @@ function _validate_nbody6(p::Nbody6ParameterSpec)
     p.rmin ≥ 0 || error("config: merger.nbody6.rmin must be ≥ 0 (0 = derived); got $(p.rmin)")
     p.dtmin ≥ 0 || error("config: merger.nbody6.dtmin must be ≥ 0 (0 = derived); got $(p.dtmin)")
     p.kz16 in 0:3 || error("config: merger.nbody6.kz16 must be one of 0, 1, 2, 3; got $(p.kz16)")
+    p.etau > 0 || error("config: merger.nbody6.etau must be > 0; got $(p.etau)")
+    p.eclose > 0 || error("config: merger.nbody6.eclose must be > 0; got $(p.eclose)")
+    (0 < p.gmin < p.gmax) || error(
+        "config: merger.nbody6 must satisfy 0 < gmin < gmax; got gmin = $(p.gmin), gmax = $(p.gmax)",
+    )
+    p.smax > 0 || error("config: merger.nbody6.smax must be > 0; got $(p.smax)")
+    p.tcomp > 0 || error("config: merger.nbody6.tcomp must be > 0 [s]; got $(p.tcomp)")
+    p.tcrtp0 > 0 || error("config: merger.nbody6.tcrtp0 must be > 0 [Myr]; got $(p.tcrtp0)")
+    for k in (:isernb, :iserreg, :iserks)
+        getfield(p, k) ≥ 0 || error("config: merger.nbody6.$k must be ≥ 0; got $(getfield(p, k))")
+    end
+    for k in (:nfix, :ncrit, :nrun, :ncomm)
+        getfield(p, k) ≥ 1 || error("config: merger.nbody6.$k must be ≥ 1; got $(getfield(p, k))")
+    end
+    for (i, v) in p.kz
+        1 ≤ i ≤ 50 || error("config: merger.nbody6.kz index must be within 1–50; got $i")
+    end
     return nothing
 end
 

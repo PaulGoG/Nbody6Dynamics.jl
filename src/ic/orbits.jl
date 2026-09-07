@@ -195,7 +195,9 @@ function combine_clusters_explicit(
     }()
 
     for i in 1:n
-        cd = cluster_data[i]
+        # Keep only the particle arrays; sampled cluster data may carry
+        # extra fields (energies) that the truncated vector does not hold.
+        cd = (pos = cluster_data[i].pos, vel = cluster_data[i].vel, mass = cluster_data[i].mass)
         if truncate_jacobi_flag && n ≥ 2
             M_self = sum(cd.mass)
             pos_i = specs[i].position

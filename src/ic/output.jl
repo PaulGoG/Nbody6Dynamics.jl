@@ -6,6 +6,28 @@
 # sqrt(G M☉ / pc) in km/s. Sampled and Kepler velocities carry this unit
 # until the NB-unit conversion for dat.10.
 const _CODE_VSTAR_KMS = 0.06557
+# Code time unit pc / (km s⁻¹) / _CODE_VSTAR_KMS in Myr (≈ 14.91 Myr), the
+# crossing-time unit of a 1 M☉, 1 pc system with G = 1.
+const _PC_KM = 3.0857e13
+const _MYR_S = 3.15576e13
+const _CODE_TIME_MYR = _PC_KM / _MYR_S / _CODE_VSTAR_KMS
+
+"""
+    crossing_time(M, E) -> Float64
+
+Crossing time `M^{5/2} / (2|E|)^{3/2}` of a self-gravitating system of mass
+`M` and total energy `E < 0` in `G = 1` units (the engine's `TCR`,
+`scale.F`/`adjust.F`); `NaN` for `E ≥ 0`.
+"""
+crossing_time(M::Real, E::Real)::Float64 = E < 0 ? M^2.5 / (2 * abs(E))^1.5 : NaN
+
+"""N-body time unit in Myr for a system of total mass `M_total` [M☉] and length unit `rbar_pc` [pc] (the engine's `T*`)."""
+_nbody_time_myr(M_total::Real, rbar_pc::Real)::Float64 = _CODE_TIME_MYR * sqrt(rbar_pc^3 / M_total)
+
+"""Stellar mass bounds `(bodyn, body1)` [M☉] written to `&INDATA` for an IMF specification (inert under `KZ(22) = 2`, kept consistent with the sampled population)."""
+_imf_mass_bounds(i::KroupaIMF) = (i.bodyn, i.body1)
+_imf_mass_bounds(i::RescaledKroupaIMF) = (i.bodyn, i.body1)
+_imf_mass_bounds(i::EqualMassIMF) = (i.particle_mass, i.particle_mass)
 
 """
     write_dat10(path, mass, pos, vel)
@@ -137,16 +159,19 @@ function resolve_nbody6_parameters(
     ρ̂ = _central_density_contrast(clusters[i_min].profile)
     rmin = spec.rmin > 0 ? spec.rmin : 4 * r_h / (N_min * cbrt(ρ̂))
     dtmin = spec.dtmin > 0 ? spec.dtmin : 0.04 * sqrt(spec.etai / 0.02) * sqrt(rmin^3 * N_total)
-    return Nbody6ParameterSpec(;
-        qe = spec.qe,
-        etai = spec.etai,
-        etar = spec.etar,
-        nnbopt = nnbopt,
-        rs0 = rs0,
-        rmin = rmin,
-        dtmin = dtmin,
-        kz16 = spec.kz16,
-    )
+    kw = Dict{Symbol,Any}(k => getfield(spec, k) for k in fieldnames(Nbody6ParameterSpec))
+    kw[:nnbopt] = nnbopt
+    kw[:rs0] = rs0
+    kw[:rmin] = rmin
+    kw[:dtmin] = dtmin
+    return Nbody6ParameterSpec(; kw...)
+end
+
+"""`Nbody6ParameterSpec` as a TOML-ready table (the `kz` override keys as strings)."""
+function _nbody6_table(p::Nbody6ParameterSpec)::Dict{String,Any}
+    d = _struct_to_dict(p)
+    d["kz"] = Dict{String,Int}(string(k) => v for (k, v) in p.kz)
+    return d
 end
 
 """Throw unless every derivable entry of `p` has been resolved (no zeros)."""
@@ -167,22 +192,26 @@ const _Q_COLD_COLLAPSE = 0.3
 const _RBAR_OVER_RHM_UNRESOLVED = 5.0
 
 """
-    _check_multicluster_regime(q_virial, rbar_over_rhm_min, nbody6, r_h_min_nb)
+    _check_multicluster_regime(q_virial, rbar_over_rhm_min, nbody6, r_h_min_nb;
+                               deltat = 0.0, t_cr_member_min_nb = NaN)
 
 Generation-time guards against configurations the engine mis-integrates or
 mis-diagnoses: refuse a neighbour radius `rs0` wider than the smallest
 member half-mass radius (every neighbour list would overflow at start-up);
 warn when the combined virial ratio is below `$(_Q_COLD_COLLAPSE)`
 (cold-collapse regime, global diagnostics meaningless until the remnant
-forms) and when the length unit exceeds `$(_RBAR_OVER_RHM_UNRESOLVED)`
+forms), when the length unit exceeds `$(_RBAR_OVER_RHM_UNRESOLVED)`
 member half-mass radii (members unresolved by the single-centre
-diagnostics).
+diagnostics), and when the snapshot interval `deltat` exceeds the smallest
+member crossing time (member dynamics undersampled).
 """
 function _check_multicluster_regime(
     q_virial::Float64,
     rbar_over_rhm_min::Float64,
     nbody6::Nbody6ParameterSpec,
-    r_h_min_nb::Float64,
+    r_h_min_nb::Float64;
+    deltat::Float64 = 0.0,
+    t_cr_member_min_nb::Float64 = NaN,
 )
     nbody6.rs0 ≤ r_h_min_nb || error(
         "merger.nbody6.rs0 = $(nbody6.rs0) exceeds the smallest member half-mass radius " *
@@ -201,11 +230,17 @@ function _check_multicluster_regime(
               "member clusters are unresolved by the engine's single-centre diagnostics; use " *
               "the per-cluster snapshot analysis (cluster_ranges) for cluster-level results"
     end
+    if !isnan(t_cr_member_min_nb) && deltat > t_cr_member_min_nb
+        @warn "Snapshot interval deltat = $deltat exceeds the smallest member crossing time " *
+              "$(round(t_cr_member_min_nb; sigdigits = 3)) (N-body units): member dynamics are " *
+              "undersampled by conf.3; lower merger.output.deltat"
+    end
     return nothing
 end
 
 """
-    generate_merger_inp(path, N_total, rbar, zmbar; nbody6, kz14 = 0, tcrit, dtadj, deltat, nrand)
+    generate_merger_inp(path, N_total, rbar, zmbar; nbody6, stellar = StellarSpec(),
+                        kz14 = 0, tcrit, dtadj, deltat, nrand, mass_bounds = (0.08, 100.0))
 
 Generate an Nbody6++ `.inp` file configured for external particle
 input via `dat.10` in N-body units (`KZ(22) = 2`, the only supported
@@ -216,10 +251,14 @@ Follows the Fortran NAMELIST read order expected by `nbody6.F → start.F`:
   `&INDATA` → `&INSCALE` (→ `&INXTRNL0` if KZ(14)>0).
 
 # Key settings
-- `nbody6`: resolved [`Nbody6ParameterSpec`](@ref) (`QE`, `ETAI`, `ETAR`,
-  `NNBOPT`, `RS0`, `RMIN`, `DTMIN`, `KZ(16)`); obtain it from
-  [`resolve_nbody6_parameters`](@ref) — unresolved zeros are refused
+- `nbody6`: resolved [`Nbody6ParameterSpec`](@ref); obtain it from
+  [`resolve_nbody6_parameters`](@ref) — unresolved zeros are refused. Its
+  `kz` overrides are applied last.
+- `stellar`: [`StellarSpec`](@ref) (`KZ(19)`, `Level`, `ZMET`, `EPOCH0`,
+  `DTPLOT`); `KZ(12)` HR diagnostics are switched off with `kz19 = 0`
 - `KZ(14) = kz14`: tidal field option (0 = isolated)
+- `mass_bounds`: `(BODYN, BODY1)` of `&INDATA`, inert under `KZ(22) = 2`
+  but kept consistent with the sampled population
 """
 function generate_merger_inp(
     path::AbstractString,
@@ -227,11 +266,13 @@ function generate_merger_inp(
     rbar::Float64,
     zmbar::Float64;
     nbody6::Nbody6ParameterSpec,
+    stellar::StellarSpec = StellarSpec(),
     kz14::Int = 0,
     tcrit::Float64 = 100.0,
     dtadj::Float64 = 1.0,
     deltat::Float64 = 1.0,
     nrand::Int = 10000,
+    mass_bounds::Tuple{Float64,Float64} = (0.08, 100.0),
 )
     _assert_resolved(nbody6)
     kz = zeros(Int, 50)
@@ -239,14 +280,19 @@ function generate_merger_inp(
     kz[2] = -1
     kz[3] = 2
     kz[7] = 3
-    kz[12] = 1
+    kz[12] = stellar.kz19 == 0 ? 0 : 1
     kz[14] = kz14
     kz[16] = nbody6.kz16
-    kz[19] = 3
+    kz[19] = stellar.kz19
     kz[22] = 2
     kz[23] = 2
     kz[26] = 1
     kz[30] = 1
+    for (i, v) in nbody6.kz
+        i in (14, 16, 19) &&
+            @warn "merger.nbody6.kz overrides KZ($i) = $v, which also has a named key (kz14/tidal, kz16, stellar.kz19)"
+        kz[i] = v
+    end
 
     # Build KZ lines: KZ(1:10) = ... etc.
     kz_strs = String[]
@@ -259,17 +305,29 @@ function generate_merger_inp(
     open(path, "w") do io
         # --- 1. &INNBODY6: start/restart, CPU time, checkpointing ---
         println(io, "&INNBODY6")
-        println(io, "KSTART=1,TCOMP=1.0E8,TCRTP0=3600.0,isernb=40,iserreg=40,iserks=0 /")
+        @printf(
+            io,
+            "KSTART=1,TCOMP=%.6G,TCRTP0=%.6G,isernb=%d,iserreg=%d,iserks=%d /\n",
+            nbody6.tcomp,
+            nbody6.tcrtp0,
+            nbody6.isernb,
+            nbody6.iserreg,
+            nbody6.iserks
+        )
         println(io)
 
         # --- 2. &ININPUT: main simulation parameters + KZ options ---
         println(io, "&ININPUT")
         @printf(
             io,
-            "N=%d,NFIX=1,NCRIT=10,NRAND=%d,NNBOPT=%d,NRUN=1,NCOMM=10,\n",
+            "N=%d,NFIX=%d,NCRIT=%d,NRAND=%d,NNBOPT=%d,NRUN=%d,NCOMM=%d,\n",
             N_total,
+            nbody6.nfix,
+            nbody6.ncrit,
             abs(nrand) % typemax(Int32),
-            nbody6.nnbopt
+            nbody6.nnbopt,
+            nbody6.nrun,
+            nbody6.ncomm
         )
         @printf(
             io,
@@ -287,11 +345,16 @@ function generate_merger_inp(
         println(io, join(kz_strs, "\n"))
         @printf(
             io,
-            "DTMIN=%.3E,RMIN=%.3E,ETAU=0.1,ECLOSE=1.0,GMIN=1.0E-06,GMAX=0.01,SMAX=1.0,\n",
+            "DTMIN=%.3E,RMIN=%.3E,ETAU=%.4G,ECLOSE=%.4G,GMIN=%.3E,GMAX=%.4G,SMAX=%.4G,\n",
             nbody6.dtmin,
-            nbody6.rmin
+            nbody6.rmin,
+            nbody6.etau,
+            nbody6.eclose,
+            nbody6.gmin,
+            nbody6.gmax,
+            nbody6.smax
         )
-        println(io, "Level='C' /")
+        println(io, "Level='$(stellar.level)' /")
         println(io)
 
         # --- 3-5. SSE/BSE/Coll: empty → use Level defaults ---
@@ -302,13 +365,20 @@ function generate_merger_inp(
         println(io, "&INCOLL /")
         println(io)
 
-        # --- 6. &INDATA: IMF and mass function ---
-        # Inert under KZ(22)=2: masses come from dat.10, so the IMF fields
-        # here are never sampled; they are namelist boilerplate only.
+        # --- 6. &INDATA: stellar population ---
+        # ALPHAS/BODY1/BODYN are inert under KZ(22)=2 (masses come from
+        # dat.10); the bounds are written consistent with the sampled IMF.
+        # ZMET, EPOCH0, DTPLOT govern stellar evolution. NBIN0/NHI0 = 0: no
+        # primordial binaries or hierarchies are generated yet.
         println(io, "&INDATA")
-        println(
+        @printf(
             io,
-            "ALPHAS=2.35,BODY1=150.0,BODYN=0.08,NBIN0=0,NHI0=0,ZMET=0.001,EPOCH0=0,DTPLOT=1.0 /",
+            "ALPHAS=2.35,BODY1=%.4G,BODYN=%.4G,NBIN0=0,NHI0=0,ZMET=%.4G,EPOCH0=%.4G,DTPLOT=%.4G /\n",
+            mass_bounds[2],
+            mass_bounds[1],
+            stellar.zmet,
+            stellar.epoch0,
+            stellar.dtplot
         )
         println(io)
 
@@ -362,8 +432,8 @@ function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rn
         pos .*= spec.rbar / r_hm
     end
 
-    virialise!(masses, pos, vel)
-    return (pos = pos, vel = vel, mass = masses)
+    energies = virialise!(masses, pos, vel)
+    return (pos = pos, vel = vel, mass = masses, T = energies.T, W = energies.W)
 end
 
 """
@@ -393,6 +463,7 @@ function generate_merger_ic(
         _validate_cluster_spec(spec, i)
     end
     _validate_nbody6(cfg.nbody6)
+    _validate_stellar(cfg.stellar, cfg.output)
 
     # Resolve RNG and effective seed. When the caller supplies an RNG the
     # sampling is NOT reproducible from `effective_seed`; the metadata records
@@ -449,22 +520,46 @@ function generate_merger_ic(
     # Combined-system diagnostics in code units (G = 1): the virial ratio of
     # the whole configuration, the resolution of the members by the length
     # unit, and the integration parameters scaled to the smallest member.
-    q_virial = if N_total ≤ _VIRIAL_NMAX
+    q_virial, t_cr_config_code = if N_total ≤ _VIRIAL_NMAX
         T, W = _kinetic_and_potential(mass_combined, pos_combined, vel_combined)
-        W < 0 ? T / abs(W) : NaN
+        (W < 0 ? T / abs(W) : NaN, crossing_time(M_total, T + W))
     else
         @warn "Combined virial ratio not evaluated: N_total = $N_total exceeds $(_VIRIAL_NMAX) (O(N²) pair sum)"
-        NaN
+        (NaN, NaN)
     end
+    # Crossing times: configuration and smallest member (pre-truncation
+    # energies of the virialised members), in code units → NB and Myr.
+    t_star_myr = _nbody_time_myr(M_total, rbar)
+    code_to_nb = _CODE_TIME_MYR / t_star_myr
+    t_cr_member_code = minimum(crossing_time(sum(c.mass), c.T + c.W) for c in cluster_data)
     r_h_min_pc = minimum(c.rbar for c in cfg.clusters)
     rbar_over_rhm_min = rbar / r_h_min_pc
     nbody6 = resolve_nbody6_parameters(cfg.nbody6, cfg.clusters, cluster_ranges, N_total, rbar)
-    _check_multicluster_regime(q_virial, rbar_over_rhm_min, nbody6, r_h_min_pc / rbar)
-    regime = (q_virial = q_virial, rbar_over_rhm_min = rbar_over_rhm_min, nbody6 = nbody6)
-    @info @sprintf(
-        "Combined system: Q = %.3f, RBAR/r_hm,min = %.2f; RS0 = %.3g, RMIN = %.3g, DTMIN = %.3g, NNBOPT = %d (N-body units)",
+    _check_multicluster_regime(
         q_virial,
         rbar_over_rhm_min,
+        nbody6,
+        r_h_min_pc / rbar;
+        deltat = cfg.output.deltat,
+        t_cr_member_min_nb = t_cr_member_code * code_to_nb,
+    )
+    regime = (
+        q_virial = q_virial,
+        rbar_over_rhm_min = rbar_over_rhm_min,
+        nbody6 = nbody6,
+        t_cr_config_nb = t_cr_config_code * code_to_nb,
+        t_cr_config_myr = t_cr_config_code * _CODE_TIME_MYR,
+        t_cr_member_min_nb = t_cr_member_code * code_to_nb,
+        t_cr_member_min_myr = t_cr_member_code * _CODE_TIME_MYR,
+        t_star_myr = t_star_myr,
+    )
+    @info @sprintf(
+        "Combined system: Q = %.3f, RBAR/r_hm,min = %.2f, t_cr = %.3g NB (%.3g Myr), smallest member t_cr = %.3g NB; RS0 = %.3g, RMIN = %.3g, DTMIN = %.3g, NNBOPT = %d",
+        q_virial,
+        rbar_over_rhm_min,
+        regime.t_cr_config_nb,
+        regime.t_cr_config_myr,
+        regime.t_cr_member_min_nb,
         nbody6.rs0,
         nbody6.rmin,
         nbody6.dtmin,
@@ -494,10 +589,15 @@ function generate_merger_ic(
         rbar,
         zmbar;
         nbody6 = nbody6,
+        stellar = cfg.stellar,
         tcrit = cfg.output.tcrit,
         dtadj = cfg.output.dtadj,
         deltat = cfg.output.deltat,
         nrand = effective_seed,
+        mass_bounds = (
+            minimum(_imf_mass_bounds(c.imf)[1] for c in cfg.clusters),
+            maximum(_imf_mass_bounds(c.imf)[2] for c in cfg.clusters),
+        ),
     )
 
     # Summary log
@@ -579,8 +679,14 @@ function _write_merger_ic_metadata(
             "zmbar" => zmbar,
             "q_virial" => regime.q_virial,
             "rbar_over_rhm_min" => regime.rbar_over_rhm_min,
+            "t_cr_config_nb" => regime.t_cr_config_nb,
+            "t_cr_config_myr" => regime.t_cr_config_myr,
+            "t_cr_member_min_nb" => regime.t_cr_member_min_nb,
+            "t_cr_member_min_myr" => regime.t_cr_member_min_myr,
+            "t_star_myr" => regime.t_star_myr,
         ),
-        "nbody6" => _struct_to_dict(regime.nbody6),
+        "nbody6" => _nbody6_table(regime.nbody6),
+        "stellar" => _struct_to_dict(cfg.stellar),
         "hardware" => _hardware_fingerprint(),
         "orbit_mode" => cfg.orbit_mode,
         "orbit" => Dict{String,Any}(
@@ -785,10 +891,19 @@ function _write_merger_summary(
             regime.q_virial,
             regime.rbar_over_rhm_min
         )
+        @printf(
+            io,
+            "          crossing time: configuration %.3g NB = %.3g Myr, smallest member %.3g NB = %.3g Myr (T* = %.3g Myr)\n",
+            regime.t_cr_config_nb,
+            regime.t_cr_config_myr,
+            regime.t_cr_member_min_nb,
+            regime.t_cr_member_min_myr,
+            regime.t_star_myr
+        )
         p = regime.nbody6
         @printf(
             io,
-            "Integration (merger.inp, N-body units): QE=%.1E ETAI=%.3g ETAR=%.3g NNBOPT=%d RS0=%.3g RMIN=%.3E DTMIN=%.3E KZ(16)=%d\n",
+            "Integration (merger.inp, N-body units): QE=%.1E ETAI=%.3g ETAR=%.3g NNBOPT=%d RS0=%.3g RMIN=%.3E DTMIN=%.3E KZ(16)=%d TCRTP0=%.4g Myr\n",
             p.qe,
             p.etai,
             p.etar,
@@ -796,7 +911,18 @@ function _write_merger_summary(
             p.rs0,
             p.rmin,
             p.dtmin,
-            p.kz16
+            p.kz16,
+            p.tcrtp0
+        )
+        st = cfg.stellar
+        @printf(
+            io,
+            "Stellar evolution: KZ(19)=%d Level=%s ZMET=%.4g EPOCH0=%.3g DTPLOT=%.3g\n",
+            st.kz19,
+            st.level,
+            st.zmet,
+            st.epoch0,
+            st.dtplot
         )
         println(io)
         println(io, "Output format: ", cfg.output.format, " (KZ(22)=2)")

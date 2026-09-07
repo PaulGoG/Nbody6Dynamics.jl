@@ -116,8 +116,40 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 | `rmin` | Float | `0.0` | KS regularisation distance; `0` = `4 r_h / (N_min ρ̂^{1/3})`; must be ≥ 0 |
 | `dtmin` | Float | `0.0` | KS time-step threshold; `0` = `0.04 √(ETAI/0.02) √(RMIN³ N_total)`; must be ≥ 0 |
 | `kz16` | Int | `0` | `KZ(16)`: the engine's re-derivation of `RMIN`, `DTMIN`, and `ECLOSE` from its global scale radius and core density every `DTADJ`; `0` keeps the written values (recommended for multi-cluster systems); one of 0, 1, 2, 3 |
+| `etau` | Float | `0.1` | Regularised time-step factor; must be > 0 |
+| `eclose` | Float | `1.0` | Binding energy per unit mass of a hard binary; must be > 0 |
+| `gmin` | Float | `1.0e-6` | Relative perturbation for unperturbed KS motion; `0 < gmin < gmax` |
+| `gmax` | Float | `0.01` | Termination parameter for soft KS binaries; `> gmin` |
+| `smax` | Float | `1.0` | Maximum time step, a power of two commensurate with 1; must be > 0 |
+| `tcomp` | Float | `1.0e8` | Run-time limit [s]; must be > 0 |
+| `tcrtp0` | Float | `3600.0` | Termination time [Myr]; must be > 0 |
+| `isernb`, `iserreg`, `iserks` | Int | `40`, `40`, `0` | MPI block-size thresholds below which irregular, regular, and KS blocks run serially; must be ≥ 0 |
+| `nfix` | Int | `1` | Multiplier of `deltat` for `conf.3` and binary output; must be ≥ 1 |
+| `ncrit` | Int | `10` | Minimum particle number, alternative termination criterion; must be ≥ 1 |
+| `nrun` | Int | `1` | Run identification index; must be ≥ 1 |
+| `ncomm` | Int | `10` | Multiplier of `deltat` for the restart (`COMMON`) dump interval; must be ≥ 1 |
 
-The resolved values appear in `merger_summary.txt` and in `merger_ic.toml` (`[nbody6]`), next to the combined virial ratio `Q = T/|W|` and the ratio `RBAR/r_hm,min` (`[meta]`). Generation warns when `Q < 0.3` (cold-collapse regime: global infall dominates and the engine's global diagnostics are meaningless until the remnant forms) or when `RBAR/r_hm,min > 5` (members unresolved by the single-centre diagnostics), and refuses an `rs0` wider than the smallest member.
+`[merger.nbody6.kz]` holds explicit `KZ(i) = v` overrides with string keys `"1"`–`"50"` and integer values, applied after every named option (an override of an index that also has a named key, 14, 16, or 19, warns):
+
+```toml
+[merger.nbody6.kz]
+"8" = 2      # primordial binaries from dat.10
+"47" = 1
+```
+
+The resolved values appear in `merger_summary.txt` and in `merger_ic.toml` (`[nbody6]`, `[stellar]`), next to the combined virial ratio `Q = T/|W|`, the ratio `RBAR/r_hm,min`, the crossing times of the configuration and of the smallest member in N-body units and Myr, and the N-body time unit `T*` (`[meta]`). Generation warns when `Q < 0.3` (cold-collapse regime: global infall dominates and the engine's global diagnostics are meaningless until the remnant forms), when `RBAR/r_hm,min > 5` (members unresolved by the single-centre diagnostics), and when `deltat` exceeds the smallest member crossing time (member dynamics undersampled), and refuses an `rs0` wider than the smallest member.
+
+### `[merger.stellar]`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `kz19` | Int | `3` | `KZ(19)`, stellar evolution and mass-loss scheme: `0` off (HR diagnostics `KZ(12)` are then switched off too), `1`–`2` supernova schemes, `≥ 3` Eggleton–Tout–Hurley; must be ≥ 0 |
+| `level` | String | `"C"` | SSE/BSE parameter level (Kamlah et al. 2022); one of `"A"`, `"B"`, `"C"`, `"0"` (no level: the engine's independent defaults) |
+| `zmet` | Float | `0.001` | Metal abundance; `0.0001 ≤ zmet ≤ 0.03` (the engine's own bounds) |
+| `epoch0` | Float | `0.0` | Formation time of the population [Myr]; must be ≤ 0 (the age at start is `−epoch0`) |
+| `dtplot` | Float | `1.0` | Interval of the stellar-evolution diagnostics (`sev.83_*`) [NB]; must be > 0 and ≥ `deltat` |
+
+The `&INDATA` mass bounds `BODY1`/`BODYN` are written from the clusters' IMF specifications (inert under `KZ(22) = 2`, where masses come from `dat.10`); `ALPHAS` is inert for the same reason. `NBIN0 = NHI0 = 0`: no primordial binaries or hierarchies are generated.
 
 ### Flat legacy cluster form
 

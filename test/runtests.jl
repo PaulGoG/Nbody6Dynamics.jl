@@ -1648,6 +1648,46 @@ truncate_jacobi = false
                     "merger.nbody6.rs0",
                 ),
                 (
+                    "nbody6_tcomp",
+                    _merger_toml() * "\n[merger.nbody6]\ntcomp = 0.0\n",
+                    "merger.nbody6.tcomp",
+                ),
+                (
+                    "nbody6_gmin_gmax",
+                    _merger_toml() * "\n[merger.nbody6]\ngmin = 0.1\ngmax = 0.01\n",
+                    "gmin < gmax",
+                ),
+                (
+                    "nbody6_ncrit",
+                    _merger_toml() * "\n[merger.nbody6]\nncrit = 0\n",
+                    "merger.nbody6.ncrit",
+                ),
+                (
+                    "nbody6_kz_index",
+                    _merger_toml() * "\n[merger.nbody6.kz]\n\"99\" = 1\n",
+                    "merger.nbody6.kz index",
+                ),
+                (
+                    "stellar_zmet",
+                    _merger_toml() * "\n[merger.stellar]\nzmet = 0.1\n",
+                    "merger.stellar.zmet",
+                ),
+                (
+                    "stellar_level",
+                    _merger_toml() * "\n[merger.stellar]\nlevel = \"X\"\n",
+                    "merger.stellar.level",
+                ),
+                (
+                    "stellar_dtplot",
+                    _merger_toml() * "\n[merger.stellar]\ndtplot = 0.5\n",
+                    "merger.stellar.dtplot",
+                ),
+                (
+                    "stellar_epoch0",
+                    _merger_toml() * "\n[merger.stellar]\nepoch0 = 5.0\n",
+                    "merger.stellar.epoch0",
+                ),
+                (
                     "imf_rescale_factor",
                     _merger_toml(
                         cluster1 = "model = \"king\"\nN = 100\nrbar = 1.0\n" *
@@ -1737,6 +1777,22 @@ truncate_jacobi = false
                 0.25,
             )
             @test_logs Nbody6Dynamics._check_multicluster_regime(0.5, 2.0, r, 0.25)
+            @test_logs (:warn, r"undersampled") Nbody6Dynamics._check_multicluster_regime(
+                0.5,
+                2.0,
+                r,
+                0.25;
+                deltat = 1.0,
+                t_cr_member_min_nb = 0.2,
+            )
+            @test_logs Nbody6Dynamics._check_multicluster_regime(
+                0.5,
+                2.0,
+                r,
+                0.25;
+                deltat = 0.1,
+                t_cr_member_min_nb = 0.2,
+            )
 
             # Writer: unresolved specs refused, resolved values written
             inp = joinpath(mktempdir(), "t.inp")
@@ -1770,11 +1826,63 @@ rbar = 1.0
 qe = 1.0e-3
 nnbopt = 30
 kz16 = 1
+tcomp = 7200.0
+tcrtp0 = 500.0
+isernb = 20
+ncrit = 5
+smax = 0.5
+
+[merger.nbody6.kz]
+"40" = 2
+"19" = 4
+
+[merger.stellar]
+kz19 = 0
+level = "0"
+zmet = 0.02
+epoch0 = -1.0
+dtplot = 2.0
 """,
             )
             cfg_nb = load_merger_config(nb_path)
             @test cfg_nb.nbody6.qe == 1.0e-3 && cfg_nb.nbody6.nnbopt == 30
             @test cfg_nb.nbody6.kz16 == 1 && cfg_nb.nbody6.rs0 == 0.0
+            @test cfg_nb.nbody6.tcomp == 7200.0 && cfg_nb.nbody6.tcrtp0 == 500.0
+            @test cfg_nb.nbody6.isernb == 20 &&
+                  cfg_nb.nbody6.ncrit == 5 &&
+                  cfg_nb.nbody6.smax == 0.5
+            @test cfg_nb.nbody6.kz == Dict(40 => 2, 19 => 4)
+            @test cfg_nb.stellar.kz19 == 0 && cfg_nb.stellar.level == "0"
+            @test cfg_nb.stellar.zmet == 0.02 &&
+                  cfg_nb.stellar.epoch0 == -1.0 &&
+                  cfg_nb.stellar.dtplot == 2.0
+
+            # Writer: run control, stellar settings, KZ overrides (an override of a named
+            # index warns), and mass bounds reach the file
+            rnb = resolve_nbody6_parameters(cfg_nb.nbody6, clusters, ranges, 220, 4.0)
+            inp2 = joinpath(mktempdir(), "t2.inp")
+            @test_logs (:warn, r"overrides KZ\(19\)") match_mode = :any generate_merger_inp(
+                inp2,
+                220,
+                4.0,
+                0.6;
+                nbody6 = rnb,
+                stellar = cfg_nb.stellar,
+                mass_bounds = (0.5, 20.0),
+            )
+            txt2 = read(inp2, String)
+            @test occursin("KSTART=1,TCOMP=7200,TCRTP0=500,isernb=20,iserreg=40,iserks=0 /", txt2)
+            @test occursin("N=220,NFIX=1,NCRIT=5,", txt2) &&
+                  occursin(",NNBOPT=30,NRUN=1,NCOMM=10,", txt2)
+            @test occursin("SMAX=0.5,", txt2) && occursin("Level='0' /", txt2)
+            @test occursin("KZ(11:20)=0 0 0 0 0 1 0 0 4 0", txt2)   # KZ(12) off with kz19 = 0; override 19 → 4
+            @test occursin("KZ(31:40)=0 0 0 0 0 0 0 0 0 2", txt2)
+            @test occursin("BODY1=20,BODYN=0.5,NBIN0=0,NHI0=0,ZMET=0.02,EPOCH0=-1,DTPLOT=2 /", txt2)
+
+            # Crossing time: G = 1 virial system with E = -M²/(4 r_v) has t_cr = (2 r_v)^{3/2}/√M
+            @test crossing_time(1.0, -0.25) ≈ 2.0^1.5
+            @test isnan(crossing_time(1.0, 0.1))
+            @test Nbody6Dynamics._nbody_time_myr(1.0, 1.0) ≈ 14.91 rtol = 0.01
         end
 
         # --- Full pipeline — kepler mode (small N) ---
@@ -1832,9 +1940,17 @@ kz16 = 1
             @test ic_meta["nbody6"]["rmin"] > 0 && ic_meta["nbody6"]["dtmin"] > 0
             @test isfinite(ic_meta["meta"]["q_virial"]) && ic_meta["meta"]["q_virial"] > 0
             @test ic_meta["meta"]["rbar_over_rhm_min"] > 1
+            @test ic_meta["meta"]["t_cr_config_nb"] > ic_meta["meta"]["t_cr_member_min_nb"] > 0
+            @test ic_meta["meta"]["t_star_myr"] > 0
+            @test ic_meta["stellar"]["level"] == "C" && ic_meta["nbody6"]["tcrtp0"] == 3600.0
+            @test ic_meta["nbody6"]["kz"] == Dict{String,Any}()
             summary_text = read(joinpath(result.output_dir, "merger_summary.txt"), String)
             @test occursin("virial ratio Q = T/|W|", summary_text)
+            @test occursin("crossing time: configuration", summary_text)
             @test occursin("Integration (merger.inp", summary_text)
+            @test occursin("Stellar evolution: KZ(19)=3 Level=C", summary_text)
+            @test occursin("ZMET=0.001,EPOCH0=0,DTPLOT=1 /", inp_text)
+            @test occursin("BODY1=50,BODYN=0.1,", inp_text)
         end
 
         # --- Full pipeline — explicit mode (3 clusters) ---

@@ -347,10 +347,11 @@ function _kinetic_and_potential(mass::Vector{Float64}, pos::Matrix{Float64}, vel
 end
 
 """
-    virialise!(mass, pos, vel; nmax = 200_000)
+    virialise!(mass, pos, vel; nmax = 200_000) -> (; T, W)
 
 Shift to centre-of-mass frame and scale velocities so that the virial
-ratio `Q = T/|W| = 0.5` (virial equilibrium). Operates in-place.
+ratio `Q = T/|W| = 0.5` (virial equilibrium). Operates in-place and returns
+the kinetic and potential energies after scaling (`G = 1`).
 
 Assumes `G = 1`. Uses the exact N-body potential energy — O(N²), threaded
 over strided rows. Refuses (with a clear error) above `nmax` particles
@@ -402,7 +403,8 @@ function virialise!(
     if T > 0.0 && W < 0.0
         scale_v = sqrt(0.5 * abs(W) / T)
         vel .*= scale_v
+        T = 0.5 * abs(W)
     end
 
-    return nothing
+    return (T = T, W = W)
 end

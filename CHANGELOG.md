@@ -19,6 +19,17 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   member is refused.
 - Fail-fast bound on the rescaled Kroupa IMF: a rescale factor outside
   ×[0.5, 2] is refused at load time, outside ×[0.7, 1.4] warned.
+- No hardcoded input: every numerical field of `merger.inp`'s `&INNBODY6`
+  and `&ININPUT` namelists is a `[merger.nbody6]` key (run-time and
+  termination limits, block thresholds, output multipliers, chain and KS
+  parameters) with an explicit `[merger.nbody6.kz]` override table; the
+  stellar-evolution settings (`KZ(19)`, `Level`, `ZMET`, `EPOCH0`,
+  `DTPLOT`) form `[merger.stellar]` (`StellarSpec`), with evolution
+  switchable off; `&INDATA` mass bounds follow the clusters' IMFs.
+- Crossing times of the configuration and of the smallest member
+  (`crossing_time`, N-body units and Myr) and the N-body time unit are
+  reported in `merger_summary.txt` and `merger_ic.toml`; generation warns
+  when `deltat` exceeds the smallest member crossing time.
 - Per-cluster structure from snapshots (`cluster_structure`,
   `ClusterStructure`): self-consistently bound members, shrinking-sphere
   centre, 10/50/90 % radii, velocity dispersion, bound mass fraction, and
