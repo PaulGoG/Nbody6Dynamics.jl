@@ -9,6 +9,7 @@ using SpecialFunctions: erf
 
 include("binaries.jl")
 include("config.jl")
+include("control.jl")
 include("models.jl")
 include("imf.jl")
 include("orbits.jl")

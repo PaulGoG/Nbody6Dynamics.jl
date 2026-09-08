@@ -6,6 +6,18 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Control runs (F14): `control_merger_dict`/`write_control_merger_config`
+  derive the isolated single-cluster equivalent of a merger TOML (summed
+  `N`, `N`-weighted half-mass radius, cluster 1's model, IMF and binaries,
+  other sections verbatim); the generator accepts one cluster in explicit
+  mode. `controls = true` in a sweep adds a control companion to every
+  point (`kind`/`control_of` in the index and summary), the comparison and
+  ensemble figures use merger points only, and `plot_control_comparison`
+  draws each merger against its control. Merger output intervals may be
+  given in Myr (`tcrit_myr`, `dtadj_myr`, `deltat_myr`, `dtplot_myr`),
+  converted at generation with the realised time unit and recorded in
+  `merger_ic.toml` and the summary, so merger and control span the same
+  physical time.
 - Remnant diagnostics (F13): `remnant_diagnostics` analyses the bound
   remnant of the whole system at every snapshot — Casertano & Hut (1985)
   core radius (`core_radius`, engine densities or a sixth-neighbour

@@ -491,7 +491,9 @@ function generate_merger_ic(
     mkpath(out_dir)
 
     n_clusters = length(cfg.clusters)
-    n_clusters ≥ 2 || error("Need at least 2 clusters, got $n_clusters")
+    n_clusters ≥ 1 || error("Need at least 1 cluster, got $n_clusters")
+    (cfg.orbit_mode == "kepler" && n_clusters != 2) &&
+        error("Kepler orbit mode requires exactly 2 clusters, got $n_clusters")
     for (i, spec) in enumerate(cfg.clusters)
         _validate_cluster_spec(spec, i)
     end
@@ -594,12 +596,31 @@ function generate_merger_ic(
     r_h_min_pc = minimum(c.rbar for c in cfg.clusters)
     rbar_over_rhm_min = rbar / r_h_min_pc
     nbody6 = resolve_nbody6_parameters(cfg.nbody6, cfg.clusters, cluster_ranges, N_total, rbar)
+    # Time parameters: physical values are converted with the realised T*.
+    out = cfg.output
+    tcrit_nb = out.tcrit_myr > 0 ? out.tcrit_myr / t_star_myr : out.tcrit
+    dtadj_nb = out.dtadj_myr > 0 ? out.dtadj_myr / t_star_myr : out.dtadj
+    deltat_nb = out.deltat_myr > 0 ? out.deltat_myr / t_star_myr : out.deltat
+    dtplot_nb =
+        cfg.stellar.dtplot_myr > 0 ? cfg.stellar.dtplot_myr / t_star_myr : cfg.stellar.dtplot
+    dtplot_nb ≥ deltat_nb || error(
+        "merger.stellar.dtplot ($(round(dtplot_nb; sigdigits = 4)) NB) must be ≥ merger.output.deltat " *
+        "($(round(deltat_nb; sigdigits = 4)) NB) after conversion with T* = $(round(t_star_myr; sigdigits = 4)) Myr",
+    )
+    stellar = StellarSpec(;
+        kz19 = cfg.stellar.kz19,
+        level = cfg.stellar.level,
+        zmet = cfg.stellar.zmet,
+        epoch0 = cfg.stellar.epoch0,
+        dtplot = dtplot_nb,
+        dtplot_myr = cfg.stellar.dtplot_myr,
+    )
     _check_multicluster_regime(
         q_virial,
         rbar_over_rhm_min,
         nbody6,
         r_h_min_pc / rbar;
-        deltat = cfg.output.deltat,
+        deltat = deltat_nb,
         t_cr_member_min_nb = t_cr_member_code * code_to_nb,
     )
     regime = (
@@ -609,6 +630,10 @@ function generate_merger_ic(
         cluster_blocks = cluster_blocks,
         n_pairs = n_pairs,
         nbin0 = nbin0,
+        tcrit_nb = tcrit_nb,
+        dtadj_nb = dtadj_nb,
+        deltat_nb = deltat_nb,
+        dtplot_nb = dtplot_nb,
         hard_fraction = expanded.hard_fraction,
         t_cr_config_nb = t_cr_config_code * code_to_nb,
         t_cr_config_myr = t_cr_config_code * _CODE_TIME_MYR,
@@ -652,11 +677,11 @@ function generate_merger_ic(
         rbar,
         zmbar;
         nbody6 = nbody6,
-        stellar = cfg.stellar,
+        stellar = stellar,
         tidal = cfg.tidal,
-        tcrit = cfg.output.tcrit,
-        dtadj = cfg.output.dtadj,
-        deltat = cfg.output.deltat,
+        tcrit = tcrit_nb,
+        dtadj = dtadj_nb,
+        deltat = deltat_nb,
         nrand = effective_seed,
         mass_bounds = (
             minimum(_imf_mass_bounds(c.imf)[1] for c in cfg.clusters),
@@ -764,9 +789,13 @@ function _write_merger_ic_metadata(
         "output" => Dict{String,Any}(
             "format" => cfg.output.format,
             "truncate_jacobi" => cfg.output.truncate_jacobi,
-            "tcrit" => cfg.output.tcrit,
-            "dtadj" => cfg.output.dtadj,
-            "deltat" => cfg.output.deltat,
+            "tcrit" => regime.tcrit_nb,
+            "dtadj" => regime.dtadj_nb,
+            "deltat" => regime.deltat_nb,
+            "tcrit_myr" => regime.tcrit_nb * regime.t_star_myr,
+            "dtadj_myr" => regime.dtadj_nb * regime.t_star_myr,
+            "deltat_myr" => regime.deltat_nb * regime.t_star_myr,
+            "dtplot" => regime.dtplot_nb,
         ),
         "cluster_blocks" =>
             [[[first(r), last(r)] for r in blocks] for blocks in regime.cluster_blocks],
@@ -910,6 +939,14 @@ function _write_merger_summary(
         println(io, "Generated: ", Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))
         println(io, "N clusters: ", n_clusters)
         println(io, "Orbit mode: ", cfg.orbit_mode)
+        @printf(
+            io,
+            "Time unit: T* = %.4g Myr; tcrit = %.4g NB = %.4g Myr, deltat = %.4g NB\n",
+            regime.t_star_myr,
+            regime.tcrit_nb,
+            regime.tcrit_nb * regime.t_star_myr,
+            regime.deltat_nb,
+        )
         println(io)
         for (i, spec) in enumerate(cfg.clusters)
             Ni = length(cluster_ranges[i])

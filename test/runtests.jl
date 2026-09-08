@@ -938,7 +938,8 @@ $(extra)
             Dict{String,Any}("status" => "failed", "exit_status" => 1, "elapsed_seconds" => 3.0)
         write_sweep_index(sdir, scfg, pts; status = status)
         columns, rows = sweep_summary(sdir)
-        @test columns[1:3] == ["index", "id", "seed"] && columns[4:5] == idx["sweep"]["axes"]
+        @test columns[1:5] == ["index", "id", "kind", "control_of", "seed"]
+        @test columns[6:7] == idx["sweep"]["axes"]
         @test length(rows) == 8
         @test rows[1]["status"] == "done" &&
               rows[1]["elapsed_seconds"] == 12.5 &&
@@ -957,7 +958,7 @@ $(extra)
         @test lines[1] == join(columns, ",")
         @test startswith(
             lines[2],
-            "1,001_cluster2-N=300_orbit-eccentricity=0_seed=1,1,300,0,done,0,12.5,",
+            "1,001_cluster2-N=300_orbit-eccentricity=0_seed=1,merger,,1,300,0,done,0,12.5,",
         )
         @test occursin(",pending,-1,,,-1,-1,,", lines[5])   # NaN → empty cells
 
@@ -1313,6 +1314,193 @@ $(extra)
             vis_r,
         )
         rm(vis_r.output_dir; recursive = true, force = true)
+    end
+
+    # =====================================================================
+    @testset "Control configurations" begin
+        demo = joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml")
+        raw = Nbody6Dynamics.TOML.parsefile(demo)
+        raw["merger"]["cluster2"]["N"] = 500
+        raw["merger"]["cluster2"]["rbar"] = 4.0
+        raw["merger"]["cluster1"]["binaries"] = Dict{String,Any}("fraction" => 0.1)
+        raw["merger"]["nbody6"] = Dict{String,Any}("qe" => 0.01)
+        c = control_merger_dict(raw)
+        m = c["merger"]
+        @test m["n_clusters"] == 1 && m["orbit_mode"] == "explicit"
+        @test !haskey(m, "orbit") && !haskey(m, "cluster2")
+        @test m["cluster1"]["N"] == 1500                                  # 1000 + 500
+        @test m["cluster1"]["rbar"] ≈ (1000 * 2.0 + 500 * 4.0) / 1500     # N-weighted r_h
+        @test m["cluster1"]["position"] == [0.0, 0.0, 0.0] &&
+              m["cluster1"]["velocity"] == [0.0, 0.0, 0.0]
+        @test m["cluster1"]["model"] == "king" && m["cluster1"]["W0"] == 6.0
+        @test m["cluster1"]["binaries"]["fraction"] == 0.1                # cluster 1's population kept
+        @test m["nbody6"]["qe"] == 0.01 && haskey(m, "output")             # other sections verbatim
+        # NB intervals scale by (RBAR_est / r_h,c)^{3/2}: apocentre 12 × 500/1500 + N-weighted r_h
+        rbar_c = m["cluster1"]["rbar"]
+        factor = ((12.0 * 500 / 1500 + rbar_c) / rbar_c)^1.5
+        @test m["output"]["tcrit"] ≈ raw["merger"]["output"]["tcrit"] * factor
+        @test m["output"]["deltat"] ≈ raw["merger"]["output"]["deltat"] * factor
+        raw_myr = deepcopy(raw)
+        delete!(raw_myr["merger"]["output"], "tcrit")
+        raw_myr["merger"]["output"]["tcrit_myr"] = 25.0
+        raw_myr["merger"]["stellar"] = Dict{String,Any}("dtplot_myr" => 5.0)
+        m_myr = control_merger_dict(raw_myr)["merger"]
+        @test m_myr["output"]["tcrit_myr"] == 25.0 && !haskey(m_myr["output"], "tcrit")   # physical: verbatim
+        @test m_myr["output"]["deltat"] ≈ raw["merger"]["output"]["deltat"] * factor     # NB: scaled
+        @test m_myr["stellar"]["dtplot_myr"] == 5.0
+        raw_ex = deepcopy(raw)
+        raw_ex["merger"]["orbit_mode"] = "explicit"
+        delete!(raw_ex["merger"], "orbit")
+        raw_ex["merger"]["cluster1"]["position"] = [-6.0, 0.0, 0.0]
+        raw_ex["merger"]["cluster2"]["position"] = [12.0, 0.0, 0.0]
+        f_ex =
+            Nbody6Dynamics._control_time_factor(raw_ex["merger"], [1000, 500], [2.0, 4.0], rbar_c)
+        centre = (1000 * -6.0 + 500 * 12.0) / 1500
+        rms = sqrt((1000 * (-6.0 - centre)^2 + 500 * (12.0 - centre)^2) / 1500)
+        @test f_ex ≈ ((rms + rbar_c) / rbar_c)^1.5
+        @test raw["merger"]["n_clusters"] == 2                            # input untouched
+        @test_throws ArgumentError control_merger_dict(Dict{String,Any}())
+        bad = deepcopy(raw)
+        delete!(bad["merger"], "cluster2")
+        @test_throws ArgumentError control_merger_dict(bad)
+
+        work = mktempdir()
+        dst = joinpath(work, "control.toml")
+        @test write_control_merger_config(demo, dst) == dst
+        ccfg = load_merger_config(dst)
+        @test length(ccfg.clusters) == 1 &&
+              ccfg.clusters[1].N == 2000 &&
+              ccfg.orbit_mode == "explicit"
+        @test_throws ErrorException write_control_merger_config(joinpath(work, "absent.toml"), dst)
+
+        # The single-cluster generator path: one member block, no truncation, at rest
+        small = replace(read(dst, String), r"N = \d+" => "N = 300")
+        write(joinpath(work, "control_small.toml"), small)
+        res = generate_merger_ic(
+            load_merger_config(joinpath(work, "control_small.toml"));
+            output_dir = joinpath(work, "ic"),
+        )
+        @test res.N_total == 300 &&
+              length(res.cluster_ranges) == 1 &&
+              length(res.cluster_ranges[1]) == 300
+        @test isfile(joinpath(work, "ic", "dat.10")) && isfile(joinpath(work, "ic", "merger.inp"))
+        @test parse_merger_summary(joinpath(work, "ic", "merger_summary.txt")) == [collect(1:300)]
+        # Physical-time intervals: converted with the realised T* at generation
+        phys = replace(small, r"tcrit = [0-9.]+" => "tcrit_myr = 20.0")
+        phys = replace(phys, r"deltat = [0-9.]+" => "deltat_myr = 4.0")
+        write(joinpath(work, "control_phys.toml"), phys)
+        cfg_p = load_merger_config(joinpath(work, "control_phys.toml"))
+        @test cfg_p.output.tcrit_myr == 20.0 && cfg_p.output.deltat_myr == 4.0
+        res_p = generate_merger_ic(cfg_p; output_dir = joinpath(work, "ic_phys"))
+        meta_p = Nbody6Dynamics.TOML.parsefile(joinpath(work, "ic_phys", "merger_ic.toml"))
+        t_star = meta_p["meta"]["t_star_myr"]
+        @test t_star > 0
+        @test meta_p["output"]["tcrit"] ≈ 20.0 / t_star && meta_p["output"]["tcrit_myr"] ≈ 20.0
+        @test meta_p["output"]["deltat"] ≈ 4.0 / t_star
+        inp_p = read(joinpath(work, "ic_phys", "merger.inp"), String)
+        @test occursin(Nbody6Dynamics.Printf.@sprintf("TCRIT=%.2f", 20.0 / t_star), inp_p)
+        @test occursin(
+            "Time unit: T* =",
+            read(joinpath(work, "ic_phys", "merger_summary.txt"), String),
+        )
+        both = replace(small, r"tcrit = [0-9.]+" => "tcrit = 1.0\ntcrit_myr = 20.0")
+        write(joinpath(work, "both.toml"), both)
+        @test_throws ErrorException load_merger_config(joinpath(work, "both.toml"))
+        neg = replace(small, r"tcrit = [0-9.]+" => "tcrit_myr = -1.0")
+        write(joinpath(work, "neg.toml"), neg)
+        @test_throws ErrorException load_merger_config(joinpath(work, "neg.toml"))
+        # dtplot below deltat is caught at generation once T* is known
+        # (the control file carries a [merger.stellar] table with the scaled dtplot)
+        @test occursin(r"dtplot = [0-9.]+", phys)
+        late = replace(phys, r"dtplot = [0-9.]+" => "dtplot_myr = 1.0")
+        write(joinpath(work, "late.toml"), late)
+        @test_throws ErrorException load_merger_config(joinpath(work, "late.toml"))   # both physical: config time
+        late_nb = replace(phys, r"dtplot = [0-9.]+" => "dtplot = 0.01")
+        write(joinpath(work, "late_nb.toml"), late_nb)
+        @test_throws ErrorException generate_merger_ic(
+            load_merger_config(joinpath(work, "late_nb.toml"));
+            output_dir = joinpath(work, "ic_late"),
+        )
+        kepler_one = replace(small, "orbit_mode = \"explicit\"" => "orbit_mode = \"kepler\"")
+        write(joinpath(work, "kepler_one.toml"), kepler_one)
+        @test_throws ErrorException load_merger_config(joinpath(work, "kepler_one.toml"))
+
+        # Sweep with controls: companions interleaved, derived at the point's values
+        write(
+            joinpath(work, "config.toml"),
+            "[install]\nenabled = false\ninstall_dir = \"backend\"\n\n[simulation]\nrun_test = true\nruns_dir = \"runs\"\n\n[visualization]\nformat = \"png\"\n",
+        )
+        cp(demo, joinpath(work, "merger.toml"))
+        write(
+            joinpath(work, "sweep.toml"),
+            "[sweep]\nname = \"ctrl\"\npipeline_config = \"config.toml\"\nmerger_config = \"merger.toml\"\nseeds = [1]\ncontrols = true\n\n[sweep.grid]\n\"merger.cluster2.N\" = [300, 400]\n",
+        )
+        scfg = load_sweep_config(joinpath(work, "sweep.toml"))
+        @test scfg.controls
+        pts = sweep_points(scfg)
+        @test length(pts) == 4
+        @test [p.kind for p in pts] == ["merger", "control", "merger", "control"]
+        @test pts[2].id == "002_cluster2-N=300_seed=1_control" && pts[2].control_of == pts[1].id
+        @test pts[2].values == pts[1].values && pts[2].seed == pts[1].seed
+        sdir = joinpath(work, "sweep_ctrl")
+        prepare_sweep(scfg; sweep_dir = sdir)
+        m3 = load_merger_config(joinpath(sdir, pts[3].id, "merger.toml"))
+        m4 = load_merger_config(joinpath(sdir, pts[4].id, "merger.toml"))
+        @test length(m3.clusters) == 2 && m3.clusters[2].N == 400
+        @test length(m4.clusters) == 1 && m4.clusters[1].N == 1400 && m4.seed == 1
+        idx = read_sweep_index(sdir)
+        @test idx["sweep"]["controls"] == true
+        @test [p["kind"] for p in idx["points"]] == ["merger", "control", "merger", "control"]
+        @test idx["points"][4]["control_of"] == pts[3].id
+        columns, rows = sweep_summary(sdir)
+        @test columns[1:5] == ["index", "id", "kind", "control_of", "seed"]
+        @test rows[2]["kind"] == "control" && rows[2]["control_of"] == pts[1].id
+        @test_throws ErrorException load_sweep_config(
+            (
+                write(
+                    joinpath(work, "bad.toml"),
+                    replace(
+                        read(joinpath(work, "sweep.toml"), String),
+                        "controls = true" => "controls = \"yes\"",
+                    ),
+                );
+                joinpath(work, "bad.toml")
+            ),
+        )
+
+        # Paired figure on fixture output: mergers solid, controls dashed
+        fixtures = joinpath(@__DIR__, "fixtures")
+        status = Dict{Int,Dict{String,Any}}()
+        for p in pts
+            out = joinpath(sdir, p.id, "run", "output")
+            mkpath(out)
+            cp(joinpath(fixtures, "out1000"), joinpath(out, "out1000"))
+            cp(joinpath(fixtures, "lagr.7"), joinpath(out, "lagr.7"))
+            status[p.index] =
+                Dict{String,Any}("status" => "done", "exit_status" => 0, "elapsed_seconds" => 1.0)
+        end
+        write_sweep_index(sdir, scfg, pts; status = status)
+        _, done_m = Nbody6Dynamics._sweep_done_points(sdir)
+        _, done_c = Nbody6Dynamics._sweep_done_points(sdir; kind = "control")
+        _, done_all = Nbody6Dynamics._sweep_done_points(sdir; kind = "")
+        @test length(done_m) == 2 && length(done_c) == 2 && length(done_all) == 4
+        vis_c = VisualizationConfig(;
+            format = "png",
+            column = "single",
+            output_dir = joinpath(work, "plots"),
+        )
+        @test isfile(plot_control_comparison(sdir, vis_c))
+        @test isfile(
+            plot_control_comparison(sdir, vis_c; quantity = :energy, filename = "ctrl_energy"),
+        )
+        figs = sweep_figures(sdir, vis_c)
+        @test length(figs) == 3 && all(isfile, figs)      # one seed: comparison + control figures
+        @test length(sweep_ensembles(sdir, :lagrangian)) == 2   # mergers only
+        status[2]["status"] = "failed"
+        status[4]["status"] = "failed"
+        write_sweep_index(sdir, scfg, pts; status = status)
+        @test_throws ErrorException plot_control_comparison(sdir, vis_c; filename = "none")
+        rm(work; recursive = true, force = true)
     end
 
     # =====================================================================

@@ -687,6 +687,7 @@ export RemnantDiagnostics, RotationProfile, remnant_diagnostics, write_remnant_d
 export coalescence_time, core_radius, rotation_analysis, mass_segregation
 export plot_remnant_rotation, plot_rotation_profile, plot_remnant_structure
 export plot_mass_segregation_evolution, remnant_figures
+export control_merger_dict, write_control_merger_config, plot_control_comparison
 export plot_snapshot, plot_snapshot_evolution
 export plot_lagrangian, plot_energy, plot_particle_count
 export plot_hr, plot_hr_evolution

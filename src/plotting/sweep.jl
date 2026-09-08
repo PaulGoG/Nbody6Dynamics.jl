@@ -3,11 +3,15 @@
 # by the value of one grid axis (seeds share the colour)
 # =============================================================================
 
-"""Completed points of a sweep as `(entry, run_dir)` pairs."""
-function _sweep_done_points(sweep_dir::AbstractString)
+"""Completed points of a sweep of the given `kind` (`"merger"` by default,
+`"control"`, or `""` for all) as `(entry, run_dir)` pairs."""
+function _sweep_done_points(sweep_dir::AbstractString; kind::AbstractString = "merger")
     idx = read_sweep_index(sweep_dir)
-    return idx,
-    [(p, joinpath(p["dir"], _SWEEP_RUN_ID)) for p in idx["points"] if p["status"] == "done"]
+    pts = [
+        (p, joinpath(p["dir"], _SWEEP_RUN_ID)) for p in idx["points"] if
+        p["status"] == "done" && (isempty(kind) || get(p, "kind", "merger") == kind)
+    ]
+    return idx, pts
 end
 
 """Colour per axis value: the Okabe–Ito cycle up to seven values, a viridis
@@ -162,7 +166,8 @@ end
 The comparison figures of a sweep for one grid axis
 ([`plot_sweep_lagrangian`](@ref), [`plot_sweep_energy`](@ref)) and, when
 the sweep has more than one seed, the ensemble figures of the same
-quantities ([`plot_sweep_ensemble`](@ref)).
+quantities ([`plot_sweep_ensemble`](@ref)), and the merger–control pairs
+when the sweep carries controls ([`plot_control_comparison`](@ref)).
 """
 function sweep_figures(
     sweep_dir::AbstractString,
@@ -173,9 +178,13 @@ function sweep_figures(
         plot_sweep_lagrangian(sweep_dir, cfg; axis = axis),
         plot_sweep_energy(sweep_dir, cfg; axis = axis),
     ]
-    if length(read_sweep_index(sweep_dir)["sweep"]["seeds"]) ≥ 2
+    idx = read_sweep_index(sweep_dir)
+    if length(idx["sweep"]["seeds"]) ≥ 2
         push!(paths, plot_sweep_ensemble(sweep_dir, cfg; quantity = :lagrangian, axis = axis))
         push!(paths, plot_sweep_ensemble(sweep_dir, cfg; quantity = :energy, axis = axis))
+    end
+    if get(idx["sweep"], "controls", false)
+        push!(paths, plot_control_comparison(sweep_dir, cfg; quantity = :lagrangian, axis = axis))
     end
     return paths
 end

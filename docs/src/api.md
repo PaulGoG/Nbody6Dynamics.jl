@@ -106,6 +106,9 @@ sweep_visualization
 plot_sweep_lagrangian
 plot_sweep_energy
 sweep_figures
+control_merger_dict
+write_control_merger_config
+plot_control_comparison
 EnsembleStatistics
 ensemble_statistics
 sweep_ensembles
@@ -279,5 +282,6 @@ Nbody6Dynamics._central_density_contrast
 Nbody6Dynamics._sweep_point_outcome
 Nbody6Dynamics._run_series
 Nbody6Dynamics._count_spatial_clusters
+Nbody6Dynamics._control_time_factor
 Nbody6Dynamics._local_density
 ```

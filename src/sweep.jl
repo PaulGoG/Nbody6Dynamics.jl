@@ -32,6 +32,8 @@ Specification of a parameter sweep, parsed by [`load_sweep_config`](@ref).
 - `omp_threads`: OpenMP threads per job
 - `runs_dir`: absolute sweep root
 - `poll_interval`: seconds between checks of the running jobs
+- `controls`: whether every point gets an isolated single-cluster control
+  companion ([`control_merger_dict`](@ref))
 """
 struct SweepConfig
     name::String
@@ -43,20 +45,26 @@ struct SweepConfig
     omp_threads::Int
     runs_dir::String
     poll_interval::Float64
+    controls::Bool
 end
 
 """
     SweepPoint
 
 One point of a sweep: its 1-based `index`, directory `id`, the axis values
-in grid order, and the seed.
+in grid order, the seed, its `kind` (`"merger"` or `"control"`) and, for a
+control, the id of the merger point it belongs to (`control_of`).
 """
 struct SweepPoint
     index::Int
     id::String
     values::Vector{Pair{String,Any}}
     seed::Int
+    kind::String
+    control_of::String
 end
+
+SweepPoint(index, id, values, seed) = SweepPoint(index, id, values, seed, "merger", "")
 
 const _SWEEP_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]*$"
 const _SWEEP_INDEX_FILE = "sweep_index.toml"
@@ -77,6 +85,7 @@ seeds = [11, 12]
 concurrency = 5       # ≥ 1
 omp_threads = 4       # ≥ 1
 runs_dir = "../runs"  # sweep root
+controls = false      # isolated single-cluster control per point
 [sweep.grid]
 "merger.orbit.eccentricity" = [0.0, 0.6]
 "merger.cluster2.N" = [500, 1000]
@@ -133,6 +142,8 @@ function load_sweep_config(path::AbstractString)::SweepConfig
     poll_interval = Float64(get(s, "poll_interval", 2.0))
     poll_interval > 0 || error("sweep config: poll_interval must be positive, got $poll_interval")
     runs_dir = resolve(String(get(s, "runs_dir", "runs")))
+    controls = get(s, "controls", false)
+    controls isa Bool || error("sweep config: controls must be true or false")
 
     return SweepConfig(
         name,
@@ -144,6 +155,7 @@ function load_sweep_config(path::AbstractString)::SweepConfig
         omp_threads,
         runs_dir,
         poll_interval,
+        controls,
     )
 end
 
@@ -168,8 +180,10 @@ end
     sweep_points(cfg::SweepConfig) -> Vector{SweepPoint}
 
 Enumerate the Cartesian product of the grid axes (first axis varying
-fastest) times the seeds. Ids read
-`<index>_<axis>=<value>_…_seed=<seed>`.
+fastest) times the seeds. Ids read `<index>_<axis>=<value>_…_seed=<seed>`.
+With `cfg.controls` every merger point is followed by its control companion
+(`<index>_<…>_control`, `kind = "control"`, `control_of` the merger id),
+sharing the axis values and seed.
 """
 function sweep_points(cfg::SweepConfig)::Vector{SweepPoint}
     axis_keys = first.(cfg.grid)
@@ -187,6 +201,15 @@ function sweep_points(cfg::SweepConfig)::Vector{SweepPoint}
                 @sprintf("%03d_%s_seed=%d", index, label, seed)
             end
             push!(points, SweepPoint(index, id, values, seed))
+            if cfg.controls
+                index += 1
+                cid = if isempty(label)
+                    @sprintf("%03d_seed=%d_control", index, seed)
+                else
+                    @sprintf("%03d_%s_seed=%d_control", index, label, seed)
+                end
+                push!(points, SweepPoint(index, cid, values, seed, "control", id))
+            end
         end
     end
     return points
@@ -275,6 +298,7 @@ function prepare_sweep(cfg::SweepConfig; sweep_dir::AbstractString = "")
             _set_nested!(m, k, v)
         end
         _set_nested!(m, "merger.seed", p.seed)
+        p.kind == "control" && (m = control_merger_dict(m))
         merger_path = joinpath(pdir, "merger.toml")
         open(io -> TOML.print(io, m), merger_path, "w")
         load_merger_config(merger_path)
@@ -317,6 +341,7 @@ function write_sweep_index(
         "seeds" => cfg.seeds,
         "concurrency" => cfg.concurrency,
         "omp_threads" => cfg.omp_threads,
+        "controls" => cfg.controls,
         "n_points" => length(points),
     )
     entries = map(points) do p
@@ -326,6 +351,8 @@ function write_sweep_index(
             "seed" => p.seed,
             "dir" => joinpath(sweep_dir, p.id),
             "values" => Dict{String,Any}(k => v for (k, v) in p.values),
+            "kind" => p.kind,
+            "control_of" => p.control_of,
             "status" => "pending",
         )
         merge!(e, get(status, p.index, Dict{String,Any}()))
@@ -493,7 +520,7 @@ end
 """
     sweep_summary(sweep_dir) -> (columns, rows)
 
-One row per point: index, id, seed, the axis values, status, and the
+One row per point: index, id, kind, control id, seed, the axis values, status, and the
 outcome fields of [`_sweep_point_outcome`](@ref) for finished points.
 `columns` gives the column order used by [`write_sweep_summary`](@ref).
 """
@@ -501,7 +528,7 @@ function sweep_summary(sweep_dir::AbstractString)
     idx = read_sweep_index(sweep_dir)
     axes = String[idx["sweep"]["axes"]...]
     columns = vcat(
-        ["index", "id", "seed"],
+        ["index", "id", "kind", "control_of", "seed"],
         axes,
         [
             "status",
@@ -519,6 +546,8 @@ function sweep_summary(sweep_dir::AbstractString)
         row = Dict{String,Any}(
             "index" => p["index"],
             "id" => p["id"],
+            "kind" => get(p, "kind", "merger"),
+            "control_of" => get(p, "control_of", ""),
             "seed" => p["seed"],
             "status" => p["status"],
         )

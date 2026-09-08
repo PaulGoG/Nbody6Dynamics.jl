@@ -101,6 +101,7 @@ In `"explicit"` mode this section is ignored (a warning is emitted if present).
 | `tcrit` | Float | `100.0` | Simulation end time (NB units for `"nbody"`) |
 | `dtadj` | Float | `1.0` | ADJUST diagnostic interval |
 | `deltat` | Float | `1.0` | Snapshot (conf.3) interval |
+| `tcrit_myr`, `dtadj_myr`, `deltat_myr` | Float | `0.0` | The same three in Myr; a positive value replaces the NB one and is converted at generation with the realised time unit `T*` (both forms of one key: error) |
 
 ### `[merger.nbody6]`
 
@@ -148,6 +149,7 @@ The resolved values appear in `merger_summary.txt` and in `merger_ic.toml` (`[nb
 | `zmet` | Float | `0.001` | Metal abundance; `0.0001 ≤ zmet ≤ 0.03` (the engine's own bounds) |
 | `epoch0` | Float | `0.0` | Formation time of the population [Myr]; must be ≤ 0 (the age at start is `−epoch0`) |
 | `dtplot` | Float | `1.0` | Interval of the stellar-evolution diagnostics (`sev.83_*`) [NB]; must be > 0 and ≥ `deltat` |
+| `dtplot_myr` | Float | `0.0` | The same in Myr (positive replaces `dtplot`); the ordering against `deltat` is checked at generation when either side is physical |
 
 ### `[merger.tidal]`
 

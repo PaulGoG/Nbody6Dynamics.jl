@@ -256,6 +256,10 @@ Output and integration parameters for merger ICs.
 - `output_dir::String`: directory for generated files.
 - `tcrit::Float64`: simulation end time (NB units when `format = "nbody"`).
 - `dtadj::Float64`, `deltat::Float64`: adjustment and snapshot intervals.
+- `tcrit_myr`, `dtadj_myr`, `deltat_myr`: the same three in Myr; a positive
+  value replaces the NB one, converted at generation with the realised
+  N-body time unit of the configuration (`0` = unused). A key may be given
+  in one form only.
 """
 Base.@kwdef struct MergerOutputSpec
     format::String = "nbody"
@@ -264,6 +268,9 @@ Base.@kwdef struct MergerOutputSpec
     tcrit::Float64 = 100.0
     dtadj::Float64 = 1.0
     deltat::Float64 = 1.0
+    tcrit_myr::Float64 = 0.0
+    dtadj_myr::Float64 = 0.0
+    deltat_myr::Float64 = 0.0
 end
 
 """
@@ -356,6 +363,7 @@ Base.@kwdef struct StellarSpec
     zmet::Float64 = 0.001
     epoch0::Float64 = 0.0
     dtplot::Float64 = 1.0
+    dtplot_myr::Float64 = 0.0
 end
 
 """
@@ -571,7 +579,14 @@ function load_merger_config(path::AbstractString)::MergerConfig
         tcrit = Float64(get(out_raw, "tcrit", 100.0)),
         dtadj = Float64(get(out_raw, "dtadj", 1.0)),
         deltat = Float64(get(out_raw, "deltat", 1.0)),
+        tcrit_myr = Float64(get(out_raw, "tcrit_myr", 0.0)),
+        dtadj_myr = Float64(get(out_raw, "dtadj_myr", 0.0)),
+        deltat_myr = Float64(get(out_raw, "deltat_myr", 0.0)),
     )
+    for key in ("tcrit", "dtadj", "deltat")
+        (haskey(out_raw, key) && haskey(out_raw, key * "_myr")) &&
+            error("config: merger.output.$key and merger.output.$(key)_myr are mutually exclusive")
+    end
 
     nb_raw = get(m, "nbody6", Dict{String,Any}())
     kz_raw = get(nb_raw, "kz", Dict{String,Any}())
@@ -614,6 +629,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
         zmet = Float64(get(st_raw, "zmet", 0.001)),
         epoch0 = Float64(get(st_raw, "epoch0", 0.0)),
         dtplot = Float64(get(st_raw, "dtplot", 1.0)),
+        dtplot_myr = Float64(get(st_raw, "dtplot_myr", 0.0)),
     )
 
     td_raw = get(m, "tidal", Dict{String,Any}())
@@ -652,6 +668,12 @@ function load_merger_config(path::AbstractString)::MergerConfig
     output.tcrit > 0 || error("config: merger.output.tcrit must be > 0; got $(output.tcrit)")
     output.dtadj > 0 || error("config: merger.output.dtadj must be > 0; got $(output.dtadj)")
     output.deltat > 0 || error("config: merger.output.deltat must be > 0; got $(output.deltat)")
+    output.tcrit_myr ≥ 0 ||
+        error("config: merger.output.tcrit_myr must be ≥ 0; got $(output.tcrit_myr)")
+    output.dtadj_myr ≥ 0 ||
+        error("config: merger.output.dtadj_myr must be ≥ 0; got $(output.dtadj_myr)")
+    output.deltat_myr ≥ 0 ||
+        error("config: merger.output.deltat_myr must be ≥ 0; got $(output.deltat_myr)")
     _validate_nbody6(nbody6)
     _validate_stellar(stellar, output)
     _validate_tidal(tidal)
@@ -717,9 +739,20 @@ function _validate_stellar(s::StellarSpec, output::MergerOutputSpec)
         error("config: merger.stellar.zmet must satisfy 0.0001 ≤ zmet ≤ 0.03; got $(s.zmet)")
     s.epoch0 ≤ 0 || error("config: merger.stellar.epoch0 must be ≤ 0 [Myr]; got $(s.epoch0)")
     s.dtplot > 0 || error("config: merger.stellar.dtplot must be > 0 [NB]; got $(s.dtplot)")
-    s.dtplot ≥ output.deltat || error(
-        "config: merger.stellar.dtplot must be ≥ merger.output.deltat; got dtplot = $(s.dtplot), deltat = $(output.deltat)",
-    )
+    s.dtplot_myr ≥ 0 ||
+        error("config: merger.stellar.dtplot_myr must be ≥ 0 [Myr]; got $(s.dtplot_myr)")
+    # With NB intervals on both sides the ordering is checked here; with a
+    # physical interval on either side it is checked at generation, once the
+    # time unit is known.
+    if s.dtplot_myr == 0 && output.deltat_myr == 0
+        s.dtplot ≥ output.deltat || error(
+            "config: merger.stellar.dtplot must be ≥ merger.output.deltat; got dtplot = $(s.dtplot), deltat = $(output.deltat)",
+        )
+    elseif s.dtplot_myr > 0 && output.deltat_myr > 0
+        s.dtplot_myr ≥ output.deltat_myr || error(
+            "config: merger.stellar.dtplot_myr must be ≥ merger.output.deltat_myr; got $(s.dtplot_myr), $(output.deltat_myr)",
+        )
+    end
     return nothing
 end
 
