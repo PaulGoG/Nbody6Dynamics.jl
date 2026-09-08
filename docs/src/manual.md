@@ -285,6 +285,35 @@ The backend's own performance report is captured as well. The last timing table 
 
 ---
 
+### Parameter sweeps
+
+A sweep runs the merger pipeline over a Cartesian grid of merger-TOML values times a set of seeds, one directory per point:
+
+```toml
+[sweep]
+name = "demo"                              # letters, digits, "_", "-"
+pipeline_config = "../config.toml"         # base pipeline config, relative to this file
+merger_config = "merger_demo_small.toml"   # base merger config, relative to this file
+seeds = [11, 12]                           # merger.seed at every grid point; distinct integers
+concurrency = 5                            # simultaneous jobs; ≥ 1
+omp_threads = 4                            # OpenMP threads per job; ≥ 1
+runs_dir = "../runs"                       # sweep root: runs_dir/sweep_<name>_<timestamp>/
+poll_interval = 2.0                        # seconds between job checks; > 0
+
+[sweep.grid]                               # dotted merger-TOML keys → arrays; Cartesian product
+"merger.orbit.eccentricity" = [0.0, 0.6]
+"merger.cluster2.N" = [500, 1000]
+```
+
+```bash
+julia --project=. scripts/run_sweep.jl input_files/sweep_demo.toml            # run
+julia --project=. scripts/run_sweep.jl input_files/sweep_demo.toml --dry-run  # prepare only
+```
+
+Axes address the merger TOML from its root; the parent table must exist in the base file (add `[merger.tidal]` with `kz14 = 0` to sweep the tidal field), and `merger.seed` is reserved for `seeds`. Axes are processed in key order with the first varying fastest; point directories read `<index>_<axis>=<value>_…_seed=<seed>`.
+
+`prepare_sweep` writes each point's `merger.toml` and `config.toml` (the base pipeline config with the install phase disabled, an absolute backend path, the point directory as run root, the derived merger file and the sweep's `omp_threads`) and loads both back through the regular parsers, so an invalid point fails before anything runs. `run_sweep` then executes the points as separate worker processes (`run_sweep_point`, at most `concurrency` at a time, each logging to `<point>/sweep_point.log`, the run itself in `<point>/run/`), rewrites `sweep_index.toml` on every state change (`pending`, `running`, `done`, `failed` with exit status and elapsed time), and writes `sweep_summary.csv`: index, id, seed, the axis values, status, elapsed time, exit status, and the final time, star count, pair count, energy error and virial ratio from the last ADJUST record. `sweep_figures` draws the half-mass Lagrangian radius and |ΔE/E| of every completed run on common physical axes, coloured by the value of one grid axis (the first by default; seeds share the colour), into `<sweep>/plots` with the base config's `[visualization]` settings. Four threads per job saturate the backend for N ≲ 2×10⁴ on the reference workstation, so five concurrent four-thread jobs use it fully.
+
 ## 8. Post-processing
 
 ### Snapshots (conf.3, Fortran binary)

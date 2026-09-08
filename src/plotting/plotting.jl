@@ -415,6 +415,38 @@ function _annotate!(
     return nothing
 end
 
+"""
+    _emptiest_corner(xs, ys; corners = (:tl, :tr, :br), width = 0.35, height = 0.2)
+
+The corner of the data's bounding box (fractions `width` × `height` of the
+ranges) holding the fewest points among `corners`, for placing an
+annotation clear of series whose course is not known in advance. Ties
+resolve in the order given.
+"""
+function _emptiest_corner(
+    xs::AbstractVector{<:Real},
+    ys::AbstractVector{<:Real};
+    corners = (:tl, :tr, :br),
+    width::Real = 0.35,
+    height::Real = 0.2,
+)
+    isempty(xs) && return first(corners)
+    x0, x1 = extrema(xs)
+    y0, y1 = extrema(ys)
+    dx = max(x1 - x0, eps(Float64))
+    dy = max(y1 - y0, eps(Float64))
+    counts = map(corners) do c
+        count(zip(xs, ys)) do (x, y)
+            u = (x - x0) / dx
+            v = (y - y0) / dy
+            right = c in (:tr, :br)
+            top = c in (:tl, :tr)
+            (right ? u ≥ 1 - width : u ≤ width) && (top ? v ≥ 1 - height : v ≤ height)
+        end
+    end
+    return corners[argmin(counts)]
+end
+
 """Centred grey note for panels with no plottable data."""
 function _no_data_note!(ax, text)
     text!(
@@ -512,3 +544,4 @@ include("sse.jl")
 include("animation.jl")
 include("merger.jl")
 include("binaries.jl")
+include("sweep.jl")

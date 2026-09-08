@@ -31,6 +31,7 @@ Nbody6Dynamics/
 │   ├── external.jl                  # scan_output + postprocess_external for arbitrary output dirs
 │   ├── cluster_structure.jl         # Per-cluster structure from snapshots: bound members, centres, radii, dispersions
 │   ├── binary_population.jl         # Binary diagnostics: Heggie hard/soft split, binary fraction, energy scale from snapshots
+│   ├── sweep.jl                     # Parameter sweeps: grid × seeds, concurrent worker processes, index and summary
 │   ├── io/
 │   │   ├── io.jl                    # I/O submodule includes
 │   │   ├── fortran_binary.jl        # Fortran unformatted record reader
@@ -58,9 +59,11 @@ Nbody6Dynamics/
 │       ├── sse.jl                   # SSE-quantity plots: mass segregation, t/T_MS clock, core masses
 │       ├── merger.jl                # Merger IC overview figures
 │       ├── binaries.jl              # Binary population, a–e diagram, period distribution
+│       ├── sweep.jl                 # Sweep comparison figures on common axes (Lagrangian radius, energy error)
 │       └── animation.jl             # GIF animations (cluster, HR, Lagrangian)
 ├── scripts/
 │   ├── run_setup.jl                 # CLI wrapper: load config → run_pipeline
+│   ├── run_sweep.jl                 # CLI wrapper: sweep TOML → run_sweep → comparison figures
 │   └── run_verif_suite.jl           # Three-target verification suite
 ├── test/
 │   ├── runtests.jl                  # Full unit + physics-validation suite
@@ -116,6 +119,7 @@ One invocation each; details in the sections below. The docs and benchmark scrip
 |------|------------|
 | Instantiate the package environment | `julia --project=. -e 'using Pkg; Pkg.instantiate()'` |
 | Run the main pipeline | `julia --project=. scripts/run_setup.jl [config.toml]` |
+| Run a parameter sweep | `julia --project=. scripts/run_sweep.jl input_files/sweep_demo.toml [--dry-run]` |
 | Run the verification suite | `julia --project=. scripts/run_verif_suite.jl` |
 | Execute the test suite | `julia --project=. -e 'using Pkg; Pkg.test()'` |
 | Run the benchmarks | `julia bench/benchmarks.jl` |
@@ -168,10 +172,11 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 |-----------|--------|-------|
 | Install / build | Working | Clone, `configure`, HDF5 Makefile patch, parallel make; CUDA path auto-detection |
 | Merger IC generator | Working | Plummer + King samplers (King c(W0) validated against published concentrations); Kroupa (2001) IMF; Kepler two-body and explicit N-cluster orbit modes; primordial binaries (Kroupa 1995 periods, thermal eccentricities, written in the engine's pair convention); Jacobi truncation; seeded reproducibility — the TOML `seed` drives the sampler RNG and propagates to Nbody6's `NRAND`. The engine itself has no multi-centre diagnostics: cluster-level results before coalescence come from the snapshot-based per-cluster tools, not from `lagr.7`/`esc.11`; see "Feasibility and limitations" in the merger documentation |
+| Parameter sweeps | Working | Sweep TOML → Cartesian grid over dotted merger-TOML keys × seeds; one directory per point with derived configs validated before launch; points run as concurrent worker processes (`omp_threads` per job from the cost model); `sweep_index.toml` kept current, `sweep_summary.csv` with final N, pairs, energy error and virial ratio; comparison figures on common axes coloured by one grid axis |
 | Simulation runner | Working | Launch script with `OMP_NUM_THREADS` control, live stdout monitoring, run summary with exact CPU accounting and sampled CPU/memory/GPU telemetry (`telemetry.csv`); restarts from the engine's COMMON dumps (`restart_simulation`) with per-segment bookkeeping; merger runs execute inside the IC output dir so `dat.10` is found |
 | I/O readers | Working | `conf.3` (standard + extended), `out1000` diagnostics (ADJUST + physical scaling; virial ratio Q = T/\|W\|, equilibrium at 0.5), `lagr.7`, and `esc.11` (incl. the ANGLE PHI / ANGLE THETA escape-direction columns) / `sev.83_*` / `bev.82_*` in the fork's real formats; `STELLAR_TYPE_LABELS` follow the Hurley convention (13 = NS, 14 = BH); `UnitScaling.zmbar` is the total-mass scale factor M*, not the mean stellar mass. HDF5 reader removed — the fork's KZ(46) H5Part layout was never supported; `.h5part` files are detected and warned about |
 | Plotting / animation | Working | Publication theme: no titles, no minor ticks, Computer Modern fonts, dashed grey low-opacity grid on line plots; presentation knobs config-driven via `[visualization.style]` (`PlotStyle`); escaper suite (cumulative mass loss, velocity classes, escape anisotropy) and SSE-quantity plots (mass segregation, t/T_MS evolutionary clock, core-mass growth); binary suite (pair counts with the Heggie hard/soft split, binary fraction, `a`–`e` diagrams, period histograms); existing figures are never overwritten (safesave-style `#1`, `#2`, … backups) |
-| Tests | Passing | 924/924 as of this commit (plus 18 engine-dependent tests behind `NBODY6_BINARY_TESTS=1`), incl. physics validation, adversarial external-input tests, telemetry/thread-control, per-cluster structure, restart, and tidal-field tests |
+| Tests | Passing | 990/990 as of this commit (plus 30 engine-dependent tests behind `NBODY6_BINARY_TESTS=1`), incl. physics validation, adversarial external-input tests, telemetry/thread-control, per-cluster structure, restart, and tidal-field tests |
 
 ## Testing
 

@@ -65,6 +65,11 @@ include("cluster_structure.jl")
 include("binary_population.jl")
 
 # ---------------------------------------------------------------------------
+# Parameter sweeps
+# ---------------------------------------------------------------------------
+include("sweep.jl")
+
+# ---------------------------------------------------------------------------
 # Plotting (sets publication theme on load)
 # ---------------------------------------------------------------------------
 include("plotting/plotting.jl")
@@ -450,7 +455,7 @@ function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config; run_dir::A
 end
 
 """
-    run_pipeline(cfg::Nbody6Config; base_dir = _PROJECT_ROOT) -> Dict{Symbol,Any}
+    run_pipeline(cfg::Nbody6Config; base_dir = _PROJECT_ROOT, run_id = "") -> Dict{Symbol,Any}
 
 Top-level orchestrator that runs the full pipeline (or any subset) based on
 the config flags.  This is the **single entry point** for config-driven workflows.
@@ -487,12 +492,19 @@ results = run_pipeline(cfg)
 If `data_dir` is empty but `run_test = false`, the most recent run in
 `runs/` is post-processed.
 
+`run_id` fixes the run directory name (`<runs_dir>/<run_id>`); when empty,
+`generate_run_id` derives it from `simulation.run_id_prefix` and the time.
+
 # Returns
 A `Dict{Symbol,Any}` with keys `:snapshots`, `:diagnostics`, `:lagr`,
 `:escapers`, `:stellar_evo`, `:binary_evo` (present only when corresponding data exists).
 Returns an empty dict if post-processing is disabled.
 """
-function run_pipeline(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROOT)::Dict{Symbol,Any}
+function run_pipeline(
+    cfg::Nbody6Config;
+    base_dir::AbstractString = _PROJECT_ROOT,
+    run_id::AbstractString = "",
+)::Dict{Symbol,Any}
     # ── Phase 1: Install / Build ──
     if cfg.install.enabled
         @info "Phase 1: Installing Nbody6++..."
@@ -518,7 +530,7 @@ function run_pipeline(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
         # timestamp + a 4-hex uniqueness suffix, so two merger pipelines
         # started in the same second cannot collide; the configured prefix
         # is preserved so _find_latest_run can locate merger runs.
-        run_id = generate_run_id("merger_" * cfg.simulation.run_id_prefix)
+        isempty(run_id) && (run_id = generate_run_id("merger_" * cfg.simulation.run_id_prefix))
         run_dir = joinpath(base_dir, cfg.simulation.runs_dir, run_id)
         ic_dir = joinpath(run_dir, "output")
         mkpath(ic_dir)
@@ -536,7 +548,7 @@ function run_pipeline(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
             run_dir = _run_merger_simulation(cfg, merger_result; base_dir = base_dir)
         else
             @info "Phase 2: Running simulation..."
-            run_dir = run_simulation(cfg; base_dir = base_dir)
+            run_dir = run_simulation(cfg; base_dir = base_dir, run_id = run_id)
         end
     else
         @info "Phase 2: Simulation skipped (run_test = false)"
@@ -658,6 +670,9 @@ export BinaryRecord, BinaryEvolutionSnapshot, read_binary_evolution, read_all_bi
 export BinaryPopulation, binary_population, binary_hardness, hardness_scale, binary_scales
 export semi_major_axis_pc, binding_energy
 export plot_binary_population, plot_binary_orbital_elements, plot_binary_period_distribution
+export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
+export run_sweep_point, read_sweep_index, write_sweep_index, sweep_summary, write_sweep_summary
+export sweep_visualization, plot_sweep_lagrangian, plot_sweep_energy, sweep_figures
 export plot_snapshot, plot_snapshot_evolution
 export plot_lagrangian, plot_energy, plot_particle_count
 export plot_hr, plot_hr_evolution

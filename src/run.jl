@@ -43,7 +43,7 @@ end
 const _SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 """
-    run_simulation(cfg::Nbody6Config; base_dir = _PROJECT_ROOT) -> String
+    run_simulation(cfg::Nbody6Config; base_dir = _PROJECT_ROOT, run_id = "") -> String
 
 Execute the Nbody6++ simulation with:
 - Unique run ID and isolated output directory
@@ -53,7 +53,11 @@ Execute the Nbody6++ simulation with:
 
 Returns the path to the run directory.
 """
-function run_simulation(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROOT)::String
+function run_simulation(
+    cfg::Nbody6Config;
+    base_dir::AbstractString = _PROJECT_ROOT,
+    run_id::AbstractString = "",
+)::String
     sim = cfg.simulation
 
     # --- Resolve input file (relative to the backend source tree) ---
@@ -66,7 +70,7 @@ function run_simulation(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_R
     #       output/      — simulation output files
     #       plots/       — post-processing plots (created later)
     #       config.toml  — frozen config
-    run_id = generate_run_id(sim.run_id_prefix)
+    isempty(run_id) && (run_id = generate_run_id(sim.run_id_prefix))
     run_dir = abspath(joinpath(base_dir, sim.runs_dir, run_id))
     out_dir = joinpath(run_dir, "output")
     mkpath(out_dir)

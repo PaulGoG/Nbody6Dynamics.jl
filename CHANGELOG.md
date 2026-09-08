@@ -6,6 +6,17 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Parameter sweeps (F6): `scripts/run_sweep.jl` runs a sweep TOML
+  (`[sweep]` with base pipeline and merger configs, `seeds`,
+  `concurrency`, `omp_threads`; `[sweep.grid]` axes as dotted merger-TOML
+  keys, Cartesian product). `prepare_sweep` writes one directory per point
+  with the derived `merger.toml`/`config.toml` (validated through the
+  regular parsers), `run_sweep` executes the points as concurrent worker
+  processes (`run_sweep_point`) while keeping `sweep_index.toml` current,
+  `write_sweep_summary` collects final N, pair count, energy error and
+  virial ratio into `sweep_summary.csv`, and `sweep_figures` draws the
+  Lagrangian radius and |ΔE/E| of every point on common axes coloured by
+  one grid axis. `run_pipeline`/`run_simulation` accept a fixed `run_id`.
 - Binary diagnostics (F5b): `read_binary_evolution` parses the engine's
   `bev.82_*` records (KS-regularised pairs with orbital elements and the
   SSE state of both components; `BinaryRecord`, `BinaryEvolutionSnapshot`);

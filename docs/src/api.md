@@ -88,6 +88,26 @@ read_binary_evolution
 read_all_binary_evolution
 ```
 
+## Parameter Sweeps
+
+```@docs
+SweepConfig
+SweepPoint
+load_sweep_config
+sweep_points
+prepare_sweep
+run_sweep
+run_sweep_point
+read_sweep_index
+write_sweep_index
+sweep_summary
+write_sweep_summary
+sweep_visualization
+plot_sweep_lagrangian
+plot_sweep_energy
+sweep_figures
+```
+
 ## Binary Population
 
 ```@docs
@@ -234,4 +254,5 @@ Nbody6Dynamics._validate
 Nbody6Dynamics._bound_members
 Nbody6Dynamics._kinetic_and_potential
 Nbody6Dynamics._central_density_contrast
+Nbody6Dynamics._sweep_point_outcome
 ```

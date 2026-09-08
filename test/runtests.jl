@@ -770,6 +770,226 @@ TIME   0.01  0.05  0.20  0.50  1.00
     end
 
     # =====================================================================
+    @testset "Parameter sweeps" begin
+        work = mktempdir()
+        fixtures = joinpath(@__DIR__, "fixtures")
+        base_pipeline = joinpath(work, "config.toml")
+        write(
+            base_pipeline,
+            """
+[install]
+enabled = false
+install_dir = "backend/Nbody6PPGPU-beijing"
+
+[simulation]
+run_test = true
+input_file = "../../input_files/N1k_quick.inp"
+runs_dir = "runs"
+omp_threads = 8
+run_id_prefix = "sw"
+
+[postprocess]
+enabled = true
+
+[visualization]
+enabled = false
+format = "png"
+column = "double"
+output_dir = "plots"
+
+[merger]
+enabled = false
+config_file = ""
+""",
+        )
+        base_merger = joinpath(work, "merger.toml")
+        write(
+            base_merger,
+            replace(
+                read(joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml"), String),
+                "[merger]\n" => "[merger]\nseed = 7\n";
+                count = 1,
+            ),
+        )
+        sweep_toml(extra = "") = """
+[sweep]
+name = "unit"
+pipeline_config = "config.toml"
+merger_config = "merger.toml"
+seeds = [1, 2]
+concurrency = 2
+omp_threads = 3
+$(extra)
+[sweep.grid]
+"merger.orbit.eccentricity" = [0.0, 0.5]
+"merger.cluster2.N" = [300, 400]
+"""
+        spath = joinpath(work, "sweep.toml")
+        write(spath, sweep_toml())
+        scfg = load_sweep_config(spath)
+        @test scfg.name == "unit"
+        @test scfg.pipeline_config == base_pipeline && scfg.merger_config == base_merger
+        @test first.(scfg.grid) == ["merger.cluster2.N", "merger.orbit.eccentricity"]   # key order
+        @test last.(scfg.grid) == [[300, 400], [0.0, 0.5]]
+        @test scfg.seeds == [1, 2] && scfg.concurrency == 2 && scfg.omp_threads == 3
+        @test scfg.runs_dir == joinpath(work, "runs") && scfg.poll_interval == 2.0
+
+        pts = sweep_points(scfg)
+        @test length(pts) == 8                       # 2 × 2 grid × 2 seeds
+        @test [p.index for p in pts] == 1:8
+        @test pts[1].id == "001_cluster2-N=300_orbit-eccentricity=0_seed=1"
+        @test pts[2].id == "002_cluster2-N=300_orbit-eccentricity=0_seed=2"
+        @test pts[3].id == "003_cluster2-N=400_orbit-eccentricity=0_seed=1"   # first axis fastest
+        @test pts[5].id == "005_cluster2-N=300_orbit-eccentricity=0.5_seed=1"
+        @test pts[8].values == ["merger.cluster2.N" => 400, "merger.orbit.eccentricity" => 0.5]
+        @test pts[8].seed == 2
+        @test Nbody6Dynamics._axis_short("merger.cluster1.binaries.fraction") ==
+              "cluster1-binaries-fraction"
+        @test Nbody6Dynamics._format_axis_value(0.25) == "0.25"
+        @test Nbody6Dynamics._format_axis_value(1000) == "1000"
+        @test Nbody6Dynamics._format_axis_value(true) == "true"
+        @test Nbody6Dynamics._format_axis_value("king W0=6") == "king-W0-6"
+
+        d = Dict{String,Any}(
+            "merger" => Dict{String,Any}("orbit" => Dict{String,Any}("apocentre" => 1.0)),
+        )
+        Nbody6Dynamics._set_nested!(d, "merger.orbit.eccentricity", 0.3)
+        @test d["merger"]["orbit"]["eccentricity"] == 0.3
+        @test_throws ArgumentError Nbody6Dynamics._set_nested!(d, "merger.tidal.kz14", 2)
+
+        # Validation
+        bad(extra_or_text) =
+            (write(spath, extra_or_text); @test_throws ErrorException load_sweep_config(spath))
+        bad(replace(sweep_toml(), "name = \"unit\"" => "name = \"unit sweep\""))
+        bad(replace(sweep_toml(), "seeds = [1, 2]" => "seeds = [1, 1]"))
+        bad(replace(sweep_toml(), "seeds = [1, 2]" => "seeds = []"))
+        bad(replace(sweep_toml(), "concurrency = 2" => "concurrency = 0"))
+        bad(replace(sweep_toml(), "omp_threads = 3" => "omp_threads = 0"))
+        bad(
+            replace(
+                sweep_toml(),
+                "\"merger.cluster2.N\" = [300, 400]\n" => "\"merger.seed\" = [3]\n",
+            ),
+        )
+        bad(
+            replace(
+                sweep_toml(),
+                "\"merger.cluster2.N\" = [300, 400]\n" => "\"orbit.apocentre\" = [3.0]\n",
+            ),
+        )
+        bad(
+            replace(
+                sweep_toml(),
+                "\"merger.cluster2.N\" = [300, 400]\n" => "\"merger.cluster2.N\" = []\n",
+            ),
+        )
+        bad(
+            replace(
+                sweep_toml(),
+                "merger_config = \"merger.toml\"" => "merger_config = \"absent.toml\"",
+            ),
+        )
+        bad(
+            replace(
+                sweep_toml(),
+                "[sweep.grid]\n\"merger.orbit.eccentricity\" = [0.0, 0.5]\n\"merger.cluster2.N\" = [300, 400]\n" => "",
+            ),
+        )
+        write(spath, sweep_toml("poll_interval = 0.5\n"))
+        scfg = load_sweep_config(spath)
+        @test scfg.poll_interval == 0.5
+
+        # Preparation (dry run): derived configs, index, summary, figures
+        sdir = joinpath(work, "sweep_unit")
+        @test run_sweep(scfg; dry_run = true, sweep_dir = sdir) == sdir
+        @test_throws ErrorException prepare_sweep(scfg; sweep_dir = sdir)   # never reuse a sweep dir
+        @test isfile(joinpath(sdir, "base_config.toml")) &&
+              isfile(joinpath(sdir, "base_merger.toml"))
+        m3 = load_merger_config(joinpath(sdir, pts[3].id, "merger.toml"))
+        @test m3.clusters[2].N == 400 && m3.orbit.eccentricity == 0.0 && m3.seed == 1
+        m8 = load_merger_config(joinpath(sdir, pts[8].id, "merger.toml"))
+        @test m8.clusters[2].N == 400 && m8.orbit.eccentricity == 0.5 && m8.seed == 2
+        c3 = load_config(joinpath(sdir, pts[3].id, "config.toml"))
+        @test !c3.install.enabled
+        @test c3.install.install_dir == joinpath(work, "backend", "Nbody6PPGPU-beijing")
+        @test c3.simulation.runs_dir == joinpath(sdir, pts[3].id)
+        @test c3.simulation.omp_threads == 3 && c3.simulation.run_test && !c3.simulation.monitor
+        @test c3.merger.enabled && c3.merger.config_file == joinpath(sdir, pts[3].id, "merger.toml")
+        @test c3.visualization.column == "double"     # untouched base settings survive
+        idx = read_sweep_index(sdir)
+        @test idx["sweep"]["name"] == "unit" && idx["sweep"]["n_points"] == 8
+        @test idx["sweep"]["axes"] == ["merger.cluster2.N", "merger.orbit.eccentricity"]
+        @test all(p -> p["status"] == "pending", idx["points"])
+        @test idx["points"][5]["values"]["merger.orbit.eccentricity"] == 0.5
+        @test idx["points"][5]["dir"] == joinpath(sdir, pts[5].id)
+
+        # Mark two points done with real output excerpts and summarise
+        status = Dict{Int,Dict{String,Any}}()
+        for i in (1, 3)
+            run_out = joinpath(sdir, pts[i].id, "run", "output")
+            mkpath(run_out)
+            cp(joinpath(fixtures, "out1000"), joinpath(run_out, "out1000"))
+            cp(joinpath(fixtures, "lagr.7"), joinpath(run_out, "lagr.7"))
+            write(
+                joinpath(sdir, pts[i].id, "run", "RUN_INFO.toml"),
+                "[run]\nelapsed_seconds = 12.5\n\n[[segments]]\nexit_status = 0\n",
+            )
+            status[i] =
+                Dict{String,Any}("status" => "done", "exit_status" => 0, "elapsed_seconds" => 12.5)
+        end
+        status[2] =
+            Dict{String,Any}("status" => "failed", "exit_status" => 1, "elapsed_seconds" => 3.0)
+        write_sweep_index(sdir, scfg, pts; status = status)
+        columns, rows = sweep_summary(sdir)
+        @test columns[1:3] == ["index", "id", "seed"] && columns[4:5] == idx["sweep"]["axes"]
+        @test length(rows) == 8
+        @test rows[1]["status"] == "done" &&
+              rows[1]["elapsed_seconds"] == 12.5 &&
+              rows[1]["exit_status"] == 0
+        @test rows[1]["n_final"] > 0 &&
+              isfinite(rows[1]["de_final"]) &&
+              isfinite(rows[1]["q_final"])
+        @test rows[1]["t_final_myr"] > 0
+        @test rows[2]["status"] == "failed" && rows[2]["exit_status"] == 1
+        @test rows[4]["status"] == "pending" &&
+              isnan(rows[4]["de_final"]) &&
+              rows[4]["n_final"] == -1
+        csv_path = write_sweep_summary(sdir)
+        lines = readlines(csv_path)
+        @test length(lines) == 9
+        @test lines[1] == join(columns, ",")
+        @test startswith(
+            lines[2],
+            "1,001_cluster2-N=300_orbit-eccentricity=0_seed=1,1,300,0,done,0,12.5,",
+        )
+        @test occursin(",pending,-1,,,-1,-1,,", lines[5])   # NaN → empty cells
+
+        vis_sw = sweep_visualization(scfg, sdir)
+        @test vis_sw.output_dir == joinpath(sdir, "plots") &&
+              vis_sw.format == "png" &&
+              vis_sw.column == "double"
+        figs = sweep_figures(sdir, vis_sw)
+        @test length(figs) == 2 && all(isfile, figs)
+        @test isfile(
+            plot_sweep_lagrangian(
+                sdir,
+                vis_sw;
+                axis = "merger.orbit.eccentricity",
+                fraction = 0.1,
+                filename = "r10",
+            ),
+        )
+        @test_throws ArgumentError plot_sweep_energy(sdir, vis_sw; axis = "merger.orbit.apocentre")
+        rm(work; recursive = true, force = true)
+
+        # Annotation corner: the least occupied of the data's bounding box
+        xs = collect(0.0:0.1:1.0)
+        @test Nbody6Dynamics._emptiest_corner(xs, xs) == :tl          # rising series frees the top-left
+        @test Nbody6Dynamics._emptiest_corner(xs, 1 .- xs) == :tr     # falling series frees the top-right
+        @test Nbody6Dynamics._emptiest_corner(Float64[], Float64[]) == :tl
+    end
+
+    # =====================================================================
     @testset "Stellar type labels" begin
         # Standard Hurley et al. (2000) SSE/BSE table used by this fork
         @test startswith(STELLAR_TYPE_LABELS[0], "MS")
@@ -3442,6 +3662,54 @@ $(merger)
             @test Nbody6Dynamics.TOML.parsefile(joinpath(trun, "RUN_INFO.toml"))["segments"][1]["exit_status"] ==
                   0
             _keep(trun, "merger_tidal")
+
+            # 4. Two-point sweep through the worker processes
+            swork = joinpath(work, "sweep")
+            mkpath(swork)
+            stoml = replace(mtoml, r"tcrit = [0-9.]+" => "tcrit = 0.5")
+            stoml = replace(stoml, r"N = 1000" => "N = 300")
+            write(joinpath(swork, "merger.toml"), stoml)
+            write(
+                joinpath(swork, "config.toml"),
+                replace(
+                    base_toml(runs_dir),
+                    "install_dir = \"backend/Nbody6PPGPU-beijing\"" => "install_dir = \"$(joinpath(base, "backend", "Nbody6PPGPU-beijing"))\"",
+                ),
+            )
+            write(
+                joinpath(swork, "sweep.toml"),
+                """
+[sweep]
+name = "gated"
+pipeline_config = "config.toml"
+merger_config = "merger.toml"
+seeds = [11]
+concurrency = 2
+omp_threads = 2
+runs_dir = "runs"
+poll_interval = 1.0
+
+[sweep.grid]
+"merger.orbit.eccentricity" = [0.0, 0.6]
+""",
+            )
+            scfg = load_sweep_config(joinpath(swork, "sweep.toml"))
+            t0 = time()
+            sdir = run_sweep(scfg)
+            @info "binary test: two-point sweep in $(round(time() - t0; digits = 1)) s"
+            sidx = read_sweep_index(sdir)
+            @test length(sidx["points"]) == 2
+            @test all(p -> p["status"] == "done" && p["exit_status"] == 0, sidx["points"])
+            for p in sidx["points"]
+                @test isfile(joinpath(p["dir"], "run", "RUN_INFO.toml"))
+                @test isfile(joinpath(p["dir"], "run", "output", "lagr.7"))
+                @test isfile(joinpath(p["dir"], "sweep_point.log"))
+            end
+            scols, srows = sweep_summary(sdir)
+            @test all(r -> r["n_final"] > 0 && r["t_final_myr"] > 0, srows)
+            @test isfile(joinpath(sdir, "sweep_summary.csv"))
+            sfigs = sweep_figures(sdir, sweep_visualization(scfg, sdir))
+            @test all(isfile, sfigs)
         end
     end
 
