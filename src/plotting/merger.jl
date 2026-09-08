@@ -53,134 +53,6 @@ function parse_merger_summary(path::AbstractString)::Vector{Vector{Int}}
 end
 
 """
-    _cluster_com_trajectories(snaps, cluster_ranges)
-        -> (coms, present, r_rms)
-
-Compute the mass-weighted centre of mass of each initial cluster at every
-snapshot. `coms` is `3 × n_clusters × n_times`. `present[i, k]` is false when
-fewer than 3 members of cluster `i` remain in snapshot `k`. `r_rms[i, k]` is
-the mass-weighted RMS radius of cluster `i`'s members from their COM (a
-proxy for cluster extent); `NaN` when `present` is false.
-"""
-function _cluster_com_trajectories(
-    snaps::Vector{Snapshot},
-    cluster_ranges::AbstractVector{<:AbstractVector{Int}},
-)
-    n_cl = length(cluster_ranges)
-    n_t = length(snaps)
-    coms = fill(NaN, 3, n_cl, n_t)
-    r_rms = fill(NaN, n_cl, n_t)
-    present = falses(n_cl, n_t)
-
-    for (k, snap) in enumerate(snaps)
-        for (i, rng) in enumerate(cluster_ranges)
-            mask = falses(length(snap.name))
-            mask[_member_indices(snap, rng)] .= true
-            n_mem = count(mask)
-            n_mem < 3 && continue
-            m = Float64.(snap.mass[mask])
-            M = sum(m)
-            M > 0 || continue
-            cx = sum(m .* Float64.(snap.pos[1, mask])) / M
-            cy = sum(m .* Float64.(snap.pos[2, mask])) / M
-            cz = sum(m .* Float64.(snap.pos[3, mask])) / M
-            coms[1, i, k] = cx
-            coms[2, i, k] = cy
-            coms[3, i, k] = cz
-
-            # Mass-weighted RMS radius: sqrt(Σ m_k r_k² / Σ m_k)
-            x = Float64.(@view snap.pos[1, mask])
-            y = Float64.(@view snap.pos[2, mask])
-            z = Float64.(@view snap.pos[3, mask])
-            ssum = 0.0
-            @inbounds for j in eachindex(m)
-                dx = x[j] - cx
-                dy = y[j] - cy
-                dz = z[j] - cz
-                ssum += m[j] * (dx*dx + dy*dy + dz*dz)
-            end
-            r_rms[i, k] = sqrt(ssum / M)
-            present[i, k] = true
-        end
-    end
-    return coms, present, r_rms
-end
-
-"""
-    _count_spatial_clusters(coms, r_rms, present; overlap_factor = 1.0) -> Vector{Int}
-
-At each snapshot, count spatially distinct initial clusters via union-find.
-Two clusters are considered merged when their COMs are closer than
-`overlap_factor × (r_ref_i + r_ref_j)`, where `r_ref` is the *initial* RMS
-radius of each cluster (held fixed throughout). Using the initial radius
-(rather than current) prevents spurious "mergers" caused by infall-driven
-puffing — the criterion then measures true spatial convergence of COMs.
-"""
-function _count_spatial_clusters(
-    coms::Array{Float64,3},
-    r_rms::AbstractMatrix{<:Real},
-    present::AbstractMatrix{Bool};
-    overlap_factor::Real = 1.0,
-)
-    n_cl = size(coms, 2)
-    n_t = size(coms, 3)
-    counts = zeros(Int, n_t)
-
-    # Reference radii: each cluster's RMS radius in its first present snapshot
-    r_ref = fill(NaN, n_cl)
-    for i in 1:n_cl
-        for k in 1:n_t
-            if present[i, k] && !isnan(r_rms[i, k])
-                r_ref[i] = r_rms[i, k]
-                break
-            end
-        end
-    end
-
-    # Simple union-find with path compression
-    parent = zeros(Int, n_cl)
-    function find(p::Vector{Int}, a::Int)
-        while p[a] != a
-            p[a] = p[p[a]]
-            a = p[a]
-        end
-        return a
-    end
-
-    for k in 1:n_t
-        active = findall(@view present[:, k])
-        isempty(active) && (counts[k] = 0; continue)
-
-        for i in 1:n_cl
-            parent[i] = i
-        end
-        for ia in eachindex(active)
-            i = active[ia]
-            isnan(r_ref[i]) && continue
-            for jb in (ia + 1):length(active)
-                j = active[jb]
-                isnan(r_ref[j]) && continue
-                dx = coms[1, i, k] - coms[1, j, k]
-                dy = coms[2, i, k] - coms[2, j, k]
-                dz = coms[3, i, k] - coms[3, j, k]
-                d = sqrt(dx*dx + dy*dy + dz*dz)
-                if d < overlap_factor * (r_ref[i] + r_ref[j])
-                    ri = find(parent, i)
-                    rj = find(parent, j)
-                    ri == rj || (parent[ri] = rj)
-                end
-            end
-        end
-        roots = Set{Int}()
-        for i in active
-            push!(roots, find(parent, i))
-        end
-        counts[k] = length(roots)
-    end
-    return counts
-end
-
-"""
     plot_cluster_separation(snaps, cluster_ranges, cfg;
                             filename = "merger_cluster_separation")
 
@@ -255,6 +127,21 @@ function plot_cluster_separation(
             n_lines += 1
         end
         n_lines ≥ 2 && _top_legend!(fig, ax; nbanks = min(3, cld(n_pairs, 4)))
+        # First-class coalescence time: all initial clusters spatially merged
+        coal = coalescence_time(snaps, cluster_ranges)
+        if coal.index !== nothing
+            t_c = physical ? coal.time_myr : coal.time_nb
+            vlines!(ax, [t_c]; color = :black, linestyle = :dash, linewidth = 1.5)
+            text!(
+                ax,
+                t_c,
+                maximum(filter(!isnan, vec(seps)));
+                text = latexstring("t_\\mathrm{coalesce} = $(_fmt_latex_sig3(t_c))"),
+                align = (:left, :top),
+                offset = (4, 0),
+                fontsize = _ANNOTATION_FONTSIZE,
+            )
+        end
     else
         # Envelope: show min/max band plus mean line
         d_min, d_max, d_mean = _envelope_stats(seps)
@@ -354,7 +241,7 @@ every present member counts. `n_mem` is the number of present members.
 Returns `(NaN, n_mem)` with fewer than 3 selected members or a
 non-negative `W`. N-body units (`G = 1`).
 """
-function _cluster_virial_snapshot(snap::Snapshot, rng::UnitRange{Int}; bound_only::Bool = true)
+function _cluster_virial_snapshot(snap::Snapshot, rng::AbstractVector{Int}; bound_only::Bool = true)
     idx = _member_indices(snap, rng)
     n_mem = length(idx)
     n_mem < 3 && return (NaN, n_mem)

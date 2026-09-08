@@ -6,6 +6,17 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Remnant diagnostics (F13): `remnant_diagnostics` analyses the bound
+  remnant of the whole system at every snapshot — Casertano & Hut (1985)
+  core radius (`core_radius`, engine densities or a sixth-neighbour
+  estimate), half-mass radius, rotation (`rotation_analysis`: angular
+  momentum, spin axis, intrinsic `λ_R`, Peebles `λ_P`, `v_rot/σ` profile),
+  Allison et al. (2009) `Λ_MSR` mass segregation with a segregation time
+  (`mass_segregation`), and the union-find coalescence time
+  (`coalescence_time`, now marked on the separation figure). Written to
+  `remnant_diagnostics.csv` in the run directory and drawn by
+  `remnant_figures` (rotation, rotation profile, structure, mass
+  segregation).
 - Seeded ensembles (F11): `sweep_ensembles` groups the completed points
   of a sweep by grid values, `ensemble_statistics` interpolates the
   members' series onto a common time grid and takes the median and the
@@ -215,6 +226,8 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- The per-cluster virial figure accepted only index ranges and crashed on
+  the body-index blocks written since the primordial-binary change.
 - `Manifest.toml` self-entry still carried the pre-rename package name
   (`Nbody6Setup`); three shipped merger TOML headers likewise.
 - README structure tree: `bench/` (was stale `benchmark/`), previously

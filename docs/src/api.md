@@ -112,6 +112,24 @@ sweep_ensembles
 plot_sweep_ensemble
 ```
 
+## Remnant Diagnostics
+
+```@docs
+RemnantDiagnostics
+RotationProfile
+remnant_diagnostics
+write_remnant_diagnostics
+coalescence_time
+core_radius
+rotation_analysis
+mass_segregation
+plot_remnant_rotation
+plot_rotation_profile
+plot_remnant_structure
+plot_mass_segregation_evolution
+remnant_figures
+```
+
 ## Binary Population
 
 ```@docs
@@ -260,4 +278,6 @@ Nbody6Dynamics._kinetic_and_potential
 Nbody6Dynamics._central_density_contrast
 Nbody6Dynamics._sweep_point_outcome
 Nbody6Dynamics._run_series
+Nbody6Dynamics._count_spatial_clusters
+Nbody6Dynamics._local_density
 ```

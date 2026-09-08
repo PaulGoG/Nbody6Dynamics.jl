@@ -1143,6 +1143,179 @@ $(extra)
     end
 
     # =====================================================================
+    @testset "Remnant diagnostics" begin
+        using StableRNGs
+        rng_r = StableRNG(7)
+        N = 2000
+        pos, vel = sample_plummer(N, 1.0; rng = rng_r)
+        mass = fill(1.0 / N, N)
+        virialise!(mass, pos, vel)
+
+        # Core radius: with exact Plummer densities the particle-weighted
+        # Casertano–Hut estimator gives √0.3 a; the 6-neighbour estimate
+        # sits a few per cent below.
+        r_all = vec(sqrt.(sum(pos .^ 2; dims = 1)))
+        ρ_exact = (1 .+ r_all .^ 2) .^ (-2.5)
+        cr = core_radius(pos, ρ_exact)
+        @test cr.r_core ≈ sqrt(0.3) rtol = 0.06
+        @test all(abs.(cr.centre) .< 0.1)
+        ρ6 = Nbody6Dynamics._local_density(pos, mass)
+        @test length(ρ6) == N && all(≥(0), ρ6)
+        @test 0.42 < core_radius(pos, ρ6).r_core < 0.62
+        @test_throws ArgumentError Nbody6Dynamics._local_density(pos[:, 1:5], mass[1:5])
+        @test_throws DimensionMismatch core_radius(pos, ρ6[1:10])
+        @test_throws ArgumentError core_radius(pos, zeros(N))
+
+        # Rotation: an isotropic sphere has λ_R at the noise level; adding
+        # solid-body rotation about z recovers the axis and raises λ_R.
+        rot0 = rotation_analysis(pos, vel, mass)
+        @test rot0.lambda_r < 0.15
+        @test rot0.lambda_peebles < 0.05
+        @test length(rot0.profile.radius) == 8 && issorted(rot0.profile.radius)
+        vrot = copy(vel)
+        Ω = 0.5
+        for i in 1:N
+            vrot[1, i] -= Ω * pos[2, i]
+            vrot[2, i] += Ω * pos[1, i]
+        end
+        rot1 = rotation_analysis(pos, vrot, mass)
+        @test rot1.lambda_r > 0.6
+        @test abs(rot1.axis[3]) > 0.99
+        @test rot1.axis[3] > 0                          # L along +z for counter-clockwise motion
+        @test all(>(0), rot1.profile.v_rot)              # v_φ > 0 in every shell
+        @test rot1.profile.v_rot_over_sigma[end - 1] > rot1.profile.v_rot_over_sigma[1]   # Ω R grows outward
+        @test rotation_analysis(pos, vrot, mass; nbins = 3).profile.radius |> length == 3
+        @test_throws ArgumentError rotation_analysis(pos[:, 1:5], vrot[:, 1:5], mass[1:5])
+
+        # Mass segregation: random masses give Λ ≈ 1; the heaviest stars
+        # placed innermost give Λ ≫ 1 and a small half-mass ratio.
+        m_rand = mass .* (1 .+ rand(rng_r, N))
+        ms0 = mass_segregation(pos, m_rand; seed = 1)
+        @test abs(ms0.lambda_msr - 1) < 3 * ms0.lambda_err + 0.3
+        @test 0.7 < ms0.r_half_ratio < 1.3
+        m_seg = zeros(N)
+        m_seg[sortperm(r_all)] = sort(1 .+ 9 .* rand(rng_r, N); rev = true)
+        ms1 = mass_segregation(pos, m_seg; seed = 1)
+        @test ms1.lambda_msr > 5
+        @test ms1.r_half_ratio < 0.4
+        @test mass_segregation(pos, m_seg; seed = 1).lambda_msr == ms1.lambda_msr   # reproducible
+        @test_throws ArgumentError mass_segregation(pos[:, 1:20], m_seg[1:20])       # ≤ n_massive
+        @test_throws ArgumentError mass_segregation(pos, m_seg; n_massive = 1)
+        @test Nbody6Dynamics._mst_length(pos, Int[]) == 0.0
+        @test Nbody6Dynamics._mst_length([0.0 3.0 3.0; 0.0 0.0 4.0; 0.0 0.0 0.0], [1, 2, 3]) ≈ 7.0   # 3 + 4
+
+        # Coalescence and the full time series on two synthetic snapshots:
+        # separated clusters, then superposed with their orbital velocities.
+        p1, v1 = sample_plummer(600, 0.3; rng = rng_r)
+        m1 = fill(1.0 / 1200, 600)
+        virialise!(m1, p1, v1)
+        p2, v2 = sample_plummer(600, 0.3; rng = rng_r)
+        m2 = fill(1.0 / 1200, 600)
+        virialise!(m2, p2, v2)
+        pos_o, vel_o, mass_o, ranges_o, _ = Nbody6Dynamics.setup_two_cluster_orbit(
+            p1,
+            v1,
+            m1,
+            p2,
+            v2,
+            m2,
+            6.0,
+            0.0;
+            truncate_jacobi_flag = false,
+        )
+        function _rsnap(pos, vel, mass, t)
+            params = zeros(Float32, 20)
+            params[1] = t
+            params[3] = 2.0f0     # rbar: 1 NB = 2 pc
+            params[4] = 1.0f0
+            params[11] = 3.0f0    # tscale: 1 NB = 3 Myr
+            params[12] = 1.0f0
+            Snapshot(
+                SnapshotHeader(Int32(length(mass)), Int32(1), Int32(1), Int32(20), params),
+                Int32.(1:length(mass)),
+                Float32.(mass),
+                Float32.(pos),
+                Float32.(vel),
+                Float32[],
+                Float32[],
+            )
+        end
+        s0 = _rsnap(pos_o, vel_o, mass_o, 0.0)
+        # "Merged": the clusters overlap (0.5 apart, radii ≈ 0.35) and keep
+        # their orbital velocities, so the pair's angular momentum survives
+        # with the orbital sense; superposing them exactly would cancel it.
+        pos_m = copy(pos_o)
+        pos_m[:, ranges_o[1]] .= p1 .- [0.25, 0.0, 0.0]
+        pos_m[:, ranges_o[2]] .= p2 .+ [0.25, 0.0, 0.0]
+        s1 = _rsnap(pos_m, vel_o, mass_o, 1.0)
+        coal = coalescence_time([s0, s1], ranges_o)
+        @test coal.index == 2 && coal.time_nb == 1.0 && coal.time_myr == 3.0
+        @test coal.n_distinct == [2, 1]
+        far = coalescence_time([s0, s0], ranges_o)
+        @test far.index === nothing && isnan(far.time_nb) && far.n_distinct == [2, 2]
+        @test_throws ArgumentError coalescence_time([s0], ranges_o[1:1])
+        L_orb = Nbody6Dynamics._orbital_angular_momentum(s0, ranges_o)
+        @test abs(L_orb[3]) > 0.5 && abs(L_orb[1]) < 1e-6 && abs(L_orb[2]) < 1e-6   # orbit in the x–y plane
+
+        diag = remnant_diagnostics([s0, s1], ranges_o; n_massive = 20, n_random = 20)
+        @test diag.time == [0.0, 1.0] && diag.time_myr == [0.0, 3.0] && diag.rbar == [2.0, 2.0]
+        @test diag.coalescence_time == 1.0 && diag.coalescence_time_myr == 3.0
+        @test all(diag.n_bound .≥ 1100)
+        @test all(0.9 .< diag.bound_mass_fraction .≤ 1.0)
+        @test diag.r_core[1] > diag.r_core[2] > 0           # two separated clusters → one compact remnant
+        @test diag.r_half[1] > diag.r_half[2] > 0
+        @test diag.spin_alignment[1] ≈ 1.0 atol = 1e-3       # spin of the pair = orbital L at t = 0
+        @test diag.spin_alignment[2] > 0.9                   # remnant keeps the orbital sense
+        @test all(isfinite, diag.lambda_r) && all(isfinite, diag.lambda_peebles)
+        @test all(isfinite, diag.lambda_msr) && all(isfinite, diag.segregation_ratio)
+        @test isnan(diag.segregation_time)
+        @test !isempty(diag.profile.radius)
+        @test_throws ArgumentError remnant_diagnostics(Snapshot[], ranges_o)
+
+        csv_path = joinpath(mktempdir(), "remnant.csv")
+        @test write_remnant_diagnostics(csv_path, diag) == csv_path
+        lines = readlines(csv_path)
+        @test length(lines) == 4
+        @test startswith(lines[1], "# coalescence_time_nb=1.0 coalescence_time_myr=3.0")
+        @test lines[2] ==
+              "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio"
+        @test startswith(lines[4], "1,3,2,")
+
+        vis_r = VisualizationConfig(; format = "png", column = "single", output_dir = mktempdir())
+        figs = remnant_figures(diag, vis_r)
+        @test length(figs) == 4 && all(isfile, figs)
+        vis_nb = VisualizationConfig(;
+            format = "png",
+            column = "single",
+            units = "nbody",
+            output_dir = vis_r.output_dir,
+        )
+        @test isfile(plot_remnant_structure(diag, vis_nb; filename = "structure_nb"))
+        @test isfile(
+            plot_mass_segregation_evolution(
+                diag,
+                vis_nb;
+                lambda_threshold = 1.5,
+                filename = "seg_nb",
+            ),
+        )
+        @test isfile(
+            plot_rotation_profile(
+                diag.profile,
+                vis_r;
+                rbar = 2.0,
+                lambda_r = 0.3,
+                filename = "profile",
+            ),
+        )
+        @test_throws ErrorException plot_rotation_profile(
+            RotationProfile(Float64[], Float64[], Float64[], Float64[]),
+            vis_r,
+        )
+        rm(vis_r.output_dir; recursive = true, force = true)
+    end
+
+    # =====================================================================
     @testset "Stellar type labels" begin
         # Standard Hurley et al. (2000) SSE/BSE table used by this fork
         @test startswith(STELLAR_TYPE_LABELS[0], "MS")
@@ -3186,6 +3359,16 @@ rbar = 1.0
         @test isfile(joinpath(plots_dir, "merger_cluster_separation.png"))
         plot_cluster_virial(snaps, ranges, vis_smoke)
         @test isfile(joinpath(plots_dir, "merger_cluster_virial.png"))
+        # Membership as body-index blocks (what parse_merger_summary returns)
+        Q_blocks, n_blocks = per_cluster_virial(snaps, collect.(ranges))
+        @test Q_blocks == Q && n_blocks == n_mem
+        plot_cluster_virial(
+            snaps,
+            collect.(ranges),
+            vis_smoke;
+            filename = "merger_cluster_virial_blocks",
+        )
+        @test isfile(joinpath(plots_dir, "merger_cluster_virial_blocks.png"))
 
         # Envelope statistics helper: NaNs are skipped, all-NaN columns stay NaN
         env = [1.0 NaN 3.0; 5.0 NaN 1.0]

@@ -500,6 +500,7 @@ generate_plots(results, cfg; run_dir)
 | `StellarRecord` / `StellarEvolutionSnapshot` | Stellar evolution data from one sev.83 file |
 | `BinaryRecord` / `BinaryEvolutionSnapshot` | Regularised binaries from one bev.82 file |
 | `BinaryPopulation` | Pair counts, hard/soft split and binary fraction against time |
+| `RemnantDiagnostics` / `RotationProfile` | Bound-remnant core radius, rotation, mass segregation and coalescence time against snapshots |
 | `UnitScaling` | Physical unit conversion factors |
 | `MergerConfig` / `MergerICResult` | Merger IC specification and structured result |
 | `OutputScan` | Result of `scan_output` on an external directory |

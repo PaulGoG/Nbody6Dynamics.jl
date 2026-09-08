@@ -17,7 +17,13 @@ makedocs(;
     sitename = "Nbody6Dynamics.jl",
     authors = "Paul-Adrian Gogîță",
     repo = Documenter.Remotes.GitHub("PaulGoG", "Nbody6Dynamics.jl"),
-    format = Documenter.HTML(; prettyurls = get(ENV, "CI", nothing) == "true", assets = String[]),
+    format = Documenter.HTML(;
+        prettyurls = get(ENV, "CI", nothing) == "true",
+        assets = String[],
+        # The API reference lists every public docstring on one page; exempt
+        # it from Documenter's per-page size threshold.
+        size_threshold_ignore = ["api.md"],
+    ),
     pages = [
         "Home" => "index.md",
         "Manual" => "manual.md",

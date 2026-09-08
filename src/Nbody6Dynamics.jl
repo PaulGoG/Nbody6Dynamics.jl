@@ -63,6 +63,7 @@ include("io/io.jl")
 # ---------------------------------------------------------------------------
 include("cluster_structure.jl")
 include("binary_population.jl")
+include("remnant.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -311,6 +312,13 @@ function generate_plots(
                         )
                         @info "Plotting velocity dispersion profiles (final snapshot)..."
                         plot_velocity_dispersion(snaps[end], ranges, vis)
+                        @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
+                        diag = remnant_diagnostics(snaps, ranges)
+                        write_remnant_diagnostics(
+                            joinpath(dirname(abspath(sim_dir)), "remnant_diagnostics.csv"),
+                            diag,
+                        )
+                        remnant_figures(diag, vis)
                     end
                 end
             end
@@ -675,6 +683,10 @@ export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, 
 export run_sweep_point, read_sweep_index, write_sweep_index, sweep_summary, write_sweep_summary
 export sweep_visualization, plot_sweep_lagrangian, plot_sweep_energy, sweep_figures
 export EnsembleStatistics, ensemble_statistics, sweep_ensembles, plot_sweep_ensemble
+export RemnantDiagnostics, RotationProfile, remnant_diagnostics, write_remnant_diagnostics
+export coalescence_time, core_radius, rotation_analysis, mass_segregation
+export plot_remnant_rotation, plot_rotation_profile, plot_remnant_structure
+export plot_mass_segregation_evolution, remnant_figures
 export plot_snapshot, plot_snapshot_evolution
 export plot_lagrangian, plot_energy, plot_particle_count
 export plot_hr, plot_hr_evolution
