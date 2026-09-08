@@ -1,8 +1,5 @@
 # Nbody6Dynamics.jl
 
-[![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)
-[![Format](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg?branch=main)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml)
-[![codecov](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![Julia](https://img.shields.io/badge/Julia-1.10%2B-9558B2.svg?logo=julia&logoColor=white)](https://julialang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
