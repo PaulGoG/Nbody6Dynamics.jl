@@ -13,9 +13,15 @@ A Julia package that automates the full lifecycle of [Nbody6PPGPU-beijing](https
 ![Two star clusters merging: the initial conditions and the remnant after 12 Myr](docs/src/assets/merger_evolution.png)
 
 *Two King clusters of 4000 stars each, released 6 pc apart on an eccentric orbit, and the
-remnant they leave 12 Myr later. Initial conditions, integration, analysis and figure were all
-produced by this package from one configuration file; the case is `input_files/showcase/` and
-is documented figure by figure in the showcase note.*
+remnant they leave 12 Myr later. Note the axes: the pair spans 12 pc, the remnant and its halo
+nearly 70 pc. Initial conditions, integration, analysis and figure were all produced by this
+package from one configuration file; the case is `input_files/showcase/`.*
+
+![Animation of the same merger over 12 Myr](docs/src/assets/merger_evolution.gif)
+
+*The same run animated on fixed axes, one frame per Myr. The two clusters fall together and
+coalesce at 4 Myr, after which the remnant relaxes and sheds the halo of loosely bound stars
+that fills the frame. Every run writes animations like this one alongside its static figures.*
 
 ## Project Structure
 
@@ -93,7 +99,7 @@ Nbody6Dynamics/
 │   ├── make.jl                      # Documenter.jl build script
 │   ├── Project.toml                 # Documentation build environment
 │   ├── src/                         # index, manual, input_files, multi_cluster_mergers, api
-│   └── src/assets/                  # figures used by the README and the docs site
+│   └── src/assets/                  # figure and animation used by the README and the docs site
 ├── input_files/
 │   ├── N1k_quick.inp                # N=1000 smoke test (seconds)
 │   ├── N5k_medium.inp               # N=5000 medium verification run

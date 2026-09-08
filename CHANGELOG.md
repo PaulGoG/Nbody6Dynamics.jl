@@ -8,7 +8,9 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ### Added
 - README and docs index carry a figure of the equal-mass merger, at the
   start and after 12 Myr, produced by the pipeline itself; the asset lives
-  in `docs/src/assets/` and is shared by both.
+  in `docs/src/assets/` and is shared by both. The README also carries the
+  animation of the same run (281 kB), which shows the dynamics the static
+  pair cannot.
 - Badges for Aqua static QA, the supported Julia version, and repository
   status. A documentation badge is deliberately absent until the site is
   deployed, and a Backend-workflow badge until that workflow has run.
