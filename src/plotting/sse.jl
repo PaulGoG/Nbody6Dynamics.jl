@@ -120,13 +120,17 @@ function plot_evolutionary_clock(
     # Main-sequence turnoff boundary — labelled reference line.
     if hi > 1.0
         vlines!(ax, [1.0]; color = :gray50, linestyle = :dash, linewidth = 1.0)
+        # The label goes on whichever side of the line has room; anchoring it
+        # always to the right clips it when the axis ends just past t = T_MS.
+        x_rel = 1.0 / hi
+        to_right = x_rel < 0.8
         text!(
             ax,
-            1.0 / hi + 0.01,
+            to_right ? x_rel + 0.01 : x_rel - 0.01,
             0.80;
             text = L"t = T_\mathrm{MS}",
             space = :relative,
-            align = (:left, :top),
+            align = (to_right ? :left : :right, :top),
             fontsize = 14,
             color = :gray30,
         )

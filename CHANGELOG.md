@@ -238,6 +238,9 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- The main-sequence turnoff label of the evolutionary-clock figure is placed
+  on whichever side of the reference line has room; it was clipped by the
+  axis whenever the distribution ended just past t = T_MS.
 - The rotation figure's alignment label is placed at the end of the axis
   away from the coalescence marker, and the lambda_R annotation treats the
   marker as occupied when choosing its corner.
