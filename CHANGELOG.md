@@ -238,6 +238,13 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- The rotation figure's alignment label is placed at the end of the axis
+  away from the coalescence marker, and the lambda_R annotation treats the
+  marker as occupied when choosing its corner.
+- The IMF reference slopes are continuous at the 0.5 Msun break; the
+  alpha = 2.3 segment shared the low-mass anchor and was drawn a factor of
+  five below the histogram, which made a correctly sampled population look
+  wrong.
 - The hard/soft energy scale of the binary diagnostics is taken over the
   bound systems: escapers and kicked stellar remnants had inflated the
   mass-weighted dispersion by a factor of several at single epochs.

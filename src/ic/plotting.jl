@@ -273,6 +273,10 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         m_ref = m_centres[i_ref]
         x_ref = 10.0 .^ range(log10(m_min / 1.5), log10(m_max * 1.5); length = 200)
         n_slopes = 0
+        # Segments are drawn in order of increasing mass, each continuing the
+        # previous one at the break mass, so the reference curve is unbroken
+        # where the Kroupa exponent changes.
+        anchor_m, anchor_y = m_ref, norm_val
         for (α, lbl, lo, hi, c) in [
             (
                 _KROUPA_ALPHAS[2],
@@ -288,12 +292,14 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             lines!(
                 ax_h,
                 seg,
-                norm_val .* (seg ./ m_ref) .^ (1.0 - α);
+                anchor_y .* (seg ./ anchor_m) .^ (1.0 - α);
                 color = c,
                 linewidth = 2,
                 linestyle = :dash,
                 label = lbl,
             )
+            anchor_y *= (hi / anchor_m)^(1.0 - α)
+            anchor_m = hi
             n_slopes += 1
         end
         ylims!(ax_h, y_floor, dn_max * 2)

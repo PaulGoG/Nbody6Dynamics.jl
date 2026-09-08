@@ -12,6 +12,13 @@ function _remnant_time(diag::RemnantDiagnostics, cfg::VisualizationConfig)
     return (; physical, t, label, t_coal, t_seg)
 end
 
+"""Occupancy points of a series extended by one point standing for an event
+marker's label (`x` the marker time, `y` the top of the data range), so
+[`_emptiest_corner`](@ref) keeps annotations away from it. Returns the
+series unchanged when the marker is absent."""
+_with_marker(v::AbstractVector{<:Real}, extra::Real) =
+    isfinite(extra) ? vcat(Float64.(v), Float64(extra)) : Float64.(v)
+
 """Fraction of the time range within which a marker label flips to the left of its line."""
 const _MARKER_EDGE_FRACTION = 0.2
 
@@ -104,13 +111,18 @@ function plot_remnant_rotation(
     valida = isfinite.(diag.spin_alignment)
     lines!(ax2, t[valida], diag.spin_alignment[valida]; color = :black, linewidth = 2.0)
     hlines!(ax2, [1.0]; color = (:grey, 0.6), linestyle = :dot, linewidth = 1.2)
+    # The guide label sits at the end of the axis furthest from the
+    # coalescence marker, so the two never cross.
+    label_left =
+        !isfinite(ax_t.t_coal) ||
+        (ax_t.t_coal - first(t)) > 0.5 * max(last(t) - first(t), eps(Float64))
     text!(
         ax2,
-        t[1],
+        label_left ? first(t) : last(t),
         1.0;
         text = "Aligned with orbital L",
-        align = (:left, :top),
-        offset = (4, -2),
+        align = (label_left ? :left : :right, :top),
+        offset = (label_left ? 4 : -4, -2),
         fontsize = _ANNOTATION_FONTSIZE,
         color = :grey,
     )
@@ -126,7 +138,11 @@ function plot_remnant_rotation(
             latexstring(
                 "\\lambda_R = $(_fmt_latex_sig3(diag.lambda_r[findlast(valid)]))\\;(\\mathrm{final})",
             );
-            corner = _emptiest_corner(t[valid], diag.lambda_r[valid]; corners = (:tl, :tr)),
+            corner = _emptiest_corner(
+                _with_marker(t[valid], ax_t.t_coal),
+                _with_marker(diag.lambda_r[valid], maximum(diag.lambda_r[valid]));
+                corners = (:tl, :tr),
+            ),
             color = c_r,
         )
     end
