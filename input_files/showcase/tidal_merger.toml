@@ -1,0 +1,48 @@
+# Equal-mass merger inside a point-mass galactic potential (KZ(14) = 2).
+# The engine evaluates no tidal energy, so the tolerance is relaxed and the
+# run is judged against the isolated case.
+
+[merger]
+seed = 23
+n_clusters = 2
+orbit_mode = "kepler"
+
+[merger.cluster1]
+model = "king"
+N = 2500
+W0 = 6.0
+rbar = 1.0
+imf = "kroupa"
+body1 = 50.0
+bodyn = 0.1
+
+[merger.cluster2]
+model = "king"
+N = 2500
+W0 = 6.0
+rbar = 1.0
+imf = "kroupa"
+body1 = 50.0
+bodyn = 0.1
+
+[merger.orbit]
+apocentre = 6.0
+eccentricity = 0.9
+
+[merger.output]
+format = "nbody"
+truncate_jacobi = true
+tcrit_myr = 20.0
+dtadj_myr = 0.5
+deltat_myr = 1.0
+
+[merger.nbody6]
+qe = 0.05
+
+[merger.tidal]
+kz14 = 2
+gmg = 1.0e11        # galaxy mass [M☉]
+rg0 = 8.5           # galactocentric radius [kpc]
+
+[merger.stellar]
+dtplot_myr = 2.0

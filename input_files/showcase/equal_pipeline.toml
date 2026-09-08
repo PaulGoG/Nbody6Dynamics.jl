@@ -1,0 +1,40 @@
+# Pipeline configuration of the showcase case "equal" (paths relative to this file).
+
+[install]
+enabled = false
+install_dir = "../../backend/Nbody6PPGPU-beijing"
+ref = "618d7a4"
+
+[build]
+configure_flags = ["--enable-mcmodel=large", "--with-par=b1m"]
+enable_mpi = false
+enable_hdf5 = true
+enable_gpu = false
+nproc = 0
+
+[simulation]
+run_test = true
+input_file = "../../input_files/N1k_quick.inp"   # unused: merger.inp is generated
+runs_dir = "../../runs"
+binary_name = "nbody6++"
+mpi_ranks = 1
+omp_threads = 4
+run_id_prefix = "showcase_equal"
+monitor = false
+telemetry_interval = 5.0
+startup_timeout = 600.0
+
+[postprocess]
+enabled = true
+
+[visualization]
+enabled = true
+format = "png"
+dpi = 300
+column = "single"
+units = "physical"
+output_dir = "plots"
+
+[merger]
+enabled = true
+config_file = "equal_merger.toml"

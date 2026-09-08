@@ -102,7 +102,10 @@ Nbody6Dynamics/
 │   ├── N10k_long.inp                # 10k single cluster, extended TCRIT (long run)
 │   ├── merger_27cluster_cubic.toml  # 27 clusters on a 3×3×3 cubic grid
 │   ├── verif_triorbit.toml          # Bound Lagrange-triangle verification target
-│   └── verif_3d5cluster.toml        # 5 clusters distributed in 3D (projection/COM verification)
+│   ├── verif_3d5cluster.toml        # 5 clusters distributed in 3D (projection/COM verification)
+│   ├── sweep_demo.toml              # Demonstration sweep (eccentricity × secondary size × seeds)
+│   └── showcase/                    # Four science cases with Myr intervals: equal-mass eccentric merger,
+│                                    #   binary-rich unequal merger, tidal-field merger, sweep with controls
 ├── backend/                         # (gitignored) cloned Nbody6PPGPU-beijing source + build
 └── runs/                            # (gitignored) per-run output/, plots/, frozen config.toml
 ```
@@ -126,6 +129,7 @@ One invocation each; details in the sections below. The docs and benchmark scrip
 | Instantiate the package environment | `julia --project=. -e 'using Pkg; Pkg.instantiate()'` |
 | Run the main pipeline | `julia --project=. scripts/run_setup.jl [config.toml]` |
 | Run a parameter sweep | `julia --project=. scripts/run_sweep.jl input_files/sweep_demo.toml [--dry-run]` |
+| Run a showcase case | `julia --project=. scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (also `binary_`, `tidal_`; the sweep via `scripts/run_sweep.jl input_files/showcase/sweep.toml`) |
 | Run the verification suite | `julia --project=. scripts/run_verif_suite.jl` |
 | Execute the test suite | `julia --project=. -e 'using Pkg; Pkg.test()'` |
 | Run the benchmarks | `julia bench/benchmarks.jl` |

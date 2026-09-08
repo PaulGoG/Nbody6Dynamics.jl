@@ -174,6 +174,10 @@ Nbody6++GPU integrates a multi-cluster system correctly as a set of point masses
 
 **Execution.** The engine takes its thread count from the OpenMP runtime alone and reports it at start-up; `simulation.omp_threads` controls it, and `RUN_INFO.toml` records the configured and reported values with the CPU accounting of the run. GPU devices are selected through the engine's `GPU_LIST` environment variable, not `CUDA_VISIBLE_DEVICES`.
 
+## Showcase configurations
+
+`input_files/showcase/` holds four cases that exercise the pipeline end to end within minutes on a workstation, each as a merger TOML with a matching pipeline TOML (paths relative to the folder): an equal-mass King pair on an eccentric orbit that coalesces within the run (`equal_*`), an unequal pair with 20 % primordial binaries in both clusters and the relaxed energy tolerance such runs need (`binary_*`), the equal pair inside a point-mass galactic potential (`tidal_*`), and an eccentricity × seed sweep with isolated controls (`sweep.toml`). All intervals are given in Myr, so merger, control and sweep points cover the same physical span.
+
 ## Verification configs
 
 Two configs in `input_files/` exercise the machinery end-to-end: `verif_triorbit.toml` (three clusters on a rotating Lagrange-equilibrium triangle, `ω² = Gm/(√3 r³)` — see [Input File Reference](@ref) for the derivation) and `verif_3d5cluster.toml` (five clusters distributed in 3D). The test suite additionally validates the King concentration `c(W0)`, the Plummer `r_hm = 1.305 a` relation, the Kroupa mean mass, `virialise!` reaching `Q = 0.5`, and the Kepler/Jacobi relations.

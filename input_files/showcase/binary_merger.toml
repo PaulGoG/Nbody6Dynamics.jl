@@ -1,0 +1,48 @@
+# Unequal-mass merger (q ≈ 0.25) with 20 % primordial binaries in both clusters.
+# Binary-rich runs need a relaxed energy tolerance (regularised-pair bookkeeping).
+
+[merger]
+seed = 22
+n_clusters = 2
+orbit_mode = "kepler"
+
+[merger.cluster1]
+model = "king"
+N = 4000
+W0 = 6.0
+rbar = 1.0
+imf = "kroupa"
+body1 = 50.0
+bodyn = 0.1
+
+[merger.cluster1.binaries]
+fraction = 0.2
+
+[merger.cluster2]
+model = "king"
+N = 1000
+W0 = 5.0
+rbar = 0.7
+imf = "kroupa"
+body1 = 50.0
+bodyn = 0.1
+
+[merger.cluster2.binaries]
+fraction = 0.2
+
+[merger.orbit]
+apocentre = 5.0
+eccentricity = 0.7
+
+[merger.output]
+format = "nbody"
+truncate_jacobi = true
+tcrit_myr = 15.0
+dtadj_myr = 0.5
+deltat_myr = 1.0
+
+[merger.nbody6]
+qe = 0.01
+
+[merger.stellar]
+dtplot_myr = 1.0

@@ -238,6 +238,9 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- The hard/soft energy scale of the binary diagnostics is taken over the
+  bound systems: escapers and kicked stellar remnants had inflated the
+  mass-weighted dispersion by a factor of several at single epochs.
 - The per-cluster virial figure accepted only index ranges and crashed on
   the body-index blocks written since the primordial-binary change.
 - `Manifest.toml` self-entry still carried the pre-rename package name

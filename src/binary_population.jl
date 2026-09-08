@@ -36,17 +36,21 @@ function binding_energy(r::BinaryRecord)
 end
 
 """
-    hardness_scale(snap::Snapshot, bev::BinaryEvolutionSnapshot)
+    hardness_scale(snap::Snapshot, bev::BinaryEvolutionSnapshot; bound_only = true)
         -> (; m_mean, sigma_kms, n_systems)
 
 Mean system mass ⟨m⟩ [M☉] and one-dimensional, mass-weighted velocity
 dispersion σ [km s⁻¹] of the systems in `snap`: single stars plus the centres
 of mass of the pairs listed in `bev`, matched to the snapshot by particle
 name. A pair with a component missing from the snapshot is not reduced and
-its present component counts as a single star. `⟨m⟩ σ²` is the hard/soft
-energy scale used by [`binary_hardness`](@ref).
+its present component counts as a single star. With `bound_only` the scale
+is taken over the self-consistently bound systems ([`_bound_members`](@ref)),
+which keeps escapers and kicked stellar remnants — a handful of stars at
+tens of km s⁻¹ — from dominating the mass-weighted dispersion; `n_systems`
+counts the systems used. `⟨m⟩ σ²` is the hard/soft energy scale used by
+[`binary_hardness`](@ref).
 """
-function hardness_scale(snap::Snapshot, bev::BinaryEvolutionSnapshot)
+function hardness_scale(snap::Snapshot, bev::BinaryEvolutionSnapshot; bound_only::Bool = true)
     N = nparticles(snap)
     N > 0 || throw(ArgumentError("hardness_scale: empty snapshot"))
     zm = zmbar(snap.header)
@@ -61,6 +65,8 @@ function hardness_scale(snap::Snapshot, bev::BinaryEvolutionSnapshot)
     m_sys = Vector{Float64}(undef, N)
     v_sys = Matrix{Float64}(undef, 3, N)
     is_component = falses(N)
+    pair_index = Int[]      # first component of every reduced pair (its position stands for the c.m.)
+    single_index = Int[]
     n_sys = 0
     for r in bev.records
         i = get(index_of, r.name1, 0)
@@ -70,6 +76,7 @@ function hardness_scale(snap::Snapshot, bev::BinaryEvolutionSnapshot)
         mi = Float64(snap.mass[i])
         mj = Float64(snap.mass[j])
         n_sys += 1
+        push!(pair_index, i)
         m_sys[n_sys] = mi + mj
         for k in 1:3
             v_sys[k, n_sys] = (mi * snap.vel[k, i] + mj * snap.vel[k, j]) / (mi + mj)
@@ -77,25 +84,39 @@ function hardness_scale(snap::Snapshot, bev::BinaryEvolutionSnapshot)
         is_component[i] = true
         is_component[j] = true
     end
+    n_pairs_reduced = n_sys
     for i in 1:N
         is_component[i] && continue
         n_sys += 1
+        push!(single_index, i)
         m_sys[n_sys] = Float64(snap.mass[i])
         for k in 1:3
             v_sys[k, n_sys] = Float64(snap.vel[k, i])
         end
     end
 
-    M = sum(@view m_sys[1:n_sys])
+    sel = collect(1:n_sys)
+    if bound_only && n_sys ≥ _MIN_MEMBERS
+        p_sys = Matrix{Float64}(undef, 3, n_sys)
+        for s in 1:n_sys
+            i = s ≤ n_pairs_reduced ? pair_index[s] : single_index[s - n_pairs_reduced]
+            for k in 1:3
+                p_sys[k, s] = Float64(snap.pos[k, i])
+            end
+        end
+        sel = _bound_members(p_sys, v_sys[:, 1:n_sys], m_sys[1:n_sys])
+        length(sel) ≥ _MIN_MEMBERS || (sel = collect(1:n_sys))
+    end
+    M = sum(m_sys[s] for s in sel)
     M > 0 || throw(ArgumentError("hardness_scale: snapshot has zero total mass"))
-    vc = ntuple(k -> sum(m_sys[s] * v_sys[k, s] for s in 1:n_sys) / M, 3)
+    vc = ntuple(k -> sum(m_sys[s] * v_sys[k, s] for s in sel) / M, 3)
     σ2 = 0.0
-    for s in 1:n_sys
+    for s in sel
         σ2 += m_sys[s] * sum((v_sys[k, s] - vc[k])^2 for k in 1:3)
     end
     σ2 /= 3M
 
-    return (; m_mean = M / n_sys * zm, sigma_kms = sqrt(σ2) * vs, n_systems = n_sys)
+    return (; m_mean = M / length(sel) * zm, sigma_kms = sqrt(σ2) * vs, n_systems = length(sel))
 end
 
 """

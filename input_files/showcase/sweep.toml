@@ -1,0 +1,15 @@
+# Showcase sweep: orbital eccentricity × two seeds, each point with its
+# isolated single-cluster control.
+
+[sweep]
+name = "showcase"
+pipeline_config = "sweep_pipeline.toml"
+merger_config = "sweep_merger.toml"
+seeds = [1, 2]
+concurrency = 2
+omp_threads = 4
+runs_dir = "../../runs"
+controls = true
+
+[sweep.grid]
+"merger.orbit.eccentricity" = [0.5, 0.9]
