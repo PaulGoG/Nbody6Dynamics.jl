@@ -6,6 +6,10 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- The showcase sweep is rebased on a geometry the engine can start from
+  (2 pc clusters on a 10 pc orbit, three seeds): with 1 pc clusters on a
+  5 pc orbit the derived neighbour radius is too small and every merger
+  point hangs during neighbour-list construction.
 - Control runs (F14): `control_merger_dict`/`write_control_merger_config`
   derive the isolated single-cluster equivalent of a merger TOML (summed
   `N`, `N`-weighted half-mass radius, cluster 1's model, IMF and binaries,
