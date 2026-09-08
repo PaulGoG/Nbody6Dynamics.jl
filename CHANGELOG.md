@@ -6,6 +6,16 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Binary diagnostics (F5b): `read_binary_evolution` parses the engine's
+  `bev.82_*` records (KS-regularised pairs with orbital elements and the
+  SSE state of both components; `BinaryRecord`, `BinaryEvolutionSnapshot`);
+  `binary_population` reduces a run to pair counts, binary fraction and the
+  Heggie hard/soft split, with the energy scale `⟨m⟩ σ²` measured on the
+  systems of the nearest snapshot (`hardness_scale`, `binary_scales`,
+  `binary_hardness`); `plot_binary_population`,
+  `plot_binary_orbital_elements` and `plot_binary_period_distribution` join
+  the pipeline, controlled by `postprocess.read_binary_evo` and
+  `binary_evo_pattern`.
 - Primordial binaries (F5a): `[merger.clusterN.binaries]` (`BinarySpec`)
   pairs a fraction of a cluster's stars (random or uniform-`q` pairing,
   Kroupa 1995 periods or log-uniform semi-major axes, thermal or circular

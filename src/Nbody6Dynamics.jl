@@ -62,6 +62,7 @@ include("io/io.jl")
 # Per-cluster structure from snapshots (used by the merger plots)
 # ---------------------------------------------------------------------------
 include("cluster_structure.jl")
+include("binary_population.jl")
 
 # ---------------------------------------------------------------------------
 # Plotting (sets publication theme on load)
@@ -166,7 +167,68 @@ function postprocess(
         isempty(sevs) || (results[:stellar_evo] = sevs)
     end
 
+    # Regularised binaries
+    if pp.read_binary_evo
+        bevs = read_all_binary_evolution(sim_dir, pp.binary_evo_pattern)
+        isempty(bevs) || (results[:binary_evo] = bevs)
+    end
+
     return results
+end
+
+"""
+    _plot_binary_diagnostics(bevs, results, vis)
+
+Binary-population figures for `bevs`. The hard/soft energy scale and the
+stellar count per epoch come from the conf.3 snapshots when present
+([`binary_scales`](@ref)); without snapshots the stellar count falls back
+to the ADJUST diagnostics and the pairs are left unclassified.
+"""
+function _plot_binary_diagnostics(
+    bevs::Vector{BinaryEvolutionSnapshot},
+    results::Dict{Symbol,Any},
+    vis::VisualizationConfig,
+)
+    snaps = get(results, :snapshots, Snapshot[])::Vector{Snapshot}
+    scales = binary_scales(bevs, snaps)
+    if scales === nothing
+        n_stars = nothing
+        if haskey(results, :diagnostics)
+            adj = (results[:diagnostics]::DiagnosticsData).adjust
+            if !isempty(adj)
+                t_adj = [a.time_myr for a in adj]
+                n_stars = [adj[argmin(abs.(t_adj .- b.time_myr))].n for b in bevs]
+            end
+        end
+        pop = binary_population(bevs; n_stars = n_stars)
+        m_mean = fill(NaN, length(bevs))
+        sigma = fill(NaN, length(bevs))
+    else
+        pop = binary_population(
+            bevs;
+            n_stars = scales.n_stars,
+            m_mean = scales.m_mean,
+            sigma_kms = scales.sigma_kms,
+        )
+        m_mean = scales.m_mean
+        sigma = scales.sigma_kms
+    end
+    plot_binary_population(pop, vis; filename = "binary_population")
+    plot_binary_period_distribution(bevs, vis; filename = "binary_period_distribution")
+    epochs =
+        length(bevs) > 1 ?
+        ((1, "binary_orbital_elements_initial"), (length(bevs), "binary_orbital_elements_final")) :
+        ((1, "binary_orbital_elements_initial"),)
+    for (idx, fname) in epochs
+        plot_binary_orbital_elements(
+            bevs[idx],
+            vis;
+            m_mean = m_mean[idx],
+            sigma_kms = sigma[idx],
+            filename = fname,
+        )
+    end
+    return nothing
 end
 
 """
@@ -306,6 +368,14 @@ function generate_plots(
         end
     end
 
+    if haskey(results, :binary_evo)
+        bevs = results[:binary_evo]::Vector{BinaryEvolutionSnapshot}
+        if !isempty(bevs)
+            @info "Plotting binary population..."
+            _plot_binary_diagnostics(bevs, results, vis)
+        end
+    end
+
     # --- Animations (GIF) ---
     if animations
         if haskey(results, :snapshots)
@@ -419,7 +489,7 @@ If `data_dir` is empty but `run_test = false`, the most recent run in
 
 # Returns
 A `Dict{Symbol,Any}` with keys `:snapshots`, `:diagnostics`, `:lagr`,
-`:escapers`, `:stellar_evo` (present only when corresponding data exists).
+`:escapers`, `:stellar_evo`, `:binary_evo` (present only when corresponding data exists).
 Returns an empty dict if post-processing is disabled.
 """
 function run_pipeline(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROOT)::Dict{Symbol,Any}
@@ -584,6 +654,10 @@ export read_diagnostics, extract_scaling
 export read_lagr
 export read_escapers
 export read_stellar_evolution, read_all_stellar_evolution
+export BinaryRecord, BinaryEvolutionSnapshot, read_binary_evolution, read_all_binary_evolution
+export BinaryPopulation, binary_population, binary_hardness, hardness_scale, binary_scales
+export semi_major_axis_pc, binding_energy
+export plot_binary_population, plot_binary_orbital_elements, plot_binary_period_distribution
 export plot_snapshot, plot_snapshot_evolution
 export plot_lagrangian, plot_energy, plot_particle_count
 export plot_hr, plot_hr_evolution

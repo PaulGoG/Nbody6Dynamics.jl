@@ -54,6 +54,9 @@ EscaperRecord
 StellarRecord
 StellarEvolutionSnapshot
 STELLAR_TYPE_LABELS
+BinaryRecord
+BinaryEvolutionSnapshot
+BinaryPopulation
 ```
 
 ## Snapshot Accessors
@@ -81,6 +84,19 @@ read_lagr
 read_escapers
 read_stellar_evolution
 read_all_stellar_evolution
+read_binary_evolution
+read_all_binary_evolution
+```
+
+## Binary Population
+
+```@docs
+binary_population
+binary_hardness
+hardness_scale
+binary_scales
+binding_energy
+semi_major_axis_pc
 ```
 
 ## Plotting
@@ -204,6 +220,9 @@ cluster_profiles
 system_profile
 plot_density_profiles
 plot_velocity_dispersion
+plot_binary_population
+plot_binary_orbital_elements
+plot_binary_period_distribution
 plot_cluster_separation
 plot_cluster_virial
 ```

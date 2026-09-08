@@ -115,6 +115,8 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `escapers_file`       | String | `"esc.11"` | Escaper file name; must be nonempty when `read_escapers = true` |
 | `read_stellar_evo`    | Bool   | `true`  | Read stellar evolution snapshots |
 | `stellar_evo_pattern` | String | `"sev.83_*"` | Glob pattern for stellar evolution files (matches what this fork's `hrplot.F` writes: `sev.83_<time>`); must be nonempty when `read_stellar_evo = true` |
+| `read_binary_evo`     | Bool   | `true`  | Read the regularised-binary snapshots |
+| `binary_evo_pattern`  | String | `"bev.82_*"` | Glob pattern for the binary files (`bev.82_<time>`, written by `hrplot.F` alongside `sev.83`); must be nonempty when `read_binary_evo = true` |
 
 !!! note "HDF5 snapshot support was removed"
     Setting `snapshot_format = "hdf5"` raises an error. The old HDF5 reader
@@ -242,7 +244,8 @@ runs/run_20260325_143022_a1f3/
 │   ├── conf.3_*         # particle snapshots
 │   ├── lagr.7           # Lagrangian radii
 │   ├── esc.11           # escaper events
-│   └── sev.83_*         # stellar evolution snapshots
+│   ├── sev.83_*         # stellar evolution snapshots
+│   └── bev.82_*         # regularised-binary snapshots
 └── plots/               # post-processing plots & GIF animations
 ```
 
@@ -350,6 +353,25 @@ sevs = read_all_stellar_evolution(run_out, "sev.83_*")
 
 Note the header time is TPHYS in **Myr** while each data line's first token is TTOT in **NB units**; both clocks are kept (`StellarEvolutionSnapshot.time_myr`, `StellarRecord.time_nb`).
 
+### Regularised binaries
+
+```julia
+bev = read_binary_evolution("bev.82_0")
+bev.n_pairs                       # header NPAIRS
+bev.records[1].eccentricity
+bev.records[1].log_period_days    # log10(P / d)
+semi_major_axis_pc(bev.records[1])
+
+bevs = read_all_binary_evolution(run_out, "bev.82_*")
+snaps = read_all_conf3(run_out)
+scales = binary_scales(bevs, snaps)          # ⟨m⟩, σ and N per epoch from the nearest snapshot
+pop = binary_population(bevs; n_stars = scales.n_stars,
+                        m_mean = scales.m_mean, sigma_kms = scales.sigma_kms)
+pop.n_hard, pop.n_soft, pop.binary_fraction
+```
+
+`bev.82` lists the KS-regularised pairs only (32 columns per line, the same header convention as `sev.83`): component indices, names and stellar types, the distance of the centre of mass from the density centre, eccentricity, `log10(P/d)`, `log10(a/R☉)`, and the SSE quantities of both components. Pairs wider than the regularisation distance are absent, so every count derived from it is a lower bound on the bound-pair population. Hardness follows Heggie (1975): a pair is hard when its binding energy `G m₁ m₂ / (2a)` exceeds `⟨m⟩ σ²`, with the mean system mass and the one-dimensional, mass-weighted dispersion of the systems (singles plus pair centres of mass) taken from the snapshot nearest in time (`hardness_scale`). The pipeline draws `binary_population` (pair counts and hard/soft split above the binary and hard fractions), `binary_period_distribution` (first against last epoch), and `binary_orbital_elements_initial`/`_final` (semi-major axis against eccentricity by hardness class, with the boundary of a pair of mean component-mass product).
+
 ---
 
 ## 9. Visualisation
@@ -445,6 +467,8 @@ generate_plots(results, cfg; run_dir)
 | `LagrangianData` | Lagrangian radii evolution |
 | `EscaperRecord` | Single escaper event |
 | `StellarRecord` / `StellarEvolutionSnapshot` | Stellar evolution data from one sev.83 file |
+| `BinaryRecord` / `BinaryEvolutionSnapshot` | Regularised binaries from one bev.82 file |
+| `BinaryPopulation` | Pair counts, hard/soft split and binary fraction against time |
 | `UnitScaling` | Physical unit conversion factors |
 | `MergerConfig` / `MergerICResult` | Merger IC specification and structured result |
 | `OutputScan` | Result of `scan_output` on an external directory |
@@ -463,6 +487,7 @@ Files produced by the Nbody6++ simulation and read by this package:
 | `lagr.7` | Lagrangian radii (ASCII) | `read_lagr` |
 | `esc.11` | Escaper events (ASCII) | `read_escapers` |
 | `sev.83_*` | Single-star evolution snapshots (ASCII) | `read_stellar_evolution` |
+| `bev.82_*` | Regularised-binary snapshots (ASCII) | `read_binary_evolution` |
 | `snap.40_*.h5part` | HDF5 snapshots (KZ(46)) | **not readable** — detected and warned about only |
 
 ### Stellar type codes (K*)

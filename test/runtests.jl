@@ -72,6 +72,8 @@ figsize = [10, 8]
         @test cfg.postprocess.escapers_file == "esc.11"
         @test cfg.postprocess.read_stellar_evo == true
         @test cfg.postprocess.stellar_evo_pattern == "sev.83_*"
+        @test cfg.postprocess.read_binary_evo == true
+        @test cfg.postprocess.binary_evo_pattern == "bev.82_*"
         @test cfg.visualization.dpi == 150
         @test cfg.visualization.figsize == (10, 8)
         @test cfg.install.source_url == "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
@@ -564,6 +566,210 @@ TIME   0.01  0.05  0.20  0.50  1.00
     end
 
     # =====================================================================
+    @testset "Binary evolution reader" begin
+        # hrplot.F FORMAT 5: 32 tokens per line; header NPAIRS TPHYS [Myr];
+        # token 1 of every data line is TTOT [NB]. Record 1 is a verbatim
+        # engine line, record 2 carries a recognisable 1..12 tail.
+        bev_path = joinpath(TESTDIR, "bev.82_0")
+        write(
+            bev_path,
+            """
+       2      0.0
+   0.00000E+00       1       2       1       2  0  1   0  1.34446E+00  9.21880E-01  1.20647E+00  1.30277E+00  2.21134E-01  1.98278E-01 -1.99897E+00 -2.08678E+00 -6.28737E-01 -6.64486E-01  3.57640E+00  3.57233E+00  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00  4.98658E+05  6.20908E+05  0.00000E+00  0.00000E+00  0.00000E+00  0.00000E+00  1.52819E-01  1.40743E-01
+   0.00000E+00       3       4       3       4  1  0   0  5.14787E-01  6.97120E-01  5.58338E+00  4.42220E+00  1.11885E+00  5.68179E-01  3.81907E-01 -9.85920E-01 -1.23430E-02 -2.97930E-01  3.86343E+00  3.70000E+00  1.0  2.0  3.0  4.0  5.0  6.0  7.0  8.0  9.0  10.0  11.0  12.0
+   0.00000E+00       5       6
+""",
+        )
+        bev = read_binary_evolution(bev_path)
+        @test bev.n_pairs == 2
+        @test bev.time_myr == 0.0
+        @test length(bev.records) == 2        # the short line is skipped
+
+        r1 = bev.records[1]
+        @test r1.time_nb == 0.0
+        @test (r1.index1, r1.index2, r1.name1, r1.name2) == (1, 2, 1, 2)
+        @test (r1.stellar_type1, r1.stellar_type2, r1.stellar_type_cm) == (0, 1, 0)
+        @test r1.ri ≈ 1.34446
+        @test r1.eccentricity ≈ 0.92188
+        @test r1.log_period_days ≈ 1.20647
+        @test r1.log_semi_major_axis_rsun ≈ 1.30277
+        @test r1.mass1 ≈ 0.221134
+        @test r1.mass2 ≈ 0.198278
+        @test r1.log_luminosity1 ≈ -1.99897
+        @test r1.log_radius2 ≈ -0.664486
+        @test r1.log_teff1 ≈ 3.5764
+        @test r1.ms_lifetime1_myr ≈ 4.98658e5     # TM of a 0.22 M☉ dwarf
+        @test r1.radius_envelope2 ≈ 0.140743
+
+        r2 = bev.records[2]
+        @test (r2.age1_myr, r2.age2_myr) == (1.0, 2.0)
+        @test (r2.epoch1_myr, r2.epoch2_myr) == (3.0, 4.0)
+        @test (r2.ms_lifetime1_myr, r2.ms_lifetime2_myr) == (5.0, 6.0)
+        @test (r2.mass_core1, r2.mass_core2) == (7.0, 8.0)
+        @test (r2.radius_core1, r2.radius_core2) == (9.0, 10.0)
+        @test (r2.radius_envelope1, r2.radius_envelope2) == (11.0, 12.0)
+
+        # The engine's period and semi-major axis columns obey Kepler III,
+        # a³/P² = m₁ + m₂ in au, yr, M☉ — a check of the column map and of
+        # the R☉ → pc → au conversions.
+        P_yr = 10^r1.log_period_days / 365.25
+        a_au = semi_major_axis_pc(r1) / Nbody6Dynamics._AU_IN_PC
+        @test a_au^3 / P_yr^2 ≈ r1.mass1 + r1.mass2 rtol = 1e-2
+        @test binding_energy(r1) ≈
+              Nbody6Dynamics._G_PC_KMS2_MSUN * r1.mass1 * r1.mass2 / (2 * semi_major_axis_pc(r1))
+
+        write(joinpath(TESTDIR, "bev.82_1"), "       0      1.5\n")
+        bevs = read_all_binary_evolution(TESTDIR, "bev.82_*")
+        @test length(bevs) == 2
+        @test bevs[1].time_myr < bevs[2].time_myr
+        @test bevs[2].n_pairs == 0 && isempty(bevs[2].records)
+        @test isempty(read_all_binary_evolution(joinpath(TESTDIR, "absent"), "bev.82_*"))
+        @test_throws ErrorException read_binary_evolution(joinpath(TESTDIR, "missing.82"))
+    end
+
+    # =====================================================================
+    @testset "Binary population diagnostics" begin
+        # Synthetic snapshot: four singles and one pair with known velocities.
+        # Scalings: 10 M☉ per NB mass unit, 2 km/s per NB velocity unit.
+        params = zeros(Float32, 20)
+        params[3] = 1.0f0
+        params[4] = 10.0f0
+        params[11] = 1.0f0
+        params[12] = 2.0f0
+        names = Int32.(1:6)
+        mass = Float32[0.1, 0.1, 0.1, 0.1, 0.3, 0.3]
+        pos = zeros(Float32, 3, 6)
+        vel = zeros(Float32, 3, 6)
+        vel[1, 1:4] .= Float32[1, -1, 1, -1]     # singles: ±1 along x
+        vel[1, 5], vel[1, 6] = 3.0f0, -3.0f0     # pair (5, 6): equal masses, c.m. at rest in x
+        vel[2, 5] = vel[2, 6] = 0.5f0            # c.m. moving at 0.5 along y
+        hdr = SnapshotHeader(Int32(6), Int32(1), Int32(1), Int32(20), params)
+        snap = Snapshot(hdr, names, mass, pos, vel, Float32[], Float32[])
+
+        _bin_rec(n1, n2, m1, m2, loga, e) = BinaryRecord(
+            0.0,
+            Int32(n1),
+            Int32(n2),
+            Int32(n1),
+            Int32(n2),
+            Int32(0),
+            Int32(0),
+            Int32(0),
+            0.0,
+            e,
+            0.0,
+            loga,
+            m1,
+            m2,
+            zeros(18)...,
+        )
+        hard_rec = _bin_rec(5, 6, 3.0, 3.0, 3.0, 0.1)   # a = 10³ R☉
+        soft_rec = _bin_rec(5, 6, 3.0, 3.0, 6.0, 0.9)   # a = 10⁶ R☉
+        bev0 = BinaryEvolutionSnapshot(0.0, 2, [hard_rec, soft_rec])
+        bev1 = BinaryEvolutionSnapshot(1.0, 1, [hard_rec])
+
+        # Systems: four singles (m = 0.1, v = ±x̂) and the pair's c.m.
+        # (m = 0.6, v = 0.5 ŷ). M = 1, v_c = 0.3 ŷ,
+        # σ² = [4 × 0.1 × (1 + 0.09) + 0.6 × 0.04] / (3 × 1) = 0.46/3.
+        sc = hardness_scale(snap, bev0)
+        @test sc.n_systems == 5
+        @test sc.m_mean ≈ 2.0 rtol = 1e-6            # Float32 particle masses
+        @test sc.sigma_kms ≈ 2 * sqrt(0.46 / 3) rtol = 1e-6
+        # A pair with a component missing from the snapshot is not reduced.
+        sc_missing = hardness_scale(
+            snap,
+            BinaryEvolutionSnapshot(0.0, 1, [_bin_rec(5, 99, 3.0, 3.0, 3.0, 0.0)]),
+        )
+        @test sc_missing.n_systems == 6
+        @test_throws ArgumentError hardness_scale(
+            Snapshot(
+                hdr,
+                Int32[],
+                Float32[],
+                zeros(Float32, 3, 0),
+                zeros(Float32, 3, 0),
+                Float32[],
+                Float32[],
+            ),
+            bev0,
+        )
+
+        x = binary_hardness(bev0, sc.m_mean, sc.sigma_kms)
+        scale = sc.m_mean * sc.sigma_kms^2
+        @test x[1] ≈ binding_energy(hard_rec) / scale
+        @test x[1] > 1 && x[2] < 1
+        @test x[1] / x[2] ≈ 1e3            # same masses, a ratio 10³
+        @test semi_major_axis_pc(hard_rec) ≈ 1e3 * Nbody6Dynamics._RSUN_PC
+        @test_throws ArgumentError binary_hardness(bev0, 0.0, 1.0)
+        @test_throws ArgumentError binary_hardness(bev0, 1.0, -1.0)
+
+        pop = binary_population(
+            [bev0, bev1];
+            n_stars = 6,
+            m_mean = sc.m_mean,
+            sigma_kms = sc.sigma_kms,
+        )
+        @test pop.classified
+        @test pop.time_myr == [0.0, 1.0]
+        @test pop.n_pairs == [2, 1]
+        @test pop.n_hard == [1, 1]
+        @test pop.n_soft == [1, 0]
+        @test pop.binary_fraction ≈ [2 / 4, 1 / 5]   # N_b / (N_stars − N_b)
+        pop_u = binary_population([bev0, bev1])
+        @test !pop_u.classified
+        @test all(iszero, pop_u.n_hard) && pop_u.n_soft == pop_u.n_pairs
+        @test all(isnan, pop_u.binary_fraction)
+        pop_v = binary_population(
+            [bev0, bev1];
+            n_stars = [6, 4],
+            m_mean = [2.0, 2.0],
+            sigma_kms = [sc.sigma_kms, 1e-3],
+        )
+        @test pop_v.binary_fraction ≈ [0.5, 1 / 3]
+        @test pop_v.n_hard == [1, 1]
+        @test_throws DimensionMismatch binary_population([bev0, bev1]; n_stars = [6, 6, 6])
+        @test_throws ArgumentError binary_population(BinaryEvolutionSnapshot[])
+
+        scales = binary_scales([bev0, bev1], [snap])
+        @test scales.n_stars == [6, 6]
+        @test scales.m_mean ≈ [2.0, 2.0] rtol = 1e-6
+        @test scales.sigma_kms ≈ fill(sc.sigma_kms, 2) rtol = 1e-6
+        @test binary_scales([bev0], Snapshot[]) === nothing
+
+        # Figures: time series, single epoch, classified and unclassified
+        # elements, period histograms, and the no-data paths.
+        vis_b = VisualizationConfig(; format = "png", column = "single", output_dir = mktempdir())
+        @test isfile(plot_binary_population(pop, vis_b; filename = "pop_series"))
+        @test isfile(
+            plot_binary_population(
+                binary_population([bev0]; n_stars = 6),
+                vis_b;
+                filename = "pop_single",
+            ),
+        )
+        @test isfile(
+            plot_binary_orbital_elements(
+                bev0,
+                vis_b;
+                m_mean = sc.m_mean,
+                sigma_kms = sc.sigma_kms,
+                filename = "ae_classified",
+            ),
+        )
+        @test isfile(plot_binary_orbital_elements(bev0, vis_b; filename = "ae_plain"))
+        @test isfile(plot_binary_period_distribution([bev0, bev1], vis_b; filename = "period_two"))
+        @test isfile(plot_binary_period_distribution([bev0], vis_b; filename = "period_one"))
+        empty_bev = BinaryEvolutionSnapshot(2.0, 0, BinaryRecord[])
+        @test isfile(plot_binary_orbital_elements(empty_bev, vis_b; filename = "ae_empty"))
+        @test isfile(plot_binary_period_distribution([empty_bev], vis_b; filename = "period_empty"))
+        @test_throws ErrorException plot_binary_period_distribution(
+            BinaryEvolutionSnapshot[],
+            vis_b,
+        )
+        rm(vis_b.output_dir; recursive = true, force = true)
+    end
+
+    # =====================================================================
     @testset "Stellar type labels" begin
         # Standard Hurley et al. (2000) SSE/BSE table used by this fork
         @test startswith(STELLAR_TYPE_LABELS[0], "MS")
@@ -637,6 +843,29 @@ TIME   0.01  0.05  0.20  0.50  1.00
             @test r1.ms_lifetime_myr ≈ 4.46907 rtol = 1e-5   # TM
             @test r1.mass_core == 0.0                    # MC (MS star)
             @test r1.radius_envelope ≈ 1e-10 rtol = 1e-3 # RE placeholder on MS
+        end
+
+        @testset "bev.82" begin
+            # Truncated excerpt (40 of 224 pairs) of the t = 0 record of a
+            # two-cluster run with 20 % primordial binaries per cluster.
+            bev = read_binary_evolution(joinpath(FIXDIR, "bev.82_0"))
+            @test bev.n_pairs == 40
+            @test bev.time_myr == 0.0
+            @test length(bev.records) == 40
+            r1 = bev.records[1]
+            @test (r1.name1, r1.name2) == (1, 2)          # primordial pairs lead the body list
+            @test r1.eccentricity ≈ 0.92188 rtol = 1e-5
+            @test r1.log_period_days ≈ 1.20647 rtol = 1e-5
+            @test r1.mass1 ≈ 0.221134 rtol = 1e-5
+            @test r1.ms_lifetime1_myr ≈ 4.98658e5 rtol = 1e-5
+            # Every record is a bound orbit whose own columns obey Kepler III.
+            for r in bev.records
+                P_yr = 10^r.log_period_days / 365.25
+                a_au = semi_major_axis_pc(r) / Nbody6Dynamics._AU_IN_PC
+                @test a_au^3 / P_yr^2 ≈ r.mass1 + r.mass2 rtol = 2e-2
+                @test 0 ≤ r.eccentricity < 1
+            end
+            @test all(r -> r.name1 < r.name2, bev.records)
         end
     end
 

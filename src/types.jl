@@ -87,6 +87,8 @@ Base.@kwdef struct PostprocessConfig
     escapers_file::String = "esc.11"
     read_stellar_evo::Bool = true
     stellar_evo_pattern::String = "sev.83_*"
+    read_binary_evo::Bool = true
+    binary_evo_pattern::String = "bev.82_*"
 end
 
 """
@@ -384,6 +386,66 @@ struct StellarEvolutionSnapshot
     time_myr::Float64
     n_stars::Int
     records::Vector{StellarRecord}
+end
+
+"""
+    BinaryRecord
+
+One KS-regularised binary from a bev.82_* file (`hrplot.F`, upstream
+v2026.07: 32 tokens per line). Only regularised pairs are listed, so counts
+derived from these records are lower bounds on the bound-pair population;
+wide pairs beyond the regularisation distance never appear.
+
+Fields with suffix `1`/`2` refer to the two components: masses in M☉, radii
+in R☉, ages, epochs and main-sequence lifetimes in Myr;
+`log_period_days` is ``\\log_{10}(P/\\mathrm{d})`` and
+`log_semi_major_axis_rsun` is ``\\log_{10}(a/R_\\odot)``.
+"""
+struct BinaryRecord
+    time_nb::Float64
+    index1::Int32
+    index2::Int32
+    name1::Int32
+    name2::Int32
+    stellar_type1::Int32
+    stellar_type2::Int32
+    stellar_type_cm::Int32
+    ri::Float64                      # c.m. distance from the density centre [pc]
+    eccentricity::Float64
+    log_period_days::Float64
+    log_semi_major_axis_rsun::Float64
+    mass1::Float64
+    mass2::Float64
+    log_luminosity1::Float64
+    log_luminosity2::Float64
+    log_radius1::Float64
+    log_radius2::Float64
+    log_teff1::Float64
+    log_teff2::Float64
+    age1_myr::Float64
+    age2_myr::Float64
+    epoch1_myr::Float64
+    epoch2_myr::Float64
+    ms_lifetime1_myr::Float64
+    ms_lifetime2_myr::Float64
+    mass_core1::Float64
+    mass_core2::Float64
+    radius_core1::Float64
+    radius_core2::Float64
+    radius_envelope1::Float64
+    radius_envelope2::Float64
+end
+
+"""
+    BinaryEvolutionSnapshot
+
+All regularised binaries from one bev.82_* file; `time_myr` is the header
+TPHYS [Myr] and `n_pairs` the header NPAIRS.
+"""
+struct BinaryEvolutionSnapshot
+    time_myr::Float64
+    n_pairs::Int
+    records::Vector{BinaryRecord}
 end
 
 """

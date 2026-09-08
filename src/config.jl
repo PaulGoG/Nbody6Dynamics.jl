@@ -103,6 +103,8 @@ function _parse_postprocess(d::Dict)
         escapers_file = get(d, "escapers_file", "esc.11"),
         read_stellar_evo = get(d, "read_stellar_evo", true),
         stellar_evo_pattern = get(d, "stellar_evo_pattern", "sev.83_*"),
+        read_binary_evo = get(d, "read_binary_evo", true),
+        binary_evo_pattern = get(d, "binary_evo_pattern", "bev.82_*"),
     )
 end
 
@@ -215,6 +217,9 @@ function _validate(cfg::Nbody6Config)
         error(
             "config: postprocess.stellar_evo_pattern must be nonempty when read_stellar_evo = true",
         )
+    pp.read_binary_evo &&
+        isempty(pp.binary_evo_pattern) &&
+        error("config: postprocess.binary_evo_pattern must be nonempty when read_binary_evo = true")
 
     # [visualization]
     vis.format in ("pdf", "svg", "png") || error(

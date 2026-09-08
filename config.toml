@@ -44,6 +44,8 @@ read_escapers        = true
 escapers_file        = "esc.11"     # nonempty when read_escapers = true
 read_stellar_evo     = true
 stellar_evo_pattern  = "sev.83_*"   # nonempty when read_stellar_evo = true
+read_binary_evo      = true
+binary_evo_pattern   = "bev.82_*"   # nonempty when read_binary_evo = true
 
 [visualization]
 enabled    = true

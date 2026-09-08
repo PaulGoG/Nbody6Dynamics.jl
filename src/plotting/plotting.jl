@@ -492,6 +492,8 @@ const _SEMANTIC_COLORS = Dict{Symbol,Makie.RGBAf}(
     :n_pairs => _OKABE_ITO[2],  # orange        N_pairs
     :separation => _OKABE_ITO[5],  # sky blue      pairwise separations
     :escapers => _OKABE_ITO[4],  # reddish purple escaper counts & cumulative mass
+    :binary_hard => _OKABE_ITO[6],  # vermillion    hard pairs (E_b > ⟨m⟩σ²)
+    :binary_soft => _OKABE_ITO[5],  # sky blue      soft pairs
 )
 
 """Darkened same-hue edge colour for `band!` fills (edge at full opacity)."""
@@ -509,3 +511,4 @@ include("escapers.jl")
 include("sse.jl")
 include("animation.jl")
 include("merger.jl")
+include("binaries.jl")
