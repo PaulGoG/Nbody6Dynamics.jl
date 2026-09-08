@@ -6,6 +6,12 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- README and docs index carry a figure of the equal-mass merger, at the
+  start and after 12 Myr, produced by the pipeline itself; the asset lives
+  in `docs/src/assets/` and is shared by both.
+- Badges for Aqua static QA, the supported Julia version, and repository
+  status. A documentation badge is deliberately absent until the site is
+  deployed, and a Backend-workflow badge until that workflow has run.
 - The showcase sweep is rebased on a geometry the engine can start from
   (2 pc clusters on a 10 pc orbit, three seeds): with 1 pc clusters on a
   5 pc orbit the derived neighbour radius is too small and every merger

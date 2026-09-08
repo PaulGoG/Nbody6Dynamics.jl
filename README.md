@@ -3,9 +3,19 @@
 [![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)
 [![Format](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg?branch=main)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml)
 [![codecov](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl)
+[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![Julia](https://img.shields.io/badge/Julia-1.10%2B-9558B2.svg?logo=julia&logoColor=white)](https://julialang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Project Status: WIP](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)
 
 A Julia package that automates the full lifecycle of [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations: install/build of the Fortran code, multi-cluster merger initial-condition generation, simulation execution, post-processing of all standard output files, and publication-quality visualization. Every phase is driven by a single TOML configuration and orchestrated through one entry point, `run_pipeline`.
+
+![Two star clusters merging: the initial conditions and the remnant after 12 Myr](docs/src/assets/merger_evolution.png)
+
+*Two King clusters of 4000 stars each, released 6 pc apart on an eccentric orbit, and the
+remnant they leave 12 Myr later. Initial conditions, integration, analysis and figure were all
+produced by this package from one configuration file; the case is `input_files/showcase/` and
+is documented figure by figure in the showcase note.*
 
 ## Project Structure
 
@@ -82,7 +92,8 @@ Nbody6Dynamics/
 ├── docs/
 │   ├── make.jl                      # Documenter.jl build script
 │   ├── Project.toml                 # Documentation build environment
-│   └── src/                         # index, manual, input_files, multi_cluster_mergers, api
+│   ├── src/                         # index, manual, input_files, multi_cluster_mergers, api
+│   └── src/assets/                  # figures used by the README and the docs site
 ├── input_files/
 │   ├── N1k_quick.inp                # N=1000 smoke test (seconds)
 │   ├── N5k_medium.inp               # N=5000 medium verification run

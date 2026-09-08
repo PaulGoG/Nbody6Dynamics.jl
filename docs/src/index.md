@@ -2,6 +2,11 @@
 
 A Julia package for automated setup, execution, post-processing, and visualisation of the [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) N-body astrophysical simulation code, plus a validated multi-cluster merger initial-condition generator.
 
+![Two star clusters merging: the initial conditions and the remnant after 12 Myr](assets/merger_evolution.png)
+
+*Two King clusters of 4000 stars each, released 6 pc apart on an eccentric orbit, and the
+remnant they leave 12 Myr later, produced end to end by this package.*
+
 ## Features
 
 - **Merger IC generation** — Multi-cluster initial conditions with validated King (1966) and Plummer samplers (King concentration `c(W0)` matches published values to <1%), Kroupa (2001) IMF in natural / rescaled / equal-mass modes, per-cluster virialisation to `Q = 0.5`, Jacobi truncation, Kepler or explicit orbit placement, and `dat.10` + `merger.inp` output for `KZ(22)=2`
