@@ -5,8 +5,8 @@
 name = "showcase"
 pipeline_config = "sweep_pipeline.toml"
 merger_config = "sweep_merger.toml"
-seeds = [1, 2]
-concurrency = 2
+seeds = [2, 3, 4]
+concurrency = 4
 omp_threads = 4
 runs_dir = "../../runs"
 controls = true

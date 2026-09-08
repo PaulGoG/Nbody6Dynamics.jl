@@ -1,4 +1,7 @@
 # Base configuration of the showcase sweep: two equal King clusters.
+# The half-mass radii are deliberately large relative to the orbit: a compact
+# geometry (r_h << apocentre) makes the derived neighbour radius RS0 too small
+# and the engine hangs during neighbour-list construction.
 
 [merger]
 seed = 1
@@ -7,32 +10,32 @@ orbit_mode = "kepler"
 
 [merger.cluster1]
 model = "king"
-N = 1500
+N = 500
 W0 = 6.0
-rbar = 1.0
+rbar = 2.0
 imf = "kroupa"
 body1 = 50.0
 bodyn = 0.1
 
 [merger.cluster2]
 model = "king"
-N = 1500
+N = 500
 W0 = 6.0
-rbar = 1.0
+rbar = 2.0
 imf = "kroupa"
 body1 = 50.0
 bodyn = 0.1
 
 [merger.orbit]
-apocentre = 5.0
+apocentre = 10.0
 eccentricity = 0.5
 
 [merger.output]
 format = "nbody"
 truncate_jacobi = true
-tcrit_myr = 15.0
+tcrit_myr = 12.0
 dtadj_myr = 0.5
 deltat_myr = 1.0
 
 [merger.stellar]
-dtplot_myr = 2.0
+dtplot_myr = 4.0
