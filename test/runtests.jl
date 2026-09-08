@@ -889,12 +889,9 @@ $(extra)
                 "merger_config = \"merger.toml\"" => "merger_config = \"absent.toml\"",
             ),
         )
-        bad(
-            replace(
-                sweep_toml(),
-                "[sweep.grid]\n\"merger.orbit.eccentricity\" = [0.0, 0.5]\n\"merger.cluster2.N\" = [300, 400]\n" => "",
-            ),
-        )
+        # An absent grid is a seed ensemble of the base configuration, not an error
+        write(spath, replace(sweep_toml(), r"\[sweep\.grid\][\s\S]*" => ""))
+        @test isempty(load_sweep_config(spath).grid)
         write(spath, sweep_toml("poll_interval = 0.5\n"))
         scfg = load_sweep_config(spath)
         @test scfg.poll_interval == 0.5
@@ -969,7 +966,7 @@ $(extra)
               vis_sw.format == "png" &&
               vis_sw.column == "double"
         figs = sweep_figures(sdir, vis_sw)
-        @test length(figs) == 2 && all(isfile, figs)
+        @test length(figs) == 4 && all(isfile, figs)   # two seeds → comparison and ensemble figures
         @test isfile(
             plot_sweep_lagrangian(
                 sdir,
@@ -987,6 +984,162 @@ $(extra)
         @test Nbody6Dynamics._emptiest_corner(xs, xs) == :tl          # rising series frees the top-left
         @test Nbody6Dynamics._emptiest_corner(xs, 1 .- xs) == :tr     # falling series frees the top-right
         @test Nbody6Dynamics._emptiest_corner(Float64[], Float64[]) == :tl
+    end
+
+    # =====================================================================
+    @testset "Seeded ensembles" begin
+        # Type-7 quantiles and linear interpolation
+        q = Nbody6Dynamics._quantile_sorted
+        v = [1.0, 2.0, 3.0, 4.0, 5.0]
+        @test q(v, 0.5) == 3.0 && q(v, 0.0) == 1.0 && q(v, 1.0) == 5.0
+        @test q(v, 0.16) ≈ 1.64 && q(v, 0.84) ≈ 4.36
+        @test q(v, 0.025) ≈ 1.1 && q(v, 0.975) ≈ 4.9
+        @test q([7.0], 0.3) == 7.0
+        @test_throws ArgumentError q(Float64[], 0.5)
+        @test_throws ArgumentError q(v, 1.5)
+        interp = Nbody6Dynamics._interpolate_linear
+        @test interp([0.0, 1.0, 2.0], [0.0, 10.0, 0.0], [0.0, 0.5, 1.0, 1.5, 2.0]) ==
+              [0.0, 5.0, 10.0, 5.0, 0.0]
+        @test interp([1.0], [3.0], [1.0]) == [3.0]
+        @test_throws ArgumentError interp([0.0, 1.0], [0.0, 1.0], [1.5])
+        @test_throws DimensionMismatch interp([0.0, 1.0], [0.0], [0.5])
+
+        # Members y_i = i t on different spans: common grid = intersection
+        members = [(collect(0.0:0.5:10.0), i .* collect(0.0:0.5:10.0)) for i in 1:5]
+        members[2] = (collect(1.0:0.5:12.0), 2 .* collect(1.0:0.5:12.0))   # starts later, ends later
+        st = ensemble_statistics(members; n_grid = 19)
+        @test st.n == 5
+        @test st.time[1] == 1.0 && st.time[end] == 10.0 && length(st.time) == 19
+        @test st.median ≈ 3 .* st.time
+        @test st.q16 ≈ 1.64 .* st.time && st.q84 ≈ 4.36 .* st.time
+        @test st.q025 ≈ 1.1 .* st.time && st.q975 ≈ 4.9 .* st.time
+        single = ensemble_statistics(members[1:1]; n_grid = 5)
+        @test single.n == 1 &&
+              single.median == single.q025 == single.q975 ≈ collect(range(0.0, 10.0; length = 5))
+        @test_throws ArgumentError ensemble_statistics(typeof(members[1])[])
+        @test_throws ArgumentError ensemble_statistics([
+            members[1],
+            (collect(20.0:1.0:30.0), zeros(11)),
+        ])
+        @test_throws ArgumentError ensemble_statistics([([1.0, 0.5, 2.0], [0.0, 1.0, 2.0])])
+        @test_throws ArgumentError ensemble_statistics(members; n_grid = 1)
+
+        # Series extractors on a run directory built from the fixtures
+        fixtures = joinpath(@__DIR__, "fixtures")
+        rdir = mktempdir()
+        @test Nbody6Dynamics._run_series(rdir, :lagrangian) === nothing
+        @test Nbody6Dynamics._run_series(rdir, :energy) === nothing
+        mkpath(joinpath(rdir, "output"))
+        cp(joinpath(fixtures, "out1000"), joinpath(rdir, "output", "out1000"))
+        cp(joinpath(fixtures, "lagr.7"), joinpath(rdir, "output", "lagr.7"))
+        t_l, r_l = Nbody6Dynamics._run_series(rdir, :lagrangian; fraction = 0.5)
+        @test length(t_l) == length(r_l) > 1 && issorted(t_l) && all(>(0), r_l)
+        t_e, de = Nbody6Dynamics._run_series(rdir, :energy)
+        @test all(>(0), de) && length(t_e) == length(de)
+        t_n, n = Nbody6Dynamics._run_series(rdir, :n_stars)
+        @test all(>(0), n)
+        t_p, np = Nbody6Dynamics._run_series(rdir, :n_pairs)
+        @test length(np) == length(t_n) && all(≥(0), np)
+        @test_throws ArgumentError Nbody6Dynamics._run_series(rdir, :unknown)
+        @test Nbody6Dynamics._series_label(:energy, 0.5) isa AbstractString
+        @test_throws ArgumentError Nbody6Dynamics._series_label(:unknown, 0.5)
+
+        # A seeds-only sweep (no grid axes) and a one-axis sweep, marked done with fixture output
+        work = mktempdir()
+        write(
+            joinpath(work, "config.toml"),
+            "[install]\nenabled = false\ninstall_dir = \"backend\"\n\n[simulation]\nrun_test = true\nruns_dir = \"runs\"\n\n[visualization]\nformat = \"png\"\n",
+        )
+        write(
+            joinpath(work, "merger.toml"),
+            read(joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml"), String),
+        )
+        function _done_sweep(name, grid_text, seeds_text)
+            spath = joinpath(work, "sweep_$(name).toml")
+            write(
+                spath,
+                "[sweep]\nname = \"$(name)\"\npipeline_config = \"config.toml\"\nmerger_config = \"merger.toml\"\nseeds = $(seeds_text)\n$(grid_text)",
+            )
+            scfg = load_sweep_config(spath)
+            sdir = joinpath(work, "sweep_$(name)")
+            prepare_sweep(scfg; sweep_dir = sdir)
+            pts = sweep_points(scfg)
+            status = Dict{Int,Dict{String,Any}}()
+            for p in pts
+                out = joinpath(sdir, p.id, "run", "output")
+                mkpath(out)
+                cp(joinpath(fixtures, "out1000"), joinpath(out, "out1000"))
+                cp(joinpath(fixtures, "lagr.7"), joinpath(out, "lagr.7"))
+                status[p.index] = Dict{String,Any}(
+                    "status" => "done",
+                    "exit_status" => 0,
+                    "elapsed_seconds" => 1.0,
+                )
+            end
+            write_sweep_index(sdir, scfg, pts; status = status)
+            return scfg, sdir, pts
+        end
+        scfg0, sdir0, pts0 = _done_sweep("seeds", "", "[1, 2, 3]")
+        @test isempty(scfg0.grid)
+        @test [p.id for p in pts0] == ["001_seed=1", "002_seed=2", "003_seed=3"]
+        ens0 = sweep_ensembles(sdir0, :lagrangian)
+        @test length(ens0) == 1 && ens0[1].stats.n == 3 && isempty(ens0[1].values)
+        @test ens0[1].stats.median ≈ ens0[1].stats.q975    # identical members → zero-width bands
+        vis_e = VisualizationConfig(;
+            format = "png",
+            column = "single",
+            output_dir = joinpath(work, "plots"),
+        )
+        @test isfile(plot_sweep_ensemble(sdir0, vis_e))
+        @test isfile(plot_sweep_ensemble(sdir0, vis_e; quantity = :energy))
+        @test isfile(plot_sweep_ensemble(sdir0, vis_e; quantity = :n_stars, filename = "ens_n"))
+        @test isfile(plot_sweep_lagrangian(sdir0, vis_e; filename = "seeds_lagr"))   # no axes: one colour, no legend
+        @test_throws ArgumentError plot_sweep_lagrangian(
+            sdir0,
+            vis_e;
+            axis = "merger.orbit.eccentricity",
+        )
+        figs0 = sweep_figures(sdir0, vis_e)
+        @test length(figs0) == 4 && all(isfile, figs0)
+
+        scfg1, sdir1, pts1 = _done_sweep(
+            "axes",
+            "[sweep.grid]\n\"merger.orbit.eccentricity\" = [0.0, 0.5]\n\"merger.cluster2.N\" = [300, 400]\n",
+            "[1, 2]",
+        )
+        ens1 = sweep_ensembles(sdir1, :energy)
+        @test length(ens1) == 4 && all(e -> e.stats.n == 2, ens1)
+        @test isfile(
+            plot_sweep_ensemble(sdir1, vis_e; quantity = :lagrangian, filename = "ens_axes"),
+        )
+        @test isfile(
+            plot_sweep_ensemble(
+                sdir1,
+                vis_e;
+                axis = "merger.orbit.eccentricity",
+                fixed = Dict("merger.cluster2.N" => 400),
+                filename = "ens_fixed",
+            ),
+        )
+        @test_throws ErrorException plot_sweep_ensemble(
+            sdir1,
+            vis_e;
+            axis = "merger.orbit.eccentricity",
+            fixed = Dict("merger.cluster2.N" => 999),
+        )
+        @test_throws ArgumentError plot_sweep_ensemble(
+            sdir1,
+            vis_e;
+            fixed = Dict("merger.cluster2.N" => 400),
+        )   # the axis itself
+        @test_throws ArgumentError plot_sweep_ensemble(
+            sdir1,
+            vis_e;
+            fixed = Dict("merger.orbit.apocentre" => 1.0),
+        )
+        @test length(sweep_figures(sdir1, vis_e)) == 4
+        rm(work; recursive = true, force = true)
+        rm(rdir; recursive = true, force = true)
     end
 
     # =====================================================================

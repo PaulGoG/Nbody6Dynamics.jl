@@ -68,6 +68,7 @@ include("binary_population.jl")
 # Parameter sweeps
 # ---------------------------------------------------------------------------
 include("sweep.jl")
+include("ensemble.jl")
 
 # ---------------------------------------------------------------------------
 # Plotting (sets publication theme on load)
@@ -673,6 +674,7 @@ export plot_binary_population, plot_binary_orbital_elements, plot_binary_period_
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
 export run_sweep_point, read_sweep_index, write_sweep_index, sweep_summary, write_sweep_summary
 export sweep_visualization, plot_sweep_lagrangian, plot_sweep_energy, sweep_figures
+export EnsembleStatistics, ensemble_statistics, sweep_ensembles, plot_sweep_ensemble
 export plot_snapshot, plot_snapshot_evolution
 export plot_lagrangian, plot_energy, plot_particle_count
 export plot_hr, plot_hr_evolution

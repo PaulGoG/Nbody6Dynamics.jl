@@ -106,6 +106,10 @@ sweep_visualization
 plot_sweep_lagrangian
 plot_sweep_energy
 sweep_figures
+EnsembleStatistics
+ensemble_statistics
+sweep_ensembles
+plot_sweep_ensemble
 ```
 
 ## Binary Population
@@ -255,4 +259,5 @@ Nbody6Dynamics._bound_members
 Nbody6Dynamics._kinetic_and_potential
 Nbody6Dynamics._central_density_contrast
 Nbody6Dynamics._sweep_point_outcome
+Nbody6Dynamics._run_series
 ```

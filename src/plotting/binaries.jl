@@ -8,8 +8,8 @@ const _PERIOD_BIN_DEX = 0.5
 """Upper limit of the eccentricity axis; the band above e = 1 holds the annotations."""
 const _E_AXIS_TOP = 1.14
 
-"""Legend entry types accepted by the grouped legend of the population figure."""
-const _LegendElement = Union{LineElement,MarkerElement}
+"""Legend entry types accepted by the grouped legends (population and ensemble figures)."""
+const _LegendElement = Union{LineElement,MarkerElement,PolyElement}
 
 """Marker of a hardness class: circles for hard pairs, triangles for soft ones."""
 _binary_marker(hard::Bool) = hard ? :circle : :utriangle

@@ -6,6 +6,15 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Seeded ensembles (F11): `sweep_ensembles` groups the completed points
+  of a sweep by grid values, `ensemble_statistics` interpolates the
+  members' series onto a common time grid and takes the median and the
+  central 68 % and 95 % intervals (`EnsembleStatistics`), and
+  `plot_sweep_ensemble` draws them as line and bands for the Lagrangian
+  radius, energy error, star or pair count, coloured by one grid axis
+  with the other axes held fixed. A sweep without `[sweep.grid]` is a
+  seed ensemble of the base configuration; `sweep_figures` includes the
+  ensemble figures whenever a sweep has more than one seed.
 - Parameter sweeps (F6): `scripts/run_sweep.jl` runs a sweep TOML
   (`[sweep]` with base pipeline and merger configs, `seeds`,
   `concurrency`, `omp_threads`; `[sweep.grid]` axes as dotted merger-TOML

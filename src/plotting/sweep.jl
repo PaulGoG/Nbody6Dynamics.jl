@@ -23,16 +23,12 @@ function _sweep_axis_colors(values::AbstractVector)
     return Dict{Any,Any}(v => c for (v, c) in zip(values, colors))
 end
 
-"""Physical unit scaling of a run from its stdout; identity when absent."""
-function _run_scaling(out_dir::AbstractString)
-    path = joinpath(out_dir, "out1000")
-    isfile(path) || return UnitScaling(1.0, 1.0, 1.0, 1.0)
-    return extract_scaling(read_diagnostics(path))
-end
-
-"""Resolve the comparison axis: the given key, or the first grid axis."""
+"""Resolve the comparison axis: the given key, the first grid axis, or `""`
+for a sweep without axes (seeds only)."""
 function _sweep_axis(idx, axis::AbstractString)
     axes = String[idx["sweep"]["axes"]...]
+    isempty(axes) && isempty(axis) && return ""
+    isempty(axes) && throw(ArgumentError("axis \"$axis\" given, but this sweep has no grid axes"))
     isempty(axis) && return first(axes)
     axis in axes || throw(
         ArgumentError("axis \"$axis\" is not a grid axis of this sweep; axes: $(join(axes, ", "))"),
@@ -40,10 +36,14 @@ function _sweep_axis(idx, axis::AbstractString)
     return axis
 end
 
+"""Value of `axis` at a point; `nothing` for a sweep without axes."""
+_point_axis_value(p, axis::AbstractString) = isempty(axis) ? nothing : p["values"][axis]
+
 """Draw one series per point, coloured by its value of `axis`, with one
 legend entry per distinct value; `series(run_dir) -> (x, y)` or `nothing`."""
 function _sweep_overlay!(ax, pts, axis::AbstractString, series)
-    values = sort(unique(p["values"][axis] for (p, _) in pts))
+    values =
+        sort(unique(_point_axis_value(p, axis) for (p, _) in pts); by = v -> v === nothing ? 0 : v)
     colors = _sweep_axis_colors(values)
     labelled = Set{Any}()
     n_drawn = 0
@@ -55,8 +55,8 @@ function _sweep_overlay!(ax, pts, axis::AbstractString, series)
         x, y = xy
         append!(all_x, x)
         append!(all_y, y)
-        v = p["values"][axis]
-        if v in labelled
+        v = _point_axis_value(p, axis)
+        if v === nothing || v in labelled
             lines!(ax, x, y; color = (colors[v], 0.85), linewidth = 1.8)
         else
             lines!(
@@ -104,15 +104,7 @@ function plot_sweep_lagrangian(
         ax,
         pts,
         axis,
-        run_dir -> begin
-            out = joinpath(run_dir, "output")
-            path = joinpath(out, "lagr.7")
-            isfile(path) || return nothing
-            lagr = read_lagr(path)
-            k = argmin(abs.(lagr.mass_fractions .- fraction))
-            u = _run_scaling(out)
-            (to_myr(u, lagr.time), to_pc(u, lagr.radii[k, :]))
-        end,
+        run_dir -> _run_series(run_dir, :lagrangian; fraction = fraction),
     )
     n_drawn == 0 && _no_data_note!(ax, "No Lagrangian radii in the completed runs")
     n_seeds = length(idx["sweep"]["seeds"])
@@ -147,22 +139,13 @@ function plot_sweep_energy(
     ax =
         Axis(fig[1, 1]; xlabel = L"t \; [\mathrm{Myr}]", ylabel = L"|\Delta E / E|", yscale = log10)
     lo, hi = Inf, 0.0
-    n_drawn, n_values, _ = _sweep_overlay!(
-        ax,
-        pts,
-        axis,
-        run_dir -> begin
-            path = joinpath(run_dir, "output", "out1000")
-            isfile(path) || return nothing
-            adj = read_diagnostics(path).adjust
-            keep = [a for a in adj if isfinite(a.de_rel) && a.de_rel != 0]
-            isempty(keep) && return nothing
-            y = abs.([a.de_rel for a in keep])
-            lo = min(lo, minimum(y))
-            hi = max(hi, maximum(y))
-            ([a.time_myr for a in keep], y)
-        end,
-    )
+    n_drawn, n_values, _ = _sweep_overlay!(ax, pts, axis, run_dir -> begin
+        s = _run_series(run_dir, :energy)
+        s === nothing && return nothing
+        lo = min(lo, minimum(s[2]))
+        hi = max(hi, maximum(s[2]))
+        s
+    end)
     if n_drawn == 0
         _no_data_note!(ax, "No ADJUST records in the completed runs")
     else
@@ -176,16 +159,23 @@ end
 """
     sweep_figures(sweep_dir, cfg::VisualizationConfig; axis = "") -> Vector{String}
 
-The comparison figures of a sweep ([`plot_sweep_lagrangian`](@ref),
-[`plot_sweep_energy`](@ref)) for one grid axis.
+The comparison figures of a sweep for one grid axis
+([`plot_sweep_lagrangian`](@ref), [`plot_sweep_energy`](@ref)) and, when
+the sweep has more than one seed, the ensemble figures of the same
+quantities ([`plot_sweep_ensemble`](@ref)).
 """
 function sweep_figures(
     sweep_dir::AbstractString,
     cfg::VisualizationConfig;
     axis::AbstractString = "",
 )
-    return [
+    paths = [
         plot_sweep_lagrangian(sweep_dir, cfg; axis = axis),
         plot_sweep_energy(sweep_dir, cfg; axis = axis),
     ]
+    if length(read_sweep_index(sweep_dir)["sweep"]["seeds"]) ≥ 2
+        push!(paths, plot_sweep_ensemble(sweep_dir, cfg; quantity = :lagrangian, axis = axis))
+        push!(paths, plot_sweep_ensemble(sweep_dir, cfg; quantity = :energy, axis = axis))
+    end
+    return paths
 end

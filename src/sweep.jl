@@ -83,7 +83,8 @@ runs_dir = "../runs"  # sweep root
 ```
 
 Axes must address the merger TOML from its root and may not be
-`merger.seed`; seeds must be distinct integers.
+`merger.seed`; seeds must be distinct integers. A sweep without grid axes
+is a seed ensemble of the base merger configuration.
 """
 function load_sweep_config(path::AbstractString)::SweepConfig
     isfile(path) || error("Sweep configuration not found: $path")
@@ -104,7 +105,6 @@ function load_sweep_config(path::AbstractString)::SweepConfig
     grid_raw = get(s, "grid", Dict{String,Any}())
     grid_raw isa AbstractDict ||
         error("sweep config: [sweep.grid] must be a table of key = [values]")
-    isempty(grid_raw) && error("sweep config: [sweep.grid] must define at least one axis")
     grid = Pair{String,Vector{Any}}[]
     for key in sort!(collect(String, keys(grid_raw)))
         vals = grid_raw[key]
@@ -181,10 +181,12 @@ function sweep_points(cfg::SweepConfig)::Vector{SweepPoint}
         label = join(["$(_axis_short(k))=$(_format_axis_value(v))" for (k, v) in values], "_")
         for seed in cfg.seeds
             index += 1
-            push!(
-                points,
-                SweepPoint(index, @sprintf("%03d_%s_seed=%d", index, label, seed), values, seed),
-            )
+            id = if isempty(label)
+                @sprintf("%03d_seed=%d", index, seed)
+            else
+                @sprintf("%03d_%s_seed=%d", index, label, seed)
+            end
+            push!(points, SweepPoint(index, id, values, seed))
         end
     end
     return points
