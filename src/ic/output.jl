@@ -99,14 +99,7 @@ solved model, with `r_h` located on the cumulative-mass profile.
 """
 _central_density_contrast(::PlummerProfile) = 2.0 * _PLUMMER_RHM_OVER_A^3
 function _central_density_contrast(p::KingProfile)
-    rhat, _, ρ = _solve_king(p.W0)
-    n = length(rhat)
-    m_cum = zeros(Float64, n)
-    for i in 2:n
-        f_prev = 4π * rhat[i - 1]^2 * ρ[i - 1]
-        f_here = 4π * rhat[i]^2 * ρ[i]
-        m_cum[i] = m_cum[i - 1] + 0.5 * (f_prev + f_here) * (rhat[i] - rhat[i - 1])
-    end
+    rhat, ρ, m_cum = _king_cumulative(p.W0)
     i_h = findfirst(≥(0.5 * m_cum[end]), m_cum)
     r_h = rhat[i_h]
     ρ_mean = 0.5 * m_cum[end] / (4π / 3 * r_h^3)

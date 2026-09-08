@@ -252,6 +252,10 @@ Merger runs additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, a
 
 The generated `_launch.sh` sets `ulimit -s unlimited` (Fortran stack), `OMP_STACKSIZE=4096M`, `OMP_NUM_THREADS` when `simulation.omp_threads > 0`, CUDA environment variables (if GPU enabled), and `stdbuf -oL` for line-buffered output where available. The backend takes its thread count from the OpenMP runtime alone (there is no input parameter for it) and echoes it at start-up; that echoed value is recorded as `run.omp_threads_reported` in `RUN_INFO.toml` next to the configured `run.omp_threads` and `run.mpi_ranks`.
 
+### Choosing the thread count
+
+The backend's OpenMP parallelism saturates early for the particle numbers a workstation handles: on a 22-thread machine the two-cluster benchmark (`bench/thread_scaling.jl`) reaches its shortest wall time at four threads for N ≤ 2×10⁴, while more threads only add CPU time (efficiency 0.38 at 22 threads). Parameter sweeps and ensembles are therefore best run as several four-thread jobs in parallel; the benchmark script sweeps thread count and N on your hardware and reports the fitted cost, using the telemetry of each run.
+
 ### Real-time monitoring
 
 During execution, ADJUST summaries are echoed live:
@@ -375,6 +379,8 @@ Static plots take the extension from `visualization.format`; animations are alwa
 | `plot_cluster_separation(snaps, ranges, vis)` | Pairwise centre-of-mass separations of the initial clusters (merger runs) | `merger_cluster_separation` |
 | `plot_cluster_virial(snaps, ranges, vis)` | Virial ratio of each initial cluster from its bound members, `Q = 0.5` reference | `merger_cluster_virial` |
 | `plot_cluster_structure(snaps, ranges, vis)` | Two panels: bound half-mass radius per cluster with the engine's global `r₅₀` overlaid, and bound mass fraction | `merger_cluster_structure` |
+| `plot_density_profiles(snap, ranges, vis; specs)` | Density profiles of each cluster about its own centre (log–log) with the generating King/Plummer model dashed and a `ρ/ρ_model` ratio strip with unity guide | `merger_density_profiles_{initial,final}` |
+| `plot_velocity_dispersion(snap, ranges, vis)` | Radial (solid) and tangential (dashed) velocity dispersion profiles per cluster, and the anisotropy `β(r)` with the isotropic guide | `merger_velocity_dispersion` |
 | `plot_hr(sev, vis)` | HR diagram coloured by stellar type K*, reversed Teff axis | `hr_diagram_{early,mid,final}` |
 | `plot_hr_evolution(sevs, vis)` | HR panel grid across up to 6 epochs | `hr_evolution` |
 | `plot_escapers(escs, vis)` | Two panels: cumulative escaped mass step curve with totals annotation, and escape velocity vs time (log y) split into luminous / compact-remnant classes | `escapers` |

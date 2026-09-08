@@ -221,6 +221,28 @@ function generate_plots(
                             vis;
                             lagr = get(results, :lagr, nothing),
                         )
+                        # Radial profiles against the generating models (merger_ic.toml)
+                        ic_meta = joinpath(sim_dir, "merger_ic.toml")
+                        specs =
+                            isfile(ic_meta) ? load_merger_ic_result(sim_dir).cluster_specs : nothing
+                        specs === nothing || length(specs) == length(ranges) || (specs = nothing)
+                        @info "Plotting density profiles (initial and final snapshots)..."
+                        plot_density_profiles(
+                            snaps[1],
+                            ranges,
+                            vis;
+                            specs = specs,
+                            filename = "merger_density_profiles_initial",
+                        )
+                        plot_density_profiles(
+                            snaps[end],
+                            ranges,
+                            vis;
+                            specs = specs,
+                            filename = "merger_density_profiles_final",
+                        )
+                        @info "Plotting velocity dispersion profiles (final snapshot)..."
+                        plot_velocity_dispersion(snaps[end], ranges, vis)
                     end
                 end
             end
@@ -569,6 +591,8 @@ export plot_escapers, plot_escape_anisotropy
 export plot_mass_segregation, plot_evolutionary_clock, plot_core_mass
 export plot_cluster_separation, plot_cluster_virial, per_cluster_virial, parse_merger_summary
 export ClusterStructure, cluster_structure, plot_cluster_structure, bound_fraction
+export RadialProfile, radial_profile, cluster_profiles, system_profile, model_density
+export plot_density_profiles, plot_velocity_dispersion
 export animate_cluster, animate_hr, animate_lagrangian
 export set_publication_theme!
 export generate_run_id, restart_simulation, export_for_paper

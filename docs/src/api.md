@@ -164,6 +164,7 @@ load_merger_ic_result
 plot_merger_ic
 sample_plummer
 sample_king
+model_density
 sample_kroupa
 virialise!
 ```
@@ -194,6 +195,12 @@ bound_fraction
 plot_cluster_structure
 ClusterStructure
 cluster_structure
+RadialProfile
+radial_profile
+cluster_profiles
+system_profile
+plot_density_profiles
+plot_velocity_dispersion
 plot_cluster_separation
 plot_cluster_virial
 ```

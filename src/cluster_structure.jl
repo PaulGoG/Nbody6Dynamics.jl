@@ -160,6 +160,157 @@ function _lagrangian_radii(
 end
 
 """
+    RadialProfile
+
+Radial structure of one particle set about a centre, in log-spaced shells
+(the innermost shell is the sphere enclosing `n_min_inner` particles):
+
+- `r`: mass-weighted mean radius of each shell
+- `r_edges`: shell boundaries (`length(r) + 1`)
+- `rho`: shell density `ΔM / (4π/3 (r_{k+1}³ − r_k³))`
+- `sigma_r`, `sigma_t`: radial and one-dimensional tangential velocity
+  dispersions of the shell about the set's centre-of-mass velocity
+  (`σ_t² = ½ ⟨|v_t − ⟨v_t⟩|²⟩`); `NaN` in shells with fewer than 5 members
+- `beta`: anisotropy `1 − σ_t²/σ_r²` (0 isotropic, 1 radial)
+- `n`: members per shell
+- `M`, `r_h`: total mass and half-mass radius of the set
+"""
+struct RadialProfile
+    r::Vector{Float64}
+    r_edges::Vector{Float64}
+    rho::Vector{Float64}
+    sigma_r::Vector{Float64}
+    sigma_t::Vector{Float64}
+    beta::Vector{Float64}
+    n::Vector{Int}
+    M::Float64
+    r_h::Float64
+end
+
+"""
+    radial_profile(pos, vel, mass, centre; nbins = 12, n_min_inner = 20,
+                   mass_fraction_max = 0.99) -> RadialProfile
+
+Shell profile of the particles about `centre` (N-body or any consistent
+units): `nbins` shells whose outer edges are log-spaced between the radius
+enclosing `n_min_inner` particles and the radius enclosing
+`mass_fraction_max` of the mass.
+"""
+function radial_profile(
+    pos::AbstractMatrix{Float64},
+    vel::AbstractMatrix{Float64},
+    mass::AbstractVector{Float64},
+    centre::AbstractVector{Float64};
+    nbins::Int = 12,
+    n_min_inner::Int = 20,
+    mass_fraction_max::Float64 = 0.99,
+)::RadialProfile
+    N = length(mass)
+    N ≥ 2 * n_min_inner ||
+        throw(ArgumentError("radial_profile: need at least $(2 * n_min_inner) particles; got $N"))
+    nbins ≥ 2 || throw(ArgumentError("radial_profile: nbins must be ≥ 2"))
+    d = [
+        sqrt((pos[1, i] - centre[1])^2 + (pos[2, i] - centre[2])^2 + (pos[3, i] - centre[3])^2)
+        for i in 1:N
+    ]
+    order = sortperm(d)
+    cum = cumsum(mass[order])
+    M = cum[end]
+    r_h = d[order[findfirst(≥(0.5 * M), cum)]]
+    r_min = max(d[order[n_min_inner]], eps())
+    r_max = d[order[findfirst(≥(mass_fraction_max * M), cum)]]
+    r_max > r_min || (r_max = r_min * 10)
+    edges = vcat(0.0, exp10.(range(log10(r_min), log10(r_max); length = nbins)))
+    vc = vec(sum(vel .* mass'; dims = 2)) ./ M
+    r_mean = fill(NaN, nbins)
+    rho = fill(NaN, nbins)
+    σr = fill(NaN, nbins)
+    σt = fill(NaN, nbins)
+    β = fill(NaN, nbins)
+    n = zeros(Int, nbins)
+    for k in 1:nbins
+        idx = [i for i in 1:N if edges[k] ≤ d[i] < edges[k + 1]]
+        n[k] = length(idx)
+        isempty(idx) && continue
+        m = mass[idx]
+        ΔM = sum(m)
+        rho[k] = ΔM / (4π / 3 * (edges[k + 1]^3 - edges[k]^3))
+        r_mean[k] = sum(m .* d[idx]) / ΔM
+        n[k] < 5 && continue
+        vr = zeros(n[k])
+        vt = zeros(3, n[k])
+        for (j, i) in enumerate(idx)
+            rx = pos[1, i] - centre[1]
+            ry = pos[2, i] - centre[2]
+            rz = pos[3, i] - centre[3]
+            rn = max(d[i], eps())
+            ux, uy, uz = rx / rn, ry / rn, rz / rn
+            dvx, dvy, dvz = vel[1, i] - vc[1], vel[2, i] - vc[2], vel[3, i] - vc[3]
+            vr[j] = dvx * ux + dvy * uy + dvz * uz
+            vt[1, j] = dvx - vr[j] * ux
+            vt[2, j] = dvy - vr[j] * uy
+            vt[3, j] = dvz - vr[j] * uz
+        end
+        w = m ./ ΔM
+        mean_vr = sum(w .* vr)
+        σr2 = sum(w .* (vr .- mean_vr) .^ 2)
+        mean_vt = vec(sum(vt .* w'; dims = 2))
+        σt2 = 0.5 * sum(w[j] * sum((vt[:, j] .- mean_vt) .^ 2) for j in 1:n[k])
+        σr[k] = sqrt(σr2)
+        σt[k] = sqrt(σt2)
+        β[k] = σr2 > 0 ? 1 - σt2 / σr2 : NaN
+    end
+    return RadialProfile(r_mean, edges, rho, σr, σt, β, n, M, r_h)
+end
+
+"""
+    cluster_profiles(snap, cluster_ranges; bound_only = true, nbins = 12)
+        -> Vector{Union{Nothing,RadialProfile}}
+
+Radial profile of every initial cluster about its own shrinking-sphere
+centre from its bound members ([`cluster_structure`](@ref) conventions);
+`nothing` for clusters with too few members.
+"""
+function cluster_profiles(
+    snap::Snapshot,
+    cluster_ranges::Vector{UnitRange{Int}};
+    bound_only::Bool = true,
+    nbins::Int = 12,
+)
+    pos_all = Float64.(snap.pos)
+    vel_all = Float64.(snap.vel)
+    mass_all = Float64.(snap.mass)
+    out = Vector{Union{Nothing,RadialProfile}}(nothing, length(cluster_ranges))
+    for (i, rng) in enumerate(cluster_ranges)
+        idx = _member_indices(snap, rng)
+        length(idx) < 2 * _MIN_MEMBERS && continue
+        pos = pos_all[:, idx]
+        vel = vel_all[:, idx]
+        mass = mass_all[idx]
+        sel = bound_only ? _bound_members(pos, vel, mass) : collect(1:length(idx))
+        length(sel) < 2 * _MIN_MEMBERS && continue
+        p = pos[:, sel]
+        c = _shrinking_sphere_centre(p, mass[sel])
+        out[i] = radial_profile(p, vel[:, sel], mass[sel], c; nbins = nbins)
+    end
+    return out
+end
+
+"""
+    system_profile(snap; nbins = 12) -> RadialProfile
+
+Radial profile of the whole snapshot about its shrinking-sphere centre
+(the remnant after coalescence).
+"""
+function system_profile(snap::Snapshot; nbins::Int = 12)::RadialProfile
+    pos = Float64.(snap.pos)
+    vel = Float64.(snap.vel)
+    mass = Float64.(snap.mass)
+    c = _shrinking_sphere_centre(pos, mass)
+    return radial_profile(pos, vel, mass, c; nbins = nbins)
+end
+
+"""
     bound_fraction(snap::Snapshot) -> Float64
 
 Mass fraction of the particles bound to the whole system in its own frame

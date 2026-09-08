@@ -649,3 +649,314 @@ function plot_cluster_structure(
 
     return _save_fig(cfg, filename, fig)
 end
+
+# -----------------------------------------------------------------------------
+# Radial profiles: density against the generating model, velocity dispersions
+# -----------------------------------------------------------------------------
+
+"""
+    plot_density_profiles(snap, cluster_ranges, cfg; specs = nothing,
+                          filename = "merger_density_profiles")
+
+Density profiles `ρ(r)` of every initial cluster about its own centre from
+its bound members ([`cluster_profiles`](@ref)), log–log, with the
+generating model overlaid dashed when `specs` (the clusters'
+[`ClusterSpec`](@ref)s) are given: each model is evaluated at the cluster's
+initial half-mass radius and its bound mass at this snapshot. A ratio strip
+`ρ / ρ_model` with a labelled unity guide sits beneath the main panel. For
+more than five clusters the min–max envelope and mean of the ratio are
+drawn. Radii in pc and densities in M☉ pc⁻³ when `cfg.units == "physical"`.
+"""
+function plot_density_profiles(
+    snap::Snapshot,
+    cluster_ranges::Vector{UnitRange{Int}},
+    cfg::VisualizationConfig;
+    specs::Union{Nothing,AbstractVector} = nothing,   # Vector{ClusterSpec}; the type is defined later in the module
+    filename::AbstractString = "merger_density_profiles",
+)
+    n_cl = length(cluster_ranges)
+    n_cl ≥ 1 || (@info "Skipping density profiles: no cluster ranges"; return nothing)
+    specs === nothing ||
+        length(specs) == n_cl ||
+        throw(ArgumentError("specs must have one entry per cluster range"))
+    h = snap.header
+    physical = cfg.units == "physical" && _has_physical_scaling(h)
+    r_unit = physical ? rbar(h) : 1.0
+    ρ_unit = physical ? zmbar(h) / rbar(h)^3 : 1.0
+    profiles = cluster_profiles(snap, cluster_ranges)
+    any(!isnothing, profiles) ||
+        (@info "Skipping density profiles: no cluster with enough members"; return nothing)
+    with_model = specs !== nothing
+
+    fig = Figure(; size = with_model ? _fig_two_panel(cfg) : _figsize_px(cfg))
+    ax1 = Axis(
+        fig[1, 1];
+        xlabel = with_model ? "" : (physical ? L"r \; [\mathrm{pc}]" : L"r \; [\mathrm{NB}]"),
+        ylabel = physical ? L"\rho \; [\mathrm{M}_\odot\,\mathrm{pc}^{-3}]" :
+                 L"\rho \; [\mathrm{NB}]",
+        xscale = log10,
+        yscale = log10,
+        xticklabelsvisible = !with_model,
+    )
+    ax2 =
+        with_model ?
+        Axis(
+            fig[2, 1];
+            xlabel = physical ? L"r \; [\mathrm{pc}]" : L"r \; [\mathrm{NB}]",
+            ylabel = L"\rho \, / \, \rho_{\mathrm{model}}",
+            xscale = log10,
+            yscale = log10,
+            yticks = _log_ticks(0.1, 10.0),
+        ) : nothing
+
+    detail = n_cl ≤ 5
+    r_all = Float64[]
+    ρ_all = Float64[]
+    ratios = Vector{Vector{Float64}}()
+    r_ratio = Vector{Vector{Float64}}()
+    n_series = 0
+    for i in 1:n_cl
+        prof = profiles[i]
+        prof === nothing && continue
+        valid = .!isnan.(prof.rho) .& (prof.rho .> 0)
+        any(valid) || continue
+        r = prof.r[valid] .* r_unit
+        ρ = prof.rho[valid] .* ρ_unit
+        append!(r_all, r)
+        append!(ρ_all, ρ)
+        color = _OKABE_ITO[mod1(i, length(_OKABE_ITO))]
+        if detail
+            lines!(
+                ax1,
+                r,
+                ρ;
+                color = color,
+                linewidth = 1.8,
+                label = latexstring("\\mathrm{cluster}\\;$(i)"),
+            )
+            n_series += 1
+        else
+            lines!(ax1, r, ρ; color = (:gray50, 0.5), linewidth = 1.0)
+        end
+        if with_model
+            spec = specs[i]
+            r_h_model = spec.rbar / rbar(h)              # initial half-mass radius [NB]
+            ρ_model = model_density(spec.profile, prof.M, r_h_model)
+            ρm = [ρ_model(x) for x in prof.r[valid]] .* ρ_unit
+            ok = ρm .> 0
+            if detail && any(ok)
+                lines!(ax1, r[ok], ρm[ok]; color = color, linestyle = :dash, linewidth = 1.4)
+                lines!(ax2, r[ok], ρ[ok] ./ ρm[ok]; color = color, linewidth = 1.8)
+            end
+            push!(ratios, ρ[ok] ./ ρm[ok])
+            push!(r_ratio, r[ok])
+        end
+    end
+    if !detail && with_model && !isempty(ratios)
+        # Envelope on a common radial grid: interpolate each ratio onto the union grid
+        grid = exp10.(
+            range(log10(minimum(minimum, r_ratio)), log10(maximum(maximum, r_ratio)); length = 24),
+        )
+        mat = fill(NaN, length(ratios), length(grid))
+        for (i, (rr, q)) in enumerate(zip(r_ratio, ratios))
+            for (k, g) in enumerate(grid)
+                j = searchsortedlast(rr, g)
+                (j < 1 || j ≥ length(rr)) && continue
+                f = (g - rr[j]) / (rr[j + 1] - rr[j])
+                mat[i, k] = (1 - f) * q[j] + f * q[j + 1]
+            end
+        end
+        lo, hi, mean = _envelope_stats(mat)
+        valid = .!isnan.(mean)
+        c = _SEMANTIC_COLORS[:separation]
+        band!(
+            ax2,
+            grid[valid],
+            lo[valid],
+            hi[valid];
+            color = (c, 0.25),
+            label = L"\min\;-\;\max\;\mathrm{range}",
+        )
+        lines!(ax2, grid[valid], mean[valid]; color = c, linewidth = 2.2, label = L"\mathrm{mean}")
+        lines!(ax1, r_all[1:1], ρ_all[1:1]; color = :gray50, label = L"\mathrm{clusters}")
+        n_series = 2
+    end
+    if with_model && detail
+        lines!(
+            ax1,
+            r_all[1:1],
+            ρ_all[1:1];
+            color = :black,
+            linestyle = :dash,
+            linewidth = 1.4,
+            label = L"\mathrm{generating\;model}",
+        )
+        n_series += 1
+    end
+    if with_model
+        hlines!(ax2, [1.0]; color = :gray50, linestyle = :dash, linewidth = 1.0)
+        _annotate!(ax2, L"\rho = \rho_{\mathrm{model}}"; corner = :tr, color = :gray40)
+        # Within a factor of ten of the model; the outermost shells at a King
+        # model's tidal edge run away and are clipped.
+        ylims!(ax2, 0.1, 10.0)
+        linkxaxes!(ax1, ax2)
+        rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
+    end
+    if !isempty(ρ_all)
+        ax1.yticks = _log_ticks(minimum(ρ_all), maximum(ρ_all))
+        xt = _log_ticks(minimum(r_all), maximum(r_all))
+        ax1.xticks = xt
+        ax2 === nothing || (ax2.xticks = xt)
+    end
+    n_series ≥ 2 && _top_legend!(fig, ax1; nbanks = min(3, cld(n_series, 4)))
+    return _save_fig(cfg, filename, fig)
+end
+
+"""
+    plot_velocity_dispersion(snap, cluster_ranges, cfg;
+                             filename = "merger_velocity_dispersion")
+
+Radial (solid) and one-dimensional tangential (dashed) velocity dispersion
+profiles of every initial cluster from its bound members, with the
+anisotropy `β(r) = 1 − σ_t²/σ_r²` beneath and the isotropic `β = 0` guide
+labelled. Velocities in km s⁻¹ and radii in pc when `cfg.units ==
+"physical"`. For more than five clusters the min–max envelope and mean of
+`σ_r` and `β` are drawn.
+"""
+function plot_velocity_dispersion(
+    snap::Snapshot,
+    cluster_ranges::Vector{UnitRange{Int}},
+    cfg::VisualizationConfig;
+    filename::AbstractString = "merger_velocity_dispersion",
+)
+    n_cl = length(cluster_ranges)
+    n_cl ≥ 1 || (@info "Skipping velocity dispersion: no cluster ranges"; return nothing)
+    h = snap.header
+    physical = cfg.units == "physical" && _has_physical_scaling(h)
+    r_unit = physical ? rbar(h) : 1.0
+    v_unit = physical ? vstar(h) : 1.0
+    profiles = cluster_profiles(snap, cluster_ranges)
+    any(!isnothing, profiles) ||
+        (@info "Skipping velocity dispersion: no cluster with enough members"; return nothing)
+
+    fig = Figure(; size = _fig_two_panel(cfg))
+    ax1 = Axis(
+        fig[1, 1];
+        ylabel = physical ? L"\sigma \; [\mathrm{km\,s^{-1}}]" : L"\sigma \; [\mathrm{NB}]",
+        xscale = log10,
+        xticklabelsvisible = false,
+    )
+    ax2 = Axis(
+        fig[2, 1];
+        xlabel = physical ? L"r \; [\mathrm{pc}]" : L"r \; [\mathrm{NB}]",
+        ylabel = L"\beta = 1 - \sigma_t^2 / \sigma_r^2",
+        xscale = log10,
+    )
+    detail = n_cl ≤ 5
+    r_all = Float64[]
+    n_series = 0
+    rows_sr = Vector{Vector{Float64}}()
+    rows_beta = Vector{Vector{Float64}}()
+    rows_r = Vector{Vector{Float64}}()
+    for i in 1:n_cl
+        prof = profiles[i]
+        prof === nothing && continue
+        valid = .!isnan.(prof.sigma_r)
+        any(valid) || continue
+        r = prof.r[valid] .* r_unit
+        append!(r_all, r)
+        color = _OKABE_ITO[mod1(i, length(_OKABE_ITO))]
+        if detail
+            lines!(
+                ax1,
+                r,
+                prof.sigma_r[valid] .* v_unit;
+                color = color,
+                linewidth = 1.8,
+                label = latexstring("\\mathrm{cluster}\\;$(i)"),
+            )
+            lines!(
+                ax1,
+                r,
+                prof.sigma_t[valid] .* v_unit;
+                color = color,
+                linestyle = :dash,
+                linewidth = 1.4,
+            )
+            lines!(ax2, r, prof.beta[valid]; color = color, linewidth = 1.8)
+            n_series += 1
+        else
+            push!(rows_sr, prof.sigma_r[valid] .* v_unit)
+            push!(rows_beta, prof.beta[valid])
+            push!(rows_r, r)
+        end
+    end
+    if !detail && !isempty(rows_r)
+        grid = exp10.(
+            range(log10(minimum(minimum, rows_r)), log10(maximum(maximum, rows_r)); length = 24),
+        )
+        function onto(rows_y)
+            mat = fill(NaN, length(rows_y), length(grid))
+            for (i, (rr, q)) in enumerate(zip(rows_r, rows_y))
+                for (k, g) in enumerate(grid)
+                    j = searchsortedlast(rr, g)
+                    (j < 1 || j ≥ length(rr)) && continue
+                    f = (g - rr[j]) / (rr[j + 1] - rr[j])
+                    mat[i, k] = (1 - f) * q[j] + f * q[j + 1]
+                end
+            end
+            return mat
+        end
+        c = _SEMANTIC_COLORS[:virial]
+        for (ax, mat, labelled) in ((ax1, onto(rows_sr), true), (ax2, onto(rows_beta), false))
+            lo, hi, mean = _envelope_stats(mat)
+            valid = .!isnan.(mean)
+            any(valid) || continue
+            if labelled
+                band!(
+                    ax,
+                    grid[valid],
+                    lo[valid],
+                    hi[valid];
+                    color = (c, 0.25),
+                    label = L"\sigma_r\;\min\;-\;\max",
+                )
+                lines!(
+                    ax,
+                    grid[valid],
+                    mean[valid];
+                    color = c,
+                    linewidth = 2.2,
+                    label = L"\sigma_r\;\mathrm{mean}",
+                )
+            else
+                band!(ax, grid[valid], lo[valid], hi[valid]; color = (c, 0.25))
+                lines!(ax, grid[valid], mean[valid]; color = c, linewidth = 2.2)
+            end
+        end
+        n_series = 2
+    end
+    if detail && n_series ≥ 1
+        lines!(
+            ax1,
+            r_all[1:1],
+            [NaN];
+            color = :black,
+            linestyle = :dash,
+            linewidth = 1.4,
+            label = L"\sigma_t\;\mathrm{(dashed)}",
+        )
+        n_series += 1
+    end
+    hlines!(ax2, [0.0]; color = :gray50, linestyle = :dash, linewidth = 1.0)
+    _annotate!(ax2, L"\beta = 0\;\mathrm{(isotropic)}"; corner = :tr, color = :gray40)
+    if !isempty(r_all)
+        xt = _log_ticks(minimum(r_all), maximum(r_all))
+        ax1.xticks = xt
+        ax2.xticks = xt
+    end
+    linkxaxes!(ax1, ax2)
+    rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
+    n_series ≥ 2 && _top_legend!(fig, ax1; nbanks = min(3, cld(n_series, 4)))
+    return _save_fig(cfg, filename, fig)
+end

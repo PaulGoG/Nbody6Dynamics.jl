@@ -6,6 +6,14 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Radial profiles (F4): `radial_profile`, `cluster_profiles`, and
+  `system_profile` measure density, radial and tangential velocity
+  dispersions, and anisotropy in log-spaced shells about a cluster's own
+  centre (bound members) or the whole system; `model_density` evaluates
+  the generating King or Plummer profile; `plot_density_profiles` (with a
+  `ρ/ρ_model` ratio strip) and `plot_velocity_dispersion` join the merger
+  plot suite, drawn for the first and last snapshots. `bench/thread_scaling.jl`
+  sweeps thread count and N for the cost model of the science sweeps.
 - `[simulation] startup_timeout`: a start-up watchdog that terminates a run
   which reports no adjustment beyond t = 0 within the given wall-clock time.
   Signal terminations are recorded in `RUN_INFO.toml` as negative signal

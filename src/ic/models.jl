@@ -150,6 +150,54 @@ function _solve_king(W0::Float64; n_grid::Int = 2000)
 end
 
 """
+    _king_cumulative(W0) -> (rhat, ρ̂, m_cum)
+
+Dimensionless King profile on the solver's grid with its cumulative mass
+`m_cum(r̂) = ∫ 4π r̂² ρ̂ dr̂` (trapezoidal).
+"""
+function _king_cumulative(W0::Float64)
+    rhat, _, ρ = _solve_king(W0)
+    n = length(rhat)
+    m_cum = zeros(Float64, n)
+    for i in 2:n
+        f_prev = 4π * rhat[i - 1]^2 * ρ[i - 1]
+        f_here = 4π * rhat[i]^2 * ρ[i]
+        m_cum[i] = m_cum[i - 1] + 0.5 * (f_prev + f_here) * (rhat[i] - rhat[i - 1])
+    end
+    return rhat, ρ, m_cum
+end
+
+"""
+    model_density(profile::DensityProfile, M, r_h) -> Function
+
+Density `ρ(r)` of the generating model with total mass `M` and half-mass
+radius `r_h` (any consistent unit system): Plummer analytically,
+`ρ = 3M/(4π a³) (1 + r²/a²)^{-5/2}` with `a = r_h / 1.305`; King from the
+solved dimensionless profile scaled so that its half-mass radius equals
+`r_h` and its mass equals `M` (zero beyond the tidal radius).
+"""
+function model_density(::PlummerProfile, M::Real, r_h::Real)
+    a = r_h / _PLUMMER_RHM_OVER_A
+    return r -> 3M / (4π * a^3) * (1 + (r / a)^2)^(-2.5)
+end
+function model_density(p::KingProfile, M::Real, r_h::Real)
+    rhat, ρ̂, m_cum = _king_cumulative(p.W0)
+    i_h = findfirst(≥(0.5 * m_cum[end]), m_cum)
+    s = r_h / rhat[i_h]
+    norm = M / (m_cum[end] * s^3)
+    r_t = rhat[end]
+    return function (r)
+        x = r / s
+        (x < 0 || x ≥ r_t) && return 0.0
+        j = searchsortedlast(rhat, x)
+        j ≥ length(rhat) && return 0.0
+        j < 1 && return norm * ρ̂[1]
+        f = (x - rhat[j]) / (rhat[j + 1] - rhat[j])
+        return norm * ((1 - f) * ρ̂[j] + f * ρ̂[j + 1])
+    end
+end
+
+"""
     sample_king(N::Int, W0::Float64, rt::Float64;
                 rng=Random.default_rng()) -> (pos, vel)
 

@@ -2215,6 +2215,71 @@ dtplot = 2.0
         fb = bound_fraction(snaps[1])
         @test 0.9 ≤ fb ≤ 0.98
 
+        vis_p = VisualizationConfig(;
+            format = "png",
+            column = "single",
+            units = "nbody",
+            output_dir = mktempdir(),
+        )
+        # Radial profiles against the generating models
+        rng_p = StableRNG(9090)
+        Np = 6000
+        pp, vp = sample_plummer(Np, 0.2; rng = rng_p)
+        mp = fill(1.0 / Np, Np)
+        virialise!(mp, pp, vp)
+        prof = radial_profile(pp, vp, mp, zeros(3))
+        @test prof isa RadialProfile && length(prof.r) == 12 && sum(prof.n) ≥ 0.98 * Np
+        @test isapprox(prof.r_h, 1.305 * 0.2; rtol = 0.08)
+        ρ_pl = model_density(PlummerProfile(), 1.0, prof.r_h)
+        good = prof.n .≥ 80
+        ratios = prof.rho[good] ./ [ρ_pl(x) for x in prof.r[good]]
+        @test all(0.7 .≤ ratios .≤ 1.3)
+        @test all(abs.(prof.beta[prof.n .≥ 150]) .< 0.25)           # isotropic Plummer
+        σ_iso = prof.sigma_r[prof.n .≥ 150]
+        @test all(0.3 .< σ_iso .< 3.0)
+        @test_throws ArgumentError radial_profile(pp[:, 1:10], vp[:, 1:10], mp[1:10], zeros(3))
+        # King W0 = 6, scaled to r_h = 0.3: the model integrates to the mass and half-mass radius
+        pk, vk = sample_king(Np, 6.0, 1.0; rng = rng_p)
+        mk = fill(1.0 / Np, Np)
+        r_hk = Nbody6Dynamics.half_mass_radius(mk, pk; centre = zeros(3))
+        pk .*= 0.3 / r_hk
+        virialise!(mk, pk, vk)
+        profk = radial_profile(pk, vk, mk, zeros(3))
+        ρ_k = model_density(KingProfile(W0 = 6.0), 1.0, 0.3)
+        goodk = profk.n .≥ 80
+        ratk = profk.rho[goodk] ./ [ρ_k(x) for x in profk.r[goodk]]
+        @test all(0.65 .≤ ratk .≤ 1.35)
+        @test ρ_k(100.0) == 0.0                                       # beyond the tidal radius
+        r_grid = exp10.(range(-3, 1; length = 400))
+        m_int = sum(
+            4π * r_grid[i]^2 * ρ_k(r_grid[i]) * (r_grid[i + 1] - r_grid[i]) for
+            i in 1:(length(r_grid) - 1)
+        )
+        @test isapprox(m_int, 1.0; rtol = 0.05)
+        # Per-cluster profiles on the synthetic pair and the system profile
+        profs = cluster_profiles(snaps[1], ranges)
+        @test length(profs) == 2 && all(!isnothing, profs)
+        @test isapprox(profs[2].r_h, 1.305 * 0.15; rtol = 0.15)
+        sp = system_profile(snaps[1])
+        @test sp.M ≈ sum(mass) && sp.r_h > profs[1].r_h                 # the pair is wider than a member
+        # Figures: with and without the generating models, physical off
+        specs_s = [
+            ClusterSpec(profile = PlummerProfile(), N = N1, rbar = 1.305 * 0.2, imf = KroupaIMF()),
+            ClusterSpec(profile = PlummerProfile(), N = N2, rbar = 1.305 * 0.15, imf = KroupaIMF()),
+        ]
+        pd1 = plot_density_profiles(snaps[1], ranges, vis_p; specs = specs_s)
+        @test isfile(pd1)
+        pd2 = plot_density_profiles(snaps[1], ranges, vis_p; filename = "density_nomodel")
+        @test isfile(pd2)
+        pv = plot_velocity_dispersion(snaps[1], ranges, vis_p)
+        @test isfile(pv)
+        @test_throws ArgumentError plot_density_profiles(
+            snaps[1],
+            ranges,
+            vis_p;
+            specs = specs_s[1:1],
+        )
+
         # Figure: with and without the engine overlay (NB units, raster draft)
         vis_s = VisualizationConfig(;
             format = "png",
