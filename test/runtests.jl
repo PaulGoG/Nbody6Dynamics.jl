@@ -1344,7 +1344,7 @@ TIME   0.01  0.05  0.20  0.50  1.00
                 v .-= sum(m' .* v, dims = 2) ./ sum(m)
             end
 
-            pos, vel, mass, ranges = Nbody6Dynamics.setup_two_cluster_orbit(
+            pos, vel, mass, ranges, _ = Nbody6Dynamics.setup_two_cluster_orbit(
                 pos1,
                 vel1,
                 mass1,
@@ -1715,6 +1715,13 @@ truncate_jacobi = false
                     "tidal_rg",
                     _merger_toml() * "\n[merger.tidal]\nkz14 = 5\nvg = [0.0, 220.0, 0.0]\n",
                     "merger.tidal.rg",
+                ),
+                (
+                    "binaries_fraction",
+                    _merger_toml(
+                        cluster1 = "model = \"king\"\nN = 100\nrbar = 1.0\n[merger.cluster1.binaries]\nfraction = 1.5",
+                    ),
+                    "binaries.fraction",
                 ),
                 (
                     "imf_rescale_factor",
@@ -2099,6 +2106,206 @@ dtplot = 2.0
             generate_merger_ic(cfg; rng = rng)
             lines = readlines(joinpath(out_dir, "dat.10"))
             @test length(lines) == 100
+        end
+
+        # --- Primordial binaries ---
+        @testset "Primordial binaries" begin
+            rng_b = StableRNG(777)
+            m = sample_kroupa(1000; rng = rng_b)
+            b = sample_binaries(BinarySpec(; fraction = 0.3), m, rng_b)
+            n_b = round(Int, 0.3 * 1000 / 1.3)
+            @test length(b.primary) == n_b == length(b.a_pc) == length(b.e)
+            @test isempty(intersect(b.primary, b.secondary)) &&
+                  allunique(vcat(b.primary, b.secondary))
+            @test all(b.m1 .≥ b.m2)
+            @test all(0 .≤ b.e .< 1) && 0.55 < sum(b.e) / n_b < 0.78            # thermal mean 2/3
+            @test all(5e-8 .< b.a_pc .< 0.2)                                      # 0.01 AU … 4×10⁴ AU
+            bc = sample_binaries(
+                BinarySpec(;
+                    fraction = 0.5,
+                    period = "loguniform",
+                    a_min = 1.0,
+                    a_max = 10.0,
+                    eccentricity = "circular",
+                ),
+                m,
+                rng_b,
+            )
+            au = Nbody6Dynamics._AU_PC
+            @test all(bc.e .== 0) && all(au .≤ bc.a_pc .≤ 10au)
+            @test length(bc.primary) == round(Int, 0.5 * 1000 / 1.5)
+            bq = sample_binaries(
+                BinarySpec(; fraction = 0.2, pairing = "uniform_q", q_min = 0.5),
+                m,
+                rng_b,
+            )
+            @test all(0.5 .≤ bq.m2 ./ bq.m1 .≤ 1.0)
+            @test isempty(sample_binaries(BinarySpec(), m, rng_b).primary)
+            @test_throws ErrorException Nbody6Dynamics._validate_binaries(
+                BinarySpec(; fraction = 1.0),
+                "c",
+            )
+            @test_throws ErrorException Nbody6Dynamics._validate_binaries(
+                BinarySpec(; pairing = "x"),
+                "c",
+            )
+            @test_throws ErrorException Nbody6Dynamics._validate_binaries(
+                BinarySpec(; a_min = 5.0, a_max = 1.0),
+                "c",
+            )
+            # Kroupa (1995) periods stay within the distribution's support
+            lp = [Nbody6Dynamics._sample_log_period_kroupa1995(rng_b) for _ in 1:2000]
+            @test all(1.0 .≤ lp .≤ 8.43) && 3.0 < sum(lp) / length(lp) < 6.0
+
+            # Kepler relative orbit: energy −GM/(2a) and r within [a(1−e), a(1+e)]
+            for e_test in (0.0, 0.5, 0.9)
+                r, v = Nbody6Dynamics._kepler_relative_orbit(2.0, 1e-3, e_test, rng_b)
+                rn = sqrt(sum(r .^ 2))
+                @test isapprox(0.5 * sum(v .^ 2) - 2.0 / rn, -2.0 / (2 * 1e-3); rtol = 1e-8)
+                @test 1e-3 * (1 - e_test) - 1e-12 ≤ rn ≤ 1e-3 * (1 + e_test) + 1e-12
+            end
+            R = Nbody6Dynamics._random_rotation(rng_b)
+            @test isapprox(R * R', [1 0 0; 0 1 0; 0 0 1]; atol = 1e-12)
+
+            # Expansion of a tiny system set: pairs first, then singles; centres of mass kept
+            pos_s = [0.0 1.0 2.0 10.0 11.0; 0.0 0.0 0.0 0.0 0.0; 0.0 0.0 0.0 0.0 0.0]
+            vel_s = zeros(3, 5)
+            mass_s = [2.0, 1.0, 1.5, 1.0, 1.0]
+            cb1 = (
+                system_binary = [1, 0, 2],
+                m1 = [1.2, 0.9],
+                m2 = [0.8, 0.6],
+                a_pc = [1e-3, 2e-3],
+                e = [0.0, 0.5],
+            )
+            cb2 = (
+                system_binary = [0, 0],
+                m1 = Float64[],
+                m2 = Float64[],
+                a_pc = Float64[],
+                e = Float64[],
+            )
+            ex = expand_binaries(
+                pos_s,
+                vel_s,
+                mass_s,
+                [1:3, 4:5],
+                [cb1, cb2],
+                [[1, 2, 3], [1, 2]];
+                rng = rng_b,
+            )
+            @test ex.n_pairs == [2, 0] && length(ex.mass) == 7
+            @test ex.mass[1:4] ≈ [1.2, 0.8, 0.9, 0.6] && ex.mass[5:7] ≈ [1.0, 1.0, 1.0]
+            @test ex.cluster_blocks[1] == [1:4, 5:5] && ex.cluster_blocks[2] == [5:4, 6:7]
+            for (k, sys) in ((1, 1), (2, 3))
+                i1, i2 = 2k - 1, 2k
+                M = ex.mass[i1] + ex.mass[i2]
+                com = (ex.mass[i1] .* ex.pos[:, i1] .+ ex.mass[i2] .* ex.pos[:, i2]) ./ M
+                @test isapprox(com, pos_s[:, sys]; atol = 1e-12)
+                r_rel = ex.pos[:, i1] .- ex.pos[:, i2]
+                v_rel = ex.vel[:, i1] .- ex.vel[:, i2]
+                @test 0.5 * sum(v_rel .^ 2) - M / sqrt(sum(r_rel .^ 2)) < 0
+            end
+            @test sum(ex.mass) ≈ sum(mass_s)
+            @test isnan(ex.hard_fraction[2]) && 0 ≤ ex.hard_fraction[1] ≤ 1
+            @test Nbody6Dynamics._members_from_blocks([1:4, 5:5]) == [1, 2, 3, 4, 5]
+
+            # Summary parsing with and without pair counts
+            sp = joinpath(TESTDIR, "summary_bin.txt")
+            write(
+                sp,
+                "  Cluster 1: king, imf=kroupa, N=10 (after trunc: 9, binaries: 2), M=1 M☉\n" *
+                "  Cluster 2: plummer, imf=kroupa, N=6 (after trunc: 5, binaries: 1), M=1 M☉\n",
+            )
+            mem = parse_merger_summary(sp)
+            @test mem[1] == vcat(1:4, 7:11) && mem[2] == vcat(5:6, 12:14)
+            write(
+                sp,
+                "  Cluster 1: king, imf=kroupa, N=10 (after trunc: 9), M=1 M☉\n" *
+                "  Cluster 2: plummer, imf=kroupa, N=6 (after trunc: 5), M=1 M☉\n",
+            )
+            mem0 = parse_merger_summary(sp)
+            @test mem0[1] == collect(1:9) && mem0[2] == collect(10:14)
+
+            # Full generation with a binary-rich cluster: ordering, input, metadata round trip
+            cfg_bin = MergerConfig(
+                [
+                    ClusterSpec(
+                        profile = PlummerProfile(),
+                        N = 200,
+                        rbar = 1.0,
+                        imf = KroupaIMF(),
+                        binaries = BinarySpec(; fraction = 0.3),
+                    ),
+                    ClusterSpec(
+                        profile = KingProfile(W0 = 5.0),
+                        N = 200,
+                        rbar = 1.0,
+                        imf = KroupaIMF(),
+                    ),
+                ],
+                "kepler",
+                OrbitSpec(apocentre = 10.0, eccentricity = 0.5),
+                MergerOutputSpec(; output_dir = mktempdir());
+                seed = 5,
+            )
+            res_b = generate_merger_ic(cfg_bin)
+            @test res_b.n_pairs[2] == 0 && res_b.n_pairs[1] ≥ 30
+            nb = sum(res_b.n_pairs)
+            inp_b = read(joinpath(res_b.output_dir, "merger.inp"), String)
+            @test occursin("NBIN0=$(nb),", inp_b) &&
+                  occursin("KZ(1:10)=1 -1 2 0 0 0 3 2 0 0", inp_b)
+            dat =
+                [parse.(Float64, split(l)) for l in eachline(joinpath(res_b.output_dir, "dat.10"))]
+            @test length(dat) == res_b.N_total
+            seps = [sqrt(sum((dat[2k - 1][2:4] .- dat[2k][2:4]) .^ 2)) for k in 1:nb]
+            @test maximum(seps) < 0.05                          # pairs are far smaller than a cluster
+            @test length(res_b.cluster_ranges[1]) + length(res_b.cluster_ranges[2]) == res_b.N_total
+            @test res_b.cluster_ranges[1][1:(2nb)] == collect(1:(2nb))
+            ic_b = load_merger_ic_result(res_b.output_dir)
+            @test ic_b.cluster_ranges == res_b.cluster_ranges && ic_b.n_pairs == res_b.n_pairs
+            @test ic_b.cluster_specs[1].binaries.fraction == 0.3
+            @test parse_merger_summary(joinpath(res_b.output_dir, "merger_summary.txt")) ==
+                  res_b.cluster_ranges
+            @test occursin(
+                "Primordial binaries: NBIN0 = $(nb)",
+                read(joinpath(res_b.output_dir, "merger_summary.txt"), String),
+            )
+            ic_meta_b = Nbody6Dynamics.TOML.parsefile(joinpath(res_b.output_dir, "merger_ic.toml"))
+            @test ic_meta_b["meta"]["nbin0"] == nb && length(ic_meta_b["cluster_blocks"][1]) == 2
+            # TOML round trip of the binaries table
+            bt_path = joinpath(TESTDIR, "merger_bin.toml")
+            write(
+                bt_path,
+                """
+[merger]
+n_clusters = 2
+orbit_mode = "kepler"
+
+[merger.cluster1]
+model = "plummer"
+N = 100
+rbar = 1.0
+
+[merger.cluster1.binaries]
+fraction = 0.25
+pairing = "uniform_q"
+period = "loguniform"
+a_min = 0.5
+a_max = 50.0
+eccentricity = "circular"
+
+[merger.cluster2]
+model = "king"
+N = 100
+rbar = 1.0
+""",
+            )
+            cfg_bt = load_merger_config(bt_path)
+            @test cfg_bt.clusters[1].binaries.fraction == 0.25 &&
+                  cfg_bt.clusters[1].binaries.pairing == "uniform_q"
+            @test cfg_bt.clusters[1].binaries.a_max == 50.0 &&
+                  cfg_bt.clusters[2].binaries.fraction == 0.0
         end
 
         # --- Summary write→parse round-trip (guards the format/regex coupling) ---

@@ -72,7 +72,7 @@ end
     truncate_jacobi(pos, vel, mass, r_trunc) -> (pos_t, vel_t, mass_t)
 
 Return copies of `(pos, vel, mass)` with particles beyond `r_trunc` from the
-coordinate origin removed. Non-mutating (the inputs are left untouched), so
+coordinate origin removed, and the indices of the kept particles. Non-mutating (the inputs are left untouched), so
 no `!` — the cluster is assumed centred at the origin (pre-offset).
 """
 function truncate_jacobi(
@@ -92,13 +92,13 @@ function truncate_jacobi(
     n_removed = N - length(idx)
     n_removed > 0 &&
         @info "Jacobi truncation: removed $n_removed / $N particles (r_trunc = $(round(r_trunc; digits=4)))"
-    return pos[:, idx], vel[:, idx], mass[idx]
+    return pos[:, idx], vel[:, idx], mass[idx], idx
 end
 
 """
     setup_two_cluster_orbit(pos1, vel1, mass1, pos2, vel2, mass2,
                             d_apo, ecc; truncate_jacobi_flag=true)
-        -> (pos, vel, mass, cluster_ranges)
+        -> (pos, vel, mass, cluster_ranges, kept)
 
 Place two clusters on a Keplerian orbit at apocentre.
 
@@ -130,11 +130,13 @@ function setup_two_cluster_orbit(
     M_total = M1 + M2
 
     # Optional Jacobi truncation
+    kept1 = collect(1:length(mass1))
+    kept2 = collect(1:length(mass2))
     if truncate_jacobi_flag
         r_jacobi_1 = jacobi_radius(d_apo, M1, M2)
         r_jacobi_2 = jacobi_radius(d_apo, M2, M1)
-        pos1, vel1, mass1 = truncate_jacobi(pos1, vel1, mass1, r_jacobi_1)
-        pos2, vel2, mass2 = truncate_jacobi(pos2, vel2, mass2, r_jacobi_2)
+        pos1, vel1, mass1, kept1 = truncate_jacobi(pos1, vel1, mass1, r_jacobi_1)
+        pos2, vel2, mass2, kept2 = truncate_jacobi(pos2, vel2, mass2, r_jacobi_2)
         # Update totals after truncation
         M1 = sum(mass1)
         M2 = sum(mass2)
@@ -179,12 +181,12 @@ function setup_two_cluster_orbit(
         mass_out[j] = mass2[i]
     end
 
-    return pos_out, vel_out, mass_out, [1:N1, (N1 + 1):N_total]
+    return pos_out, vel_out, mass_out, [1:N1, (N1 + 1):N_total], [kept1, kept2]
 end
 
 """
     combine_clusters_explicit(cluster_data, specs; truncate_jacobi_flag=true)
-        -> (pos, vel, mass, cluster_ranges)
+        -> (pos, vel, mass, cluster_ranges, kept)
 
 Combine N ≥ 2 clusters using explicit per-cluster position/velocity offsets.
 
@@ -209,6 +211,7 @@ function combine_clusters_explicit(
     truncated = Vector{
         NamedTuple{(:pos, :vel, :mass),Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}},
     }()
+    kept = Vector{Vector{Int}}()
 
     for i in 1:n
         # Keep only the particle arrays; sampled cluster data may carry
@@ -231,10 +234,12 @@ function combine_clusters_explicit(
             end
 
             r_jacobi = jacobi_radius(d_min, M_self, M_nearest)
-            pos_t, vel_t, mass_t = truncate_jacobi(cd.pos, cd.vel, cd.mass, r_jacobi)
+            pos_t, vel_t, mass_t, idx_t = truncate_jacobi(cd.pos, cd.vel, cd.mass, r_jacobi)
             push!(truncated, (pos = pos_t, vel = vel_t, mass = mass_t))
+            push!(kept, idx_t)
         else
             push!(truncated, cd)
+            push!(kept, collect(1:length(cd.mass)))
         end
     end
 
@@ -286,5 +291,5 @@ function combine_clusters_explicit(
         end
     end
 
-    return pos_out, vel_out, mass_out, cluster_ranges
+    return pos_out, vel_out, mass_out, cluster_ranges, kept
 end

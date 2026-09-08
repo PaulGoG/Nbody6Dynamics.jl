@@ -190,7 +190,9 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     for (ci, rng) in enumerate(result.cluster_ranges)
         model = profile_name(result.cluster_specs[ci].profile)
         col = per_cluster_legend ? _OKABE_ITO[mod1(ci, length(_OKABE_ITO))] : model_color(model)
-        sub = filter(i -> i in rng, collect(1:stride:N))
+        in_cluster = falses(N)
+        in_cluster[rng] .= true
+        sub = filter(i -> in_cluster[i], collect(1:stride:N))
         arrows!(
             ax_v,
             x_pc[sub],

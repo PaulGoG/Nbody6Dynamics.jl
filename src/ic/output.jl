@@ -135,7 +135,7 @@ User-supplied (nonzero) values are kept. The result has no zero entries.
 function resolve_nbody6_parameters(
     spec::Nbody6ParameterSpec,
     clusters::Vector{ClusterSpec},
-    cluster_ranges::Vector{UnitRange{Int}},
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     N_total::Int,
     rbar_pc::Float64,
 )::Nbody6ParameterSpec
@@ -268,15 +268,18 @@ function generate_merger_inp(
     deltat::Float64 = 1.0,
     nrand::Int = 10000,
     mass_bounds::Tuple{Float64,Float64} = (0.08, 100.0),
+    nbin0::Int = 0,
 )
     _assert_resolved(nbody6)
     _validate_tidal(tidal)
+    nbin0 ≥ 0 || throw(ArgumentError("nbin0 must be ≥ 0; got $nbin0"))
     kz14 = tidal.kz14
     kz = zeros(Int, 50)
     kz[1] = 1
     kz[2] = -1
     kz[3] = 2
     kz[7] = 3
+    kz[8] = nbin0 > 0 ? 2 : 0   # 2: primordial pairs are the first 2·NBIN0 bodies of dat.10
     kz[12] = stellar.kz19 == 0 ? 0 : 1
     kz[14] = kz14
     kz[16] = nbody6.kz16
@@ -286,8 +289,8 @@ function generate_merger_inp(
     kz[26] = 1
     kz[30] = 1
     for (i, v) in nbody6.kz
-        i in (14, 16, 19) &&
-            @warn "merger.nbody6.kz overrides KZ($i) = $v, which also has a named key (kz14/tidal, kz16, stellar.kz19)"
+        i in (8, 14, 16, 19) &&
+            @warn "merger.nbody6.kz overrides KZ($i) = $v, which also has a named setting (binaries, kz14/tidal, kz16, stellar.kz19)"
         kz[i] = v
     end
 
@@ -365,14 +368,15 @@ function generate_merger_inp(
         # --- 6. &INDATA: stellar population ---
         # ALPHAS/BODY1/BODYN are inert under KZ(22)=2 (masses come from
         # dat.10); the bounds are written consistent with the sampled IMF.
-        # ZMET, EPOCH0, DTPLOT govern stellar evolution. NBIN0/NHI0 = 0: no
-        # primordial binaries or hierarchies are generated yet.
+        # ZMET, EPOCH0, DTPLOT govern stellar evolution. NBIN0 = number of
+        # primordial pairs at the head of dat.10; NHI0 = 0 (no hierarchies).
         println(io, "&INDATA")
         @printf(
             io,
-            "ALPHAS=2.35,BODY1=%.4G,BODYN=%.4G,NBIN0=0,NHI0=0,ZMET=%.4G,EPOCH0=%.4G,DTPLOT=%.4G /\n",
+            "ALPHAS=2.35,BODY1=%.4G,BODYN=%.4G,NBIN0=%d,NHI0=0,ZMET=%.4G,EPOCH0=%.4G,DTPLOT=%.4G /\n",
             mass_bounds[2],
             mass_bounds[1],
+            nbin0,
             stellar.zmet,
             stellar.epoch0,
             stellar.dtplot
@@ -411,7 +415,7 @@ function generate_merger_inp(
         # --- No binaries (NBIN0=0) or hierarchical triples ---
     end
 
-    @info "Wrote .inp file: $path (N=$N_total, KZ(22)=2, KZ(14)=$kz14, RBAR=$rbar, ZMBAR=$zmbar)"
+    @info "Wrote .inp file: $path (N=$N_total, NBIN0=$nbin0, KZ(22)=2, KZ(14)=$kz14, RBAR=$rbar, ZMBAR=$zmbar)"
     return nothing
 end
 
@@ -423,24 +427,46 @@ function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rn
     # keeps the sampled sum; rescaled/equal enforce their targets).
     masses = sample_masses(spec.imf, spec.N, rng)
 
+    # Primordial pairs: the density sampler places *systems* (pairs by their
+    # centre of mass); pairs are expanded into bodies after the clusters are
+    # combined and truncated. Systems are ordered pairs first, then singles.
+    bins = sample_binaries(spec.binaries, masses, rng)
+    n_b = length(bins.primary)
+    paired = falses(spec.N)
+    paired[bins.primary] .= true
+    paired[bins.secondary] .= true
+    singles = findall(!, paired)
+    sys_mass = vcat(bins.m1 .+ bins.m2, bins.masses[singles])
+    system_binary = vcat(collect(1:n_b), zeros(Int, length(singles)))
+    N_sys = length(sys_mass)
+
     pos, vel = if spec.profile isa PlummerProfile
         # Scale radius from the target half-mass radius (r_hm = 1.305 a)
-        sample_plummer(spec.N, spec.rbar / _PLUMMER_RHM_OVER_A; rng = rng)
+        sample_plummer(N_sys, spec.rbar / _PLUMMER_RHM_OVER_A; rng = rng)
     elseif spec.profile isa KingProfile
         # Sampled with unit tidal radius; the empirical rescale below sets r_hm
-        sample_king(spec.N, spec.profile.W0, 1.0; rng = rng)
+        sample_king(N_sys, spec.profile.W0, 1.0; rng = rng)
     else
         error("Unknown profile: $(typeof(spec.profile))")
     end
 
     # Scale positions so the mass-based half-mass radius equals the target
-    r_hm = half_mass_radius(masses, pos; centre = zeros(3))
+    r_hm = half_mass_radius(sys_mass, pos; centre = zeros(3))
     if r_hm > 0
         pos .*= spec.rbar / r_hm
     end
 
-    energies = virialise!(masses, pos, vel)
-    return (pos = pos, vel = vel, mass = masses, T = energies.T, W = energies.W)
+    energies = virialise!(sys_mass, pos, vel)
+    binaries =
+        (system_binary = system_binary, m1 = bins.m1, m2 = bins.m2, a_pc = bins.a_pc, e = bins.e)
+    return (
+        pos = pos,
+        vel = vel,
+        mass = sys_mass,
+        T = energies.T,
+        W = energies.W,
+        binaries = binaries,
+    )
 end
 
 """
@@ -493,9 +519,10 @@ function generate_merger_ic(
         end for (i, spec) in enumerate(cfg.clusters)
     ]
 
-    # Combine clusters according to orbit mode; both paths return the
-    # combined arrays plus per-cluster (post-truncation) index ranges.
-    pos_combined, vel_combined, mass_combined, cluster_ranges = if cfg.orbit_mode == "kepler"
+    # Combine clusters (as systems) according to orbit mode; both paths
+    # return the combined arrays, the per-cluster index ranges of the systems
+    # that survived truncation, and their indices in each sampled set.
+    pos_combined, vel_combined, mass_combined, system_ranges, kept = if cfg.orbit_mode == "kepler"
         c1, c2 = cluster_data[1], cluster_data[2]
         setup_two_cluster_orbit(
             c1.pos,
@@ -518,24 +545,47 @@ function generate_merger_ic(
         error("Unknown orbit_mode: $(cfg.orbit_mode)")
     end
 
-    N_total = length(mass_combined)
     M_total = sum(mass_combined)
-    zmbar = M_total / N_total
+    N_systems = length(mass_combined)
 
     # Half-mass radius of the combined system — this is the RBAR length unit
     # written to the .inp file and used for the NB-unit conversion of dat.10.
     rbar = half_mass_radius(mass_combined, pos_combined)
 
-    # Combined-system diagnostics in code units (G = 1): the virial ratio of
-    # the whole configuration, the resolution of the members by the length
-    # unit, and the integration parameters scaled to the smallest member.
-    q_virial, t_cr_config_code = if N_total ≤ _VIRIAL_NMAX
+    # Combined-system diagnostics in code units (G = 1) on the systems (pair
+    # binding energies excluded): the virial ratio of the whole
+    # configuration, the resolution of the members by the length unit, and
+    # the integration parameters scaled to the smallest member.
+    q_virial, t_cr_config_code = if N_systems ≤ _VIRIAL_NMAX
         T, W = _kinetic_and_potential(mass_combined, pos_combined, vel_combined)
         (W < 0 ? T / abs(W) : NaN, crossing_time(M_total, T + W))
     else
-        @warn "Combined virial ratio not evaluated: N_total = $N_total exceeds $(_VIRIAL_NMAX) (O(N²) pair sum)"
+        @warn "Combined virial ratio not evaluated: N = $N_systems systems exceed $(_VIRIAL_NMAX) (O(N²) pair sum)"
         (NaN, NaN)
     end
+
+    # Expand primordial pairs into bodies: every cluster's pairs first, then
+    # the singles (the engine's convention for the first 2·NBIN0 bodies).
+    expanded = expand_binaries(
+        pos_combined,
+        vel_combined,
+        mass_combined,
+        system_ranges,
+        [cd.binaries for cd in cluster_data],
+        kept;
+        rng = use_rng,
+    )
+    pos_combined, vel_combined, mass_combined = expanded.pos, expanded.vel, expanded.mass
+    cluster_blocks = expanded.cluster_blocks
+    cluster_ranges = [_members_from_blocks(b) for b in cluster_blocks]
+    n_pairs = expanded.n_pairs
+    nbin0 = sum(n_pairs)
+    N_total = length(mass_combined)
+    zmbar = M_total / N_total
+    nbin0 > 0 && @info "Primordial binaries: NBIN0 = $nbin0 pairs (" *
+          join(["cluster $i: $(n_pairs[i])" for i in 1:length(n_pairs)], ", ") *
+          "); hard fractions " *
+          join([isnan(f) ? "-" : @sprintf("%.2f", f) for f in expanded.hard_fraction], ", ")
     # Crossing times: configuration and smallest member (pre-truncation
     # energies of the virialised members), in code units → NB and Myr.
     t_star_myr = _nbody_time_myr(M_total, rbar)
@@ -556,6 +606,10 @@ function generate_merger_ic(
         q_virial = q_virial,
         rbar_over_rhm_min = rbar_over_rhm_min,
         nbody6 = nbody6,
+        cluster_blocks = cluster_blocks,
+        n_pairs = n_pairs,
+        nbin0 = nbin0,
+        hard_fraction = expanded.hard_fraction,
         t_cr_config_nb = t_cr_config_code * code_to_nb,
         t_cr_config_myr = t_cr_config_code * _CODE_TIME_MYR,
         t_cr_member_min_nb = t_cr_member_code * code_to_nb,
@@ -608,6 +662,7 @@ function generate_merger_ic(
             minimum(_imf_mass_bounds(c.imf)[1] for c in cfg.clusters),
             maximum(_imf_mass_bounds(c.imf)[2] for c in cfg.clusters),
         ),
+        nbin0 = nbin0,
     )
 
     # Summary log
@@ -644,6 +699,7 @@ function generate_merger_ic(
         rbar,
         zmbar,
         cluster_ranges,
+        n_pairs,
         collect(cfg.clusters),
         cfg.orbit_mode,
         cfg.orbit,
@@ -667,7 +723,7 @@ re-sampling). Cluster specs are stored in the structured form
 function _write_merger_ic_metadata(
     path::AbstractString,
     cfg::MergerConfig,
-    cluster_ranges::Vector{UnitRange{Int}},
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     seed::Int,
     external_rng::Bool,
     N_total::Int,
@@ -694,6 +750,7 @@ function _write_merger_ic_metadata(
             "t_cr_member_min_nb" => regime.t_cr_member_min_nb,
             "t_cr_member_min_myr" => regime.t_cr_member_min_myr,
             "t_star_myr" => regime.t_star_myr,
+            "nbin0" => regime.nbin0,
         ),
         "nbody6" => _nbody6_table(regime.nbody6),
         "stellar" => _struct_to_dict(cfg.stellar),
@@ -711,7 +768,8 @@ function _write_merger_ic_metadata(
             "dtadj" => cfg.output.dtadj,
             "deltat" => cfg.output.deltat,
         ),
-        "cluster_ranges" => [[first(r), last(r)] for r in cluster_ranges],
+        "cluster_blocks" =>
+            [[[first(r), last(r)] for r in blocks] for blocks in regime.cluster_blocks],
     )
 
     # One table per cluster so spec + post-truncation count are co-located
@@ -723,7 +781,10 @@ function _write_merger_ic_metadata(
             "imf" => _imf_table(spec.imf),
             "position" => spec.position,
             "velocity" => spec.velocity,
+            "binaries" => _binaries_table(spec.binaries),
             "N_after_trunc" => length(cluster_ranges[i]),
+            "N_pairs" => regime.n_pairs[i],
+            "hard_fraction" => regime.hard_fraction[i],
         )
     end
 
@@ -768,16 +829,18 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
     # validation — metadata always records them explicitly (possibly empty
     # for kepler mode).
     cluster_specs = ClusterSpec[]
-    cluster_ranges = UnitRange{Int}[]
+    n_pairs = Int[]
     i = 1
     while haskey(raw, "cluster$i")
         c = raw["cluster$i"]::Dict
         push!(cluster_specs, _parse_cluster_table(c, i, "kepler"))
+        push!(n_pairs, Int(get(c, "N_pairs", 0)))
         i += 1
     end
-    for pair in raw["cluster_ranges"]
-        push!(cluster_ranges, Int(pair[1]):Int(pair[2]))
-    end
+    cluster_ranges = [
+        _members_from_blocks([Int(b[1]):Int(b[2]) for b in blocks]) for
+        blocks in raw["cluster_blocks"]
+    ]
     orbit_raw = raw["orbit"]::Dict
     orbit = OrbitSpec(;
         apocentre = Float64(orbit_raw["apocentre"]),
@@ -816,6 +879,7 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
         rbar,
         zmbar,
         cluster_ranges,
+        n_pairs,
         cluster_specs,
         orbit_mode,
         orbit,
@@ -852,12 +916,13 @@ function _write_merger_summary(
             M_sampled = sum(cluster_data[i].mass)  # pre-truncation sampled mass
             @printf(
                 io,
-                "  Cluster %d: %s, imf=%s, N=%d (after trunc: %d), M=%.1f M☉, r_hm=%.2f pc",
+                "  Cluster %d: %s, imf=%s, N=%d (after trunc: %d, binaries: %d), M=%.1f M☉, r_hm=%.2f pc",
                 i,
                 profile_name(spec.profile),
                 imf_name(spec.imf),
                 spec.N,
                 Ni,
+                regime.n_pairs[i],
                 M_sampled,
                 spec.rbar
             )
@@ -892,6 +957,15 @@ function _write_merger_summary(
             )
             a_orb = cfg.orbit.apocentre / (1.0 + cfg.orbit.eccentricity)
             @printf(io, "       a = %.2f pc (semi-major axis)\n", a_orb)
+            println(io)
+        end
+        if regime.nbin0 > 0
+            @printf(
+                io,
+                "Primordial binaries: NBIN0 = %d pairs written first (KZ(8) = 2); hard fraction per cluster: %s\n",
+                regime.nbin0,
+                join([isnan(f) ? "-" : @sprintf("%.2f", f) for f in regime.hard_fraction], ", ")
+            )
             println(io)
         end
         @printf(io, "Combined: N_total = %d, M_total = %.1f M☉\n", N_total, M_total)

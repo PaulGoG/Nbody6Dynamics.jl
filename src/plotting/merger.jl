@@ -13,38 +13,43 @@ const _COALESCENCE_RATIO_MAX = 2.0
 const _COALESCENCE_MEAN_SEP_FACTOR = 1.5
 
 """
-    parse_merger_summary(path::AbstractString) -> Vector{UnitRange{Int}}
+    parse_merger_summary(path::AbstractString) -> Vector{Vector{Int}}
 
-Read `merger_summary.txt` and return a vector of index ranges, one per initial
-cluster, using the post-truncation particle counts. Ranges refer to the
-particle IDs in `dat.10` (1-based, contiguous across clusters).
-
-Returns an empty vector if the file cannot be parsed.
+Read `merger_summary.txt` and return the body indices (`dat.10` order,
+1-based) of every initial cluster from the post-truncation body counts
+and, when present, the pair counts: pairs of all clusters come first,
+cluster by cluster, then the singles, so a cluster with binaries owns two
+contiguous blocks. Returns an empty vector if the file cannot be parsed.
 """
-function parse_merger_summary(path::AbstractString)::Vector{UnitRange{Int}}
-    isfile(path) || return UnitRange{Int}[]
+function parse_merger_summary(path::AbstractString)::Vector{Vector{Int}}
+    isfile(path) || return Vector{Int}[]
 
-    trunc_counts = Int[]
-    # Match e.g. "Cluster 5: plummer, imf=kroupa, N=1000 (after trunc: 966),"
+    counts = Tuple{Int,Int}[]   # (bodies after truncation, pairs)
+    # Match e.g. "Cluster 5: plummer, imf=kroupa, N=1000 (after trunc: 966, binaries: 12),"
     # Tolerant of extra comma-separated fields between the profile name and
     # the N=… count (the summary format has grown fields before; the
     # write→parse round-trip test in runtests.jl guards this coupling).
-    pattern = r"Cluster\s+\d+:\s+.*?\bN=\d+\s+\(after trunc:\s+(\d+)\)"
+    pattern = r"Cluster\s+\d+:\s+.*?\bN=\d+\s+\(after trunc:\s+(\d+)(?:,\s*binaries:\s+(\d+))?\)"
     for line in eachline(path)
         m = match(pattern, line)
         m === nothing && continue
-        push!(trunc_counts, parse(Int, something(m.captures[1])))
+        n_b = m.captures[2] === nothing ? 0 : parse(Int, m.captures[2])
+        push!(counts, (parse(Int, m.captures[1]), n_b))
     end
+    isempty(counts) && return Vector{Int}[]
 
-    isempty(trunc_counts) && return UnitRange{Int}[]
-
-    ranges = Vector{UnitRange{Int}}(undef, length(trunc_counts))
-    offset = 0
-    for (i, n) in enumerate(trunc_counts)
-        ranges[i] = (offset + 1):(offset + n)
-        offset += n
+    nbin0 = sum(last, counts)
+    members = Vector{Vector{Int}}(undef, length(counts))
+    pair_offset = 0
+    single_offset = 2nbin0
+    for (i, (n, n_b)) in enumerate(counts)
+        n_s = n - 2n_b
+        blocks = [(pair_offset + 1):(pair_offset + 2n_b), (single_offset + 1):(single_offset + n_s)]
+        members[i] = _members_from_blocks(blocks)
+        pair_offset += 2n_b
+        single_offset += n_s
     end
-    return ranges
+    return members
 end
 
 """
@@ -57,7 +62,10 @@ fewer than 3 members of cluster `i` remain in snapshot `k`. `r_rms[i, k]` is
 the mass-weighted RMS radius of cluster `i`'s members from their COM (a
 proxy for cluster extent); `NaN` when `present` is false.
 """
-function _cluster_com_trajectories(snaps::Vector{Snapshot}, cluster_ranges::Vector{UnitRange{Int}})
+function _cluster_com_trajectories(
+    snaps::Vector{Snapshot},
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}},
+)
     n_cl = length(cluster_ranges)
     n_t = length(snaps)
     coms = fill(NaN, 3, n_cl, n_t)
@@ -65,9 +73,9 @@ function _cluster_com_trajectories(snaps::Vector{Snapshot}, cluster_ranges::Vect
     present = falses(n_cl, n_t)
 
     for (k, snap) in enumerate(snaps)
-        names_k = Int.(snap.name)
         for (i, rng) in enumerate(cluster_ranges)
-            mask = [n in rng for n in names_k]
+            mask = falses(length(snap.name))
+            mask[_member_indices(snap, rng)] .= true
             n_mem = count(mask)
             n_mem < 3 && continue
             m = Float64.(snap.mass[mask])
@@ -187,7 +195,7 @@ initial cluster decomposition is no longer physically meaningful.
 """
 function plot_cluster_separation(
     snaps::Vector{Snapshot},
-    cluster_ranges::Vector{UnitRange{Int}},
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
     filename::AbstractString = "merger_cluster_separation",
 )
@@ -385,7 +393,7 @@ for N_i ≲ 10⁴.
 """
 function per_cluster_virial(
     snaps::Vector{Snapshot},
-    cluster_ranges::Vector{UnitRange{Int}};
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}};
     bound_only::Bool = true,
 )
     n_cl = length(cluster_ranges)
@@ -425,7 +433,7 @@ proxy for the time of coalescence.
 """
 function plot_cluster_virial(
     snaps::Vector{Snapshot},
-    cluster_ranges::Vector{UnitRange{Int}},
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
     filename::AbstractString = "merger_cluster_virial",
 )
@@ -537,7 +545,7 @@ times in Myr when `cfg.units == "physical"`.
 """
 function plot_cluster_structure(
     snaps::Vector{Snapshot},
-    cluster_ranges::Vector{UnitRange{Int}},
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
     lagr::Union{Nothing,LagrangianData} = nothing,
     filename::AbstractString = "merger_cluster_structure",
@@ -669,7 +677,7 @@ drawn. Radii in pc and densities in M☉ pc⁻³ when `cfg.units == "physical"`.
 """
 function plot_density_profiles(
     snap::Snapshot,
-    cluster_ranges::Vector{UnitRange{Int}},
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
     specs::Union{Nothing,AbstractVector} = nothing,   # Vector{ClusterSpec}; the type is defined later in the module
     filename::AbstractString = "merger_density_profiles",
@@ -825,7 +833,7 @@ labelled. Velocities in km s⁻¹ and radii in pc when `cfg.units ==
 """
 function plot_velocity_dispersion(
     snap::Snapshot,
-    cluster_ranges::Vector{UnitRange{Int}},
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
     filename::AbstractString = "merger_velocity_dispersion",
 )

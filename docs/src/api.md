@@ -145,6 +145,7 @@ kroupa_mean_mass
 
 ```@docs
 ClusterSpec
+BinarySpec
 OrbitSpec
 MergerOutputSpec
 Nbody6ParameterSpec
@@ -181,6 +182,8 @@ jacobi_radius
 ```@docs
 write_dat10
 generate_merger_inp
+sample_binaries
+expand_binaries
 crossing_time
 resolve_nbody6_parameters
 to_nbody_units!

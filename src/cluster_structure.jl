@@ -40,12 +40,20 @@ const _MIN_MEMBERS = 10
 const _BOUND_MAX_ITER = 8
 
 """
-    _member_indices(snap, rng) -> Vector{Int}
+    _member_indices(snap, members) -> Vector{Int}
 
-Indices in `snap` of the particles whose original name lies in `rng`.
+Indices in `snap` of the particles whose original name (body index in
+`dat.10`) belongs to `members`, a contiguous range or, with primordial
+binaries, a vector of body indices.
 """
-function _member_indices(snap::Snapshot, rng::UnitRange{Int})::Vector{Int}
-    return [i for (i, n) in enumerate(snap.name) if first(rng) ≤ n ≤ last(rng)]
+function _member_indices(snap::Snapshot, members::UnitRange{Int})::Vector{Int}
+    return [i for (i, n) in enumerate(snap.name) if first(members) ≤ n ≤ last(members)]
+end
+function _member_indices(snap::Snapshot, members::AbstractVector{Int})::Vector{Int}
+    isempty(members) && return Int[]
+    flag = falses(maximum(members))
+    flag[members] .= true
+    return [i for (i, n) in enumerate(snap.name) if 1 ≤ n ≤ length(flag) && flag[n]]
 end
 
 """
@@ -273,7 +281,7 @@ centre from its bound members ([`cluster_structure`](@ref) conventions);
 """
 function cluster_profiles(
     snap::Snapshot,
-    cluster_ranges::Vector{UnitRange{Int}};
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}};
     bound_only::Bool = true,
     nbins::Int = 12,
 )
@@ -342,7 +350,7 @@ ratio; intended for N_i ≲ 10⁴.
 """
 function cluster_structure(
     snaps::Vector{Snapshot},
-    cluster_ranges::Vector{UnitRange{Int}};
+    cluster_ranges::AbstractVector{<:AbstractVector{Int}};
     bound_only::Bool = true,
 )::ClusterStructure
     n_cl = length(cluster_ranges)

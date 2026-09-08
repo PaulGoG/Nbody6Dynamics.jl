@@ -7,6 +7,7 @@
 using Random
 using SpecialFunctions: erf
 
+include("binaries.jl")
 include("config.jl")
 include("models.jl")
 include("imf.jl")

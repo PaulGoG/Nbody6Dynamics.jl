@@ -6,6 +6,16 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Primordial binaries (F5a): `[merger.clusterN.binaries]` (`BinarySpec`)
+  pairs a fraction of a cluster's stars (random or uniform-`q` pairing,
+  Kroupa 1995 periods or log-uniform semi-major axes, thermal or circular
+  eccentricities); systems are sampled, virialised, and truncated as
+  units and expanded into Keplerian pairs written first in `dat.10` with
+  `NBIN0` and `KZ(8) = 2` (`sample_binaries`, `expand_binaries`). Cluster
+  membership is now a body-index vector (`cluster_blocks` in
+  `merger_ic.toml`, pair counts in `merger_summary.txt`), and every
+  per-cluster diagnostic accepts it. The hard fraction of each cluster's
+  pairs is reported.
 - Radial profiles (F4): `radial_profile`, `cluster_profiles`, and
   `system_profile` measure density, radial and tangential velocity
   dispersions, and anisotropy in log-spaced shells about a cluster's own

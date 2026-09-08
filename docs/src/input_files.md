@@ -161,7 +161,7 @@ The resolved values appear in `merger_summary.txt` and in `merger_ic.toml` (`[nb
 
 Options `3` (point mass + Miyamoto–Nagai disk + logarithmic halo + bulge) and `4` (Plummer potential) are refused: on those paths the engine rescales every velocity to the `&INSCALE` virial ratio including the external potential (`xtrnl0.F`), which destroys the prescribed orbital kinematics of a multi-cluster configuration. The `&INSCALE` tidal radius stays `0` so the engine derives it from the field with the generator's `RBAR`; a non-zero value would override `RBAR`. In a tidal field the engine removes escapers on the distance criterion alone, and because it does not evaluate the tidal potential energy its energy check measures the tidal work: a tidal configuration requires `merger.nbody6.qe ≥ 0.01` (see the merger documentation).
 
-The `&INDATA` mass bounds `BODY1`/`BODYN` are written from the clusters' IMF specifications (inert under `KZ(22) = 2`, where masses come from `dat.10`); `ALPHAS` is inert for the same reason. `NBIN0 = NHI0 = 0`: no primordial binaries or hierarchies are generated.
+The `&INDATA` mass bounds `BODY1`/`BODYN` are written from the clusters' IMF specifications (inert under `KZ(22) = 2`, where masses come from `dat.10`); `ALPHAS` is inert for the same reason. `NBIN0` is the number of primordial pairs (see `[merger.clusterN.binaries]`); `NHI0 = 0`, no hierarchies are generated.
 
 ### Flat legacy cluster form
 
@@ -260,6 +260,19 @@ Accepted table keys:
 - `imf`: `type = "kroupa" | "kroupa_rescaled" | "equal"`; mass bounds either as `bounds = [lo, hi]` or as separate `bodyn`/`body1` keys (defaults 0.08 / 100.0); `kroupa_rescaled` requires `target_mass`; `equal` requires `particle_mass` **or** `target_mass` (divided by `N`)
 
 The metadata file `merger_ic.toml` written next to `dat.10` stores cluster specs in this structured form, and the same parser reads it back — see `load_merger_ic_result`.
+
+### `[merger.clusterN.binaries]` — primordial binaries
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `fraction` | Float | `0.0` | Binary fraction by systems, `N_b / (N_s + N_b)`; `0 ≤ fraction < 1` |
+| `pairing` | String | `"random"` | `"random"`: both components drawn from the IMF, the more massive is the primary; `"uniform_q"`: the secondary's mass is `q m₁` with `q` uniform in `[q_min, 1]` (it replaces the drawn mass of the partner star) |
+| `period` | String | `"kroupa1995"` | `"kroupa1995"`: the Kroupa (1995) birth period distribution `f(log P) ∝ (log P − 1)/(45 + (log P − 1)²)`, `1 ≤ log(P/d) ≤ 8.43`, converted to a semi-major axis with Kepler's third law; `"loguniform"`: semi-major axis log-uniform in `[a_min, a_max]` |
+| `a_min`, `a_max` | Float | `0.01`, `100.0` | Semi-major axis bounds [AU] for `"loguniform"`; `0 < a_min < a_max` |
+| `q_min` | Float | `0.1` | Lower mass-ratio bound for `"uniform_q"`; `0 < q_min < 1` |
+| `eccentricity` | String | `"thermal"` | `"thermal"` (`f(e) = 2e`) or `"circular"` |
+
+The density sampler places *systems* (a pair by its centre of mass), which are virialised and truncated as such; each pair is then expanded into two bodies on a Keplerian orbit with a random phase and orientation. The engine reads primordial pairs as bodies `2i − 1, 2i` for `i ≤ NBIN0`, so the pairs of all clusters are written first, cluster by cluster, followed by every cluster's singles; `NBIN0` and `KZ(8) = 2` are set in `merger.inp`, and a cluster's members are then two contiguous blocks recorded in `merger_ic.toml` (`cluster_blocks`) and recoverable from `merger_summary.txt` (`binaries: N` per cluster). The summary also reports the hard fraction of each cluster's pairs (`G m₁ m₂ / 2a > ⟨m⟩ σ²` of the cluster's systems). Binary-rich runs carry a larger energy error per adjustment interval (regularised pairs, chains): the two-cluster demo with 20 % binaries reached 4×10⁻³ over its first time unit, so set `merger.nbody6.qe` accordingly (10⁻³ to 10⁻²) or the engine halts at the first adjustment that exceeds the default 2×10⁻⁴.
 
 ### Seed semantics
 

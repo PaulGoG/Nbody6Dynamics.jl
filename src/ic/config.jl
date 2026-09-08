@@ -134,9 +134,9 @@ Specification for a single star cluster.
   [`RescaledKroupaIMF`](@ref), or [`EqualMassIMF`](@ref)).
 - `position::Vector{Float64}`: centre-of-mass position [pc] (length 3). For
   `orbit_mode = "kepler"` this is auto-computed and may be left empty.
-- `velocity::Vector{Float64}`: centre-of-mass velocity in internal code units [km s⁻¹]
-  (G = 1 with masses in M☉ and lengths in pc, so 1 unit ≈ 0.0656 km/s). For
+- `velocity::Vector{Float64}`: centre-of-mass velocity [km s⁻¹]. For
   `orbit_mode = "kepler"` this is auto-computed and may be left empty.
+- `binaries::BinarySpec`: primordial binary population (none by default).
 
 The keyword constructor takes the structured (tag-typed) fields only; the
 flat TOML schema is the concern of [`load_merger_config`](@ref), which
@@ -149,6 +149,7 @@ struct ClusterSpec
     imf::IMFSpec
     position::Vector{Float64}
     velocity::Vector{Float64}
+    binaries::BinarySpec
 end
 
 function ClusterSpec(;
@@ -158,8 +159,33 @@ function ClusterSpec(;
     imf::IMFSpec = KroupaIMF(),
     position::AbstractVector = Float64[],
     velocity::AbstractVector = Float64[],
+    binaries::BinarySpec = BinarySpec(),
 )
-    return ClusterSpec(N, Float64(rbar), profile, imf, Float64.(position), Float64.(velocity))
+    return ClusterSpec(
+        N,
+        Float64(rbar),
+        profile,
+        imf,
+        Float64.(position),
+        Float64.(velocity),
+        binaries,
+    )
+end
+
+"""`BinarySpec` as a TOML table (metadata round trip)."""
+_binaries_table(b::BinarySpec) =
+    Dict{String,Any}(String(k) => getfield(b, k) for k in fieldnames(BinarySpec))
+
+function _parse_binaries_table(d::AbstractDict, idx::Int)::BinarySpec
+    return BinarySpec(;
+        fraction = Float64(get(d, "fraction", 0.0)),
+        pairing = String(get(d, "pairing", "random")),
+        period = String(get(d, "period", "kroupa1995")),
+        a_min = Float64(get(d, "a_min", 0.01)),
+        a_max = Float64(get(d, "a_max", 100.0)),
+        q_min = Float64(get(d, "q_min", 0.1)),
+        eccentricity = String(get(d, "eccentricity", "thermal")),
+    )
 end
 
 # -----------------------------------------------------------------------------
@@ -431,7 +457,10 @@ needed for downstream plotting and inspection without re-reading files.
 - `M_total::Float64`: total mass [M☉]
 - `rbar::Float64`: half-mass radius [pc]
 - `zmbar::Float64`: mean particle mass [M☉]
-- `cluster_ranges::Vector{UnitRange{Int}}`
+- `cluster_ranges::Vector{Vector{Int}}`: body indices of every cluster in
+  `dat.10` order (a contiguous range without primordial binaries; with them,
+  the cluster's pairs block followed by its singles block)
+- `n_pairs::Vector{Int}`: primordial pairs per cluster (`sum` = `NBIN0`)
 - `cluster_specs::Vector{ClusterSpec}`
 - `orbit_mode::String`
 - `orbit_spec::OrbitSpec`
@@ -445,7 +474,8 @@ struct MergerICResult
     M_total::Float64
     rbar::Float64
     zmbar::Float64
-    cluster_ranges::Vector{UnitRange{Int}}
+    cluster_ranges::Vector{Vector{Int}}
+    n_pairs::Vector{Int}
     cluster_specs::Vector{ClusterSpec}
     orbit_mode::String
     orbit_spec::OrbitSpec
@@ -781,7 +811,13 @@ function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractStr
         end
     end
 
-    return ClusterSpec(N, rbar, profile, imf, position, velocity)
+    binaries = if haskey(c, "binaries") && c["binaries"] isa AbstractDict
+        _parse_binaries_table(c["binaries"], idx)
+    else
+        BinarySpec()
+    end
+
+    return ClusterSpec(N, rbar, profile, imf, position, velocity, binaries)
 end
 
 # ---------------------------------------------------------------------------
@@ -800,6 +836,7 @@ function _validate_cluster_spec(spec::ClusterSpec, idx::Int)
     spec.rbar > 0 || error("config: $key.rbar must be > 0; got $(spec.rbar)")
     _validate_profile(spec.profile, key)
     _validate_imf(spec.imf, spec.N, key)
+    _validate_binaries(spec.binaries, key)
     return nothing
 end
 

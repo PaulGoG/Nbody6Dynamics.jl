@@ -599,6 +599,7 @@ export generate_run_id, restart_simulation, export_for_paper
 export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 export detect_platform, check_dependencies, detect_cuda_path
 export ClusterSpec,
+    BinarySpec,
     OrbitSpec,
     MergerOutputSpec,
     Nbody6ParameterSpec,
@@ -623,5 +624,6 @@ export plot_merger_ic
 export sample_plummer, sample_king, sample_kroupa
 export virialise!, kepler_velocity, jacobi_radius
 export write_dat10, generate_merger_inp, resolve_nbody6_parameters, crossing_time, to_nbody_units!
+export sample_binaries, expand_binaries
 
 end # module
