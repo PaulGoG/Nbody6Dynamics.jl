@@ -56,7 +56,7 @@ An `.inp` file is a sequence of NAMELIST blocks, each starting with `&BLOCKNAME`
 | Block | Purpose |
 |---|---|
 | `&INNBODY6` | Run control: `KSTART` (1 = new run), `TCOMP` (CPU limit), `TCRTP0` (wall-clock limit, s) |
-| `&ININPUT` | Core physics: `N`, `NRAND` (seed), `NNBOPT`, timestep accuracies `ETAI`/`ETAR`, output intervals `DTADJ`/`DELTAT`, end time `TCRIT`, physical scales `RBAR`/`ZMBAR`, the `KZ(1:50)` option array, tolerances, and the stellar-evolution `Level` (`'C'` = Kamlah et al. 2022, recommended) |
+| `&ININPUT` | Core physics: `N`, `NRAND` (seed), `NNBOPT`, timestep accuracies `ETAI`/`ETAR`, output intervals `DTADJ`/`DELTAT`, end time `TCRIT`, physical scales `RBAR`/`ZMBAR`, the `KZ(1:50)` option array, tolerances, and the stellar-evolution `Level` (`'C'` = [Kamlah2022](@cite), recommended) |
 | `&INSSE` / `&INBSE` / `&INCOLL` | SSE/BSE/collision overrides (usually empty — Level defaults apply) |
 | `&INDATA` | IMF (`ALPHAS`, `BODY1`, `BODYN`), binaries (`NBIN0`), metallicity `ZMET`, `DTPLOT` (sev.83 interval) |
 | `&INSETUP` | External-IC placeholder block |
@@ -66,7 +66,7 @@ An `.inp` file is a sequence of NAMELIST blocks, each starting with `&BLOCKNAME`
 
 KZ flags most relevant to this project: `KZ(3)` conf.3 snapshot output, `KZ(7)=3` Lagrangian radii (`lagr.7`), `KZ(12)=1` HR diagnostics (`sev.83_*`), `KZ(14)` tidal field (0 = isolated, 2 = point-mass galaxy), `KZ(19)=3` stellar evolution, `KZ(22)` initial conditions (0 = internal model, 2 = read `dat.10` in NB units, 10 = `dat.10` in astrophysical units), `KZ(23)` escaper removal (`esc.11`), `KZ(46)` HDF5 output (produces `snap.40_*.h5part` — **not readable** by this package; keep conf.3 output enabled).
 
-For the full option catalogue see the Nbody6++ manual (Khalisi & Spurzem) and Wang et al. (2015).
+For the full option catalogue see the Nbody6++ manual (Khalisi & Spurzem, Heidelberg, unpublished), the code papers [Spurzem1999](@cite), [NitadoriAarseth2012](@cite) and [Wang2015](@cite), the stellar-evolution levels of [Kamlah2022](@cite), and the method review of [SpurzemKamlah2023](@cite).
 
 ---
 
@@ -144,8 +144,8 @@ The resolved values appear in `merger_summary.txt` and in `merger_ic.toml` (`[nb
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `kz19` | Int | `3` | `KZ(19)`, stellar evolution and mass-loss scheme: `0` off (HR diagnostics `KZ(12)` are then switched off too), `1`–`2` supernova schemes, `≥ 3` Eggleton–Tout–Hurley; must be ≥ 0 |
-| `level` | String | `"C"` | SSE/BSE parameter level (Kamlah et al. 2022); one of `"A"`, `"B"`, `"C"`, `"0"` (no level: the engine's independent defaults) |
+| `kz19` | Int | `3` | `KZ(19)`, stellar evolution and mass-loss scheme: `0` off (HR diagnostics `KZ(12)` are then switched off too), `1`–`2` supernova schemes, `≥ 3` Eggleton–Tout–Hurley [Hurley2000](@cite), with binaries after [Hurley2002](@cite); must be ≥ 0 |
+| `level` | String | `"C"` | SSE/BSE parameter level [Kamlah2022](@cite); one of `"A"`, `"B"`, `"C"`, `"0"` (no level: the engine's independent defaults) |
 | `zmet` | Float | `0.001` | Metal abundance; `0.0001 ≤ zmet ≤ 0.03` (the engine's own bounds) |
 | `epoch0` | Float | `0.0` | Formation time of the population [Myr]; must be ≤ 0 (the age at start is `−epoch0`) |
 | `dtplot` | Float | `1.0` | Interval of the stellar-evolution diagnostics (`sev.83_*`) [NB]; must be > 0 and ≥ `deltat` |
@@ -269,7 +269,7 @@ The metadata file `merger_ic.toml` written next to `dat.10` stores cluster specs
 |---|---|---|---|
 | `fraction` | Float | `0.0` | Binary fraction by systems, `N_b / (N_s + N_b)`; `0 ≤ fraction < 1` |
 | `pairing` | String | `"random"` | `"random"`: both components drawn from the IMF, the more massive is the primary; `"uniform_q"`: the secondary's mass is `q m₁` with `q` uniform in `[q_min, 1]` (it replaces the drawn mass of the partner star) |
-| `period` | String | `"kroupa1995"` | `"kroupa1995"`: the Kroupa (1995) birth period distribution `f(log P) ∝ (log P − 1)/(45 + (log P − 1)²)`, `1 ≤ log(P/d) ≤ 8.43`, converted to a semi-major axis with Kepler's third law; `"loguniform"`: semi-major axis log-uniform in `[a_min, a_max]` |
+| `period` | String | `"kroupa1995"` | `"kroupa1995"`: the [Kroupa1995](@cite) birth period distribution `f(log P) ∝ (log P − 1)/(45 + (log P − 1)²)`, `1 ≤ log(P/d) ≤ 8.43`, converted to a semi-major axis with Kepler's third law; `"loguniform"`: semi-major axis log-uniform in `[a_min, a_max]` |
 | `a_min`, `a_max` | Float | `0.01`, `100.0` | Semi-major axis bounds [AU] for `"loguniform"`; `0 < a_min < a_max` |
 | `q_min` | Float | `0.1` | Lower mass-ratio bound for `"uniform_q"`; `0 < q_min < 1` |
 | `eccentricity` | String | `"thermal"` | `"thermal"` (`f(e) = 2e`) or `"circular"` |
@@ -303,11 +303,6 @@ Expected behaviour: the three cluster COMs trace a slowly rotating triangle whil
 
 ---
 
-## References
+## Sources
 
-- Aarseth, S.J. (2003). *Gravitational N-Body Simulations*. Cambridge University Press.
-- Wang, L. et al. (2015). MNRAS 450, 4070. — Nbody6++GPU code paper.
-- Kamlah, A.W.H. et al. (2022). MNRAS 511, 4060. — Level C stellar evolution.
-- Kroupa, P. (2001). MNRAS 322, 231. — IMF.
-- King, I.R. (1966). AJ 71, 64. — King models.
-- Khalisi, E. & Spurzem, R. — Nbody6++ manual (Heidelberg).
+The sources cited on this page are listed under [References](@ref); the King models are those of [King1966](@cite).

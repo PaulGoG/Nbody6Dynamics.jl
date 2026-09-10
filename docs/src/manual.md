@@ -447,7 +447,7 @@ pop = binary_population(bevs; n_stars = scales.n_stars,
 pop.n_hard, pop.n_soft, pop.binary_fraction
 ```
 
-`bev.82` lists the KS-regularised pairs only (32 columns per line, the same header convention as `sev.83`): component indices, names and stellar types, the distance of the centre of mass from the density centre, eccentricity, `log10(P/d)`, `log10(a/R☉)`, and the SSE quantities of both components. Pairs wider than the regularisation distance are absent, so every count derived from it is a lower bound on the bound-pair population. Hardness follows Heggie (1975): a pair is hard when its binding energy `G m₁ m₂ / (2a)` exceeds `⟨m⟩ σ²`, with the mean system mass and the one-dimensional, mass-weighted dispersion of the systems (singles plus pair centres of mass) taken from the snapshot nearest in time (`hardness_scale`). The pipeline draws `binary_population` (pair counts and hard/soft split above the binary and hard fractions), `binary_period_distribution` (first against last epoch), and `binary_orbital_elements_initial`/`_final` (semi-major axis against eccentricity by hardness class, with the boundary of a pair of mean component-mass product). `scan_output` detects the files and `postprocess_external` reads and plots them like the config-driven pipeline, so run directories produced elsewhere get the same binary diagnostics.
+`bev.82` lists the KS-regularised pairs only (32 columns per line, the same header convention as `sev.83`): component indices, names and stellar types, the distance of the centre of mass from the density centre, eccentricity, `log10(P/d)`, `log10(a/R☉)`, and the SSE quantities of both components. Pairs wider than the regularisation distance are absent, so every count derived from it is a lower bound on the bound-pair population. Hardness follows [Heggie1975](@cite): a pair is hard when its binding energy `G m₁ m₂ / (2a)` exceeds `⟨m⟩ σ²`, with the mean system mass and the one-dimensional, mass-weighted dispersion of the systems (singles plus pair centres of mass) taken from the snapshot nearest in time (`hardness_scale`). The pipeline draws `binary_population` (pair counts and hard/soft split above the binary and hard fractions), `binary_period_distribution` (first against last epoch), and `binary_orbital_elements_initial`/`_final` (semi-major axis against eccentricity by hardness class, with the boundary of a pair of mean component-mass product). `scan_output` detects the files and `postprocess_external` reads and plots them like the config-driven pipeline, so run directories produced elsewhere get the same binary diagnostics.
 
 ---
 
@@ -573,7 +573,7 @@ Files produced by the Nbody6++ simulation and read by this package:
 
 ### Stellar type codes (K*)
 
-Hurley et al. (2000) convention as used by this fork (`STELLAR_TYPE_LABELS`):
+[Hurley2000](@cite) convention as used by this fork (`STELLAR_TYPE_LABELS`):
 
 | K* | Type | K* | Type |
 |----|------|----|------|
@@ -590,7 +590,7 @@ Hurley et al. (2000) convention as used by this fork (`STELLAR_TYPE_LABELS`):
 
 ## 12. N-body Units and Conversions
 
-Nbody6++ uses Hénon N-body units internally: `G = 1`, `M_total = 1`, `E_total = -1/4`. The virial ratio is `Q = T/|W|` with equilibrium at `Q = 0.5`.
+Nbody6++ uses Hénon N-body units [Henon1971](@cite) internally: `G = 1`, `M_total = 1`, `E_total = -1/4`. The virial ratio is `Q = T/|W|` with equilibrium at `Q = 0.5`.
 
 Physical conversions come from the scaling factors printed in the `PHYSICAL SCALING` stdout block and collected into a `UnitScaling`:
 

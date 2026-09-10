@@ -85,13 +85,38 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     end
 
     # ── 3-panel overview ─────────────────────────────────────────
-    pw, ph = _fig_multipanel(vis, 1, 3)
-    fig3 = Figure(; size = (pw + _COLORBAR_WIDTH, ph))   # extra width for shared colorbar
+    # One column wide like every montage: three square panels share the
+    # width minus the shared colorbar column; inner y tick labels are hidden,
+    # so the compact gap applies, and the markers scale with the panel.
+    gap3 = _multipanel_gap(3; inner_ticks = false)
+    fig3 = Figure(;
+        size = _fig_multipanel(
+            vis,
+            1,
+            3;
+            inner_ticks = false,
+            panel_aspect = 1 + _MONTAGE_BAND_FRAC,
+            extra_width = _COLORBAR_WIDTH,
+            extra_height = 2 * _ANNOTATION_FONTSIZE,   # the orbit annotation row
+        ),
+    )
+    # A colorbar as tall as one small box holds few tick labels
+    cb_ticks = _nice_colorbar_ticks(cmin, cmax; target_n = vis.column == "single" ? 3 : 6)
+    ms3 = max(
+        vis.style.marker_min,
+        ms * _multipanel_scale(vis, 3; inner_ticks = false, extra_width = _COLORBAR_WIDTH),
+    )
 
-    # Global limits across all 3 projections
+    # Global limits across all 3 projections, with a data-free band above the
+    # data for the projection label
     all_coords = vcat(x_pc, y_pc, z_pc)
     xlo, xhi, _, _ = _square_limits(all_coords, all_coords)
-    tk = _nice_ticks(xlo, xhi; target_n = 5)
+    tk = _nice_ticks(xlo, xhi; target_n = 3)
+    yhi_band = xhi + _MONTAGE_BAND_FRAC * (xhi - xlo)
+    # At the single-column preset a y label per panel would leave stamp-sized
+    # boxes: the projection labels name both axes, so the first panel carries
+    # one shared label and the others none. The double preset labels each.
+    own_ylabels = vis.column != "single"
 
     orbit_annot = if result.orbit_mode == "kepler"
         d_apo = result.orbit_spec.apocentre
@@ -110,9 +135,9 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
         ax = Axis(
             fig3[1, col];
             xlabel = xlab,
-            ylabel = ylab,
+            ylabel = own_ylabels ? ylab : (col == 1 ? L"y,\; z \; [\mathrm{pc}]" : ""),
             aspect = DataAspect(),
-            limits = (xlo, xhi, xlo, xhi),
+            limits = (xlo, xhi, xlo, yhi_band),
             xticks = tk,
             yticks = tk,
             yticklabelsvisible = col == 1,
@@ -120,9 +145,6 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             ygridvisible = false,
         )
         _annotate!(ax, label_str)
-        if col == 1 && orbit_annot !== nothing
-            _annotate!(ax, orbit_annot; dy = 0.07)
-        end
         sc = scatter!(
             ax,
             px,
@@ -130,7 +152,7 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             color = log_m,
             colormap = :viridis,
             colorrange = (cmin, cmax),
-            markersize = ms * 0.7,
+            markersize = ms3,
             strokewidth = 0,
             rasterize = true,
         )
@@ -138,11 +160,19 @@ function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
             fig3[1, 4],
             sc;
             label = L"\log_{10}(m \; [\mathrm{M}_\odot])",
-            ticks = _nice_colorbar_ticks(cmin, cmax),
+            ticks = cb_ticks,
         )
     end
+    # The orbit parameters once, in an annotation row above the panels
+    orbit_annot === nothing || Label(
+        fig3[0, 1:3],
+        orbit_annot;
+        tellwidth = false,
+        fontsize = _ANNOTATION_FONTSIZE,
+        halign = :right,
+    )
 
-    colgap!(fig3.layout, _MULTIPANEL_HGAP)
+    colgap!(fig3.layout, gap3)
 
     _save_fig(vis, "merger_ic_overview", fig3)
 

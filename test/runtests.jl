@@ -4103,11 +4103,20 @@ rbar = 1.0
             @test Nbody6Dynamics._fig_multipanel(cfg, 1, 2; inner_ticks = false)[1] == pw
             @test Nbody6Dynamics._fig_multipanel(cfg, 2, 1) ==
                   (pw, 2 * ph + Nbody6Dynamics._MULTIPANEL_VGAP)
-            # Three panels of the preset aspect, compact gaps
+            # Three boxes of the preset aspect, compact gaps, one decoration strip each way
             w3, h3 = Nbody6Dynamics._fig_multipanel(cfg, 2, 3; inner_ticks = false)
             gap = Nbody6Dynamics._MULTIPANEL_GAP_COMPACT
-            panel_w = (pw - 2 * gap) / 3
-            @test h3 == round(Int, 2 * panel_w * ph / pw + gap)
+            strip = Nbody6Dynamics._AXIS_PROTRUSION
+            box_w = (pw - strip - 2 * gap) / 3
+            @test box_w == Nbody6Dynamics._multipanel_box_width(cfg, 3; inner_ticks = false)
+            @test h3 == round(Int, 2 * box_w * ph / pw + gap + strip)
+            @test Nbody6Dynamics._fig_multipanel(
+                cfg,
+                2,
+                3;
+                inner_ticks = false,
+                extra_height = 30,
+            )[2] == round(Int, 2 * box_w * ph / pw + gap + strip + 30)
             # Square panels are taller; a reserved colorbar column narrows them
             @test Nbody6Dynamics._fig_multipanel(
                 cfg,

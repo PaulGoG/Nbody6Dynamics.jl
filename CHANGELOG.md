@@ -6,6 +6,16 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Documentation site (P2): literature citations through DocumenterCitations
+  (`docs/src/references.bib`, `@cite` markers in the pages, a References
+  page in author–year style, replacing the per-page plain lists); a
+  Literate walkthrough (`docs/src/walkthrough.jl`, executed at build time)
+  from a merger TOML to the generated initial conditions, the engine input
+  file and the IC figures; `deploydocs` for the GitHub Pages deployment,
+  which publishes once the workflows run again. Docstring templates through
+  DocStringExtensions were considered and not adopted: every public
+  docstring already opens with its signature, and a template would repeat
+  it.
 - Precompile workload (P4, PrecompileTools): configuration load and
   save, the diagnostics reader, `engine_interval`, run-ID and elapsed-time
   helpers, and a small merger initial-condition generation run at package
@@ -231,7 +241,13 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   enters a document at native size. Montage panels use three ticks per
   axis, a compact gap when the inner tick labels are hidden, a data-free
   band above the data for the time annotation, and markers scaled with the
-  panel width. Two-panel stacks are unchanged.
+  panel width. Two-panel stacks are unchanged. The canvas height reserves
+  one axis-decoration strip in each direction (`_AXIS_PROTRUSION`), so the
+  boxes keep their intended size when a single row of small panels carries
+  its x labels; the initial-condition overview (`merger_ic_overview`, three
+  projections in a row) follows the same layout, with one shared y label at
+  the single preset, fewer colorbar ticks, and the orbit parameters in an
+  annotation row above the panels.
 - The derived initial neighbour radius is `2 r_h (2 NNBOPT/N_min)^{1/3}`
   (capped at the member half-mass radius): the undoubled value hung the
   engine's neighbour-list initialisation on one of three random

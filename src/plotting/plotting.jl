@@ -114,12 +114,15 @@ _fig_two_panel(cfg::VisualizationConfig) =
 
 """
 Multi-panel grids stay one column wide: the canvas keeps the preset width,
-the `ncols` panels share it minus the gaps at `panel_aspect` (height over
-width; the preset's ratio by default), and the rows stack. A montage
+the `ncols` axis boxes share it minus one axis-decoration strip
+(`_AXIS_PROTRUSION`, the outer y label and tick labels), the reserved
+`extra_width` (a shared colorbar column) and the gaps, at `panel_aspect`
+(height over width; the preset's ratio by default); the rows stack and one
+decoration strip is added below for the x label and tick labels, plus
+`extra_height` for anything above the grid (an annotation row). A montage
 therefore enters a document at native size like every other figure; at the
-`single` preset a three-column grid has 25 mm panels, so montage callers
-use three ticks per axis. `extra_width` is reserved on the right (a shared
-colorbar) and taken from the panel area. The panel gap is
+`single` preset a three-column grid has boxes of about 18 mm, so montage
+callers use three ticks per axis. The panel gap is
 [`_multipanel_gap`](@ref): compact when the inner tick labels are hidden,
 the stack value otherwise; use it with `colgap!`/`rowgap!`. Single-column
 stacks (`ncols = 1`) keep panels of the full single-panel size. Returns
@@ -129,6 +132,9 @@ const _MULTIPANEL_HGAP = 70
 const _MULTIPANEL_VGAP = 70
 const _MULTIPANEL_GAP_COMPACT = 24
 
+"""Canvas units one axis label and its tick labels take along one side (22 pt label, 18 pt ticks, pads)."""
+const _AXIS_PROTRUSION = 64
+
 """Gap between the panels of a grid: compact when `ncols > 1` and the inner tick labels are hidden, `_MULTIPANEL_HGAP` otherwise."""
 _multipanel_gap(ncols::Int; inner_ticks::Bool = true) =
     (ncols > 1 && !inner_ticks) ? _MULTIPANEL_GAP_COMPACT : _MULTIPANEL_HGAP
@@ -136,7 +142,19 @@ _multipanel_gap(ncols::Int; inner_ticks::Bool = true) =
 """Fraction of the data range kept free above the data in montage panels, so the in-axis time annotation never meets a marker."""
 const _MONTAGE_BAND_FRAC = 0.18
 
-"""Width of one panel of a grid relative to the single-panel width (1 for stacks); scales markers with the panel."""
+"""Width of one axis box of a grid (`_fig_multipanel` conventions) in canvas units."""
+function _multipanel_box_width(
+    cfg::VisualizationConfig,
+    ncols::Int;
+    inner_ticks::Bool = true,
+    extra_width::Real = 0,
+)
+    pw = _figsize_px(cfg)[1]
+    gap = _multipanel_gap(ncols; inner_ticks)
+    return (pw - extra_width - _AXIS_PROTRUSION - (ncols - 1) * gap) / ncols
+end
+
+"""Width of one axis box of a grid relative to the single-panel width (1 for stacks); scales markers with the panel."""
 function _multipanel_scale(
     cfg::VisualizationConfig,
     ncols::Int;
@@ -144,9 +162,7 @@ function _multipanel_scale(
     extra_width::Real = 0,
 )
     ncols == 1 && return 1.0
-    pw = _figsize_px(cfg)[1]
-    gap = _multipanel_gap(ncols; inner_ticks)
-    return (pw - extra_width - (ncols - 1) * gap) / ncols / pw
+    return _multipanel_box_width(cfg, ncols; inner_ticks, extra_width) / _figsize_px(cfg)[1]
 end
 
 function _fig_multipanel(
@@ -156,13 +172,15 @@ function _fig_multipanel(
     inner_ticks::Bool = true,
     panel_aspect::Union{Nothing,Real} = nothing,
     extra_width::Real = 0,
+    extra_height::Real = 0,
 )
     pw, ph = _figsize_px(cfg)
     ncols == 1 && return (pw, nrows * ph + (nrows - 1) * _MULTIPANEL_VGAP)
     gap = _multipanel_gap(ncols; inner_ticks)
-    panel_w = (pw - extra_width - (ncols - 1) * gap) / ncols
+    box_w = _multipanel_box_width(cfg, ncols; inner_ticks, extra_width)
     aspect = panel_aspect === nothing ? ph / pw : Float64(panel_aspect)
-    return (pw, round(Int, nrows * panel_w * aspect + (nrows - 1) * gap))
+    height = nrows * box_w * aspect + (nrows - 1) * gap + _AXIS_PROTRUSION + extra_height
+    return (pw, round(Int, height))
 end
 
 # ---------------------------------------------------------------------------
