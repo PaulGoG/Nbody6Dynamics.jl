@@ -6,6 +6,14 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- `run_gpu_validation` and `scripts/run_gpu_validation.jl`: the acceptance
+  sequence of a CUDA host (GPU-gated suite, GPU and CPU pipelines, scaling
+  benchmark) as logged stages, with the host record, every log, the
+  benchmark results and a summary under `runs/gpu_validation_<host>_<stamp>/`.
+- GPU builds probe `nvcc` on a trivial kernel and add
+  `-allow-unsupported-compiler` themselves, with a warning, when the toolkit
+  rejects the host compiler; the effective options are recorded in
+  `BUILD_INFO.toml`.
 - `[build] nvcc_flags`: extra `nvcc` options for the GPU build (host-compiler
   overrides such as `-allow-unsupported-compiler`), recorded in
   `BUILD_INFO.toml`.

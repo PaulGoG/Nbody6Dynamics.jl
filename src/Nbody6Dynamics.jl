@@ -56,6 +56,11 @@ include("telemetry.jl")
 include("run.jl")
 
 # ---------------------------------------------------------------------------
+# GPU validation of a CUDA host (logged stages under runs/)
+# ---------------------------------------------------------------------------
+include("gpu_validation.jl")
+
+# ---------------------------------------------------------------------------
 # I/O readers
 # ---------------------------------------------------------------------------
 include("io/io.jl")
@@ -693,6 +698,7 @@ export BinaryPopulation, binary_population, binary_hardness, hardness_scale, bin
 export semi_major_axis_pc, binding_energy
 export plot_binary_population, plot_binary_orbital_elements, plot_binary_period_distribution
 export TelemetrySample, read_telemetry, read_run_telemetry, plot_telemetry
+export run_gpu_validation
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
 export run_sweep_point, read_sweep_index, write_sweep_index, sweep_summary, write_sweep_summary
 export sweep_visualization, plot_sweep_lagrangian, plot_sweep_energy, sweep_figures

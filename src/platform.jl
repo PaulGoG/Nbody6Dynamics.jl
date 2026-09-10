@@ -298,6 +298,63 @@ function _check_cuda_arch_support(
     )
 end
 
+"""
+    _nvcc_host_compiler_flags(cuda_path = ""; nvcc_flags = String[]) -> Vector{String}
+
+Compile a trivial kernel with `nvcc` (under `cuda_path/bin` when given)
+and `nvcc_flags` to learn whether the toolkit accepts the host compiler.
+Returns the options the build must add: empty when the compilation
+succeeds or `nvcc` cannot be run at all (the build reports that itself);
+`["-allow-unsupported-compiler"]`, with a warning quoting the compiler's
+message, when `nvcc` rejects the host compiler version and accepts it
+with the override. Any other failure throws with the `nvcc` output, before
+anything is cloned or built.
+"""
+function _nvcc_host_compiler_flags(
+    cuda_path::AbstractString = "";
+    nvcc_flags::AbstractVector{<:AbstractString} = String[],
+)::Vector{String}
+    nvcc = isempty(cuda_path) ? "nvcc" : joinpath(cuda_path, "bin", "nvcc")
+    override = "-allow-unsupported-compiler"
+    mktempdir() do dir
+        src = joinpath(dir, "probe.cu")
+        obj = joinpath(dir, "probe.o")
+        write(
+            src,
+            "__global__ void probe(float *x) { x[threadIdx.x] = 0.0f; }\nint main() { return 0; }\n",
+        )
+        function attempt(extra::Vector{String})
+            out = IOBuffer()
+            cmd = `$nvcc -c $src -o $obj $(String.(nvcc_flags)) $extra`
+            ok = success(pipeline(cmd; stdout = out, stderr = out))
+            return ok, String(take!(out))
+        end
+        ok, output = try
+            attempt(String[])
+        catch e
+            e isa Base.IOError || rethrow()
+            @debug "nvcc host-compiler probe skipped: nvcc cannot be run" nvcc exception = e
+            return String[]
+        end
+        ok && return String[]
+        _unsupported_host_compiler(output) || error(
+            "nvcc cannot compile a trivial kernel with the configured flags; output:\n$output",
+        )
+        ok_override, output_override = attempt([override])
+        ok_override ||
+            error("nvcc rejects the host compiler even with $override; output:\n$output_override")
+        @warn "nvcc rejects the host compiler version; building with $override. Set " *
+              "build.nvcc_flags = [\"-ccbin\", \"<older gcc>\"] instead if the build misbehaves." nvcc_message =
+            strip(output)
+        return [override]
+    end
+end
+
+"""`true` when `nvcc` output reports an unsupported host compiler version."""
+function _unsupported_host_compiler(output::AbstractString)::Bool
+    return occursin(r"unsupported (GNU|clang|Microsoft Visual Studio) version"i, output)
+end
+
 # ---------------------------------------------------------------------------
 # HDF5 flag detection
 # ---------------------------------------------------------------------------

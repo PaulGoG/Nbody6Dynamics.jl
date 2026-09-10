@@ -85,7 +85,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `enable_gpu`      | Bool     | `false` | Enable GPU acceleration (requires CUDA) |
 | `cuda_path`       | String   | `""`    | CUDA installation path; empty = auto-detect |
 | `cuda_arch`       | [String] | `[]`    | CUDA architectures compiled into the GPU kernels, `sm_<major><minor>` (`"sm_90"` H100/H200, `"sm_120"` RTX 50 series); native code for each plus PTX for the highest. Empty = the compute capabilities `nvidia-smi` reports, or the `nvcc` default target when no device is visible (see [GPU builds](#gpu-builds-and-target-architectures)) |
-| `nvcc_flags`      | [String] | `[]`    | Extra `nvcc` options appended to the GPU build flags, e.g. `["-allow-unsupported-compiler"]` or `["-ccbin", "gcc-14"]` when the host compiler is newer than the toolkit supports; entries must be nonempty |
+| `nvcc_flags`      | [String] | `[]`    | Extra `nvcc` options appended to the GPU build flags, e.g. `["-allow-unsupported-compiler"]` or `["-ccbin", "gcc-14"]` when the host compiler is newer than the toolkit supports; entries must be nonempty. The build probes `nvcc` on a trivial kernel first and adds `-allow-unsupported-compiler` itself, with a warning, when the toolkit rejects the host compiler |
 | `nproc`           | Int      | `0`     | Parallel `make` jobs; 0 = auto-detect; must be ≥ 0 |
 
 ### `[simulation]`
@@ -250,10 +250,15 @@ Shipped under `input_files/gpu/`: `gpu_pipeline.toml` clones and builds the engi
 ```bash
 git clone git@github.com:PaulGoG/Nbody6Dynamics.jl.git Nbody6Dynamics && cd Nbody6Dynamics
 julia activate.jl
-nvidia-smi --query-gpu=name,compute_cap --format=csv && nvcc --version | tail -1   # toolkit >= 12.8 for RTX 50, >= 11.8 for H200
-NBODY6_GPU_TESTS=1 julia --project=. -e 'using Pkg; Pkg.test()'      # builds with CUDA in a temporary tree, runs the 1k input on one device, then on two if present
-julia scripts/run_setup.jl input_files/gpu/cpu_pipeline.toml   # CPU reference build + run
-julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml   # GPU build + run
+julia scripts/run_gpu_validation.jl        # under tmux or nohup: the CPU reference of the 2 × 25k merger is the long stage
+```
+
+`run_gpu_validation` runs four logged stages as separate Julia processes and collects everything to pull back under `runs/gpu_validation_<host>_<timestamp>/`: `HOST_INFO.toml` (GPU, driver, compute capabilities, CUDA path, `nvcc`, `gcc`, `gfortran`, Julia, package commit), `suite.log` (the test suite with `NBODY6_GPU_TESTS=1`: CUDA build in a temporary tree, N = 1000 on one device, then on two when present), `gpu.log` (`gpu_pipeline.toml`), `cpu.log` (`cpu_pipeline.toml`), `bench.log` with the benchmark CSV and the `RUN_INFO.toml` and `telemetry.csv` of every benchmark run, and `VALIDATION.toml` (status, exit code and duration per stage, the run directories created). A failed stage does not stop the later ones. `--dry-run` writes the host record and the planned commands only; `--stages=suite,gpu` selects stages; `--n=`, `--threads=`, `--gpus="0;0,1"` and `--tcrit=` set the benchmark grid (the GPU lists default to device 0, plus devices 0 and 1 when two are visible). The same stages by hand:
+
+```bash
+NBODY6_GPU_TESTS=1 julia --project=. -e 'using Pkg; Pkg.test()'
+julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml
+julia scripts/run_setup.jl input_files/gpu/cpu_pipeline.toml
 NBODY6_GPU_BACKEND=backend/Nbody6PPGPU-beijing-gpu julia bench/gpu_scaling.jl 20000,50000,100000 4,8 "0" 0.25   # "0;0,1" with two devices
 ```
 

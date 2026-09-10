@@ -45,6 +45,7 @@ Nbody6Dynamics/
 │   ├── telemetry.jl                 # Runtime CPU/memory/GPU telemetry of the backend process tree
 │   ├── install.jl                   # Clone, configure, HDF5 Makefile patch, build
 │   ├── run.jl                       # Simulation launcher: run dirs, launch script, live monitoring
+│   ├── gpu_validation.jl            # run_gpu_validation: logged validation stages of a CUDA host under runs/
 │   ├── external.jl                  # scan_output + postprocess_external for arbitrary output dirs
 │   ├── cluster_structure.jl         # Per-cluster structure from snapshots: bound members, centres, radii, dispersions
 │   ├── binary_population.jl         # Binary diagnostics: Heggie hard/soft split, binary fraction, energy scale from snapshots
@@ -164,7 +165,8 @@ One invocation each; details in the sections below.
 | Run the verification suite | `julia scripts/run_verif_suite.jl` |
 | Execute the test suite | `julia --project=. -e 'using Pkg; Pkg.test()'` |
 | Run the benchmarks | `julia bench/benchmarks.jl` |
-| Build and run on a CUDA host | `julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml` (CPU reference: `cpu_pipeline.toml`; recipe in the manual) |
+| Validate a CUDA host | `julia scripts/run_gpu_validation.jl` (GPU-gated suite, GPU and CPU pipelines, scaling benchmark; host record, logs and results under `runs/gpu_validation_<host>_<timestamp>/`; `--dry-run`, `--stages=`) |
+| Build and run on a CUDA host by hand | `julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml` (CPU reference: `cpu_pipeline.toml`; recipe in the manual) |
 | Measure the GPU speed-up | `julia bench/gpu_scaling.jl 20000,50000 4,8 "0;0,1" 0.25` (needs the CPU and the GPU binary) |
 | Build the documentation | `julia docs/make.jl` (also executes the walkthrough; the site lands in `docs/build/`) |
 
@@ -221,7 +223,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | I/O readers | Working | `conf.3` (standard + extended; `read_all_conf3` reads in threaded chunks when Julia has more than one thread), `out1000` diagnostics (ADJUST + physical scaling; virial ratio Q = T/\|W\|, equilibrium at 0.5), `lagr.7`, and `esc.11` (incl. the ANGLE PHI / ANGLE THETA escape-direction columns) / `sev.83_*` / `bev.82_*` in the fork's real formats; `STELLAR_TYPE_LABELS` follow the Hurley convention (13 = NS, 14 = BH); `UnitScaling.zmbar` is the total-mass scale factor M*, not the mean stellar mass. HDF5 reader removed — the fork's KZ(46) H5Part layout was never supported; `.h5part` files are detected and warned about |
 | Plotting / animation | Working | Publication theme: no titles, no minor ticks, Computer Modern fonts, dashed grey low-opacity grid on line plots; presentation knobs config-driven via `[visualization.style]` (`PlotStyle`); escaper suite (cumulative mass loss, velocity classes, escape anisotropy) and SSE-quantity plots (mass segregation, t/T_MS evolutionary clock, core-mass growth); binary suite (pair counts with the Heggie hard/soft split, binary fraction, `a`–`e` diagrams, period histograms); existing figures are never overwritten (safesave-style `#1`, `#2`, … backups) |
 | Load latency | Working | PrecompileTools workload over the configuration, diagnostics-reader and merger-IC paths; the first `load_config` of a session no longer compiles |
-| Tests | Passing | 1382/1382 as of this commit (plus 33 engine-dependent tests behind `NBODY6_BINARY_TESTS=1` and a GPU-gated set behind `NBODY6_GPU_TESTS=1`), incl. physics validation, adversarial external-input tests, telemetry/thread-control, per-cluster structure, restart, and tidal-field tests |
+| Tests | Passing | 1409/1409 as of this commit (plus 33 engine-dependent tests behind `NBODY6_BINARY_TESTS=1` and a GPU-gated set behind `NBODY6_GPU_TESTS=1`), incl. physics validation, adversarial external-input tests, telemetry/thread-control, per-cluster structure, restart, and tidal-field tests |
 
 ## Testing
 

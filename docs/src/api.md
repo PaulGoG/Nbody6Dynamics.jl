@@ -4,6 +4,7 @@
 
 ```@docs
 run_pipeline
+run_gpu_validation
 postprocess
 generate_plots
 load_config

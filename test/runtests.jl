@@ -546,6 +546,84 @@ format = "pdf"
     end
 
     # =====================================================================
+    @testset "GPU validation driver" begin
+        # nvcc host-compiler probe: classification of the compiler message
+        @test Nbody6Dynamics._unsupported_host_compiler(
+            "#error -- unsupported GNU version! gcc versions later than 14 are not supported!",
+        )
+        @test Nbody6Dynamics._unsupported_host_compiler("unsupported clang version")
+        @test !Nbody6Dynamics._unsupported_host_compiler("probe.cu(1): error: expected a \";\"")
+        # No nvcc under the path: the probe stands aside and the build reports it
+        @test Nbody6Dynamics._nvcc_host_compiler_flags("/nonexistent/cuda") == String[]
+
+        # Logged stage runner: merged output, exit code, escape sequences stripped
+        vdir = mktempdir()
+        log = joinpath(vdir, "stage.log")
+        julia = Base.julia_cmd()
+        @test Nbody6Dynamics._tee_run(
+            `$julia -e 'print("\e[31mred\e[0m\n"); println(stderr, "err line")'`,
+            log,
+        ) == 0
+        lines = readlines(log)
+        @test "red" in lines && "err line" in lines
+        @test Nbody6Dynamics._tee_run(`$julia -e 'exit(3)'`, log) == 3
+        @test Nbody6Dynamics._tool_banner(
+            `$julia -e 'println("banner line"); println("second")'`,
+        ) == "banner line"
+        @test Nbody6Dynamics._tool_banner(`/nonexistent/tool --version`) == "unavailable"
+
+        # Dry run: host record and planned commands, nothing executed
+        @test_throws ArgumentError run_gpu_validation(;
+            base_dir = vdir,
+            stages = [:nope],
+            dry_run = true,
+        )
+        @test_throws ArgumentError run_gpu_validation(;
+            base_dir = vdir,
+            stages = Symbol[],
+            dry_run = true,
+        )
+        @test_throws ArgumentError run_gpu_validation(;
+            base_dir = vdir,
+            bench_tcrit = 0.0,
+            dry_run = true,
+        )
+        out = run_gpu_validation(;
+            base_dir = vdir,
+            stages = [:suite, :bench],
+            bench_n = [1000],
+            bench_threads = [2],
+            bench_gpu_lists = [[0], [0, 1]],
+            bench_tcrit = 0.5,
+            dry_run = true,
+        )
+        @test startswith(basename(out), "gpu_validation_") && dirname(out) == joinpath(vdir, "runs")
+        host = Nbody6Dynamics.TOML.parsefile(joinpath(out, "HOST_INFO.toml"))
+        for key in (
+            "host",
+            "gpu",
+            "compute_capabilities",
+            "nvcc_release",
+            "gcc",
+            "gfortran",
+            "package_commit",
+        )
+            @test haskey(host, key)
+        end
+        summary = Nbody6Dynamics.TOML.parsefile(joinpath(out, "VALIDATION.toml"))
+        @test summary["dry_run"] && summary["stages"] == ["suite", "bench"]
+        @test summary["results"]["suite"]["status"] == "planned"
+        @test occursin("NBODY6_GPU_TESTS=1", summary["results"]["suite"]["command"])
+        bench_cmd = summary["results"]["bench"]["command"]
+        @test occursin("gpu_scaling.jl 1000 2 0;0,1 0.5", bench_cmd)
+        @test occursin("NBODY6_GPU_BACKEND=", bench_cmd) &&
+              occursin("Nbody6PPGPU-beijing-gpu", bench_cmd)
+        @test !haskey(summary["results"], "gpu") && isempty(filter(endswith(".log"), readdir(out)))
+        # Benchmark artefact collection on an empty bench tree is a no-op
+        @test Nbody6Dynamics._collect_bench_artefacts(joinpath(vdir, "bench"), out, 0.0) == String[]
+    end
+
+    # =====================================================================
     @testset "Engine interval digit counter" begin
         term = Nbody6Dynamics._engine_digit_counter_terminates
         # The intervals of the runs that hung (2026-09-08 sweep controls, 2026-09-10 reproduction)

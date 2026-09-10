@@ -60,6 +60,12 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
             nvcc_release(cuda_path),
         )
     end
+    # The toolkit may reject the host compiler; find out on a trivial kernel
+    # now rather than after the clone, and add the override it needs.
+    nvcc_flags = String.(build.nvcc_flags)
+    if build.enable_gpu && !isempty(cuda_path)
+        append!(nvcc_flags, _nvcc_host_compiler_flags(cuda_path; nvcc_flags = nvcc_flags))
+    end
 
     # ------------------------------------------------------------------
     # 4. Clone / reinstall
@@ -126,8 +132,7 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
         end
         make_args = ["-j$np"]
         if build.enable_gpu
-            cuflags =
-                _cuflags_with_arch(joinpath(makefile_dir, "Makefile"), cuda_archs, build.nvcc_flags)
+            cuflags = _cuflags_with_arch(joinpath(makefile_dir, "Makefile"), cuda_archs, nvcc_flags)
             push!(make_args, "CUFLAGS=$cuflags")
         end
         t_build = time()
@@ -141,7 +146,15 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
     # 8. Locate binary and record the build
     # ------------------------------------------------------------------
     binary = _find_binary(src_dir, cfg.simulation.binary_name, build)
-    _write_build_info(src_dir, cfg, configure_args, cuda_path, cuda_archs, binary)
+    _write_build_info(
+        src_dir,
+        cfg,
+        configure_args,
+        cuda_path,
+        cuda_archs,
+        binary;
+        nvcc_flags = nvcc_flags,
+    )
     @info "Build complete. Binary: $binary"
     return binary
 end
@@ -192,14 +205,17 @@ function _cuflags_with_arch(
 end
 
 """
-    _write_build_info(src_dir, cfg, configure_args, cuda_path, cuda_archs, binary) -> String
+    _write_build_info(src_dir, cfg, configure_args, cuda_path, cuda_archs, binary;
+                      nvcc_flags = cfg.build.nvcc_flags) -> String
 
 Write `BUILD_INFO.toml` next to the binary: date, host, backend commit,
 configure arguments, the MPI/GPU/HDF5 switches, the binary name and, for
-GPU builds, the CUDA path, the compiled architectures and the `nvcc`
-release. The launcher copies the file into every run directory and merges
-it into `RUN_INFO.toml` as the `[build]` table, so each result records the
-build that produced it. Returns the path.
+GPU builds, the CUDA path, the compiled architectures, the `nvcc` release,
+the `nvcc` options in effect (`nvcc_flags`: the configured ones plus any
+host-compiler override the build added) and the helper-header directory.
+The launcher copies the file into every run directory and merges it into
+`RUN_INFO.toml` as the `[build]` table, so each result records the build
+that produced it. Returns the path.
 """
 function _write_build_info(
     src_dir::AbstractString,
@@ -207,7 +223,8 @@ function _write_build_info(
     configure_args::AbstractVector{<:AbstractString},
     cuda_path::AbstractString,
     cuda_archs::AbstractVector{<:AbstractString},
-    binary::AbstractString,
+    binary::AbstractString;
+    nvcc_flags::AbstractVector{<:AbstractString} = cfg.build.nvcc_flags,
 )::String
     build = cfg.build
     d = Dict{String,Any}(
@@ -224,7 +241,7 @@ function _write_build_info(
         d["cuda_path"] = String(cuda_path)
         d["cuda_arch"] = String.(cuda_archs)
         d["nvcc_release"] = nvcc_release(cuda_path)
-        d["nvcc_flags"] = String.(build.nvcc_flags)
+        d["nvcc_flags"] = String.(nvcc_flags)
         d["cuda_helper_dir"] = _CUDA_HELPER_DIR
     end
     path = joinpath(dirname(binary), "BUILD_INFO.toml")
