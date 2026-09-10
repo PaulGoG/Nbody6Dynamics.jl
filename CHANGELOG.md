@@ -6,6 +6,7 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- `.mailmap` folding the earlier author identities into one.
 - Activation scripts for every environment: `activate.jl` (package),
   `docs/activate.jl` and `bench/activate.jl` (auxiliary environments,
   package developed by a relative path). The scripts under `scripts/`,

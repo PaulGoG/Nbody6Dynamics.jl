@@ -26,6 +26,7 @@ that fills the frame. Every run writes animations like this one alongside its st
 Nbody6Dynamics/
 ├── .github/workflows/               # CI matrix, static QA, Format check, Docs build, CompatHelper (parked until the repository is public)
 ├── .JuliaFormatter.toml             # Formatter configuration
+├── .mailmap                         # Author identities folded into one
 ├── README.md
 ├── LICENSE                          # MIT
 ├── CITATION.cff                     # Citation metadata
