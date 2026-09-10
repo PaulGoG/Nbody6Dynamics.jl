@@ -65,10 +65,12 @@ run ID generation, and runtime telemetry.
 - `startup_timeout`: wall-clock seconds within which the engine must report
   its first adjustment beyond t = 0; otherwise the run is terminated with an
   error. `0` disables
-- `exit_grace`: wall-clock seconds the engine may stay alive after printing
-  `END RUN`; beyond that it is terminated and the segment is recorded as
-  completed (the engine has been seen to finish its integration and never
-  exit). `0` disables
+- `exit_grace`: after the engine has printed `END RUN`, the wall-clock
+  seconds its output directory may stay unchanged with the process still
+  alive; then it is terminated and the segment is recorded as completed
+  (the engine has been seen to finish its integration and never exit). A
+  final COMMON dump in progress keeps the directory changing and is never
+  interrupted. `0` disables
 - `live_diagnostics`: with `monitor`, print in-terminal sparklines of the
   virial ratio and energy error every `live_interval` seconds (opt-in;
   interactive terminals only, never in the log file)

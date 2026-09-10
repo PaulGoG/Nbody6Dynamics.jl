@@ -644,6 +644,25 @@ format = "pdf"
         wait(r)
         mon_r.stop[] = true
         @test !mon_r.fired[]
+        # A file still being written (the final COMMON dump) keeps the engine alive
+        busy = mktempdir()
+        busy_out = joinpath(busy, "out1000")
+        write(busy_out, "END RUN\n")
+        @test Nbody6Dynamics._latest_mtime(joinpath(busy, "none")) == 0.0
+        @test time() - Nbody6Dynamics._latest_mtime(busy) < 5
+        b = run(`sleep 7`; wait = false)
+        mon_b = Nbody6Dynamics._start_completion_monitor(busy_out, b, 2.0)
+        writer = @async for _ in 1:12
+            open(joinpath(busy, "comm.1"), "a") do io
+                write(io, "x")
+            end
+            sleep(0.5)
+        end
+        wait(writer)
+        @test process_running(b) && !mon_b.fired[]      # 6 s of writes, never idle for 2 s
+        wait(b)
+        mon_b.stop[] = true
+        @test !mon_b.fired[] && Nbody6Dynamics._exit_status(b) == 0
 
         # Config key
         @test SimulationConfig().exit_grace == 120.0

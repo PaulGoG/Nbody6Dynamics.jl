@@ -526,27 +526,45 @@ function _run_completed(stdout_path::AbstractString)::Bool
 end
 
 """
+    _latest_mtime(dir) -> Float64
+
+Most recent modification time (Unix seconds) of the files directly in
+`dir`; `0.0` for an absent or empty directory.
+"""
+function _latest_mtime(dir::AbstractString)::Float64
+    isdir(dir) || return 0.0
+    latest = 0.0
+    for f in readdir(dir; join = true)
+        isfile(f) && (latest = max(latest, mtime(f)))
+    end
+    return latest
+end
+
+"""
     _start_completion_monitor(stdout_path, process, grace) -> (; stop, fired, task)
 
-Asynchronous monitor: once the stdout shows `END RUN`, the process is given
-`grace` seconds to exit; if it is still running afterwards it is terminated
-(SIGTERM) and `fired` is set. The engine has been observed to finish its
-integration, print its final tables, and never exit (tidal-field runs), which
-otherwise blocks the pipeline until an external timeout. Setting `stop`
-ends the monitor quietly.
+Asynchronous monitor: once the stdout shows `END RUN`, the process is
+terminated (SIGTERM) and `fired` is set as soon as no file in the output
+directory (the one holding `stdout_path`) has been modified for `grace`
+seconds while the process is still alive. The engine writes its final
+COMMON dump after `END RUN` when `KZ(1) > 0`; that write keeps a file
+changing and therefore keeps the engine alive, whatever its duration. What
+the monitor ends is an engine that has finished writing and does not exit,
+as observed in tidal-field runs, which otherwise blocks the pipeline until
+an external timeout. Setting `stop` ends the monitor quietly.
 """
 function _start_completion_monitor(stdout_path::AbstractString, process::Base.Process, grace::Real)
+    out_dir = dirname(abspath(stdout_path))
     stop = Ref(false)
     fired = Ref(false)
     task = @async begin
-        deadline = Inf
+        completed = false
         while !stop[] && process_running(process)
-            if deadline == Inf && _run_completed(stdout_path)
-                deadline = time() + grace
-            end
-            if time() > deadline
+            completed || (completed = _run_completed(stdout_path))
+            if completed && time() - _latest_mtime(out_dir) ≥ grace
                 fired[] = true
-                @warn "Completion monitor: END RUN printed but the engine did not exit within $(grace) s; terminating it"
+                @warn "Completion monitor: END RUN printed and the output directory idle for $(grace) s, " *
+                      "but the engine has not exited; terminating it"
                 kill(process)
                 return nothing
             end

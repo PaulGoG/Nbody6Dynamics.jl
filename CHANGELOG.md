@@ -351,8 +351,9 @@ changes; all numerical outputs unchanged).
 - The sweep's pre-launch binary check called the removed two-argument
   locator; it now selects the binary of the base config's build variant.
 - Completion monitor (`[simulation] exit_grace`, default 120 s): an engine
-  that printed `END RUN` and did not exit is terminated after the grace
-  period and recorded as completed (`completed`,
+  that printed `END RUN` and did not exit is terminated once its output
+  directory has been idle for the grace period (a final COMMON dump in
+  progress keeps it alive) and recorded as completed (`completed`,
   `terminated_after_completion` in the segment; `completed` column in the
   sweep summary), so post-processing proceeds instead of waiting on an
   external timeout.
