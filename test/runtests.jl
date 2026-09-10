@@ -2537,6 +2537,7 @@ $(extra)
         @test scan_empty.available[:lagr] == false
         @test scan_empty.available[:escapers] == false
         @test scan_empty.available[:stellar_evo] == false
+        @test scan_empty.available[:binary_evo] == false
         @test scan_empty.available[:snapshots_hdf5] == false
 
         # --- Populate with dummy files ---
@@ -2556,6 +2557,9 @@ $(extra)
             println(io, "1  1.0  0.5  1.0 2.0 3.0  0.1 0.2 0.3")
         end
 
+        # The engine's regularised-binary record (real fixture)
+        cp(joinpath(@__DIR__, "fixtures", "bev.82_0"), joinpath(ext_dir, "bev.82_0"); force = true)
+
         # --- scan_output with partial data ---
         scan = scan_output(ext_dir)
         @test scan.available[:diagnostics] == true
@@ -2563,6 +2567,7 @@ $(extra)
         @test scan.available[:escapers] == true
         @test scan.available[:snapshots_conf3] == false
         @test scan.available[:stellar_evo] == false
+        @test scan.available[:binary_evo] == true && length(scan.binary_evo_files) == 1
 
         # --- OutputScan display ---
         buf = IOBuffer()
@@ -2571,6 +2576,8 @@ $(extra)
         @test occursin("Diagnostics", output_str)
         @test occursin("out1000", output_str)
         @test occursin("not found", output_str)  # for missing categories
+        @test occursin("Regularised binaries", output_str)
+        @test occursin("binary_population", output_str)
 
         # --- scan_output error on non-existent directory ---
         @test_throws ErrorException scan_output("/nonexistent/path")
@@ -2581,6 +2588,13 @@ $(extra)
         @test results[:scan] isa OutputScan
         @test haskey(results, :diagnostics)
         @test haskey(results, :lagr)
+        @test haskey(results, :binary_evo)
+        bevs_ext = results[:binary_evo]
+        @test bevs_ext isa Vector{BinaryEvolutionSnapshot} && length(bevs_ext) == 1
+        @test bevs_ext[1].n_pairs == length(bevs_ext[1].records) > 0
+        # A bev.82 record without diagnostics is still read, and an absent one is absent
+        rm(joinpath(ext_dir, "bev.82_0"))
+        @test !haskey(postprocess_external(ext_dir; make_plots = false), :binary_evo)
     end
 
     # =====================================================================

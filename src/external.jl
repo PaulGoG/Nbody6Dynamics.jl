@@ -21,6 +21,7 @@ struct OutputScan
     lagr_file::String            # "" if not found
     escapers_file::String        # "" if not found
     stellar_evo_files::Vector{String}
+    binary_evo_files::Vector{String}
     available::Dict{Symbol,Bool}
 end
 
@@ -45,6 +46,7 @@ Detects:
 - **Lagrangian radii**: `lagr.7`
 - **Escapers**: `esc.11`
 - **Stellar evolution**: files matching `sev.83_*`
+- **Regularised binaries**: files matching `bev.82_*`
 
 The returned [`OutputScan`](@ref) contains full paths and an `available` dict
 summarising which data categories were found.
@@ -110,6 +112,10 @@ function scan_output(dir::AbstractString)::OutputScan
     sev_prefix = "sev.83_"
     sev_files = sort([joinpath(dir, f) for f in entries if startswith(f, sev_prefix)])
 
+    # ── Regularised binaries ──
+    bev_prefix = "bev.82_"
+    bev_files = sort([joinpath(dir, f) for f in entries if startswith(f, bev_prefix)])
+
     # ── Availability summary ──
     available = Dict{Symbol,Bool}(
         :snapshots_conf3 => !isempty(conf3_files),
@@ -118,6 +124,7 @@ function scan_output(dir::AbstractString)::OutputScan
         :lagr => !isempty(lagr_file),
         :escapers => !isempty(esc_file),
         :stellar_evo => !isempty(sev_files),
+        :binary_evo => !isempty(bev_files),
     )
 
     return OutputScan(
@@ -128,6 +135,7 @@ function scan_output(dir::AbstractString)::OutputScan
         lagr_file,
         esc_file,
         sev_files,
+        bev_files,
         available,
     )
 end
@@ -168,6 +176,12 @@ function Base.show(io::IO, ::MIME"text/plain", s::OutputScan)
         s.available[:stellar_evo],
         "$(length(s.stellar_evo_files)) files",
     )
+    _section(
+        io,
+        "Regularised binaries",
+        s.available[:binary_evo],
+        "$(length(s.binary_evo_files)) files",
+    )
 
     n_avail = count(values(s.available))
     n_total = length(s.available)
@@ -189,6 +203,8 @@ function Base.show(io::IO, ::MIME"text/plain", s::OutputScan)
         "core_mass_growth",
         "hr_anim",
     )
+    s.available[:binary_evo] &&
+        push!(plots, "binary_population", "binary_period_distribution", "binary_orbital_elements")
     if !isempty(plots)
         println(io)
         print(io, "Plots available: ", join(plots, ", "))
@@ -238,7 +254,9 @@ checks, and optionally generates plots and animations through the same
 
 # Returns
 A `Dict{Symbol,Any}` with keys `:scan`, `:snapshots`, `:diagnostics`,
-`:lagr`, `:escapers`, `:stellar_evo` (present only if corresponding data exists).
+`:lagr`, `:escapers`, `:stellar_evo`, `:binary_evo` (present only if
+corresponding data exists), the same keys the config-driven pipeline
+produces.
 
 # Example
 ```julia
@@ -331,6 +349,16 @@ function postprocess_external(
         if !isempty(sevs)
             results[:stellar_evo] = sevs
             _sanity_stellar_evo(sevs)
+        end
+    end
+
+    # ── Read regularised binaries ──
+    if scan.available[:binary_evo]
+        @info "Reading regularised binaries ($(length(scan.binary_evo_files)) files)..."
+        bevs = read_all_binary_evolution(scan.dir, "bev.82_*")
+        if !isempty(bevs)
+            results[:binary_evo] = bevs
+            _sanity_binary_evo(bevs)
         end
     end
 
@@ -465,5 +493,19 @@ function _sanity_stellar_evo(sevs::Vector{StellarEvolutionSnapshot})
         end
         type_labels = [get(STELLAR_TYPE_LABELS, kt, "K*=$kt") for kt in sort(collect(all_types))]
         @info "  Stellar types present: $(join(type_labels, ", "))"
+    end
+end
+
+function _sanity_binary_evo(bevs::Vector{BinaryEvolutionSnapshot})
+    n = length(bevs)
+    @info "  $n regularised-binary snapshots"
+    if n > 0
+        n_first = length(bevs[1].records)
+        n_last = length(bevs[end].records)
+        @info @sprintf("  Time range: %.4f → %.4f [Myr]", bevs[1].time_myr, bevs[end].time_myr)
+        @info "  Regularised pairs: $n_first → $n_last (KS pairs only; wide pairs are not listed)"
+        if n_first == 0 && n_last == 0
+            @warn "  Every bev.82 record is empty: no pair was regularised at any output time"
+        end
     end
 end

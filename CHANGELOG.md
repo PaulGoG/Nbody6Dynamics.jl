@@ -280,6 +280,11 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- `scan_output`/`postprocess_external` read the engine's `bev.82_*`
+  records (`:binary_evo`, category "Regularised binaries", the three
+  binary figures in the plot inventory), so the external path produces the
+  same binary diagnostics as the config-driven pipeline instead of
+  silently dropping them.
 - Start-up hang of merger runs. The engine's `string_left.f` counts the
   decimal digits of `DELTAT`, `DTADJ` and `DTPLOT` by multiplying by ten
   until the value is an integer, with a default-kind `int`; an interval
