@@ -359,6 +359,13 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- GPU builds on hosts whose default compiler is newer than the toolkit
+  accepts (GCC 16 with CUDA 13.1): the `nvcc` probe now tries
+  `-allow-unsupported-compiler`, then `-ccbin` with `CUDAHOSTCXX` and the
+  versioned `g++`/`clang++` compilers on `PATH`, captures the compiler
+  output through a file and reports an excerpt; a configured `-ccbin` is
+  final. The validation driver skips the benchmark stage, with the reason
+  recorded, when a binary it needs is missing.
 - The build dependency check accepts an `nvcc` under the configured or
   auto-detected toolkit rather than only on `PATH`; the GPU-gated tests
   query the same toolkit. On a host with the toolkit under `/usr/local/cuda`

@@ -69,10 +69,11 @@ function main()
             rpad(":" * String(s), 8),
             r["status"],
             haskey(r, "seconds") ? "  ($(r["seconds"]) s)" : "",
+            haskey(r, "reason") ? "  ($(r["reason"]))" : "",
         )
     end
     println("Validation directory: $dir")
-    exit(any(r["status"] == "failed" for r in values(results)) ? 1 : 0)
+    exit(all(r["status"] in ("passed", "planned") for r in values(results)) ? 0 : 1)
 end
 
 main()

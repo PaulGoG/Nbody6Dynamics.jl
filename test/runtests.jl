@@ -590,6 +590,67 @@ format = "pdf"
         ) == "banner line"
         @test Nbody6Dynamics._tool_banner(`/nonexistent/tool --version`) == "unavailable"
 
+        # Probe against a stand-in nvcc: a script that mimics the toolkit's
+        # verdicts (rejects the default compiler, accepts an override or a
+        # -ccbin), so the search logic runs without a CUDA toolkit.
+        function fake_nvcc(dir, body)
+            mkpath(joinpath(dir, "bin"))
+            path = joinpath(dir, "bin", "nvcc")
+            write(path, "#!/bin/sh\n" * body)
+            chmod(path, 0o755)
+            return dir
+        end
+        accepts_override = fake_nvcc(
+            mktempdir(),
+            "case \" \$* \" in *' -allow-unsupported-compiler '*) exit 0;; esac\n" *
+            "echo '#error -- unsupported GNU version! gcc versions later than 15 are not supported!' >&2\nexit 1\n",
+        )
+        flags =
+            @test_logs (:warn, r"building with -allow-unsupported-compiler") Nbody6Dynamics._nvcc_host_compiler_flags(
+                accepts_override;
+                candidates = String[],
+            )
+        @test flags == ["-allow-unsupported-compiler"]
+        needs_ccbin = fake_nvcc(
+            mktempdir(),
+            "case \" \$* \" in *' -ccbin /usr/bin/true '*) exit 0;; esac\n" *
+            "echo 'unsupported GNU version! gcc versions later than 15 are not supported!' >&2\n" *
+            "for i in \$(seq 1 60); do echo \"type_traits(\$i): error: identifier char8_t is undefined\" >&2; done\nexit 1\n",
+        )
+        flags =
+            @test_logs (:warn, r"building with -ccbin /usr/bin/true") Nbody6Dynamics._nvcc_host_compiler_flags(
+                needs_ccbin;
+                candidates = ["/nonexistent/g++-99", "/usr/bin/true"],
+            )
+        @test flags == ["-ccbin", "/usr/bin/true"]
+        hopeless = try
+            Nbody6Dynamics._nvcc_host_compiler_flags(needs_ccbin; candidates = String[])
+        catch err
+            err
+        end
+        @test hopeless isa ErrorException
+        @test occursin("nor with -allow-unsupported-compiler", hopeless.msg)
+        @test occursin("gcc15-c++", hopeless.msg) && occursin("lines omitted", hopeless.msg)
+        # A configured -ccbin is final: no search, the failure is reported as is
+        pinned_fail = try
+            Nbody6Dynamics._nvcc_host_compiler_flags(
+                needs_ccbin;
+                nvcc_flags = ["-ccbin", "/usr/bin/false"],
+                candidates = ["/usr/bin/true"],
+            )
+        catch err
+            err
+        end
+        @test pinned_fail isa ErrorException &&
+              occursin("configured host compiler", pinned_fail.msg)
+        @test Nbody6Dynamics._host_compiler_candidates() isa Vector{String}
+        @test Nbody6Dynamics._output_excerpt("a\nb\nc", 1, 1) == "a\n… (1 lines omitted)\nc"
+        @test Nbody6Dynamics._output_excerpt("a\nb", 5, 5) == "a\nb"
+        @test Nbody6Dynamics._run_capture(
+            `$(Base.julia_cmd()) -e 'println(stderr, "e"); print("o")'`,
+            joinpath(vdir, "cap.log"),
+        ) == (true, "e\no")
+
         # Dry run: host record and planned commands, nothing executed
         @test_throws ArgumentError run_gpu_validation(;
             base_dir = vdir,
@@ -637,6 +698,14 @@ format = "pdf"
         @test occursin("NBODY6_GPU_BACKEND=", bench_cmd) &&
               occursin("Nbody6PPGPU-beijing-gpu", bench_cmd)
         @test !haskey(summary["results"], "gpu") && isempty(filter(endswith(".log"), readdir(out)))
+        # A stage whose prerequisites are missing is skipped with the reason, no process spawned
+        bare = mktempdir()
+        skipped = run_gpu_validation(; base_dir = bare, stages = [:bench])
+        skipped_summary = Nbody6Dynamics.TOML.parsefile(joinpath(skipped, "VALIDATION.toml"))
+        @test skipped_summary["results"]["bench"]["status"] == "skipped"
+        @test occursin("Nbody6PPGPU-beijing-gpu", skipped_summary["results"]["bench"]["reason"])
+        @test !isfile(joinpath(skipped, "bench.log")) && haskey(skipped_summary, "finished")
+        @test Nbody6Dynamics._stage_prerequisite(:suite, bare) === nothing
         # Benchmark artefact collection on an empty bench tree is a no-op
         @test Nbody6Dynamics._collect_bench_artefacts(joinpath(vdir, "bench"), out, 0.0) == String[]
     end

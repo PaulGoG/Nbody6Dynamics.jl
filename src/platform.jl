@@ -322,9 +322,12 @@ anything is cloned or built.
 function _nvcc_host_compiler_flags(
     cuda_path::AbstractString = "";
     nvcc_flags::AbstractVector{<:AbstractString} = String[],
+    candidates::AbstractVector{<:AbstractString} = _host_compiler_candidates(),
 )::Vector{String}
     nvcc = isempty(cuda_path) ? "nvcc" : joinpath(cuda_path, "bin", "nvcc")
     override = "-allow-unsupported-compiler"
+    # A -ccbin in the configured flags settles the host compiler; probe as is.
+    pinned = "-ccbin" in nvcc_flags || any(startswith("-ccbin="), nvcc_flags)
     mktempdir() do dir
         src = joinpath(dir, "probe.cu")
         obj = joinpath(dir, "probe.o")
@@ -332,12 +335,10 @@ function _nvcc_host_compiler_flags(
             src,
             "__global__ void probe(float *x) { x[threadIdx.x] = 0.0f; }\nint main() { return 0; }\n",
         )
-        function attempt(extra::Vector{String})
-            out = IOBuffer()
-            cmd = `$nvcc -c $src -o $obj $(String.(nvcc_flags)) $extra`
-            ok = success(pipeline(cmd; stdout = out, stderr = out))
-            return ok, String(take!(out))
-        end
+        attempt(extra) = _run_capture(
+            `$nvcc -c $src -o $obj $(String.(nvcc_flags)) $(String.(extra))`,
+            joinpath(dir, "probe.log"),
+        )
         ok, output = try
             attempt(String[])
         catch e
@@ -346,17 +347,85 @@ function _nvcc_host_compiler_flags(
             return String[]
         end
         ok && return String[]
-        _unsupported_host_compiler(output) || error(
-            "nvcc cannot compile a trivial kernel with the configured flags; output:\n$output",
+        pinned && error(
+            "nvcc cannot compile a trivial kernel with the configured host compiler " *
+            "(build.nvcc_flags = $(String.(nvcc_flags))); output:\n" *
+            _output_excerpt(output),
         )
-        ok_override, output_override = attempt([override])
-        ok_override ||
-            error("nvcc rejects the host compiler even with $override; output:\n$output_override")
-        @warn "nvcc rejects the host compiler version; building with $override. Set " *
-              "build.nvcc_flags = [\"-ccbin\", \"<older gcc>\"] instead if the build misbehaves." nvcc_message =
-            strip(output)
-        return [override]
+        unsupported = _unsupported_host_compiler(output)
+        tried = String[]
+        if unsupported
+            ok_override, _ = attempt([override])
+            if ok_override
+                @warn "nvcc rejects the host compiler version; building with $override. Set " *
+                      "build.nvcc_flags = [\"-ccbin\", \"<older g++>\"] instead if the build misbehaves." nvcc_message =
+                    _output_excerpt(output, 3, 0)
+                return [override]
+            end
+            push!(tried, override)
+        end
+        for cc in candidates
+            ok_cc, _ = attempt(["-ccbin", cc])
+            if ok_cc
+                @warn "nvcc cannot use the default host compiler; building with -ccbin $cc" nvcc_message =
+                    _output_excerpt(output, 3, 0)
+                return ["-ccbin", cc]
+            end
+            push!(tried, "-ccbin $cc")
+        end
+        error(
+            "nvcc cannot compile a trivial kernel with the default host compiler" *
+            (isempty(tried) ? "" : " nor with " * join(tried, ", ")) *
+            ". Install a host compiler the toolkit supports (CUDA 13: GCC ≤ 15, e.g. Fedora's " *
+            "gcc15-c++ package providing g++-15) or set build.nvcc_flags = [\"-ccbin\", " *
+            "\"<path to a supported g++>\"]. nvcc output:\n" *
+            _output_excerpt(output),
+        )
     end
+end
+
+"""
+    _host_compiler_candidates() -> Vector{String}
+
+Host compilers to offer `nvcc` through `-ccbin` when the default one is
+rejected: `CUDAHOSTCXX` when set, then the versioned GNU and Clang C++
+compilers found on `PATH`, newest first.
+"""
+function _host_compiler_candidates()::Vector{String}
+    found = String[]
+    env_cc = get(ENV, "CUDAHOSTCXX", "")
+    isempty(env_cc) || push!(found, env_cc)
+    for name in ("g++-15", "g++-14", "g++-13", "g++-12", "clang++-20", "clang++-19", "clang++")
+        check_command(name) && push!(found, name)
+    end
+    return found
+end
+
+"""
+    _run_capture(cmd, logfile) -> (ok::Bool, output::String)
+
+Run `cmd` with stdout and stderr merged into `logfile` and return whether
+it succeeded together with the captured text. Spawn failures propagate.
+"""
+function _run_capture(cmd::Cmd, logfile::AbstractString)::Tuple{Bool,String}
+    ok = open(logfile, "w") do f
+        success(pipeline(cmd; stdout = f, stderr = f))
+    end
+    return ok, read(logfile, String)
+end
+
+"""
+    _output_excerpt(output, head = 25, tail = 5) -> String
+
+The first `head` and last `tail` lines of `output` with a marker for the
+lines omitted between them; the whole text when it is short enough.
+"""
+function _output_excerpt(output::AbstractString, head::Int = 25, tail::Int = 5)::String
+    lines = collect(eachline(IOBuffer(String(output))))
+    length(lines) ≤ head + tail && return join(lines, "\n")
+    kept = vcat(lines[1:head], ["… ($(length(lines) - head - tail) lines omitted)"])
+    tail > 0 && append!(kept, lines[(end - tail + 1):end])
+    return join(kept, "\n")
 end
 
 """`true` when `nvcc` output reports an unsupported host compiler version."""

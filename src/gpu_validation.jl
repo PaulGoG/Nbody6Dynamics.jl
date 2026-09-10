@@ -95,8 +95,13 @@ function run_gpu_validation(;
     for s in stages
         cmd = commands[s]
         entry = Dict{String,Any}("command" => _command_string(cmd))
+        unmet = _stage_prerequisite(s, base_dir)
         if dry_run
             entry["status"] = "planned"
+        elseif unmet !== nothing
+            entry["status"] = "skipped"
+            entry["reason"] = unmet
+            @warn "Stage :$s skipped: $unmet"
         else
             log = joinpath(out_dir, "$s.log")
             @info "Stage :$s → $(basename(log))"
@@ -122,6 +127,25 @@ function run_gpu_validation(;
         _write_validation_summary(out_dir, summary)
     end
     return out_dir
+end
+
+"""
+    _stage_prerequisite(stage, base_dir) -> Union{Nothing,String}
+
+`nothing` when `stage` can run, otherwise the reason it cannot: the
+benchmark needs the CPU and the GPU build trees that the `:cpu` and `:gpu`
+stages produce under `base_dir/backend`.
+"""
+function _stage_prerequisite(stage::Symbol, base_dir::AbstractString)::Union{Nothing,String}
+    stage == :bench || return nothing
+    missing_trees = String[]
+    for tree in ("Nbody6PPGPU-beijing", "Nbody6PPGPU-beijing-gpu")
+        isdir(joinpath(base_dir, "backend", tree, "build")) || push!(missing_trees, tree)
+    end
+    isempty(missing_trees) && return nothing
+    return "no build under backend/" *
+           join(missing_trees, " and backend/") *
+           " (the :cpu and :gpu stages produce them)"
 end
 
 """Host name with the characters outside `[A-Za-z0-9_-]` replaced by `_`, for a directory name."""
