@@ -24,7 +24,7 @@ Return `true` if `cmd` is found on PATH.
 """
 function check_command(cmd::String)::Bool
     try
-        success(`which $cmd`)
+        success(pipeline(`which $cmd`; stdout = devnull, stderr = devnull))
     catch
         false
     end
@@ -83,7 +83,7 @@ function detect_cuda_path()::String
 
     # 3. Locate nvcc
     try
-        nvcc = strip(read(`which nvcc`, String))
+        nvcc = strip(read(pipeline(`which nvcc`; stderr = devnull), String))
         return dirname(dirname(nvcc))  # nvcc lives in CUDA_HOME/bin/
     catch
     end
@@ -108,6 +108,192 @@ function cuda_env_vars(cuda_path::String)::Dict{String,String}
     env["LD_LIBRARY_PATH"] = "$lib_dir:" * get(ENV, "LD_LIBRARY_PATH", "")
 
     return env
+end
+
+# ---------------------------------------------------------------------------
+# CUDA target architectures
+# ---------------------------------------------------------------------------
+
+"""
+Largest number of CUDA devices one engine process drives: `MAX_GPU` in the
+backend's `gpunb.velocity.cu`. The j-particle range is split over the
+devices of `GPU_LIST` (or every visible device), one OpenMP thread each.
+"""
+const _MAX_GPU_PER_PROCESS = 4
+
+"""Accepted form of a `build.cuda_arch` entry: `sm_<major><minor>` (`sm_90`, `sm_120`)."""
+const _CUDA_ARCH_PATTERN = r"^sm_[1-9][0-9]{1,2}$"
+
+"""
+    cuda_arch_from_compute_cap(cap) -> String
+
+CUDA architecture name of a compute capability as `nvidia-smi` reports it:
+`"9.0"` → `"sm_90"` (Hopper: H100, H200), `"12.0"` → `"sm_120"` (consumer
+Blackwell: RTX 50 series), `"8.6"` → `"sm_86"`. Throws an `ArgumentError`
+for anything but `<major>.<minor>`.
+"""
+function cuda_arch_from_compute_cap(cap::AbstractString)::String
+    m = match(r"^\s*(\d+)\.(\d+)\s*$", cap)
+    m === nothing &&
+        throw(ArgumentError("compute capability must read <major>.<minor>; got \"$cap\""))
+    return "sm_" * m.captures[1] * m.captures[2]
+end
+
+"""
+    _parse_compute_caps(output) -> Vector{String}
+
+Distinct compute capabilities, in order of first appearance, from the
+lines of `nvidia-smi --query-gpu=compute_cap --format=csv,noheader`;
+blank lines and `[N/A]` entries are skipped.
+"""
+function _parse_compute_caps(output::AbstractString)::Vector{String}
+    caps = String[]
+    for line in eachline(IOBuffer(String(output)))
+        cap = strip(line)
+        (isempty(cap) || startswith(cap, "[")) && continue
+        cap in caps || push!(caps, String(cap))
+    end
+    return caps
+end
+
+"""
+    detect_compute_capabilities() -> Vector{String}
+
+Distinct compute capabilities of the visible NVIDIA devices (`"9.0"`,
+`"12.0"`, …) from `nvidia-smi`; empty when the tool or a device is absent.
+"""
+function detect_compute_capabilities()::Vector{String}
+    output = try
+        read(`nvidia-smi --query-gpu=compute_cap --format=csv,noheader`, String)
+    catch
+        return String[]
+    end
+    return _parse_compute_caps(output)
+end
+
+"""Numeric part of an architecture name (`"sm_120"` → 120)."""
+_arch_number(arch::AbstractString)::Int = parse(Int, chop(arch; head = 3, tail = 0))
+
+"""
+    cuda_gencode_flags(archs) -> String
+
+`nvcc` code-generation flags for the architectures `archs` (`"sm_90"`,
+`"sm_120"`, …): native code for each and PTX for the highest, so the
+binary also runs, JIT-compiled, on newer devices. Empty for an empty list;
+throws an `ArgumentError` for a malformed name.
+"""
+function cuda_gencode_flags(archs::AbstractVector{<:AbstractString})::String
+    isempty(archs) && return ""
+    flags = String[]
+    for arch in archs
+        occursin(_CUDA_ARCH_PATTERN, arch) ||
+            throw(ArgumentError("not a CUDA architecture name: \"$arch\""))
+        cc = _arch_number(arch)
+        push!(flags, "-gencode arch=compute_$(cc),code=sm_$(cc)")
+    end
+    cc_max = maximum(_arch_number, archs)
+    push!(flags, "-gencode arch=compute_$(cc_max),code=compute_$(cc_max)")
+    return join(flags, " ")
+end
+
+"""
+    resolve_cuda_arch(build::BuildConfig) -> Vector{String}
+
+Architectures to compile the GPU kernels for: `build.cuda_arch` when set,
+otherwise the compute capabilities of the visible devices
+([`detect_compute_capabilities`](@ref)). Empty, with a warning, when
+neither is available; the build then keeps the `nvcc` default target and
+the driver JIT-compiles its PTX at the first launch.
+"""
+function resolve_cuda_arch(build::BuildConfig)::Vector{String}
+    isempty(build.cuda_arch) || return copy(build.cuda_arch)
+    caps = detect_compute_capabilities()
+    if isempty(caps)
+        @warn "No NVIDIA device visible to nvidia-smi and build.cuda_arch is empty: the GPU " *
+              "kernels keep the nvcc default target (PTX JIT at the first launch). Set " *
+              "build.cuda_arch, e.g. [\"sm_90\"], for native code."
+        return String[]
+    end
+    return cuda_arch_from_compute_cap.(caps)
+end
+
+"""
+    nvcc_release(cuda_path = "") -> String
+
+Release of the `nvcc` on `PATH`, or under `cuda_path/bin` when given
+(`"12.8"`); empty when the compiler cannot be run.
+"""
+function nvcc_release(cuda_path::AbstractString = "")::String
+    nvcc = isempty(cuda_path) ? "nvcc" : joinpath(cuda_path, "bin", "nvcc")
+    output = try
+        read(`$nvcc --version`, String)
+    catch
+        return ""
+    end
+    return _parse_nvcc_release(output)
+end
+
+"""Release number in the banner of `nvcc --version` (`release 12.8, V12.8.93` → `"12.8"`); empty when absent."""
+function _parse_nvcc_release(output::AbstractString)::String
+    m = match(r"release\s+(\d+\.\d+)", output)
+    return m === nothing ? "" : String(m.captures[1])
+end
+
+"""
+    nvcc_supported_archs(cuda_path = "") -> Vector{String}
+
+Architectures the installed `nvcc` can compile for, as `sm_<cc>` names
+from `nvcc --list-gpu-arch` (`compute_50 … compute_120`); empty when the
+compiler cannot be run. The device side of the pair is
+[`detect_compute_capabilities`](@ref) (from `nvidia-smi`, which `nvcc`
+cannot replace: the compiler knows the toolkit, not the hardware); the
+build checks the targets against this list before compiling.
+"""
+function nvcc_supported_archs(cuda_path::AbstractString = "")::Vector{String}
+    nvcc = isempty(cuda_path) ? "nvcc" : joinpath(cuda_path, "bin", "nvcc")
+    output = try
+        read(`$nvcc --list-gpu-arch`, String)
+    catch
+        return String[]
+    end
+    return _parse_nvcc_arch_list(output)
+end
+
+"""`compute_<cc>` lines of `nvcc --list-gpu-arch` as distinct `sm_<cc>` names, in order."""
+function _parse_nvcc_arch_list(output::AbstractString)::Vector{String}
+    archs = String[]
+    for line in eachline(IOBuffer(String(output)))
+        m = match(r"^\s*compute_(\d+)\s*$", line)
+        m === nothing && continue
+        arch = "sm_" * m.captures[1]
+        arch in archs || push!(archs, arch)
+    end
+    return archs
+end
+
+"""
+    _check_cuda_arch_support(archs, supported, release)
+
+Throw an `ErrorException` naming the toolkit release and the architectures
+it lacks when any of `archs` is absent from `supported`
+([`nvcc_supported_archs`](@ref)). A no-op when `supported` is empty (the
+compiler could not be queried), leaving the failure to the build itself.
+"""
+function _check_cuda_arch_support(
+    archs::AbstractVector{<:AbstractString},
+    supported::AbstractVector{<:AbstractString},
+    release::AbstractString,
+)
+    isempty(supported) && return nothing
+    lacking = filter(a -> !(a in supported), archs)
+    isempty(lacking) && return nothing
+    error(
+        "CUDA toolkit " *
+        (isempty(release) ? "(unknown release)" : release) *
+        " cannot compile for $(join(lacking, ", ")); it supports $(join(supported, ", ")). " *
+        "Install a newer toolkit (sm_120 needs CUDA ≥ 12.8, sm_90 CUDA ≥ 11.8) and set " *
+        "build.cuda_path, or drop the architecture from build.cuda_arch.",
+    )
 end
 
 # ---------------------------------------------------------------------------
@@ -193,7 +379,8 @@ end
 Platform fingerprint for run metadata, using Julia's own introspection:
 host, OS/kernel, CPU model and logical core count, total memory, Julia
 version, Julia and BLAS thread counts. With `gpu_probe = true` an
-`nvidia-smi` query records the GPU name, VRAM, and driver version
+`nvidia-smi` query records name, VRAM, driver version, and compute
+capability of every visible GPU, one `;`-separated entry per device
 (`"unavailable"` when the tool or a device is absent). Together with the
 config and the git commits this makes every result attributable to
 config + commit + hardware.
@@ -214,14 +401,14 @@ function _hardware_fingerprint(; gpu_probe::Bool = false)::Dict{String,Any}
         gpu = try
             strip(
                 read(
-                    `nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader`,
+                    `nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv,noheader`,
                     String,
                 ),
             )
         catch
             ""
         end
-        d["gpu"] = isempty(gpu) ? "unavailable" : String(gpu)
+        d["gpu"] = isempty(gpu) ? "unavailable" : join(strip.(split(String(gpu), '\n')), "; ")
     end
     return d
 end

@@ -90,6 +90,8 @@ Nbody6Dynamics/
 │   └── fixtures/                    # Real Nbody6++ output excerpts (esc.11, lagr.7, out1000, sev.83_0, bev.82_0)
 ├── bench/
 │   ├── thread_scaling.jl            # Thread- and N-scaling of the backend from run telemetry (cost model)
+│   ├── gpu_scaling.jl               # GPU-versus-CPU binary at equal N and threads, per GPU_LIST (speed-up table)
+│   ├── merger_case.jl               # The two-cluster case shared by the scaling scripts
 │   ├── benchmarks.jl                # BenchmarkTools suite (kept out of tests)
 │   └── Project.toml                 # Bench-local environment
 ├── docs/
@@ -147,6 +149,7 @@ One invocation each; details in the sections below. The docs and benchmark scrip
 | Run the verification suite | `julia --project=. scripts/run_verif_suite.jl` |
 | Execute the test suite | `julia --project=. -e 'using Pkg; Pkg.test()'` |
 | Run the benchmarks | `julia bench/benchmarks.jl` |
+| Measure the GPU speed-up | `julia bench/gpu_scaling.jl 20000,50000 4,8 "0;0,1" 0.25` (needs the CPU and the GPU binary) |
 | Build the documentation | `julia docs/make.jl` |
 
 ## Usage
@@ -194,14 +197,14 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Install / build | Working | Clone, `configure`, HDF5 Makefile patch, parallel make; CUDA path auto-detection |
+| Install / build | Working | Clone, `configure`, HDF5 Makefile patch, parallel make; CUDA path auto-detection; GPU builds compiled for the visible devices' compute capabilities or an explicit `cuda_arch` list (the upstream configure emits no architecture flag), `BUILD_INFO.toml` next to the binary, CPU/GPU/MPI binary variants selected by suffix. Untested on real GPUs so far: the GPU-gated suite (`NBODY6_GPU_TESTS=1`) is the acceptance test for the first NVIDIA host |
 | Merger IC generator | Working | Plummer + King samplers (King c(W0) validated against published concentrations); Kroupa (2001) IMF; Kepler two-body and explicit N-cluster orbit modes; primordial binaries (Kroupa 1995 periods, thermal eccentricities, written in the engine's pair convention); Jacobi truncation; seeded reproducibility — the TOML `seed` drives the sampler RNG and propagates to Nbody6's `NRAND`. The engine itself has no multi-centre diagnostics: cluster-level results before coalescence come from the snapshot-based per-cluster tools, not from `lagr.7`/`esc.11`; see "Feasibility and limitations" in the merger documentation |
 | Remnant diagnostics | Working | Bound remnant of the whole system per snapshot: Casertano–Hut core radius (engine densities or sixth-neighbour estimate), half-mass radius, rotation (λ_R, Peebles λ_P, spin alignment with the orbital angular momentum, v_rot/σ profile), Allison et al. (2009) Λ_MSR mass segregation with segregation time, union-find coalescence time; `remnant_diagnostics.csv` and four figures per merger run |
 | Parameter sweeps | Working | Sweep TOML → Cartesian grid over dotted merger-TOML keys × seeds; one directory per point with derived configs validated before launch; points run as concurrent worker processes (`omp_threads` per job from the cost model); `sweep_index.toml` kept current, `sweep_summary.csv` with final N, pairs, energy error and virial ratio; comparison figures on common axes coloured by one grid axis; seeded ensembles (a sweep without axes, or the seeds of every grid point) summarised by median and central 68/95 % bands on a common time grid; `controls = true` adds the isolated single-cluster equivalent of every point and a paired merger-versus-control figure |
-| Simulation runner | Working | Launch script with `OMP_NUM_THREADS` control, live stdout monitoring, run summary with exact CPU accounting and sampled CPU/memory/GPU telemetry (`telemetry.csv`); restarts from the engine's COMMON dumps (`restart_simulation`) with per-segment bookkeeping; merger runs execute inside the IC output dir so `dat.10` is found |
+| Simulation runner | Working | Launch script with `OMP_NUM_THREADS` and `GPU_LIST` control, live stdout monitoring, run summary with exact CPU accounting, sampled CPU/memory/GPU telemetry (`telemetry.csv`), the devices the engine initialised and the build record; restarts from the engine's COMMON dumps (`restart_simulation`) with per-segment bookkeeping; merger runs execute inside the IC output dir so `dat.10` is found |
 | I/O readers | Working | `conf.3` (standard + extended), `out1000` diagnostics (ADJUST + physical scaling; virial ratio Q = T/\|W\|, equilibrium at 0.5), `lagr.7`, and `esc.11` (incl. the ANGLE PHI / ANGLE THETA escape-direction columns) / `sev.83_*` / `bev.82_*` in the fork's real formats; `STELLAR_TYPE_LABELS` follow the Hurley convention (13 = NS, 14 = BH); `UnitScaling.zmbar` is the total-mass scale factor M*, not the mean stellar mass. HDF5 reader removed — the fork's KZ(46) H5Part layout was never supported; `.h5part` files are detected and warned about |
 | Plotting / animation | Working | Publication theme: no titles, no minor ticks, Computer Modern fonts, dashed grey low-opacity grid on line plots; presentation knobs config-driven via `[visualization.style]` (`PlotStyle`); escaper suite (cumulative mass loss, velocity classes, escape anisotropy) and SSE-quantity plots (mass segregation, t/T_MS evolutionary clock, core-mass growth); binary suite (pair counts with the Heggie hard/soft split, binary fraction, `a`–`e` diagrams, period histograms); existing figures are never overwritten (safesave-style `#1`, `#2`, … backups) |
-| Tests | Passing | 1147/1147 as of this commit (plus 30 engine-dependent tests behind `NBODY6_BINARY_TESTS=1`), incl. physics validation, adversarial external-input tests, telemetry/thread-control, per-cluster structure, restart, and tidal-field tests |
+| Tests | Passing | 1214/1214 as of this commit (plus 30 engine-dependent tests behind `NBODY6_BINARY_TESTS=1` and a GPU-gated set behind `NBODY6_GPU_TESTS=1`), incl. physics validation, adversarial external-input tests, telemetry/thread-control, per-cluster structure, restart, and tidal-field tests |
 
 ## Testing
 

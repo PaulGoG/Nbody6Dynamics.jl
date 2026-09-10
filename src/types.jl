@@ -27,7 +27,15 @@ end
     BuildConfig
 
 Configuration for the Nbody6++ compilation phase.
-Controls configure flags, MPI/GPU/HDF5 toggles, CUDA path, and parallel make.
+Controls configure flags, MPI/GPU/HDF5 toggles, CUDA path, CUDA target
+architectures, and parallel make.
+
+# Fields
+- `cuda_arch`: CUDA architectures the GPU kernels are compiled for
+  (`"sm_90"` Hopper, `"sm_120"` consumer Blackwell, …): native code for
+  each plus PTX for the highest. Empty = the compute capabilities of the
+  devices visible to `nvidia-smi`, or the `nvcc` default target (PTX
+  JIT-compiled at the first launch) when no device is visible
 """
 Base.@kwdef struct BuildConfig
     configure_flags::Vector{String} = ["--enable-mcmodel=large", "--with-par=b1m"]
@@ -35,6 +43,7 @@ Base.@kwdef struct BuildConfig
     enable_hdf5::Bool = true
     enable_gpu::Bool = false
     cuda_path::String = ""
+    cuda_arch::Vector{String} = String[]
     nproc::Int = 0
 end
 
@@ -48,6 +57,9 @@ run ID generation, and runtime telemetry.
 # Fields
 - `omp_threads`: OpenMP threads for the backend; `0` leaves the runtime
   default (an inherited `OMP_NUM_THREADS`, else every logical CPU)
+- `gpu_list`: CUDA device indices the engine may use, exported as its
+  `GPU_LIST` variable; empty = every visible device. At most four per
+  process (the engine's `MAX_GPU`); requires `build.enable_gpu`
 - `telemetry_interval`: sampling interval of the process-tree/GPU telemetry
   [s]; `0` disables the sampler (exact CPU accounting stays on)
 - `startup_timeout`: wall-clock seconds within which the engine must report
@@ -61,6 +73,7 @@ Base.@kwdef struct SimulationConfig
     binary_name::String = "nbody6++"
     mpi_ranks::Int = 1
     omp_threads::Int = 0
+    gpu_list::Vector{Int} = Int[]
     run_id_prefix::String = "run"
     monitor::Bool = false   # opt-in live progress ticker (§9); interactive stderr only
     telemetry_interval::Float64 = 5.0

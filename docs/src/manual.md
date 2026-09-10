@@ -82,6 +82,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `enable_hdf5`     | Bool     | `true`  | Patch the Makefile with HDF5 build flags |
 | `enable_gpu`      | Bool     | `false` | Enable GPU acceleration (requires CUDA) |
 | `cuda_path`       | String   | `""`    | CUDA installation path; empty = auto-detect |
+| `cuda_arch`       | [String] | `[]`    | CUDA architectures compiled into the GPU kernels, `sm_<major><minor>` (`"sm_90"` H100/H200, `"sm_120"` RTX 50 series); native code for each plus PTX for the highest. Empty = the compute capabilities `nvidia-smi` reports, or the `nvcc` default target when no device is visible (see [GPU builds](#gpu-builds-and-target-architectures)) |
 | `nproc`           | Int      | `0`     | Parallel `make` jobs; 0 = auto-detect; must be ≥ 0 |
 
 ### `[simulation]`
@@ -94,6 +95,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `binary_name`   | String | `"nbody6++"` | Expected binary name |
 | `mpi_ranks`     | Int    | `1`     | Number of MPI ranks; must be ≥ 1, and > 1 requires `build.enable_mpi = true` |
 | `omp_threads`   | Int    | `0`     | OpenMP threads for the backend, exported as `OMP_NUM_THREADS`; must be ≥ 0. `0` leaves the OpenMP runtime default: an inherited `OMP_NUM_THREADS`, else every logical CPU. Oversubscription (`omp_threads × mpi_ranks` above the host's logical CPUs) warns at launch |
+| `gpu_list`      | [Int]  | `[]`    | CUDA device indices the engine may use, exported as its `GPU_LIST` variable; empty = every visible device. Entries ≥ 0 and distinct, at most 4 per process (the engine's `MAX_GPU`); nonempty requires `build.enable_gpu = true` |
 | `run_id_prefix` | String | `"run"` | Prefix for run directory names; must be nonempty |
 | `monitor`       | Bool   | `false` | Live ADJUST ticker on stderr; interactive terminals only |
 | `telemetry_interval` | Float | `5.0` | Sampling interval of the process-tree/GPU telemetry [s]; must be ≥ 0. `0` disables the sampler; the exact CPU accounting stays on |
@@ -214,6 +216,27 @@ When `enable_gpu = true` and `cuda_path` is empty, the build searches in order:
 2. Standard paths: `/usr/local/cuda`, `/usr/local/cuda-12`, `/usr/local/cuda-11.8`, …
 3. `nvcc` location on `PATH`
 
+### GPU builds and target architectures
+
+The engine's `./configure` finds `nvcc` but emits no architecture flag, so on its own `nvcc` compiles the kernels for its default target and the driver JIT-compiles the embedded PTX at the first launch on any newer device. The build phase therefore resolves the targets itself and passes them to `make` as a `CUFLAGS` override (the configure-generated value plus one `-gencode` entry per architecture and PTX for the highest):
+
+| Device | Compute capability | `cuda_arch` entry | Toolkit |
+|--------|--------------------|-------------------|---------|
+| RTX 5070 Ti, RTX 5090 (consumer Blackwell) | 12.0 | `"sm_120"` | CUDA ≥ 12.8 |
+| H100, H200 (Hopper) | 9.0 | `"sm_90"` | CUDA ≥ 11.8 |
+| A100 (Ampere) | 8.0 | `"sm_80"` | CUDA ≥ 11.0 |
+
+With `cuda_arch` empty the build queries `nvidia-smi --query-gpu=compute_cap` and compiles for every distinct capability it reports; a build host without a visible device keeps the `nvcc` default (a warning says so), which still runs by JIT. A binary meant for several machines lists all of their architectures. The device capability can only come from the driver (`nvidia-smi`); `nvcc` knows the toolkit, not the hardware, so the install phase also reads `nvcc --list-gpu-arch` and stops before `make`, naming the release and the missing architecture, when the toolkit cannot compile for a target.
+
+Other facts of the GPU build:
+
+- The binary is named after the configure options: `nbody6++.avx.gpu` (and `nbody6++.avx.mpi.gpu` with MPI). CPU and GPU binaries may coexist in `build/`; the launcher picks the variant whose suffix tags match `enable_gpu`/`enable_mpi`. Switching one source tree between CPU and GPU builds requires `clean_build = true`, because the Fortran objects are compiled with `-D GPU` in one case only and `make` does not track the flag change.
+- `BUILD_INFO.toml` is written next to the binary (date, host, backend commit, configure arguments, switches, CUDA path, compiled architectures, `nvcc` release). Every run copies it into its output directory and merges it into `RUN_INFO.toml` as the `[build]` table.
+- One engine process drives at most four devices (`MAX_GPU` in the kernel source): with `gpu_list` empty it takes every visible device, otherwise those listed, and splits the regular-force j-range evenly across them by one OpenMP thread per device. The kernels compute in single precision on every architecture.
+- The GPU library reports the devices it initialised on stderr; the run summary records them as `run.gpu_devices`, and the kernel throughput profile carries the label `GPU Reg.F` in `telemetry.force_kernel_gflops.kernel`, so a run that silently fell back to the CPU path is visible.
+- The upstream authors advise the GPU build only above roughly 5×10⁴ bodies: below that the regular force is a minor share of the work and host–device transfers can make the run slower. `bench/gpu_scaling.jl` measures the crossover on the machine at hand.
+- HDF5 output is unnecessary for the Julia side (it reads `conf.3`), so a GPU build can use `enable_hdf5 = false`.
+
 ### Fedora h5pfc workaround
 
 On Fedora the HDF5 parallel Fortran wrapper `h5pfc` may carry an erroneous `/openmpi-x86_64` suffix in its `includedir`, preventing `hdf5.mod` from being found. Nbody6Dynamics detects this and prints the fix:
@@ -253,11 +276,15 @@ Merger runs additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, a
 
 ### Launch script
 
-The generated `_launch.sh` sets `ulimit -s unlimited` (Fortran stack), `OMP_STACKSIZE=4096M`, `OMP_NUM_THREADS` when `simulation.omp_threads > 0`, CUDA environment variables (if GPU enabled), and `stdbuf -oL` for line-buffered output where available. The backend takes its thread count from the OpenMP runtime alone (there is no input parameter for it) and echoes it at start-up; that echoed value is recorded as `run.omp_threads_reported` in `RUN_INFO.toml` next to the configured `run.omp_threads` and `run.mpi_ranks`.
+The generated `_launch.sh` sets `ulimit -s unlimited` (Fortran stack), `OMP_STACKSIZE=4096M`, `OMP_NUM_THREADS` when `simulation.omp_threads > 0`, `GPU_LIST` when `simulation.gpu_list` is nonempty, CUDA environment variables (if GPU enabled), and `stdbuf -oL` for line-buffered output where available. The backend takes its thread count from the OpenMP runtime alone (there is no input parameter for it) and echoes it at start-up; that echoed value is recorded as `run.omp_threads_reported` in `RUN_INFO.toml` next to the configured `run.omp_threads`, `run.mpi_ranks` and `run.gpu_list`; the devices the GPU library initialised appear as `run.gpu_devices`, and the binary's build record as the `[build]` table.
 
 ### Choosing the thread count
 
 The backend's OpenMP parallelism saturates early for the particle numbers a workstation handles: on a 22-thread machine the two-cluster benchmark (`bench/thread_scaling.jl`) reaches its shortest wall time at four threads for N ≤ 2×10⁴, while more threads only add CPU time (efficiency 0.38 at 22 threads). Parameter sweeps and ensembles are therefore best run as several four-thread jobs in parallel; the benchmark script sweeps thread count and N on your hardware and reports the fitted cost, using the telemetry of each run.
+
+### Choosing the GPU devices
+
+`bench/gpu_scaling.jl` runs the same two-cluster case with the CPU and the GPU binary over a grid of N, thread counts and `GPU_LIST` values, and prints the GPU speed-up at equal N and threads together with the backend's regular-force share and the kernel throughput. The regular force grows as N² against N⟨N_nb⟩ for the neighbour force, so its share, and with it the gain from the GPU, rises with N; at N = 2×10⁴ it is two thirds of the backend CPU time on the reference workstation, which bounds the gain there at about 3×. Two devices in one process (`gpu_list = [0, 1]`) halve only the regular-force term, so they pay off later in N than the first device. Under MPI every rank on a host applies the same `gpu_list`; per-rank device slicing is not provided.
 
 ### Real-time monitoring
 
@@ -592,6 +619,18 @@ Fortran code requires a large stack. The launch script sets `ulimit -s unlimited
 ### "CUDA not found" during build
 
 Set `cuda_path` explicitly in `[build]`, or export one of `CUDA_HOME`, `CUDA_PATH`, `CUDA_ROOT`.
+
+### "nvcc fatal: Unsupported gpu architecture 'compute_120'"
+
+The toolkit predates the device: consumer Blackwell (`sm_120`) needs CUDA 12.8 or later, Hopper (`sm_90`) CUDA 11.8 or later. Install a current toolkit and point `cuda_path` at it, or drop the architecture from `cuda_arch`.
+
+### "no kernel image is available for execution on the device"
+
+The binary carries native code for other architectures and no PTX the driver can compile for this one. Rebuild with `cuda_arch` empty (the visible device's capability is detected) or including the device's `sm_<major><minor>`; a binary shared between machines lists all of their architectures.
+
+### GPU build runs, but `RUN_INFO.toml` shows no `run.gpu_devices`
+
+The engine used the CPU path: the launcher picked a binary without the `.gpu` suffix (check `build.binary` in the run summary and `enable_gpu` in the config), or the GPU library found no device (`GPU_LIST` names an index that does not exist, or the driver is not loaded — compare `hardware.gpu`).
 
 ### Post-processing finds no files
 

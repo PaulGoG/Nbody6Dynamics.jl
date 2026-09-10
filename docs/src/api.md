@@ -176,6 +176,12 @@ animate_hr
 detect_platform
 check_dependencies
 detect_cuda_path
+detect_compute_capabilities
+cuda_arch_from_compute_cap
+cuda_gencode_flags
+resolve_cuda_arch
+nvcc_release
+nvcc_supported_archs
 ```
 
 ## Merger Initial Conditions

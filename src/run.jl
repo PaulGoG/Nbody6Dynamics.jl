@@ -243,16 +243,18 @@ function _execute_simulation(
 
     # --- Locate binary ---
     src_dir = joinpath(base_dir, cfg.install.install_dir)
-    binary = _find_binary(src_dir, sim.binary_name)
+    binary = _find_binary(src_dir, sim.binary_name, cfg.build)
 
     # --- Save frozen config ---
     is_restart || save_config(cfg, joinpath(run_dir, "config.toml"))
 
-    # --- Copy binary and input for reproducibility (kept on restart) ---
+    # --- Copy binary, build record and input for reproducibility (kept on restart) ---
     local_binary = joinpath(out_dir, basename(binary))
     if !(is_restart && isfile(local_binary))
         cp(binary, local_binary; force = true)
         chmod(local_binary, 0o755)
+        build_info = joinpath(dirname(binary), "BUILD_INFO.toml")
+        isfile(build_info) && cp(build_info, joinpath(out_dir, "BUILD_INFO.toml"); force = true)
     end
     input_copy = joinpath(out_dir, basename(input_path))
     abspath(input_path) == abspath(input_copy) || cp(input_path, input_copy; force = true)
@@ -407,6 +409,8 @@ function _write_launch_script(
         # OpenMP thread cap; 0 leaves the runtime default (inherited
         # OMP_NUM_THREADS or every logical CPU).
         sim.omp_threads > 0 && println(io, "export OMP_NUM_THREADS=$(sim.omp_threads)")
+        # CUDA devices the engine may use (its own GPU_LIST variable; unset = all).
+        isempty(sim.gpu_list) || println(io, "export GPU_LIST=\"$(join(sim.gpu_list, ' '))\"")
 
         # CUDA environment
         if build.enable_gpu
@@ -649,6 +653,27 @@ function _reported_omp_threads(stdout_path::AbstractString)::Union{Nothing,Int}
     return nothing
 end
 
+"""
+    _reported_gpu_devices(stderr_path) -> Vector{String}
+
+Devices the engine's GPU library reports at initialisation
+(`gpunb.velocity.cu` prints `# GPU initialization - rank: r; HOST h;
+NGPU n; device: i <name>` to stderr, one line per device and rank), as
+`"rank r: device i <name>"`, distinct. Empty without the file or the lines
+(CPU builds print none).
+"""
+function _reported_gpu_devices(stderr_path::AbstractString)::Vector{String}
+    isfile(stderr_path) || return String[]
+    devices = String[]
+    for line in eachline(stderr_path)
+        m = match(r"# GPU initialization - rank:\s*(\d+);.*device:\s*(\d+)\s+(.*)$", line)
+        m === nothing && continue
+        entry = "rank $(m.captures[1]): device $(m.captures[2]) $(strip(m.captures[3]))"
+        entry in devices || push!(devices, entry)
+    end
+    return devices
+end
+
 """Exit status of a finished process: its exit code, or the negated signal number when it was terminated by a signal (Julia reports exit code 0 in that case)."""
 _exit_status(p::Base.Process)::Int = p.termsignal != 0 ? -Int(p.termsignal) : Int(p.exitcode)
 
@@ -664,8 +689,10 @@ end
 
 Write the machine-readable run summary `RUN_INFO.toml` into `run_dir`:
 run identity, wall-clock time, and the backend thread layout (effective
-OpenMP threads, MPI ranks); provenance (package and backend commits); the
-hardware fingerprint (§6; GPU probed when `build.enable_gpu`); the
+OpenMP threads, MPI ranks, the configured `gpu_list` and the devices the
+engine reported); provenance (package and backend commits); the
+`[build]` table copied from the binary's `BUILD_INFO.toml` when present;
+the hardware fingerprint (§6; GPU probed when `build.enable_gpu`); the
 `[telemetry]` table from [`_finish_telemetry`](@ref) when given; the
 output file inventory; and the `segments` list, one entry per launch
 (initial run and restarts). On a restart the previous segments are kept,
@@ -709,6 +736,9 @@ function _write_run_summary(
     isfile(stdout_path) && (run_table["stdout_lines"] = countlines(stdout_path))
     reported = _reported_omp_threads(stdout_path)
     reported === nothing || (run_table["omp_threads_reported"] = reported)
+    isempty(cfg.simulation.gpu_list) || (run_table["gpu_list"] = copy(cfg.simulation.gpu_list))
+    devices = _reported_gpu_devices(joinpath(dirname(stdout_path), "err1000"))
+    isempty(devices) || (run_table["gpu_devices"] = devices)
 
     d = Dict{String,Any}(
         "run" => run_table,
@@ -721,6 +751,8 @@ function _write_run_summary(
     )
     telemetry === nothing || (d["telemetry"] = telemetry)
     isempty(segments) || (d["segments"] = segments)
+    build_info = joinpath(out_dir, "BUILD_INFO.toml")
+    isfile(build_info) && (d["build"] = TOML.parsefile(build_info))
     if isdir(out_dir)
         files = sort(readdir(out_dir))
         d["output"] = Dict{String,Any}(

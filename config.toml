@@ -17,6 +17,7 @@ enable_mpi      = false
 enable_hdf5     = true
 enable_gpu      = false
 cuda_path       = ""
+cuda_arch       = []            # CUDA architectures, "sm_<major><minor>" (e.g. ["sm_90"]); [] = detect with nvidia-smi
 nproc           = 0             # ≥ 0; 0 = auto-detect
 
 [simulation]
@@ -26,6 +27,7 @@ runs_dir      = "runs"          # nonempty
 binary_name   = "nbody6++"
 mpi_ranks     = 1               # ≥ 1; > 1 requires build.enable_mpi
 omp_threads   = 0               # ≥ 0; 0 = OpenMP runtime default (all logical CPUs)
+gpu_list      = []              # CUDA device indices for GPU_LIST; ≥ 0, distinct, ≤ 4 entries; [] = all; requires build.enable_gpu
 run_id_prefix = "cubic27"       # nonempty
 monitor       = true            # live progress ticker (interactive terminals only)
 telemetry_interval = 5.0        # s; ≥ 0; 0 disables the process/GPU sampler

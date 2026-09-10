@@ -12,8 +12,11 @@ a repository or git is unavailable. Used to stamp run provenance
 """
 function _git_commit(dir::AbstractString)::String
     try
-        h = strip(read(`git -C $dir rev-parse --short HEAD`, String))
-        dirty = !isempty(strip(read(`git -C $dir status --porcelain`, String)))
+        h = strip(read(pipeline(`git -C $dir rev-parse --short HEAD`; stderr = devnull), String))
+        dirty =
+            !isempty(
+                strip(read(pipeline(`git -C $dir status --porcelain`; stderr = devnull), String)),
+            )
         return dirty ? h * "-dirty" : h
     catch
         return "unknown"

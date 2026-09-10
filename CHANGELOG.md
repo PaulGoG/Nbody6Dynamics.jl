@@ -6,6 +6,33 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- GPU build target (F12). `[build] cuda_arch` lists the CUDA architectures
+  the kernels are compiled for (`sm_90` Hopper, `sm_120` consumer
+  Blackwell, …); empty means the compute capabilities `nvidia-smi` reports,
+  or the `nvcc` default when no device is visible. The upstream configure
+  script emits no architecture flag, so the build passes the resolved
+  `-gencode` entries (native code per architecture, PTX for the highest) to
+  `make` as a `CUFLAGS` override, after checking them against the
+  toolkit's own `nvcc --list-gpu-arch` so a toolkit older than the device
+  fails the install phase with the release and the missing architecture
+  named. `[simulation] gpu_list` names the devices
+  the engine may use (its `GPU_LIST` variable, at most four per process);
+  the launch script exports it. The binary is chosen by its suffix tags
+  (`.gpu`, `.mpi`) so CPU and GPU variants can coexist in one build tree.
+  `BUILD_INFO.toml` next to the binary records date, host, backend commit,
+  configure arguments, switches, CUDA path, architectures and `nvcc`
+  release; each run copies it and merges it into `RUN_INFO.toml` as
+  `[build]`. The run summary also records `run.gpu_list`, the devices the
+  GPU library reported at initialisation (`run.gpu_devices`) and the
+  kernel label of the throughput profile (`GPU Reg.F` versus `AVX Reg.F`);
+  the hardware fingerprint adds the compute capability per device.
+  `bench/gpu_scaling.jl` measures the GPU speed-up over the CPU binary at
+  equal N and threads for a list of `GPU_LIST` values; the two-cluster
+  case moved to `bench/merger_case.jl`, shared with `thread_scaling.jl`. A
+  GPU-gated testset (`NBODY6_GPU_TESTS=1`) builds the engine with CUDA in a
+  temporary tree and runs the 1k input on one device and, when present, on
+  two. No NVIDIA device was available for this change: the GPU path is
+  verified by the gated suite on the first such host.
 - README and docs index carry a figure of the equal-mass merger, at the
   start and after 12 Myr, produced by the pipeline itself; the asset lives
   in `docs/src/assets/` and is shared by both. The README also carries the

@@ -19,6 +19,8 @@ Pkg.instantiate(; io = devnull)
 
 using Nbody6Dynamics, TOML, Dates, Printf
 
+include("merger_case.jl")
+
 const BENCH = @__DIR__
 const PROJ = normpath(joinpath(BENCH, ".."))
 parse_list(s, T) = [parse(T, x) for x in split(s, ',')]
@@ -32,40 +34,6 @@ mkpath(runs_dir)
 mkpath(results_dir)
 stamp = Dates.format(now(), "yyyymmdd_HHMMSS")
 csv_path = joinpath(results_dir, "thread_scaling_$(stamp).csv")
-
-function merger_toml(N_total)
-    n = N_total ÷ 2
-    """
-    [merger]
-    n_clusters = 2
-    orbit_mode = "kepler"
-    seed = 11
-
-    [merger.cluster1]
-    model = "king"
-    N = $n
-    W0 = 6.0
-    rbar = 2.0
-    imf = "kroupa"
-
-    [merger.cluster2]
-    model = "king"
-    N = $n
-    W0 = 6.0
-    rbar = 2.0
-    imf = "kroupa"
-
-    [merger.orbit]
-    apocentre = 12.0
-    eccentricity = 0.6
-
-    [merger.output]
-    truncate_jacobi = true
-    tcrit = $tcrit
-    dtadj = 0.25
-    deltat = 0.5
-    """
-end
 
 function pipeline_toml(merger_path, nthreads, prefix)
     """
@@ -110,7 +78,7 @@ end
 for N in N_list, nt in threads
     prefix = "bench_N$(N)_t$(nt)"
     mpath = joinpath(runs_dir, "merger_N$(N).toml")
-    isfile(mpath) || write(mpath, merger_toml(N))
+    isfile(mpath) || write(mpath, merger_toml(N, tcrit))
     cpath = joinpath(runs_dir, "$(prefix).toml")
     write(cpath, pipeline_toml(mpath, nt, prefix))
     cfg = load_config(cpath)

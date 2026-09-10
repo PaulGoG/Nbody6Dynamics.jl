@@ -47,6 +47,19 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
             @info "Auto-detected CUDA: $cuda_path"
         end
     end
+    # The configure script emits no architecture flag: resolve the targets
+    # here and pass them to make as a CUFLAGS override (step 7).
+    cuda_archs = build.enable_gpu ? resolve_cuda_arch(build) : String[]
+    if !isempty(cuda_archs)
+        @info "CUDA target architectures: $(join(cuda_archs, ", "))"
+        # The device capability comes from nvidia-smi; nvcc knows only what
+        # the toolkit can compile. Fail here, not with an nvcc fatal mid-build.
+        _check_cuda_arch_support(
+            cuda_archs,
+            nvcc_supported_archs(cuda_path),
+            nvcc_release(cuda_path),
+        )
+    end
 
     # ------------------------------------------------------------------
     # 4. Clone / reinstall
@@ -111,19 +124,93 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
                 @info "make clean skipped (no prior build artifacts)"
             end
         end
+        make_args = ["-j$np"]
+        if !isempty(cuda_archs)
+            cuflags = _cuflags_with_arch(joinpath(makefile_dir, "Makefile"), cuda_archs)
+            push!(make_args, "CUFLAGS=$cuflags")
+        end
         t_build = time()
         @info "Compiling with $np processes..."
-        _run_build_with_progress(Cmd(`make -j$np`; env = build_env))
+        _run_build_with_progress(Cmd(`make $make_args`; env = build_env))
         elapsed = _format_elapsed(time() - t_build)
         @info "Compilation finished ($elapsed)"
     end
 
     # ------------------------------------------------------------------
-    # 8. Locate binary
+    # 8. Locate binary and record the build
     # ------------------------------------------------------------------
-    binary = _find_binary(src_dir, cfg.simulation.binary_name)
+    binary = _find_binary(src_dir, cfg.simulation.binary_name, build)
+    _write_build_info(src_dir, cfg, configure_args, cuda_path, cuda_archs, binary)
     @info "Build complete. Binary: $binary"
     return binary
+end
+
+"""
+    _cuflags_with_arch(makefile, archs) -> String
+
+The `CUFLAGS` value `./configure` wrote into `makefile` (`-O3`, the
+`CUDA_5` define, the `helper_cuda.h` include path) extended with the
+[`cuda_gencode_flags`](@ref) of `archs`, for a `make CUFLAGS=...`
+command-line override. Without the override `nvcc` compiles for its
+default target, which the driver JIT-compiles from PTX on every newer
+device.
+"""
+function _cuflags_with_arch(
+    makefile::AbstractString,
+    archs::AbstractVector{<:AbstractString},
+)::String
+    base = "-O3"
+    if isfile(makefile)
+        for line in eachline(makefile)
+            m = match(r"^CUFLAGS\s*=\s*(.*)$", line)
+            m === nothing && continue
+            base = String(strip(m.captures[1]))
+            break
+        end
+    end
+    gencode = cuda_gencode_flags(archs)
+    return isempty(gencode) ? base : base * " " * gencode
+end
+
+"""
+    _write_build_info(src_dir, cfg, configure_args, cuda_path, cuda_archs, binary) -> String
+
+Write `BUILD_INFO.toml` next to the binary: date, host, backend commit,
+configure arguments, the MPI/GPU/HDF5 switches, the binary name and, for
+GPU builds, the CUDA path, the compiled architectures and the `nvcc`
+release. The launcher copies the file into every run directory and merges
+it into `RUN_INFO.toml` as the `[build]` table, so each result records the
+build that produced it. Returns the path.
+"""
+function _write_build_info(
+    src_dir::AbstractString,
+    cfg::Nbody6Config,
+    configure_args::AbstractVector{<:AbstractString},
+    cuda_path::AbstractString,
+    cuda_archs::AbstractVector{<:AbstractString},
+    binary::AbstractString,
+)::String
+    build = cfg.build
+    d = Dict{String,Any}(
+        "date" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
+        "host" => gethostname(),
+        "backend_commit" => _git_commit(src_dir),
+        "configure_args" => String.(configure_args),
+        "enable_mpi" => build.enable_mpi,
+        "enable_gpu" => build.enable_gpu,
+        "enable_hdf5" => build.enable_hdf5,
+        "binary" => basename(binary),
+    )
+    if build.enable_gpu
+        d["cuda_path"] = String(cuda_path)
+        d["cuda_arch"] = String.(cuda_archs)
+        d["nvcc_release"] = nvcc_release(cuda_path)
+    end
+    path = joinpath(dirname(binary), "BUILD_INFO.toml")
+    open(path, "w") do io
+        TOML.print(io, d)
+    end
+    return path
 end
 
 # ---------------------------------------------------------------------------
@@ -242,25 +329,42 @@ function _run_build_with_progress(cmd::Cmd)
 end
 
 """
-Search common locations for the compiled binary.
+    _find_binary(src_dir, binary_name, build::BuildConfig) -> String
+
+Path of the compiled engine under `src_dir/build`. The build system names
+the binary after its configure options (`nbody6++.avx`, `nbody6++.avx.gpu`,
+`nbody6++.avx.mpi.gpu`, …) and several variants may coexist, so the
+candidate is chosen by its suffix tags: `.gpu` present exactly when
+`build.enable_gpu`, `.mpi` present exactly when `build.enable_mpi`. Among
+several matches the most recently modified wins. Throws when no variant
+matches, listing the files found.
 """
-function _find_binary(src_dir::AbstractString, binary_name::AbstractString)::String
+function _find_binary(
+    src_dir::AbstractString,
+    binary_name::AbstractString,
+    build::BuildConfig,
+)::String
     build_dir = joinpath(src_dir, "build")
-    candidates = [
-        joinpath(build_dir, binary_name),
-        joinpath(build_dir, "nbody6++.gpu"),
-        joinpath(build_dir, "nbody6++"),
-    ]
-
-    if isdir(build_dir)
-        for f in readdir(build_dir)
-            startswith(f, "nbody6++") && push!(candidates, joinpath(build_dir, f))
-        end
+    isdir(build_dir) || error("Build directory not found: $build_dir. Run the install phase first.")
+    found = String[]
+    matches = String[]
+    for f in sort(readdir(build_dir))
+        startswith(f, binary_name) || continue
+        path = joinpath(build_dir, f)
+        isfile(path) || continue
+        push!(found, f)
+        tags = split(chop(f; head = length(binary_name), tail = 0), '.'; keepempty = false)
+        ("gpu" in tags) == build.enable_gpu || continue
+        ("mpi" in tags) == build.enable_mpi || continue
+        push!(matches, path)
     end
-
-    for path in candidates
-        isfile(path) && return path
-    end
-
-    error("Could not find compiled binary in $build_dir. Check build output for errors.")
+    isempty(matches) && error(
+        "No $(binary_name) binary with gpu = $(build.enable_gpu), mpi = $(build.enable_mpi) " *
+        "in $build_dir " *
+        (
+            isempty(found) ? "(no binary at all; check the build output)" :
+            "(found: $(join(found, ", ")))"
+        ),
+    )
+    return matches[argmax(mtime.(matches))]
 end

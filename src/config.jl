@@ -70,6 +70,7 @@ function _parse_build(d::Dict)
         enable_hdf5 = get(d, "enable_hdf5", true),
         enable_gpu = get(d, "enable_gpu", false),
         cuda_path = get(d, "cuda_path", ""),
+        cuda_arch = Vector{String}(get(d, "cuda_arch", String[])),
         nproc = get(d, "nproc", 0),
     )
 end
@@ -82,6 +83,7 @@ function _parse_simulation(d::Dict)
         binary_name = get(d, "binary_name", "nbody6++"),
         mpi_ranks = get(d, "mpi_ranks", 1),
         omp_threads = get(d, "omp_threads", 0),
+        gpu_list = Vector{Int}(get(d, "gpu_list", Int[])),
         run_id_prefix = get(d, "run_id_prefix", "run"),
         monitor = get(d, "monitor", false),
         telemetry_interval = Float64(get(d, "telemetry_interval", 5.0)),
@@ -169,6 +171,12 @@ function _validate(cfg::Nbody6Config)
     # [install] / [build]
     isempty(inst.install_dir) && error("config: install.install_dir must be nonempty")
     bld.nproc ≥ 0 || error("config: build.nproc must be ≥ 0; got $(bld.nproc)")
+    for arch in bld.cuda_arch
+        occursin(_CUDA_ARCH_PATTERN, arch) || error(
+            "config: build.cuda_arch entries must be CUDA architecture names of the form " *
+            "\"sm_<major><minor>\" (e.g. \"sm_90\", \"sm_120\"); got \"$arch\"",
+        )
+    end
 
     # [simulation]
     sim.mpi_ranks ≥ 1 || error("config: simulation.mpi_ranks must be ≥ 1; got $(sim.mpi_ranks)")
@@ -180,6 +188,21 @@ function _validate(cfg::Nbody6Config)
     end
     sim.omp_threads ≥ 0 ||
         error("config: simulation.omp_threads must be ≥ 0; got $(sim.omp_threads)")
+    if !isempty(sim.gpu_list)
+        bld.enable_gpu || error(
+            "config: simulation.gpu_list = $(sim.gpu_list) requires build.enable_gpu = true — " *
+            "the CPU binary ignores GPU_LIST",
+        )
+        all(≥(0), sim.gpu_list) || error(
+            "config: simulation.gpu_list entries must be ≥ 0 (CUDA device indices); got $(sim.gpu_list)",
+        )
+        allunique(sim.gpu_list) ||
+            error("config: simulation.gpu_list entries must be distinct; got $(sim.gpu_list)")
+        length(sim.gpu_list) ≤ _MAX_GPU_PER_PROCESS || error(
+            "config: simulation.gpu_list may name at most $(_MAX_GPU_PER_PROCESS) devices per " *
+            "process (the engine's MAX_GPU); got $(length(sim.gpu_list))",
+        )
+    end
     sim.telemetry_interval ≥ 0 || error(
         "config: simulation.telemetry_interval must be ≥ 0 [s]; got $(sim.telemetry_interval)",
     )

@@ -504,24 +504,33 @@ end
 
 Regular-force kernel throughput the backend's AVX/SSE or GPU profiles print
 to stderr once per `DTADJ` (`Perf.(Gflops) <value>`, reset after each
-print). Returns the sample count, mean, and peak in Gflops, or `nothing`
-when the file carries no such line.
+print). Returns the sample count, mean, and peak in Gflops and the kernel
+labels the lines carry (`"GPU Reg.F"`, `"AVX Reg.F"`, …; several joined
+with `, `), or `nothing` when the file carries no such line.
 """
 function _force_kernel_gflops(stderr_path::AbstractString)::Union{Nothing,Dict{String,Any}}
     isfile(stderr_path) || return nothing
     values = Float64[]
+    kernels = String[]
     for line in eachline(stderr_path)
         m = match(r"Perf\.\(Gflops\)\s+([0-9.eE+-]+)", line)
         m === nothing && continue
         v = tryparse(Float64, m.captures[1])
-        v === nothing || push!(values, v)
+        v === nothing && continue
+        push!(values, v)
+        k = match(r"\[R\.\d+\s+(.+?)\s*\]", line)
+        k === nothing && continue
+        label = String(k.captures[1])
+        label in kernels || push!(kernels, label)
     end
     isempty(values) && return nothing
-    return Dict{String,Any}(
+    d = Dict{String,Any}(
         "samples" => length(values),
         "mean" => round(_mean(values); digits = 2),
         "peak" => round(maximum(values); digits = 2),
     )
+    isempty(kernels) || (d["kernel"] = join(kernels, ", "))
+    return d
 end
 
 """
