@@ -359,6 +359,11 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- The build dependency check accepts an `nvcc` under the configured or
+  auto-detected toolkit rather than only on `PATH`; the GPU-gated tests
+  query the same toolkit. On a host with the toolkit under `/usr/local/cuda`
+  and nothing on `PATH`, GPU builds refused to start with "Missing
+  dependencies: nvcc".
 - GPU builds with a CUDA 13 toolkit: the engine's vendored `helper_cuda.h`
   reads `cudaDeviceProp.clockRate` and `.computeMode`, which CUDA 13.0
   removed; the `CUFLAGS` override now puts `deps/cuda` ahead of the engine's

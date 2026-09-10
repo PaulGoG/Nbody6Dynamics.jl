@@ -33,7 +33,11 @@ end
 """
     check_dependencies(cfg::Nbody6Config) -> Vector{String}
 
-Return a list of missing dependencies required for building Nbody6++.
+Return a list of missing dependencies required for building Nbody6++:
+`git`, the GNU toolchain and `make` on `PATH`, the MPI wrappers when
+`build.enable_mpi`, and for GPU builds `nvcc` either on `PATH` or under
+`<cuda_path>/bin` of the configured or auto-detected toolkit, whose `bin`
+the build exports itself.
 """
 function check_dependencies(cfg::Nbody6Config)::Vector{String}
     missing_deps = String[]
@@ -42,12 +46,17 @@ function check_dependencies(cfg::Nbody6Config)::Vector{String}
     if cfg.build.enable_mpi
         append!(required, ["mpicc", "mpif90", "mpirun"])
     end
-    if cfg.build.enable_gpu
-        push!(required, "nvcc")
-    end
 
     for cmd in required
         check_command(cmd) || push!(missing_deps, cmd)
+    end
+
+    if cfg.build.enable_gpu
+        cuda_path = isempty(cfg.build.cuda_path) ? detect_cuda_path() : cfg.build.cuda_path
+        nvcc_present =
+            check_command("nvcc") ||
+            (!isempty(cuda_path) && isfile(joinpath(cuda_path, "bin", "nvcc")))
+        nvcc_present || push!(missing_deps, "nvcc")
     end
 
     return missing_deps

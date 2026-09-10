@@ -547,6 +547,24 @@ format = "pdf"
 
     # =====================================================================
     @testset "GPU validation driver" begin
+        # The dependency check accepts an nvcc that sits under the toolkit rather
+        # than on PATH (the build exports <cuda_path>/bin itself).
+        cuda_dir = mktempdir()
+        mkpath(joinpath(cuda_dir, "bin"))
+        touch(joinpath(cuda_dir, "bin", "nvcc"))
+        dep_cfg(body) = (p = joinpath(cuda_dir, "cfg.toml"); write(p, body); load_config(p))
+        @test !(
+            "nvcc" in
+            check_dependencies(dep_cfg("[build]\nenable_gpu = true\ncuda_path = \"$cuda_dir\"\n"))
+        )
+        @test !("nvcc" in check_dependencies(dep_cfg("[build]\nenable_gpu = false\n")))
+        if !Nbody6Dynamics.check_command("nvcc")
+            absent = joinpath(cuda_dir, "absent")
+            @test "nvcc" in check_dependencies(
+                dep_cfg("[build]\nenable_gpu = true\ncuda_path = \"$absent\"\n"),
+            )
+        end
+
         # nvcc host-compiler probe: classification of the compiler message
         @test Nbody6Dynamics._unsupported_host_compiler(
             "#error -- unsupported GNU version! gcc versions later than 14 are not supported!",
@@ -5047,7 +5065,7 @@ poll_interval = 1.0
             caps = detect_compute_capabilities()
             @test !isempty(caps)
             archs = cuda_arch_from_compute_cap.(caps)
-            supported = nvcc_supported_archs()
+            supported = nvcc_supported_archs(detect_cuda_path())
             @test !isempty(supported) && all(a -> a in supported, archs)
             n_dev = count(
                 !isempty,
