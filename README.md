@@ -24,13 +24,15 @@ that fills the frame. Every run writes animations like this one alongside its st
 
 ```
 Nbody6Dynamics/
-├── .github/workflows/               # CI matrix, static QA, Format check, Docs build, CompatHelper
-├── .JuliaFormatter.toml             # Formatter configuration (enforced by the Format check)
+├── .github/workflows/               # CI matrix, static QA, Format check, Docs build, CompatHelper (parked until the repository is public)
+├── .JuliaFormatter.toml             # Formatter configuration
 ├── README.md
 ├── LICENSE                          # MIT
+├── CITATION.cff                     # Citation metadata
 ├── CHANGELOG.md                     # Release history (Changelog.jl conventions)
 ├── Project.toml                     # Package metadata & dependencies
 ├── Manifest.toml                    # Version-controlled — exact dependency versions
+├── activate.jl                      # Activates and instantiates the package environment
 ├── config.toml                      # Main pipeline configuration (edit this)
 ├── src/
 │   ├── Nbody6Dynamics.jl               # Module root; run_pipeline orchestrator; exports
@@ -94,10 +96,14 @@ Nbody6Dynamics/
 │   ├── gpu_scaling.jl               # GPU-versus-CPU binary at equal N and threads, per GPU_LIST (speed-up table)
 │   ├── merger_case.jl               # The two-cluster case shared by the scaling scripts
 │   ├── benchmarks.jl                # BenchmarkTools suite (kept out of tests)
-│   └── Project.toml                 # Bench-local environment
+│   ├── activate.jl                  # Activates the bench environment (package developed by relative path)
+│   ├── Project.toml                 # Bench-local environment
+│   └── Manifest.toml                # Version-controlled — exact benchmark dependency versions
 ├── docs/
 │   ├── make.jl                      # Documenter.jl build script
+│   ├── activate.jl                  # Activates the docs environment (package developed by relative path)
 │   ├── Project.toml                 # Documentation build environment
+│   ├── Manifest.toml                # Version-controlled — exact documentation dependency versions
 │   ├── src/                         # index, walkthrough (Literate), manual, input_files, multi_cluster_mergers, api, references
 │   ├── src/references.bib           # BibTeX of the sources cited (DocumenterCitations)
 │   └── src/assets/                  # figure and animation used by the README and the docs site
@@ -131,28 +137,32 @@ Nbody6Dynamics/
 
 ## Environment Setup
 
-Requires Julia ≥ 1.10.
+Requires Julia ≥ 1.10, installed through [juliaup](https://github.com/JuliaLang/juliaup) (`juliaup add release`). The tracked Manifests were resolved with Julia 1.13, the version of the GPU hosts the package targets, and reproduce that dependency set exactly there.
+
+Every environment ships an activation script that activates and instantiates it silently. Running one on a new machine performs the dependency resolution and precompilation once:
 
 ```bash
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia activate.jl          # package environment (required)
+julia docs/activate.jl     # documentation build (optional)
+julia bench/activate.jl    # benchmarks (optional)
 ```
 
-`Manifest.toml` is version-controlled, so `instantiate` reproduces the exact dependency set on any machine. Building the Fortran backend additionally needs `git`, `gfortran`/`make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
+The scripts under `scripts/`, `docs/` and `bench/` include their environment's activation script, so they need no `--project` flag; the docs and bench environments develop the package by a relative path and always run against the local source. Building the Fortran backend additionally needs `git`, `gfortran`/`make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
 
 ## Entry Points
 
-One invocation each; details in the sections below. The docs and benchmark scripts self-activate their own environments (and develop the package by path), so no `--project` flag is needed there.
+One invocation each; details in the sections below.
 
 | Task | Invocation |
 |------|------------|
-| Instantiate the package environment | `julia --project=. -e 'using Pkg; Pkg.instantiate()'` |
-| Run the main pipeline | `julia --project=. scripts/run_setup.jl [config.toml]` |
-| Run a parameter sweep | `julia --project=. scripts/run_sweep.jl input_files/sweep_demo.toml [--dry-run]` |
-| Run a showcase case | `julia --project=. scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (also `binary_`, `tidal_`; the sweep via `scripts/run_sweep.jl input_files/showcase/sweep.toml`) |
-| Run the verification suite | `julia --project=. scripts/run_verif_suite.jl` |
+| Instantiate the package environment | `julia activate.jl` |
+| Run the main pipeline | `julia scripts/run_setup.jl [config.toml]` |
+| Run a parameter sweep | `julia scripts/run_sweep.jl input_files/sweep_demo.toml [--dry-run]` |
+| Run a showcase case | `julia scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (also `binary_`, `tidal_`; the sweep via `scripts/run_sweep.jl input_files/showcase/sweep.toml`) |
+| Run the verification suite | `julia scripts/run_verif_suite.jl` |
 | Execute the test suite | `julia --project=. -e 'using Pkg; Pkg.test()'` |
 | Run the benchmarks | `julia bench/benchmarks.jl` |
-| Build and run on a CUDA host | `julia --project=. scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml` (CPU reference: `cpu_pipeline.toml`; recipe in the manual) |
+| Build and run on a CUDA host | `julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml` (CPU reference: `cpu_pipeline.toml`; recipe in the manual) |
 | Measure the GPU speed-up | `julia bench/gpu_scaling.jl 20000,50000 4,8 "0;0,1" 0.25` (needs the CPU and the GPU binary) |
 | Build the documentation | `julia docs/make.jl` (also executes the walkthrough; the site lands in `docs/build/`) |
 
@@ -178,7 +188,7 @@ results = run_pipeline(cfg)   # Dict with :snapshots, :diagnostics, :lagr, :esca
 Or via the CLI wrapper:
 
 ```bash
-julia --project=. scripts/run_setup.jl [config.toml]
+julia scripts/run_setup.jl [config.toml]
 ```
 
 Standalone merger IC generation (no main config needed):
@@ -230,7 +240,7 @@ For interactive work against the test dependencies, activate the test environmen
 ## Verification Suite
 
 ```bash
-julia --project=. scripts/run_verif_suite.jl
+julia scripts/run_verif_suite.jl
 ```
 
 Runs three end-to-end targets through `run_pipeline` (requires a built binary in `backend/`):
@@ -244,5 +254,5 @@ Runs three end-to-end targets through `run_pipeline` (requires a built binary in
 Documenter.jl docs live under `docs/` (Manual, Input Files, Cluster Mergers, API Reference):
 
 ```bash
-julia --project=docs docs/make.jl   # builds to docs/build/
+julia docs/make.jl   # builds to docs/build/
 ```

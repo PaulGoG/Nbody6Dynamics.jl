@@ -40,7 +40,7 @@ results = run_pipeline(cfg)
 ## 2. Prerequisites
 
 - **Linux** (tested on Fedora and Ubuntu)
-- **Julia 1.10+**
+- **Julia 1.10+** through [juliaup](https://github.com/JuliaLang/juliaup); the tracked Manifests were resolved with Julia 1.13
 - **GCC toolchain**: `gcc`, `g++`, `gfortran`, `make`
 - **Git** (for cloning the simulation code)
 
@@ -52,11 +52,11 @@ Optional, depending on config: MPI (`mpicc`, `mpif90`, `mpirun`), CUDA toolkit (
 
 ```bash
 cd Nbody6Dynamics
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia activate.jl                                   # resolves, instantiates and precompiles the package environment
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
-The first `using Nbody6Dynamics` after an install or a source change precompiles the package together with a small workload (configuration parsing, the diagnostics reader, a merger initial-condition generation), so those paths run compiled in every later session.
+`activate.jl` activates and instantiates the package environment silently; `docs/activate.jl` and `bench/activate.jl` do the same for the documentation and benchmark environments, developing the package by a relative path. The scripts under `scripts/`, `docs/` and `bench/` include their environment's activation script, so they run without a `--project` flag. The first `using Nbody6Dynamics` after an install or a source change precompiles the package together with a small workload (configuration parsing, the diagnostics reader, a merger initial-condition generation), so those paths run compiled in every later session.
 
 ---
 
@@ -248,11 +248,11 @@ Shipped under `input_files/gpu/`: `gpu_pipeline.toml` clones and builds the engi
 
 ```bash
 git clone git@github.com:PaulGoG/Nbody6Dynamics.jl.git Nbody6Dynamics && cd Nbody6Dynamics
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia activate.jl
 nvidia-smi --query-gpu=name,compute_cap --format=csv && nvcc --version | tail -1   # toolkit >= 12.8 for RTX 50, >= 11.8 for H200
 NBODY6_GPU_TESTS=1 julia --project=. -e 'using Pkg; Pkg.test()'      # builds with CUDA in a temporary tree, runs the 1k input on one device, then on two if present
-julia --project=. scripts/run_setup.jl input_files/gpu/cpu_pipeline.toml   # CPU reference build + run
-julia --project=. scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml   # GPU build + run
+julia scripts/run_setup.jl input_files/gpu/cpu_pipeline.toml   # CPU reference build + run
+julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml   # GPU build + run
 NBODY6_GPU_BACKEND=backend/Nbody6PPGPU-beijing-gpu julia bench/gpu_scaling.jl 20000,50000,100000 4,8 "0" 0.25   # "0;0,1" with two devices
 ```
 
@@ -363,8 +363,8 @@ controls = false                           # isolated single-cluster control com
 ```
 
 ```bash
-julia --project=. scripts/run_sweep.jl input_files/sweep_demo.toml            # run
-julia --project=. scripts/run_sweep.jl input_files/sweep_demo.toml --dry-run  # prepare only
+julia scripts/run_sweep.jl input_files/sweep_demo.toml            # run
+julia scripts/run_sweep.jl input_files/sweep_demo.toml --dry-run  # prepare only
 ```
 
 Axes address the merger TOML from its root; the parent table must exist in the base file (add `[merger.tidal]` with `kz14 = 0` to sweep the tidal field), and `merger.seed` is reserved for `seeds`. Axes are processed in key order with the first varying fastest; point directories read `<index>_<axis>=<value>_…_seed=<seed>`.

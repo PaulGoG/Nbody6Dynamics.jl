@@ -422,7 +422,7 @@ _marker_size(cfg::VisualizationConfig, n::Integer) =
 # Shared annotation, layout, and data-preparation helpers
 # ---------------------------------------------------------------------------
 
-"""Standard fontsize for in-axis annotations (quantitative takeaways, §10)."""
+"""Standard fontsize for in-axis annotations (quantitative takeaways)."""
 const _ANNOTATION_FONTSIZE = 16
 
 """Row gap between the stacked panels of two-panel figures."""

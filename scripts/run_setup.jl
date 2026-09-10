@@ -14,9 +14,7 @@
 # logic here — a previous copy of this script did, silently skipping the
 # merger phase.
 
-using Pkg
-Pkg.activate(joinpath(@__DIR__, ".."); io = devnull)
-Pkg.instantiate(; io = devnull)
+include(joinpath(@__DIR__, "..", "activate.jl"))
 
 using Nbody6Dynamics
 

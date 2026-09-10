@@ -1,6 +1,6 @@
 # =============================================================================
 # Runtime hardware telemetry: exact child CPU accounting plus process-tree
-# and GPU sampling for benchmarking (§6 provenance, §7 profiling)
+# and GPU sampling for benchmarking (provenance and profiling)
 # =============================================================================
 
 """

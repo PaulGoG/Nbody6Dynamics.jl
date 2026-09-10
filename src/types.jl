@@ -84,7 +84,7 @@ Base.@kwdef struct SimulationConfig
     omp_threads::Int = 0
     gpu_list::Vector{Int} = Int[]
     run_id_prefix::String = "run"
-    monitor::Bool = false   # opt-in live progress ticker (§9); interactive stderr only
+    monitor::Bool = false   # opt-in live progress ticker; interactive stderr only
     live_diagnostics::Bool = false
     live_interval::Float64 = 30.0
     telemetry_interval::Float64 = 5.0

@@ -8,8 +8,7 @@
 
 const PROJ = normpath(joinpath(@__DIR__, ".."))
 
-using Pkg
-Pkg.activate(PROJ; io = devnull)
+include(joinpath(PROJ, "activate.jl"))
 
 using Nbody6Dynamics, TOML, Dates
 

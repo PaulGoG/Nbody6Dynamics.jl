@@ -1,13 +1,6 @@
-# Self-activating (§3): the docs environment consumes the package by path,
-# so the build always runs against the local source.
-using Pkg
-Pkg.activate(@__DIR__; io = devnull)
-# Develop with a path relative to this directory so the tracked Manifest
-# records `path = ".."` and stays portable across machines.
-cd(@__DIR__) do
-    Pkg.develop(; path = "..", io = devnull)
-end
-Pkg.instantiate(; io = devnull)
+# The documentation environment consumes the package by path, so the build
+# always runs against the local source.
+include(joinpath(@__DIR__, "activate.jl"))
 
 using Documenter
 using DocumenterCitations
@@ -52,4 +45,8 @@ makedocs(;
 )
 
 # Publishes from CI only (a GITHUB_* environment); a local build stops here.
-deploydocs(; repo = "github.com/PaulGoG/Nbody6Dynamics.jl", devbranch = "main", push_preview = false)
+deploydocs(;
+    repo = "github.com/PaulGoG/Nbody6Dynamics.jl",
+    devbranch = "main",
+    push_preview = false,
+)

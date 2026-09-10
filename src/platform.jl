@@ -85,7 +85,9 @@ function detect_cuda_path()::String
     try
         nvcc = strip(read(pipeline(`which nvcc`; stderr = devnull), String))
         return dirname(dirname(nvcc))  # nvcc lives in CUDA_HOME/bin/
-    catch
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError} || rethrow()
+        @debug "nvcc not found on PATH" exception = e
     end
 
     return ""
@@ -314,7 +316,9 @@ function detect_hdf5_flags(platform::Symbol, use_mpi::Bool)::Tuple{String,String
         libs = strip(read(pipeline(`pkg-config --libs $hdf5_lib`; stderr = devnull), String))
         libs *= " -lhdf5_fortran"
         return (cflags, libs)
-    catch
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError} || rethrow()
+        @debug "pkg-config has no entry for $hdf5_lib; using the platform fallback" exception = e
     end
 
     # Platform-specific fallbacks
@@ -370,7 +374,7 @@ function check_fedora_h5pfc()
 end
 
 # ---------------------------------------------------------------------------
-# Hardware fingerprint (run provenance, §6)
+# Hardware fingerprint (run provenance)
 # ---------------------------------------------------------------------------
 
 """

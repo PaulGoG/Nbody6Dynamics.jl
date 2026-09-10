@@ -27,7 +27,7 @@ end
     _with_run_log(f, run_dir) -> result of f()
 
 Run `f()` with the current logger teed to a plain-text, ANSI-free
-`nbody6dynamics.log` inside `run_dir` (§9: structured logging to file for
+`nbody6dynamics.log` inside `run_dir` (structured logging to file for
 long runs). Console behaviour is unchanged; the file sink records
 timestamped Info+ records and is appended to across pipeline phases.
 """
@@ -53,7 +53,7 @@ end
     export_for_paper(paths, dest_dir; run_dir = nothing) -> Vector{String}
 
 Copy finished figures to a manuscript figures directory with provenance
-attached (§6): each file is copied as `<run_id>__<name>` and a TOML sidecar
+attached: each file is copied as `<run_id>__<name>` and a TOML sidecar
 `<run_id>__<name>.provenance.toml` records the producing run, the package
 and backend commits (from the run's RUN_INFO.toml when `run_dir` is given),
 and the export date. `dest_dir` is caller-supplied — the package never

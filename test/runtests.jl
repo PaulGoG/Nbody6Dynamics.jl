@@ -2624,7 +2624,7 @@ $(extra)
     # =====================================================================
     @testset "Initial Conditions — Merger IC Generator" begin
         # StableRNGs guarantees an identical stream across Julia versions, so
-        # reference values in these tests survive upgrades (§8).
+        # reference values in these tests survive upgrades.
         using StableRNGs
         rng = StableRNG(12345)
 
@@ -4234,7 +4234,7 @@ rbar = 1.0
     end
 
     # =====================================================================
-    # Static QA (§8): ships with the tests.
+    # Static QA ships with the tests.
     # =====================================================================
     @testset "Backend thread control" begin
         sim0 = SimulationConfig()

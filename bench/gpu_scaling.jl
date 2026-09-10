@@ -20,10 +20,7 @@
 # Runs live under bench/runs/ (ignored by git).
 # =============================================================================
 
-using Pkg
-Pkg.activate(@__DIR__; io = devnull)
-Pkg.develop(; path = joinpath(@__DIR__, ".."), io = devnull)
-Pkg.instantiate(; io = devnull)
+include(joinpath(@__DIR__, "activate.jl"))
 
 using Nbody6Dynamics, TOML, Dates, Printf
 

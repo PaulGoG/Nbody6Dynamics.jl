@@ -13,9 +13,6 @@ plots/
 # Documenter.jl build output
 docs/build/
 
-# bench-local environment (dev-links the package by absolute path)
-bench/Manifest.toml
-
 # Benchmark runs and results
 bench/runs/
 bench/results/

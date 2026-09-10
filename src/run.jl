@@ -223,7 +223,7 @@ Shared execution core for [`run_simulation`](@ref), the merger pipeline,
 and [`restart_simulation`](@ref): locates the binary, freezes the config
 into `run_dir`, copies the binary and the input file into `out_dir` for
 reproducibility, writes the launch script, and runs it under the teed run
-log (§9) with the opt-in live monitor. `input_path` must be absolute (the
+log with the opt-in live monitor. `input_path` must be absolute (the
 launch script executes from `out_dir`). With `restart = (; dump,
 tcrit_extra)` the binary copy is reused, stdout and stderr are appended,
 and the run summary records a further segment. Returns `run_dir`.
@@ -272,7 +272,7 @@ function _execute_simulation(
         append = is_restart,
     )
 
-    # --- Execute, teeing pipeline logs to the run directory (§9) ---
+    # --- Execute, teeing pipeline logs to the run directory ---
     _with_run_log(run_dir) do
         omp_threads = _effective_omp_threads(sim)
         threads_total = omp_threads * sim.mpi_ranks
@@ -615,7 +615,7 @@ function _monitor_stdout_file(
             end
         end
 
-        # Opt-in in-terminal sparklines of the diagnostics so far (§9): printed
+        # Opt-in in-terminal sparklines of the diagnostics so far: printed
         # as a block below the log lines; the spinner resumes underneath.
         if live && time() - last_live ≥ live_interval
             panel = _live_diagnostics_panel(path)
@@ -773,7 +773,11 @@ function _print_monitor_line(line::AbstractString, t_start::Float64 = time())::B
                     qvir
                 )
             end
-        catch
+        catch e
+            # A malformed ADJUST line only costs one ticker update.
+            e isa ArgumentError || e isa BoundsError || rethrow()
+            @debug "Skipping unparseable ADJUST line in the live monitor" line = stripped exception =
+                e
         end
         return true
     end
@@ -862,7 +866,7 @@ run identity, wall-clock time, and the backend thread layout (effective
 OpenMP threads, MPI ranks, the configured `gpu_list` and the devices the
 engine reported); provenance (package and backend commits); the
 `[build]` table copied from the binary's `BUILD_INFO.toml` when present;
-the hardware fingerprint (§6; GPU probed when `build.enable_gpu`); the
+the hardware fingerprint (GPU probed when `build.enable_gpu`); the
 `[telemetry]` table from [`_finish_telemetry`](@ref) when given; the
 output file inventory; and the `segments` list, one entry per launch
 (initial run and restarts). On a restart the previous segments are kept,

@@ -6,6 +6,13 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Activation scripts for every environment: `activate.jl` (package),
+  `docs/activate.jl` and `bench/activate.jl` (auxiliary environments,
+  package developed by a relative path). The scripts under `scripts/`,
+  `docs/` and `bench/` include their environment's script, so none needs a
+  `--project` flag; `julia activate.jl` bootstraps a new machine.
+- `CITATION.cff`.
+- `bench/Manifest.toml` is tracked now that the develop path is relative.
 - CUDA-host recipe: `input_files/gpu/gpu_pipeline.toml` (CUDA build into
   its own tree, architectures from `nvidia-smi`, device 0, eight host
   threads), `cpu_pipeline.toml` (the AVX reference build) and
@@ -240,6 +247,12 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   the engine source and two small confirmation runs.
 
 ### Changed
+- Manifests resolved with Julia 1.13, the version of the target GPU hosts;
+  Julia 1.10 remains the compat floor.
+- The `nvcc` and `pkg-config` probes and the live monitor's ADJUST parser
+  catch only the exception types they expect and log the miss at debug
+  level instead of swallowing every error.
+- Comments citing section numbers of an external style guide removed.
 - Multi-panel montages (`plot_snapshot_evolution`, `plot_hr_evolution`) are
   one column wide: `_fig_multipanel` keeps the preset width and divides it
   among the panels (a reserved colorbar column comes out of the panel

@@ -748,7 +748,7 @@ export write_dat10, generate_merger_inp, resolve_nbody6_parameters, crossing_tim
 export sample_binaries, expand_binaries
 
 # ---------------------------------------------------------------------------
-# Precompile workload (§13): the configuration and I/O paths every session
+# Precompile workload: the configuration and I/O paths every session
 # hits first, plus a small merger initial-condition generation. Plotting is
 # left out; the CairoMakie precompile is its own. Runs at package
 # precompilation only, silently.

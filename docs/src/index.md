@@ -24,7 +24,7 @@ remnant they leave 12 Myr later, produced end to end by this package.*
 cd Nbody6Dynamics
 
 # Install Julia dependencies (one-time)
-julia --project=. -e 'using Pkg; Pkg.instantiate()'
+julia activate.jl
 
 # Edit configuration
 $EDITOR config.toml

@@ -11,9 +11,7 @@
 # sweep_summary.csv, and draws the comparison figures into <sweep>/plots.
 # With --dry-run the directories and derived configs are written only.
 
-using Pkg
-Pkg.activate(joinpath(@__DIR__, ".."); io = devnull)
-Pkg.instantiate(; io = devnull)
+include(joinpath(@__DIR__, "..", "activate.jl"))
 
 using Nbody6Dynamics
 

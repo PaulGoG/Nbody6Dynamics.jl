@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Nbody6Dynamics.jl"
+type: software
+authors:
+  - family-names: "Gogîță"
+    given-names: "Paul-Adrian"
+    email: "gogitapaul@yahoo.ro"
+version: 0.2.0
+date-released: 2026-08-07
+license: MIT
+repository-code: "https://github.com/PaulGoG/Nbody6Dynamics.jl"
+abstract: "Julia automation of the lifecycle of Nbody6++GPU star-cluster simulations: backend build, multi-cluster merger initial conditions, run orchestration, post-processing of the engine output, and publication figures."
+keywords:
+  - stellar dynamics
+  - N-body simulation
+  - star clusters
+  - Nbody6++GPU

@@ -6,14 +6,10 @@
 # Usage:
 #   julia bench/benchmarks.jl
 #
-# Self-activating: uses the bench-local environment (BenchmarkTools lives
-# here, not in the package deps) with the package dev-linked from the
-# parent directory.
+# Uses the bench-local environment (BenchmarkTools lives here, not in the
+# package deps) with the package developed from the parent directory.
 
-using Pkg
-Pkg.activate(@__DIR__; io = devnull)
-Pkg.develop(; path = joinpath(@__DIR__, ".."), io = devnull)
-Pkg.instantiate(; io = devnull)
+include(joinpath(@__DIR__, "activate.jl"))
 
 using BenchmarkTools
 using Nbody6Dynamics
