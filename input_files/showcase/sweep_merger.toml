@@ -1,7 +1,5 @@
-# Base configuration of the showcase sweep: two equal King clusters.
-# The half-mass radii are deliberately large relative to the orbit: a compact
-# geometry (r_h << apocentre) makes the derived neighbour radius RS0 too small
-# and the engine hangs during neighbour-list construction.
+# Base configuration of the showcase sweep: two equal King clusters, 2 pc
+# half-mass radii on a 10 pc orbit (the geometry of the showcase document).
 
 [merger]
 seed = 1

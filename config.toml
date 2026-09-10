@@ -32,6 +32,7 @@ run_id_prefix = "cubic27"       # nonempty
 monitor       = true            # live progress ticker (interactive terminals only)
 telemetry_interval = 5.0        # s; ≥ 0; 0 disables the process/GPU sampler
 startup_timeout    = 0.0        # s; ≥ 0; 0 disables the start-up watchdog
+exit_grace         = 120.0      # s; ≥ 0; 0 disables the completion monitor (END RUN printed, no exit)
 
 [postprocess]
 enabled              = true

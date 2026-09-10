@@ -260,6 +260,11 @@ Output and integration parameters for merger ICs.
   value replaces the NB one, converted at generation with the realised
   N-body time unit of the configuration (`0` = unused). A key may be given
   in one form only.
+
+`dtadj` and `deltat` (and the stellar `dtplot`) are written as the nearest
+dyadic rational with an exact decimal expansion ([`engine_interval`](@ref),
+change below 0.4 %): the engine counts the decimal digits of these
+intervals with a loop that never terminates on other values.
 """
 Base.@kwdef struct MergerOutputSpec
     format::String = "nbody"

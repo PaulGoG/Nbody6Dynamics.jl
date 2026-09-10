@@ -311,6 +311,11 @@ function _execute_simulation(
         watchdog =
             sim.startup_timeout > 0 ?
             _start_startup_watchdog(stdout_path, process, sim.startup_timeout) : nothing
+        # Completion monitor: an engine that printed END RUN but never exits
+        # is terminated after the grace period and recorded as completed.
+        completion =
+            sim.exit_grace > 0 ? _start_completion_monitor(stdout_path, process, sim.exit_grace) :
+            nothing
 
         # Live ticker is opt-in and interactive-only; the Fortran stdout is
         # captured to out1000 regardless.
@@ -319,24 +324,24 @@ function _execute_simulation(
         end
         wait(process)
         watchdog === nothing || (watchdog.stop[] = true)
+        completion === nothing || (completion.stop[] = true)
 
         elapsed = time() - t_start
         telemetry =
             _finish_telemetry(monitor, cpu_before, _children_cpu_times(), elapsed, threads_total)
         merge!(telemetry, _backend_performance(stdout_path, stderr_path))
 
-        if watchdog !== nothing && watchdog.fired[]
-            error(
-                "Simulation terminated by the start-up watchdog: no adjustment beyond t = 0 within " *
-                "$(sim.startup_timeout) s (the engine hung after initialisation; re-seed the initial " *
-                "conditions or raise simulation.startup_timeout for large N)",
-            )
-        end
-        if !success(process)
+        hung = watchdog !== nothing && watchdog.fired[]
+        completed = _run_completed(stdout_path)
+        killed_after_completion = completion !== nothing && completion.fired[]
+        if killed_after_completion
+            @warn "The engine printed END RUN but had not exited $(sim.exit_grace) s later; " *
+                  "terminated and recorded as completed (exit status $(_exit_status(process)))"
+        elseif !success(process) && !hung
             @warn "Simulation exited with non-zero status ($(_exit_status(process))) after $(_format_elapsed(elapsed))"
         end
 
-        # --- Write run summary ---
+        # --- Write run summary (before raising, so a watchdog kill is on record) ---
         _write_run_summary(
             cfg,
             run_dir,
@@ -352,11 +357,22 @@ function _execute_simulation(
                 "date" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
                 "elapsed_seconds" => round(elapsed; digits = 1),
                 "exit_status" => _exit_status(process),
+                "completed" => completed,
+                "watchdog" => hung,
+                "terminated_after_completion" => killed_after_completion,
                 "input" => basename(input_copy),
                 "dump" => is_restart ? restart.dump : "",
                 "tcrit_extra" => is_restart ? restart.tcrit_extra : 0.0,
             ),
         )
+        if hung
+            error(
+                "Simulation terminated by the start-up watchdog: no adjustment beyond t = 0 within " *
+                "$(sim.startup_timeout) s. The engine hung after initialisation (recorded in " *
+                "RUN_INFO.toml); check the interval values of the input file (DTADJ, DELTAT, DTPLOT " *
+                "must have a short exact decimal expansion) or raise simulation.startup_timeout for large N",
+            )
+        end
         if haskey(telemetry, "cpu_efficiency")
             @info @sprintf(
                 "CPU: %.1f s user + %.1f s system on %d thread(s); efficiency %.2f",
@@ -481,6 +497,54 @@ function _start_startup_watchdog(stdout_path::AbstractString, process::Base.Proc
                 return nothing
             end
             sleep(min(2.0, timeout))
+        end
+    end
+    return (stop = stop, fired = fired, task = task)
+end
+
+"""
+    _run_completed(stdout_path) -> Bool
+
+Whether the captured stdout carries the engine's `END RUN` line
+(`adjust.F`, printed when the termination criterion is met). Only the last
+64 KiB are scanned, so the check stays cheap on long runs.
+"""
+function _run_completed(stdout_path::AbstractString)::Bool
+    isfile(stdout_path) || return false
+    tail = open(stdout_path) do io
+        size = filesize(stdout_path)
+        seek(io, max(0, size - 65536))
+        read(io, String)
+    end
+    return occursin("END RUN", tail)
+end
+
+"""
+    _start_completion_monitor(stdout_path, process, grace) -> (; stop, fired, task)
+
+Asynchronous monitor: once the stdout shows `END RUN`, the process is given
+`grace` seconds to exit; if it is still running afterwards it is terminated
+(SIGTERM) and `fired` is set. The engine has been observed to finish its
+integration, print its final tables, and never exit (tidal-field runs), which
+otherwise blocks the pipeline until an external timeout. Setting `stop`
+ends the monitor quietly.
+"""
+function _start_completion_monitor(stdout_path::AbstractString, process::Base.Process, grace::Real)
+    stop = Ref(false)
+    fired = Ref(false)
+    task = @async begin
+        deadline = Inf
+        while !stop[] && process_running(process)
+            if deadline == Inf && _run_completed(stdout_path)
+                deadline = time() + grace
+            end
+            if time() > deadline
+                fired[] = true
+                @warn "Completion monitor: END RUN printed but the engine did not exit within $(grace) s; terminating it"
+                kill(process)
+                return nothing
+            end
+            sleep(min(5.0, max(grace, 1.0)))
         end
     end
     return (stop = stop, fired = fired, task = task)

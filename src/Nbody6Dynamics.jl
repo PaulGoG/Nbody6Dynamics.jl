@@ -702,6 +702,7 @@ export set_publication_theme!
 export generate_run_id, restart_simulation, export_for_paper
 export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 export detect_platform, check_dependencies, detect_cuda_path
+export engine_interval
 export detect_compute_capabilities, cuda_arch_from_compute_cap, cuda_gencode_flags
 export resolve_cuda_arch, nvcc_release, nvcc_supported_archs
 export ClusterSpec,

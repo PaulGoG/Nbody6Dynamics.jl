@@ -516,6 +516,191 @@ format = "pdf"
     end
 
     # =====================================================================
+    @testset "Engine interval digit counter" begin
+        term = Nbody6Dynamics._engine_digit_counter_terminates
+        # The intervals of the runs that hung (2026-09-08 sweep controls, 2026-09-10 reproduction)
+        for bad in (0.6302, 0.1576, 0.6085, 2.434)
+            @test !term(bad)
+        end
+        # The intervals of the runs that completed, and dyadic values
+        for good in (0.5604, 0.2802, 2.241, 0.5, 0.25, 0.1, 1.0, 0.15625, 0.0009765625, 2.521)
+            @test term(good)
+        end
+        @test engine_interval(0.6302) == 161 / 256
+        @test engine_interval(0.1576) == 81 / 512     # max_digits = 9 binds: ten digits break the engine's format
+        @test engine_interval(0.1576; max_digits = 10) == 161 / 1024
+        @test engine_interval(2.521) == 161 / 64
+        @test engine_interval(0.5) == 0.5 &&
+              engine_interval(1.0) == 1.0 &&
+              engine_interval(0.25) == 0.25
+        @test engine_interval(0.0) == 0.0 && engine_interval(-1.0) == -1.0
+        @test engine_interval(0.01) == 5 / 512        # nearest 2⁻⁹ multiple
+        @test engine_interval(1e-9) == 1 / 512        # never rounds to zero
+        for dt in (0.6302, 0.1576, 2.521, 0.0636, 0.3043, 12.7, 100.0, 0.05)
+            v = engine_interval(dt)
+            @test term(v)
+            @test v * 512 == round(v * 512)            # dyadic with ≤ 9 binary digits
+            s = Nbody6Dynamics._decimal_string(v)
+            @test !occursin('.', s) || length(split(s, '.')[2]) ≤ 9
+            dt ≥ 0.25 && @test abs(v - dt) / dt ≤ 1 / 256
+        end
+        @test Nbody6Dynamics._decimal_string(161 / 256) == "0.62890625"
+        @test Nbody6Dynamics._decimal_string(0.5) == "0.5"
+        @test Nbody6Dynamics._decimal_string(1.0) == "1"
+        @test Nbody6Dynamics._decimal_string(1 / 1024) == "0.0009765625"
+        @test Nbody6Dynamics._decimal_string(2.515625) == "2.515625"
+        # A logged rounding, and silence when the value is already dyadic
+        @test (@test_logs (:info, r"DTADJ = 0.62890625 NB") Nbody6Dynamics._engine_interval_logged(
+            "DTADJ",
+            0.6302,
+        )) == 161 / 256
+        @test (@test_logs Nbody6Dynamics._engine_interval_logged("DELTAT", 0.5)) == 0.5
+
+        # End to end: Myr intervals through the generator come out dyadic and exact
+        ic_dir = mktempdir()
+        mt = joinpath(ic_dir, "merger.toml")
+        write(
+            mt,
+            """
+            [merger]
+            seed = 5
+            n_clusters = 2
+            orbit_mode = "kepler"
+
+            [merger.cluster1]
+            model = "plummer"
+            N = 150
+            rbar = 1.0
+            imf = "kroupa"
+
+            [merger.cluster2]
+            model = "plummer"
+            N = 150
+            rbar = 1.0
+            imf = "kroupa"
+
+            [merger.orbit]
+            apocentre = 5.0
+            eccentricity = 0.5
+
+            [merger.output]
+            format = "nbody"
+            truncate_jacobi = true
+            output_dir = "$(ic_dir)"
+            tcrit_myr = 2.0
+            dtadj_myr = 0.25
+            deltat_myr = 1.0
+
+            [merger.stellar]
+            dtplot_myr = 4.0
+            """,
+        )
+        generate_merger_ic(load_merger_config(mt))
+        inp = read(joinpath(ic_dir, "merger.inp"), String)
+        for key in ("DTADJ", "DELTAT", "DTPLOT")
+            m = match(Regex(key * "=([0-9.Ee+-]+)"), inp)
+            @test m !== nothing
+            v = parse(Float64, m.captures[1])
+            @test term(v) && v * 1024 == round(v * 1024)
+        end
+    end
+
+    # =====================================================================
+    @testset "Run completion monitor and exit grace" begin
+        dir = mktempdir()
+        out = joinpath(dir, "out1000")
+        @test !Nbody6Dynamics._run_completed(out)
+        write(out, " ADJUST:  TIME 1.0\n")
+        @test !Nbody6Dynamics._run_completed(out)
+        write(
+            out,
+            " ADJUST:  TIME 1.0\n\n         END RUN    TIME[Myr] =   20.50  TOFF/TIME/TTOT=  0.0\n rank PE N Total\n",
+        )
+        @test Nbody6Dynamics._run_completed(out)
+        # The scan covers only the tail of a long file
+        long = joinpath(dir, "long")
+        open(long, "w") do io
+            println(io, "END RUN")
+            for _ in 1:20000
+                println(io, "ADJUST: TIME 1.0 filler line to push the marker out of the window")
+            end
+        end
+        @test !Nbody6Dynamics._run_completed(long)
+
+        # A process that keeps running after END RUN is terminated after the grace period
+        p = run(`sleep 30`; wait = false)
+        mon = Nbody6Dynamics._start_completion_monitor(out, p, 1.0)
+        wait(p)
+        @test mon.fired[] && !process_running(p) && Nbody6Dynamics._exit_status(p) == -15
+        # A process that exits by itself leaves the monitor silent
+        q = run(`sleep 1`; wait = false)
+        mon_q = Nbody6Dynamics._start_completion_monitor(out, q, 30.0)
+        wait(q)
+        mon_q.stop[] = true
+        @test !mon_q.fired[] && Nbody6Dynamics._exit_status(q) == 0
+        # Without END RUN nothing fires within the grace period
+        r = run(`sleep 3`; wait = false)
+        mon_r = Nbody6Dynamics._start_completion_monitor(joinpath(dir, "absent"), r, 1.0)
+        wait(r)
+        mon_r.stop[] = true
+        @test !mon_r.fired[]
+
+        # Config key
+        @test SimulationConfig().exit_grace == 120.0
+        cfg_path = joinpath(dir, "c.toml")
+        write(cfg_path, "[simulation]\nexit_grace = 0\n")
+        @test load_config(cfg_path).simulation.exit_grace == 0.0
+        write(cfg_path, "[simulation]\nexit_grace = -1\n")
+        @test_throws ErrorException load_config(cfg_path)
+
+        # Sweep outcome: a completed-then-terminated segment counts as completed
+        run_dir = joinpath(dir, "run")
+        mkpath(run_dir)
+        write(
+            joinpath(run_dir, "RUN_INFO.toml"),
+            "[run]\nelapsed_seconds = 7.5\n[[segments]]\nexit_status = -15\ncompleted = true\n",
+        )
+        oc = Nbody6Dynamics._sweep_point_outcome(run_dir)
+        @test oc["exit_status"] == -15 && oc["completed"] == true && oc["elapsed_seconds"] == 7.5
+        write(
+            joinpath(run_dir, "RUN_INFO.toml"),
+            "[run]\nelapsed_seconds = 1.0\n[[segments]]\nexit_status = 0\n",
+        )
+        @test Nbody6Dynamics._sweep_point_outcome(run_dir)["completed"] == true
+        write(
+            joinpath(run_dir, "RUN_INFO.toml"),
+            "[run]\nelapsed_seconds = 1.0\n[[segments]]\nexit_status = 1\n",
+        )
+        @test Nbody6Dynamics._sweep_point_outcome(run_dir)["completed"] == false
+
+        # The sweep's pre-launch binary check honours the build variant
+        sw = mktempdir()
+        bk = joinpath(sw, "backend", "build")
+        mkpath(bk)
+        touch(joinpath(bk, "nbody6++.avx"))
+        write(
+            joinpath(sw, "pipeline.toml"),
+            "[install]\ninstall_dir = \"backend\"\n[simulation]\ninput_file = \"x.inp\"\n",
+        )
+        cp(
+            joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml"),
+            joinpath(sw, "m.toml"),
+        )
+        st = joinpath(sw, "sweep.toml")
+        write(
+            st,
+            "[sweep]\nname = \"t\"\npipeline_config = \"pipeline.toml\"\nmerger_config = \"m.toml\"\nseeds = [1]\n",
+        )
+        @test Nbody6Dynamics._check_sweep_binary(load_sweep_config(st)) ==
+              joinpath(bk, "nbody6++.avx")
+        write(
+            joinpath(sw, "pipeline.toml"),
+            "[install]\ninstall_dir = \"backend\"\n[build]\nenable_gpu = true\n[simulation]\ninput_file = \"x.inp\"\n",
+        )
+        @test_throws ErrorException Nbody6Dynamics._check_sweep_binary(load_sweep_config(st))
+    end
+
+    # =====================================================================
     @testset "Run ID generation" begin
         id1 = generate_run_id()
         @test startswith(id1, "run_")
@@ -1201,9 +1386,9 @@ $(extra)
         @test lines[1] == join(columns, ",")
         @test startswith(
             lines[2],
-            "1,001_cluster2-N=300_orbit-eccentricity=0_seed=1,merger,,1,300,0,done,0,12.5,",
+            "1,001_cluster2-N=300_orbit-eccentricity=0_seed=1,merger,,1,300,0,done,0,true,12.5,",
         )
-        @test occursin(",pending,-1,,,-1,-1,,", lines[5])   # NaN → empty cells
+        @test occursin(",pending,-1,false,,,-1,-1,,", lines[5])   # NaN → empty cells
 
         vis_sw = sweep_visualization(scfg, sdir)
         @test vis_sw.output_dir == joinpath(sdir, "plots") &&
@@ -1639,7 +1824,9 @@ $(extra)
         t_star = meta_p["meta"]["t_star_myr"]
         @test t_star > 0
         @test meta_p["output"]["tcrit"] ≈ 20.0 / t_star && meta_p["output"]["tcrit_myr"] ≈ 20.0
-        @test meta_p["output"]["deltat"] ≈ 4.0 / t_star
+        # The interval is the dyadic rounding of the converted value (engine digit counter)
+        @test meta_p["output"]["deltat"] == engine_interval(4.0 / t_star)
+        @test abs(meta_p["output"]["deltat"] - 4.0 / t_star) ≤ 4.0 / t_star / 256
         inp_p = read(joinpath(work, "ic_phys", "merger.inp"), String)
         @test occursin(Nbody6Dynamics.Printf.@sprintf("TCRIT=%.2f", 20.0 / t_star), inp_p)
         @test occursin(

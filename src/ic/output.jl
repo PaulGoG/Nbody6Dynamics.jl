@@ -107,6 +107,89 @@ function _central_density_contrast(p::KingProfile)
 end
 
 """
+    _engine_digit_counter_terminates(dt) -> Bool
+
+Whether the engine's `string_left.f` terminates on the interval `dt`. That
+routine, called at every output (`output.F`), COMMON dump (`mydump.F`) and
+stellar-evolution record (`hrplot.F`) with `DELTAT`, `DTADJ` and
+`DTPLOT`, counts the decimal digits of `dt` by multiplying by ten until
+`dtmp - int(dtmp)` is zero, with a default-kind `int`. A value whose
+binary representation never lands on an integer under repeated
+multiplication (`0.6302`, `0.1576`, …) grows past 2³¹, where the
+conversion overflows, and the loop never ends: the engine sits at 100 %
+CPU inside its first output and never prints a second adjustment.
+Emulated here in the same arithmetic.
+"""
+function _engine_digit_counter_terminates(dt::Real)::Bool
+    dtmp = Float64(dt)
+    ip = 0
+    while dtmp - trunc(dtmp) != 0.0
+        dtmp ≥ 2.0^31 && return false
+        ip += 1
+        dtmp *= 10.0
+        ip > 60 && return false
+    end
+    return true
+end
+
+"""
+    engine_interval(dt; resolution = 1/128, max_digits = 9) -> Float64
+
+`dt` rounded to the nearest dyadic rational `m 2⁻ᵏ` whose spacing `2⁻ᵏ` is
+at most `resolution × dt`, with `k ≤ max_digits`. Such a value has an
+exact decimal expansion of `k` digits, so the engine's digit counter
+([`_engine_digit_counter_terminates`](@ref)) stops after `k` steps, and it
+is commensurate with the engine's power-of-two block time steps. The cap
+of nine digits is the engine's as well: `string_left.f` formats a count of
+at most ten with an `I1` descriptor, so exactly ten digits produce an
+invalid format and a runtime error at the next output. Applied to
+`DTADJ`, `DELTAT` and `DTPLOT` before they are written to `merger.inp`;
+the change is below `resolution / 2` unless `max_digits` binds (intervals
+below about `2⁻ᵐᵃˣ⁻ᵈⁱᵍⁱᵗˢ × 128`). `dt ≤ 0` is returned unchanged.
+
+# Example
+```julia
+engine_interval(0.6302)   # 0.62890625 = 161/256
+engine_interval(0.5)      # 0.5
+```
+"""
+function engine_interval(dt::Real; resolution::Real = 1 / 128, max_digits::Integer = 9)::Float64
+    dt > 0 || return Float64(dt)
+    k = clamp(ceil(Int, -log2(resolution * dt)), 0, Int(max_digits))
+    h = 2.0^-k
+    return max(round(dt / h), 1.0) * h
+end
+
+"""[`engine_interval`](@ref) of `dt`, logging the change when it exceeds rounding noise."""
+function _engine_interval_logged(name::AbstractString, dt::Real)::Float64
+    v = engine_interval(dt)
+    if dt > 0 && !isapprox(v, dt; rtol = 1e-12)
+        @info @sprintf(
+            "%s = %s NB written as the dyadic %s (requested %.6g; the engine's interval digit counter needs an exact decimal)",
+            name,
+            _decimal_string(v),
+            _decimal_string(v),
+            dt
+        )
+    end
+    return v
+end
+
+"""
+    _decimal_string(x) -> String
+
+Exact decimal text of a dyadic rational with at most ten binary digits
+(`0.62890625`, `0.5`, `1`; [`engine_interval`](@ref) stops at nine), for
+the interval fields of `merger.inp`: a fixed-precision format would
+re-round the value and defeat the rounding.
+"""
+function _decimal_string(x::Real)::String
+    s = @sprintf("%.10f", x)
+    s = rstrip(s, '0')
+    return String(rstrip(s, '.'))
+end
+
+"""
     resolve_nbody6_parameters(spec, clusters, cluster_ranges, N_total, rbar_pc)
         -> Nbody6ParameterSpec
 
@@ -120,10 +203,10 @@ membership, and `ρ̂` the central density contrast of that cluster's profile
 - `RS0 = 2 r_h (2 NNBOPT / N_min)^{1/3}`, twice the radius enclosing about
   `NNBOPT` stars at the mean density of the half-mass sphere, capped at
   `r_h`. The factor 2 matches the engine's own example inputs
-  (`RS0 ≈ 0.5 r_h` for `NNBOPT ≈ √N`) and is empirical: with the undoubled
-  radius one of three random realisations of the two-cluster demo hung the
-  engine's neighbour-list initialisation at start-up (outer stars without
-  neighbours), whereas the doubled radius ran every realisation tried.
+  (`RS0 ≈ 0.5 r_h` for `NNBOPT ≈ √N`). The engine regrows an empty
+  neighbour sphere itself (`fpoly0.F`), so the radius is a matter of
+  start-up cost, not of correctness; the start-up hang once attributed to
+  it was the interval digit counter ([`engine_interval`](@ref)).
 - `RMIN = 4 r_h / (N_min ρ̂^{1/3})`, the functional form of the engine's own
   re-derivation (`adjust.F`) evaluated for the member cluster instead of the
   whole configuration
@@ -331,12 +414,12 @@ function generate_merger_inp(
         )
         @printf(
             io,
-            "ETAI=%.4G,ETAR=%.4G,RS0=%.4G,DTADJ=%.4f,DELTAT=%.4f,TCRIT=%.2f,QE=%.3E,RBAR=%.6f,ZMBAR=%.6f,\n",
+            "ETAI=%.4G,ETAR=%.4G,RS0=%.4G,DTADJ=%s,DELTAT=%s,TCRIT=%.2f,QE=%.3E,RBAR=%.6f,ZMBAR=%.6f,\n",
             nbody6.etai,
             nbody6.etar,
             nbody6.rs0,
-            dtadj,
-            deltat,
+            _decimal_string(dtadj),
+            _decimal_string(deltat),
             tcrit,
             nbody6.qe,
             rbar,
@@ -373,13 +456,13 @@ function generate_merger_inp(
         println(io, "&INDATA")
         @printf(
             io,
-            "ALPHAS=2.35,BODY1=%.4G,BODYN=%.4G,NBIN0=%d,NHI0=0,ZMET=%.4G,EPOCH0=%.4G,DTPLOT=%.4G /\n",
+            "ALPHAS=2.35,BODY1=%.4G,BODYN=%.4G,NBIN0=%d,NHI0=0,ZMET=%.4G,EPOCH0=%.4G,DTPLOT=%s /\n",
             mass_bounds[2],
             mass_bounds[1],
             nbin0,
             stellar.zmet,
             stellar.epoch0,
-            stellar.dtplot
+            _decimal_string(stellar.dtplot)
         )
         println(io)
 
@@ -599,10 +682,18 @@ function generate_merger_ic(
     # Time parameters: physical values are converted with the realised T*.
     out = cfg.output
     tcrit_nb = out.tcrit_myr > 0 ? out.tcrit_myr / t_star_myr : out.tcrit
-    dtadj_nb = out.dtadj_myr > 0 ? out.dtadj_myr / t_star_myr : out.dtadj
-    deltat_nb = out.deltat_myr > 0 ? out.deltat_myr / t_star_myr : out.deltat
-    dtplot_nb =
-        cfg.stellar.dtplot_myr > 0 ? cfg.stellar.dtplot_myr / t_star_myr : cfg.stellar.dtplot
+    # The intervals pass through the engine's decimal digit counter: write
+    # dyadic values with an exact decimal expansion (engine_interval).
+    dtadj_nb =
+        _engine_interval_logged("DTADJ", out.dtadj_myr > 0 ? out.dtadj_myr / t_star_myr : out.dtadj)
+    deltat_nb = _engine_interval_logged(
+        "DELTAT",
+        out.deltat_myr > 0 ? out.deltat_myr / t_star_myr : out.deltat,
+    )
+    dtplot_nb = _engine_interval_logged(
+        "DTPLOT",
+        cfg.stellar.dtplot_myr > 0 ? cfg.stellar.dtplot_myr / t_star_myr : cfg.stellar.dtplot,
+    )
     dtplot_nb ≥ deltat_nb || error(
         "merger.stellar.dtplot ($(round(dtplot_nb; sigdigits = 4)) NB) must be ≥ merger.output.deltat " *
         "($(round(deltat_nb; sigdigits = 4)) NB) after conversion with T* = $(round(t_star_myr; sigdigits = 4)) Myr",

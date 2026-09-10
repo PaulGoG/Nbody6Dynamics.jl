@@ -101,7 +101,7 @@ In `"explicit"` mode this section is ignored (a warning is emitted if present).
 | `tcrit` | Float | `100.0` | Simulation end time (NB units for `"nbody"`) |
 | `dtadj` | Float | `1.0` | ADJUST diagnostic interval |
 | `deltat` | Float | `1.0` | Snapshot (conf.3) interval |
-| `tcrit_myr`, `dtadj_myr`, `deltat_myr` | Float | `0.0` | The same three in Myr; a positive value replaces the NB one and is converted at generation with the realised time unit `T*` (both forms of one key: error) |
+| `tcrit_myr`, `dtadj_myr`, `deltat_myr` | Float | `0.0` | The same three in Myr; a positive value replaces the NB one and is converted at generation with the realised time unit `T*` (both forms of one key: error). `dtadj`, `deltat` and the stellar `dtplot` are written as the nearest dyadic rational with an exact decimal expansion (`engine_interval`, change below 0.4 %), because the engine counts their decimal digits with a loop that never terminates on other values |
 
 ### `[merger.nbody6]`
 
@@ -113,7 +113,7 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 | `etai` | Float | `0.02` | Irregular time-step factor; must be > 0 |
 | `etar` | Float | `0.02` | Regular time-step factor; must be > 0 |
 | `nnbopt` | Int | `0` | Target neighbour number; `0` = `clamp(round(√N_total), 20, 300)`; must be ≥ 0 |
-| `rs0` | Float | `0.0` | Initial neighbour-sphere radius; `0` = `2 r_h (2 NNBOPT / N_min)^{1/3}` capped at `r_h` (the factor 2 follows the engine's example inputs; a smaller radius left outer stars without neighbours and hung the engine's start-up on one of three realisations); must be ≥ 0 and, when set, no larger than the smallest member half-mass radius |
+| `rs0` | Float | `0.0` | Initial neighbour-sphere radius; `0` = `2 r_h (2 NNBOPT / N_min)^{1/3}` capped at `r_h` (the factor 2 follows the engine's example inputs; the engine regrows an empty sphere itself, so the value sets start-up cost, not correctness); must be ≥ 0 and, when set, no larger than the smallest member half-mass radius |
 | `rmin` | Float | `0.0` | KS regularisation distance; `0` = `4 r_h / (N_min ρ̂^{1/3})`; must be ≥ 0 |
 | `dtmin` | Float | `0.0` | KS time-step threshold; `0` = `0.04 √(ETAI/0.02) √(RMIN³ N_total)`; must be ≥ 0 |
 | `kz16` | Int | `0` | `KZ(16)`: the engine's re-derivation of `RMIN`, `DTMIN`, and `ECLOSE` from its global scale radius and core density every `DTADJ`; `0` keeps the written values (recommended for multi-cluster systems); one of 0, 1, 2, 3 |

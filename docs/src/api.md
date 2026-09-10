@@ -249,6 +249,7 @@ jacobi_radius
 ```@docs
 write_dat10
 generate_merger_inp
+engine_interval
 sample_binaries
 expand_binaries
 crossing_time
@@ -281,6 +282,7 @@ plot_cluster_virial
 ## Internals referenced from the public docstrings
 
 ```@docs
+Nbody6Dynamics._engine_digit_counter_terminates
 Nbody6Dynamics._validate
 Nbody6Dynamics._bound_members
 Nbody6Dynamics._kinetic_and_potential

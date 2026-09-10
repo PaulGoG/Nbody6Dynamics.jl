@@ -64,7 +64,11 @@ run ID generation, and runtime telemetry.
   [s]; `0` disables the sampler (exact CPU accounting stays on)
 - `startup_timeout`: wall-clock seconds within which the engine must report
   its first adjustment beyond t = 0; otherwise the run is terminated with an
-  error (start-up hangs on particular initial conditions). `0` disables
+  error. `0` disables
+- `exit_grace`: wall-clock seconds the engine may stay alive after printing
+  `END RUN`; beyond that it is terminated and the segment is recorded as
+  completed (the engine has been seen to finish its integration and never
+  exit). `0` disables
 """
 Base.@kwdef struct SimulationConfig
     run_test::Bool = true
@@ -78,6 +82,7 @@ Base.@kwdef struct SimulationConfig
     monitor::Bool = false   # opt-in live progress ticker (§9); interactive stderr only
     telemetry_interval::Float64 = 5.0
     startup_timeout::Float64 = 0.0
+    exit_grace::Float64 = 120.0
 end
 
 """

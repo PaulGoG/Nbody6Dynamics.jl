@@ -44,7 +44,10 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 - The showcase sweep is rebased on a geometry the engine can start from
   (2 pc clusters on a 10 pc orbit, three seeds): with 1 pc clusters on a
   5 pc orbit the derived neighbour radius is too small and every merger
-  point hangs during neighbour-list construction.
+  point hangs during neighbour-list construction. (Superseded: the hang
+  was the interval digit counter, see "Fixed"; the neighbour radius was
+  never involved. The geometry is kept because the showcase document was
+  produced with it.)
 - Control runs (F14): `control_merger_dict`/`write_control_merger_config`
   derive the isolated single-cluster equivalent of a merger TOML (summed
   `N`, `N`-weighted half-mass radius, cluster 1's model, IMF and binaries,
@@ -277,6 +280,31 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- Start-up hang of merger runs. The engine's `string_left.f` counts the
+  decimal digits of `DELTAT`, `DTADJ` and `DTPLOT` by multiplying by ten
+  until the value is an integer, with a default-kind `int`; an interval
+  such as `0.6302`, which the Myr conversion produces, never becomes an
+  integer in binary arithmetic, overflows the conversion past 2³¹, and
+  loops forever inside the first output (backtrace: `string_left_` ←
+  `output_` ← `adjust_`). The generator now writes the three intervals as
+  the nearest dyadic rational with an exact decimal expansion
+  (`engine_interval`, change below 0.4 %, logged) instead of a
+  four-decimal format, and the emulated counter is a unit test on the
+  intervals of every run that hung or completed so far. The hang had been
+  attributed to a small initial neighbour radius; that rule and its guard
+  stay, as a matter of start-up cost only, and the documentation is
+  corrected.
+- A watchdog kill is now written to `RUN_INFO.toml` (segment field
+  `watchdog = true`) before the error is raised; previously the run
+  directory had no summary at all.
+- The sweep's pre-launch binary check called the removed two-argument
+  locator; it now selects the binary of the base config's build variant.
+- Completion monitor (`[simulation] exit_grace`, default 120 s): an engine
+  that printed `END RUN` and did not exit is terminated after the grace
+  period and recorded as completed (`completed`,
+  `terminated_after_completion` in the segment; `completed` column in the
+  sweep summary), so post-processing proceeds instead of waiting on an
+  external timeout.
 - The main-sequence turnoff label of the evolutionary-clock figure is placed
   on whichever side of the reference line has room; it was clipped by the
   axis whenever the distribution ended just past t = T_MS.

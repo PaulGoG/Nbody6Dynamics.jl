@@ -404,7 +404,7 @@ function _check_sweep_binary(cfg::SweepConfig)
     install_dir = base.install.install_dir
     src_dir =
         isabspath(install_dir) ? install_dir : joinpath(dirname(cfg.pipeline_config), install_dir)
-    return _find_binary(src_dir, base.simulation.binary_name)
+    return _find_binary(src_dir, base.simulation.binary_name, base.build)
 end
 
 """
@@ -482,13 +482,15 @@ function run_sweep(cfg::SweepConfig; dry_run::Bool = false, sweep_dir::AbstractS
 end
 
 """Outcome fields of one finished point read from its run directory:
-elapsed time and exit status from `RUN_INFO.toml`, final time, star and
+elapsed time, exit status and completion (`END RUN` seen, whether or not
+the engine exited by itself) from `RUN_INFO.toml`, final time, star and
 pair counts, energy error and virial ratio from the last ADJUST record.
-Missing files leave `NaN`/`-1` entries."""
+Missing files leave `NaN`/`-1`/`false` entries."""
 function _sweep_point_outcome(run_dir::AbstractString)
     out = Dict{String,Any}(
         "elapsed_seconds" => NaN,
         "exit_status" => -1,
+        "completed" => false,
         "t_final_myr" => NaN,
         "n_final" => -1,
         "npairs_final" => -1,
@@ -500,7 +502,10 @@ function _sweep_point_outcome(run_dir::AbstractString)
         info = TOML.parsefile(info_path)
         out["elapsed_seconds"] = Float64(get(get(info, "run", Dict()), "elapsed_seconds", NaN))
         segs = get(info, "segments", Any[])
-        isempty(segs) || (out["exit_status"] = Int(get(segs[end], "exit_status", -1)))
+        if !isempty(segs)
+            out["exit_status"] = Int(get(segs[end], "exit_status", -1))
+            out["completed"] = Bool(get(segs[end], "completed", out["exit_status"] == 0))
+        end
     end
     stdout_path = joinpath(run_dir, "output", "out1000")
     if isfile(stdout_path)
@@ -533,6 +538,7 @@ function sweep_summary(sweep_dir::AbstractString)
         [
             "status",
             "exit_status",
+            "completed",
             "elapsed_seconds",
             "t_final_myr",
             "n_final",

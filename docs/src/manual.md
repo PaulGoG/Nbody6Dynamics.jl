@@ -99,7 +99,8 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `run_id_prefix` | String | `"run"` | Prefix for run directory names; must be nonempty |
 | `monitor`       | Bool   | `false` | Live ADJUST ticker on stderr; interactive terminals only |
 | `telemetry_interval` | Float | `5.0` | Sampling interval of the process-tree/GPU telemetry [s]; must be ≥ 0. `0` disables the sampler; the exact CPU accounting stays on |
-| `startup_timeout` | Float | `0.0` | Start-up watchdog [s]; must be ≥ 0. When set, a run that reports no adjustment beyond t = 0 within this wall-clock time is terminated with an error (the engine's neighbour-list initialisation can hang on a too-small `RS0`). `0` disables; large-N runs need a generous value |
+| `startup_timeout` | Float | `0.0` | Start-up watchdog [s]; must be ≥ 0. When set, a run that reports no adjustment beyond t = 0 within this wall-clock time is terminated with an error, and the kill is recorded in `RUN_INFO.toml` (`segments[].watchdog`). `0` disables; large-N runs need a generous value. The known cause of such a hang is fixed in the generator; see [Troubleshooting](#run-never-advances-past-t-0) for hand-written inputs |
+| `exit_grace` | Float | `120.0` | Completion monitor [s]; must be ≥ 0. Once the stdout shows the engine's `END RUN` line, the process may stay alive this long; afterwards it is terminated and the segment is recorded as `completed` with `terminated_after_completion = true`. `0` disables |
 
 ### `[postprocess]`
 
@@ -293,6 +294,10 @@ During execution, ADJUST summaries are echoed live:
 ```
 [ Info:   t_NB=0.0500  t_Myr=0.4  N=9998  |ΔE/E|=1.23e-06  Q_vir=0.987
 ```
+
+### Completion detection
+
+The engine prints `END RUN` (with the final timing tables) when its termination criterion is met, and normally exits right after. In a tidal-field run it has been seen to print everything and then never exit, which blocked the pipeline until an external timeout. With `simulation.exit_grace > 0` a monitor watches the last 64 KiB of the stdout capture for that line and, once the grace period has passed with the process still alive, terminates it. The segment then carries `completed = true`, `terminated_after_completion = true` and the signal exit status, post-processing proceeds, and the sweep summary counts the point as completed (`completed` column) even though its exit status is nonzero. A run that never printed `END RUN` is never touched by this monitor.
 
 ### Restarting a run
 
@@ -607,6 +612,10 @@ The same factors are available per snapshot from the conf.3 header via the acces
 
 **Fedora**: the `h5pfc` wrapper likely has a broken includedir; see [Build Phase Details](#6-build-phase-details).
 **Ubuntu**: ensure `libhdf5-dev` (or `libhdf5-openmpi-dev` with MPI) is installed.
+
+### Run never advances past t = 0
+
+The engine prints the t = 0 adjustment, then sits at 100 % of one core forever; the start-up watchdog ends it. The cause is the engine's `string_left.f`, which counts the decimal digits of `DELTAT`, `DTADJ` and `DTPLOT` by multiplying by ten until the value is an integer, with a default-kind `int`. A value such as `0.6302` never becomes an integer in binary arithmetic; past 2³¹ the conversion overflows and the loop never ends, inside the very first output. The generator therefore writes these three intervals as dyadic rationals with an exact decimal expansion (`engine_interval`, change below 0.4 %) and logs the rounding. For a hand-written input, choose intervals such as `0.5`, `0.25`, `0.125`, `0.0625` or any other `m/2ᵏ` with `k ≤ 9`, written out in full (exactly ten decimals trip a second defect of the same routine, an invalid `I1` format, which ends the run with a runtime error at the next output); `engine_interval(x)` gives the nearest such value. This hang was for a time attributed to a small initial neighbour radius; the neighbour radius has no part in it.
 
 ### Simulation segfaults immediately
 
