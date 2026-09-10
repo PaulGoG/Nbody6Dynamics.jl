@@ -6,6 +6,11 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Precompile workload (P4, PrecompileTools): configuration load and
+  save, the diagnostics reader, `engine_interval`, run-ID and elapsed-time
+  helpers, and a small merger initial-condition generation run at package
+  precompilation, so the first call of each in a session is compiled
+  already; plotting is excluded (the CairoMakie precompile is its own).
 - Live sparklines (F8): `[simulation] live_diagnostics` with `live_interval`
   prints, through the interactive monitor, UnicodePlots sparklines of the
   virial ratio and `log10 |ΔE/E|` against time from the ADJUST records so

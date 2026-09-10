@@ -14,6 +14,7 @@ using LoggingExtras: FormatLogger, MinLevelLogger, TeeLogger
 using LinearAlgebra: BLAS
 using MathTeXEngine: texfont
 using UnicodePlots: UnicodePlots
+using PrecompileTools: @setup_workload, @compile_workload
 
 # Package root directory — all relative config paths resolve against this.
 # Computed at precompile time: @__DIR__ = src/, dirname = Nbody6Dynamics/.
@@ -745,5 +746,69 @@ export sample_plummer, sample_king, sample_kroupa
 export virialise!, kepler_velocity, jacobi_radius
 export write_dat10, generate_merger_inp, resolve_nbody6_parameters, crossing_time, to_nbody_units!
 export sample_binaries, expand_binaries
+
+# ---------------------------------------------------------------------------
+# Precompile workload (§13): the configuration and I/O paths every session
+# hits first, plus a small merger initial-condition generation. Plotting is
+# left out; the CairoMakie precompile is its own. Runs at package
+# precompilation only, silently.
+# ---------------------------------------------------------------------------
+@setup_workload begin
+    _pc_dir = mktempdir()
+    _pc_cfg = joinpath(_pc_dir, "config.toml")
+    write(_pc_cfg, "[simulation]\nomp_threads = 2\n\n[merger]\nenabled = false\n")
+    _pc_out = joinpath(_pc_dir, "out1000")
+    write(
+        _pc_out,
+        " ADJUST: TIME  0.0  T[MYR]  0.0  Q  0.5  DE  0.0  E  -0.25\n" *
+        " ADJUST: TIME  1.0  T[MYR]  0.5  Q  0.5  DE  1e-8  E  -0.25\n",
+    )
+    _pc_merger = joinpath(_pc_dir, "merger.toml")
+    write(
+        _pc_merger,
+        """
+        [merger]
+        n_clusters = 2
+        orbit_mode = "kepler"
+        seed = 1
+
+        [merger.cluster1]
+        model = "plummer"
+        N = 40
+        rbar = 1.0
+        imf = "kroupa"
+
+        [merger.cluster2]
+        model = "plummer"
+        N = 40
+        rbar = 1.0
+        imf = "kroupa"
+
+        [merger.orbit]
+        apocentre = 5.0
+        eccentricity = 0.5
+
+        [merger.output]
+        format = "nbody"
+        truncate_jacobi = true
+        output_dir = "$(_pc_dir)"
+        tcrit = 1.0
+        dtadj = 0.25
+        deltat = 0.5
+        """,
+    )
+    @compile_workload begin
+        Logging.with_logger(Logging.NullLogger()) do
+            cfg = load_config(_pc_cfg)
+            save_config(cfg, joinpath(_pc_dir, "frozen.toml"))
+            read_diagnostics(_pc_out)
+            engine_interval(0.63)
+            generate_run_id("pc")
+            _format_elapsed(125.0)
+            generate_merger_ic(load_merger_config(_pc_merger))
+        end
+    end
+    rm(_pc_dir; recursive = true, force = true)
+end
 
 end # module

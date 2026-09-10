@@ -56,6 +56,8 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
 
+The first `using Nbody6Dynamics` after an install or a source change precompiles the package together with a small workload (configuration parsing, the diagnostics reader, a merger initial-condition generation), so those paths run compiled in every later session.
+
 ---
 
 ## 4. Configuration Reference
