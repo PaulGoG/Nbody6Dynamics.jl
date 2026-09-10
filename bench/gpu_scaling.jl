@@ -4,10 +4,13 @@
 # merger pipeline: wall time, CPU efficiency, the backend's own timing table,
 # regular-force kernel throughput and GPU utilisation per (N, binary variant,
 # GPU list, OMP threads), from the run telemetry. Both binaries must exist
-# under backend/Nbody6PPGPU-beijing/build beforehand (`nbody6++.avx` and
-# `nbody6++.avx.gpu`; build the GPU variant with `enable_gpu = true`).
+# beforehand: the CPU one (`nbody6++.avx`) under NBODY6_CPU_BACKEND (default
+# backend/Nbody6PPGPU-beijing) and the GPU one (`nbody6++.avx.gpu`) under
+# NBODY6_GPU_BACKEND (default: the same tree; input_files/gpu/ builds it into
+# backend/Nbody6PPGPU-beijing-gpu).
 #
-#   julia bench/gpu_scaling.jl [N_list] [thread_list] [gpu_lists] [tcrit]
+#   NBODY6_GPU_BACKEND=backend/Nbody6PPGPU-beijing-gpu \
+#     julia bench/gpu_scaling.jl [N_list] [thread_list] [gpu_lists] [tcrit]
 #   e.g. julia bench/gpu_scaling.jl 20000,50000,100000 4,8 "0;0,1" 0.25
 #
 # gpu_lists: ';'-separated GPU_LIST values ("0" = first device, "0,1" = the
@@ -28,7 +31,9 @@ include("merger_case.jl")
 
 const BENCH = @__DIR__
 const PROJ = normpath(joinpath(BENCH, ".."))
-const BACKEND = joinpath(PROJ, "backend", "Nbody6PPGPU-beijing")
+const BACKEND_CPU =
+    abspath(get(ENV, "NBODY6_CPU_BACKEND", joinpath(PROJ, "backend", "Nbody6PPGPU-beijing")))
+const BACKEND_GPU = abspath(get(ENV, "NBODY6_GPU_BACKEND", BACKEND_CPU))
 parse_list(s, T) = [parse(T, x) for x in split(s, ',')]
 N_list = length(ARGS) ≥ 1 ? parse_list(ARGS[1], Int) : [20000, 50000]
 threads = length(ARGS) ≥ 2 ? parse_list(ARGS[2], Int) : [4, 8]
@@ -37,8 +42,8 @@ tcrit = length(ARGS) ≥ 4 ? parse(Float64, ARGS[4]) : 0.25
 
 # Both binaries must be present; the selection by suffix tag is the one the
 # pipeline applies (see `_find_binary`).
-cpu_binary = Nbody6Dynamics._find_binary(BACKEND, "nbody6++", BuildConfig())
-gpu_binary = Nbody6Dynamics._find_binary(BACKEND, "nbody6++", BuildConfig(; enable_gpu = true))
+cpu_binary = Nbody6Dynamics._find_binary(BACKEND_CPU, "nbody6++", BuildConfig())
+gpu_binary = Nbody6Dynamics._find_binary(BACKEND_GPU, "nbody6++", BuildConfig(; enable_gpu = true))
 @info "CPU binary: $cpu_binary"
 @info "GPU binary: $gpu_binary"
 caps = detect_compute_capabilities()
@@ -56,7 +61,7 @@ function pipeline_toml(merger_path, nthreads, prefix; gpu::Bool, gpu_list::Vecto
     """
     [install]
     enabled = false
-    install_dir = "backend/Nbody6PPGPU-beijing"
+    install_dir = "$(gpu ? BACKEND_GPU : BACKEND_CPU)"
 
     [build]
     enable_gpu = $(gpu)

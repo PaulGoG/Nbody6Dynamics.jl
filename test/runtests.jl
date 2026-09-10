@@ -4707,6 +4707,23 @@ rbar = 1.0
     end
 
     # =====================================================================
+    @testset "Shipped GPU-host configurations" begin
+        gdir = joinpath(@__DIR__, "..", "input_files", "gpu")
+        gcfg = load_config(joinpath(gdir, "gpu_pipeline.toml"))
+        @test gcfg.install.enabled && endswith(gcfg.install.install_dir, "Nbody6PPGPU-beijing-gpu")
+        @test gcfg.build.enable_gpu && !gcfg.build.enable_hdf5 && isempty(gcfg.build.cuda_arch)
+        @test gcfg.simulation.gpu_list == [0] && gcfg.simulation.omp_threads == 8
+        @test gcfg.merger.enabled && gcfg.merger.config_file == "merger_50k.toml"
+        ccfg = load_config(joinpath(gdir, "cpu_pipeline.toml"))
+        @test ccfg.install.enabled && !ccfg.build.enable_gpu && isempty(ccfg.simulation.gpu_list)
+        @test endswith(ccfg.install.install_dir, "Nbody6PPGPU-beijing")
+        m = load_merger_config(joinpath(gdir, "merger_50k.toml"))
+        @test length(m.clusters) == 2 && all(c -> c.N == 25000, m.clusters)
+        @test m.nbody6.qe == 0.01 && m.output.tcrit_myr == 50.0
+        @test m.orbit.apocentre == 10.0
+    end
+
+    # =====================================================================
     # Engine-dependent tests: opt in with NBODY6_BINARY_TESTS=1. Without
     # NBODY6_BACKEND_ROOT the backend is cloned and built in a temporary
     # directory (what the Backend workflow does); with it, an existing

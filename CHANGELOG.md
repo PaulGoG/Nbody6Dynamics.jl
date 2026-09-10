@@ -6,6 +6,12 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- CUDA-host recipe: `input_files/gpu/gpu_pipeline.toml` (CUDA build into
+  its own tree, architectures from `nvidia-smi`, device 0, eight host
+  threads), `cpu_pipeline.toml` (the AVX reference build) and
+  `merger_50k.toml` (two King clusters of 25 000 stars, `qe = 0.01`), with
+  the command sequence in the manual; `bench/gpu_scaling.jl` takes the CPU
+  and GPU trees from `NBODY6_CPU_BACKEND`/`NBODY6_GPU_BACKEND`.
 - Documentation site (P2): literature citations through DocumenterCitations
   (`docs/src/references.bib`, `@cite` markers in the pages, a References
   page in author–year style, replacing the per-page plain lists); a

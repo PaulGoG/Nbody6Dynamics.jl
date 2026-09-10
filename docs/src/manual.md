@@ -242,6 +242,22 @@ Other facts of the GPU build:
 - The upstream authors advise the GPU build only above roughly 5×10⁴ bodies: below that the regular force is a minor share of the work and host–device transfers can make the run slower. `bench/gpu_scaling.jl` measures the crossover on the machine at hand.
 - HDF5 output is unnecessary for the Julia side (it reads `conf.3`), so a GPU build can use `enable_hdf5 = false`.
 
+### Recipe for a CUDA host
+
+Shipped under `input_files/gpu/`: `gpu_pipeline.toml` clones and builds the engine with CUDA into `backend/Nbody6PPGPU-beijing-gpu` (architectures from `nvidia-smi`, HDF5 off) and runs `merger_50k.toml`, two King clusters of 25 000 stars, on device 0 with eight host threads; `cpu_pipeline.toml` builds the AVX engine into the default tree and runs the same merger, so the two are comparable binary against binary. The order on a fresh host:
+
+```bash
+git clone git@github.com:PaulGoG/Nbody6Dynamics.jl.git Nbody6Dynamics && cd Nbody6Dynamics
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+nvidia-smi --query-gpu=name,compute_cap --format=csv && nvcc --version | tail -1   # toolkit >= 12.8 for RTX 50, >= 11.8 for H200
+NBODY6_GPU_TESTS=1 julia --project=. -e 'using Pkg; Pkg.test()'      # builds with CUDA in a temporary tree, runs the 1k input on one device, then on two if present
+julia --project=. scripts/run_setup.jl input_files/gpu/cpu_pipeline.toml   # CPU reference build + run
+julia --project=. scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml   # GPU build + run
+NBODY6_GPU_BACKEND=backend/Nbody6PPGPU-beijing-gpu julia bench/gpu_scaling.jl 20000,50000,100000 4,8 "0" 0.25   # "0;0,1" with two devices
+```
+
+Each run's `RUN_INFO.toml` carries the build record (`[build]`: architectures, `nvcc` release), the devices the engine initialised (`run.gpu_devices`), the GPU telemetry summary and the kernel label of the throughput profile; the benchmark prints the GPU speed-up over the CPU binary at equal N and threads and writes `bench/results/gpu_scaling_<timestamp>.csv`. To use one binary on several machines set `cuda_arch = ["sm_90", "sm_120"]` explicitly; `gpu_list = [0, 1]` puts two devices in one process.
+
 ### Fedora h5pfc workaround
 
 On Fedora the HDF5 parallel Fortran wrapper `h5pfc` may carry an erroneous `/openmpi-x86_64` suffix in its `includedir`, preventing `hdf5.mod` from being found. Nbody6Dynamics detects this and prints the fix:
