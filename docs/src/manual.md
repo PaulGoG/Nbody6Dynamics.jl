@@ -98,6 +98,8 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `gpu_list`      | [Int]  | `[]`    | CUDA device indices the engine may use, exported as its `GPU_LIST` variable; empty = every visible device. Entries ≥ 0 and distinct, at most 4 per process (the engine's `MAX_GPU`); nonempty requires `build.enable_gpu = true` |
 | `run_id_prefix` | String | `"run"` | Prefix for run directory names; must be nonempty |
 | `monitor`       | Bool   | `false` | Live ADJUST ticker on stderr; interactive terminals only |
+| `live_diagnostics` | Bool | `false` | With `monitor`: print in-terminal sparklines of the virial ratio and `log10 |ΔE/E|` against time every `live_interval` seconds (UnicodePlots; interactive terminals only, never in the log file) |
+| `live_interval` | Float | `30.0` | Period of the sparkline panel [s]; must be ≥ 1 |
 | `telemetry_interval` | Float | `5.0` | Sampling interval of the process-tree/GPU telemetry [s]; must be ≥ 0. `0` disables the sampler; the exact CPU accounting stays on |
 | `startup_timeout` | Float | `0.0` | Start-up watchdog [s]; must be ≥ 0. When set, a run that reports no adjustment beyond t = 0 within this wall-clock time is terminated with an error, and the kill is recorded in `RUN_INFO.toml` (`segments[].watchdog`). `0` disables; large-N runs need a generous value. The known cause of such a hang is fixed in the generator; see [Troubleshooting](#run-never-advances-past-t-0) for hand-written inputs |
 | `exit_grace` | Float | `120.0` | Completion monitor [s]; must be ≥ 0. Once the stdout shows the engine's `END RUN` line, the process may stay alive this long; afterwards it is terminated and the segment is recorded as `completed` with `terminated_after_completion = true`. `0` disables |
@@ -299,6 +301,10 @@ During execution, ADJUST summaries are echoed live:
 
 The engine prints `END RUN` (with the final timing tables) when its termination criterion is met, and normally exits right after. In a tidal-field run it has been seen to print everything and then never exit, which blocked the pipeline until an external timeout. With `simulation.exit_grace > 0` a monitor watches the last 64 KiB of the stdout capture for that line and, once the grace period has passed with the process still alive, terminates it. The segment then carries `completed = true`, `terminated_after_completion = true` and the signal exit status, post-processing proceeds, and the sweep summary counts the point as completed (`completed` column) even though its exit status is nonzero. A run that never printed `END RUN` is never touched by this monitor.
 
+### Live sparklines
+
+With `simulation.live_diagnostics = true` (and `monitor = true` on an interactive terminal) the monitor prints, every `live_interval` seconds, two in-terminal sparklines built with UnicodePlots from the ADJUST records so far: the virial ratio `Q = T/|W|` and `log10 |ΔE/E|` against time (Myr when the scaling is known). The panel is written to stderr below the log lines, the spinner resumes underneath, and nothing of it reaches `nbody6dynamics.log`. Runs that print fewer than two adjustments show no panel.
+
 ### Restarting a run
 
 The engine writes a COMMON dump every `ncomm × deltat` N-body time units (`output/comm.1_<t>`, `output/comm.2_<t>`, alternating). `restart_simulation(run_dir; tcrit_extra = 5.0)` continues the run from the latest dump (or a chosen one, `dump = "comm.2_20.0"`) for `tcrit_extra` more N-body time units: the dump is copied to `output/comm.1`, which `KSTART = 2` reads; the original input recorded in `RUN_INFO.toml` (`run.input_file`, copied into `output/` at launch) supplies the `&ININPUT` block of the restart input, with `TCRIT` set to the increment the engine adds to the saved time; the termination time in Myr can be raised with `tcrtp0`. The engine runs in the same output directory with stdout and stderr appended, so the diagnostics, Lagrangian-radii, and escaper files continue and the time-stamped snapshot and stellar-evolution files carry on; post-processing reads the concatenated run as one. `RUN_INFO.toml` keeps one entry per launch in `segments` (kind, dump, extra time, elapsed, exit status), `run.elapsed_seconds` accumulates, and each segment's telemetry goes to `telemetry_<k>.csv`.
@@ -362,6 +368,9 @@ snap.pos           # 3 × N matrix (Float32)
 snap.vel           # 3 × N matrix (Float32)
 snap.mass          # N-element vector (Float32)
 snap.name          # particle identifiers (Int32)
+
+snaps = read_all_conf3(run_out, "conf.3_*")              # ordered by the time suffix
+snaps = read_all_conf3(run_out; threaded = true)         # chunked over Threads.@spawn
 snap.rho, snap.phi # local density / potential (empty if unavailable)
 nparticles(snap)
 
@@ -453,6 +462,8 @@ All plots use the built-in publication theme, activated globally with `set_publi
 - **Never-overwrite policy**: before saving, any existing file at the target path is moved to the first free `name#k.ext` sibling (DrWatson-`safesave` style); this applies to plots, animations, `dat.10`, `merger.inp`, and metadata files alike
 - Legends appear only when ≥ 2 items are plotted; axis limits snap to nice round values with a visual buffer
 
+Multi-panel montages (`snapshot_evolution_*`, `hr_evolution`) are one column wide like every other figure: the panels share the preset width (a shared colorbar column is taken from the panel area), use three ticks per axis, keep a data-free band above the data for the in-axis time annotation, and scale their markers with the panel width; inner tick labels are hidden and the panel gap is compact unless the adaptive zoom shows every panel's ticks. A three-column grid at the `single` preset has 25 mm panels, so `double` is the preset for montages placed in a manuscript.
+
 ### Plot inventory
 
 Static plots take the extension from `visualization.format`; animations are always `.gif`.
@@ -482,6 +493,7 @@ Static plots take the extension from `visualization.format`; animations are alwa
 | `animate_cluster(snaps, vis)` | Animated scatter per projection, global or adaptive limits | `cluster_evolution_{xy,xz,yz}.gif` |
 | `animate_lagrangian(lagr, vis)` | Progressive line draw with ghost background and time cursor | `lagrangian_anim.gif` |
 | `animate_hr(sevs, vis)` | Animated HR diagram | `hr_evolution_anim.gif` |
+| `plot_telemetry(samples, vis)` | Run telemetry against wall-clock time: cores busy with the host load average on a twin axis, resident memory (RSS, high-water mark), GPU utilisation when sampled; the means and the peak RSS are legend entries. Drawn for every run directory that holds the sampler's `telemetry*.csv` (`read_run_telemetry` concatenates the segments of restarted runs) | `telemetry` |
 
 The merger plots (`plot_cluster_separation`, `plot_cluster_virial`) are generated automatically by `generate_plots`/`postprocess_external` when a `merger_summary.txt` is found next to the snapshots; the cluster index ranges come from `parse_merger_summary`. `plot_merger_ic` runs whenever a merger IC was generated in the same pipeline invocation (or can be re-run later via `load_merger_ic_result`).
 

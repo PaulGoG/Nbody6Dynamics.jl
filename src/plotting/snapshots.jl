@@ -117,16 +117,29 @@ function plot_snapshot_evolution(
     _, cmin, cmax = _log_color_range(all_m)
 
     for projection in projections
-        # Extra width for the shared colorbar column
-        pw, ph = _fig_multipanel(cfg, nrows, ncols)
-        fig = Figure(; size = (pw + _COLORBAR_WIDTH, ph))
-
         ix, iy, xsym, ysym = _proj_indices(projection)
         xlab = _coord_label(xsym, unit_str)
         ylab = _coord_label(ysym, unit_str)
 
         # Check if adaptive zoom is needed
         use_adaptive = _needs_adaptive_zoom(snaps, indices, ix, iy, cfg.style.zoom_frac)
+
+        # One column wide, square panels, the shared colorbar column taken
+        # from the panel area; inner tick labels show only under adaptive zoom.
+        gap = _multipanel_gap(ncols; inner_ticks = use_adaptive)
+        fig = Figure(;
+            size = _fig_multipanel(
+                cfg,
+                nrows,
+                ncols;
+                inner_ticks = use_adaptive,
+                panel_aspect = 1 + _MONTAGE_BAND_FRAC,
+                extra_width = _COLORBAR_WIDTH,
+            ),
+        )
+        target_ticks = ncols > 1 ? 3 : 5
+        marker_scale =
+            _multipanel_scale(cfg, ncols; inner_ticks = use_adaptive, extra_width = _COLORBAR_WIDTH)
 
         # Global limits (used when adaptive is off)
         all_x = reduce(vcat, [snaps[i].pos[ix, :] .* r_scales[i] for i in indices])
@@ -155,8 +168,10 @@ function plot_snapshot_evolution(
             else
                 xlo, xhi, ylo, yhi = gxlo, gxhi, gylo, gyhi
             end
-            xtk = _nice_ticks(xlo, xhi; target_n = 5)
-            ytk = _nice_ticks(ylo, yhi; target_n = 5)
+            xtk = _nice_ticks(xlo, xhi; target_n = target_ticks)
+            ytk = _nice_ticks(ylo, yhi; target_n = target_ticks)
+            # Data-free band above the data, where the time annotation sits
+            yhi += _MONTAGE_BAND_FRAC * (yhi - ylo)
 
             t_val = physical ? time_myr(snap.header) : time_nb(snap.header)
 
@@ -166,8 +181,8 @@ function plot_snapshot_evolution(
                 ylabel = show_ylab ? ylab : "",
                 xlabelsize = 22,
                 ylabelsize = 22,
-                xticklabelsize = use_adaptive ? 15 : 18,
-                yticklabelsize = use_adaptive ? 15 : 18,
+                xticklabelsize = 18,
+                yticklabelsize = 18,
                 aspect = DataAspect(),
                 limits = (xlo, xhi, ylo, yhi),
                 xticks = xtk,
@@ -180,7 +195,7 @@ function plot_snapshot_evolution(
             _annotate!(ax, _time_annotation(t_val, physical))
 
             log_m = log10.(max.(Float64.(snap.mass), 1e-30))
-            ms = _marker_size(cfg, nparticles(snap))
+            ms = max(cfg.style.marker_min, _marker_size(cfg, nparticles(snap)) * marker_scale)
             scatter!(
                 ax,
                 px,
@@ -202,8 +217,8 @@ function plot_snapshot_evolution(
             ticks = _nice_colorbar_ticks(cmin, cmax),
         )
 
-        colgap!(fig.layout, _MULTIPANEL_HGAP)
-        rowgap!(fig.layout, _MULTIPANEL_VGAP)
+        colgap!(fig.layout, gap)
+        rowgap!(fig.layout, gap)
 
         _save_fig(cfg, "$(filename)_$(projection)", fig)
     end

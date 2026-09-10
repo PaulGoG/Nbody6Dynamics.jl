@@ -30,6 +30,8 @@ omp_threads   = 0               # ≥ 0; 0 = OpenMP runtime default (all logical
 gpu_list      = []              # CUDA device indices for GPU_LIST; ≥ 0, distinct, ≤ 4 entries; [] = all; requires build.enable_gpu
 run_id_prefix = "cubic27"       # nonempty
 monitor       = true            # live progress ticker (interactive terminals only)
+live_diagnostics = false        # in-terminal sparklines of Q and |ΔE/E| (with monitor; interactive only)
+live_interval    = 30.0         # s; ≥ 1; period of the sparkline panel
 telemetry_interval = 5.0        # s; ≥ 0; 0 disables the process/GPU sampler
 startup_timeout    = 0.0        # s; ≥ 0; 0 disables the start-up watchdog
 exit_grace         = 120.0      # s; ≥ 0; 0 disables the completion monitor (END RUN printed, no exit)

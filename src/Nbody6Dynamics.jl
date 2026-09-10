@@ -13,6 +13,7 @@ using Logging
 using LoggingExtras: FormatLogger, MinLevelLogger, TeeLogger
 using LinearAlgebra: BLAS
 using MathTeXEngine: texfont
+using UnicodePlots: UnicodePlots
 
 # Package root directory — all relative config paths resolve against this.
 # Computed at precompile time: @__DIR__ = src/, dirname = Nbody6Dynamics/.
@@ -75,6 +76,7 @@ include("ensemble.jl")
 # Plotting (sets publication theme on load)
 # ---------------------------------------------------------------------------
 include("plotting/plotting.jl")
+include("plotting/telemetry.jl")
 
 # ---------------------------------------------------------------------------
 # External post-processing (standalone, config-free)
@@ -390,6 +392,16 @@ function generate_plots(
         end
     end
 
+    # Run telemetry: the sampler's CSVs live in the run directory above the
+    # output directory (absent for output produced outside the pipeline).
+    if !isempty(sim_dir) && isdir(sim_dir)
+        samples = read_run_telemetry(dirname(abspath(sim_dir)))
+        if length(samples) ≥ 2
+            @info "Plotting run telemetry..."
+            plot_telemetry(samples, vis; filename = "telemetry")
+        end
+    end
+
     # --- Animations (GIF) ---
     if animations
         if haskey(results, :snapshots)
@@ -679,6 +691,7 @@ export BinaryRecord, BinaryEvolutionSnapshot, read_binary_evolution, read_all_bi
 export BinaryPopulation, binary_population, binary_hardness, hardness_scale, binary_scales
 export semi_major_axis_pc, binding_energy
 export plot_binary_population, plot_binary_orbital_elements, plot_binary_period_distribution
+export TelemetrySample, read_telemetry, read_run_telemetry, plot_telemetry
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
 export run_sweep_point, read_sweep_index, write_sweep_index, sweep_summary, write_sweep_summary
 export sweep_visualization, plot_sweep_lagrangian, plot_sweep_energy, sweep_figures

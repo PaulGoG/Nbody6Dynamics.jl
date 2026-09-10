@@ -391,10 +391,11 @@ function run_sweep_point(point_dir::AbstractString)
 end
 
 """Command of a worker process for `point_dir`: the current Julia with the
-package project, calling [`run_sweep_point`](@ref)."""
+package project and the driver's thread count (`Base.julia_cmd` does not
+carry `--threads`), calling [`run_sweep_point`](@ref)."""
 function _sweep_worker_command(point_dir::AbstractString)
     julia = Base.julia_cmd()
-    return `$julia --project=$(_PROJECT_ROOT) --startup-file=no -e "using Nbody6Dynamics; run_sweep_point(ARGS[1])" $point_dir`
+    return `$julia --threads=$(Threads.nthreads()) --project=$(_PROJECT_ROOT) --startup-file=no -e "using Nbody6Dynamics; run_sweep_point(ARGS[1])" $point_dir`
 end
 
 """Fail before launching anything when the backend binary of the base

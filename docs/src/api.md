@@ -78,6 +78,8 @@ rc
 ```@docs
 read_conf3
 read_all_conf3
+read_telemetry
+read_run_telemetry
 read_diagnostics
 extract_scaling
 read_lagr
@@ -168,6 +170,13 @@ plot_core_mass
 animate_cluster
 animate_lagrangian
 animate_hr
+```
+
+## Run Telemetry
+
+```@docs
+TelemetrySample
+plot_telemetry
 ```
 
 ## Platform Utilities

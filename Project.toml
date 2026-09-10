@@ -18,6 +18,7 @@ ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
+UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [compat]
 Aqua = "0.8"
@@ -38,6 +39,7 @@ SpecialFunctions = "2"
 StableRNGs = "1"
 TOML = "1"
 Test = "1"
+UnicodePlots = "3"
 julia = "1.10"
 
 [extras]

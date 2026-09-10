@@ -156,7 +156,10 @@ function plot_hr_evolution(
     ncols = min(length(indices), 3)
     nrows = cld(length(indices), ncols)
 
-    fig = Figure(; size = _fig_multipanel(cfg, nrows, ncols))
+    # One column wide; inner tick labels are hidden, so the compact gap applies.
+    gap = _multipanel_gap(ncols; inner_ticks = false)
+    fig = Figure(; size = _fig_multipanel(cfg, nrows, ncols; inner_ticks = false))
+    target_ticks = ncols > 1 ? 3 : 5
 
     # Precompute the valid-record subset for each panel once
     valid_per_panel = [_hr_valid_records(sevs[i].records) for i in indices]
@@ -166,8 +169,11 @@ function plot_hr_evolution(
     lims = _hr_limits(valid_per_panel)
     lims === nothing && error("No valid HR records across any panel")
     tlims, llims = lims
-    xtk_hr = _logval_ticks(tlims[1], tlims[2]; target_n = 5)
-    ytk_hr = _logval_ticks(llims[1], llims[2]; target_n = 5)
+    xtk_hr = _logval_ticks(tlims[1], tlims[2]; target_n = target_ticks)
+    ytk_hr = _logval_ticks(llims[1], llims[2]; target_n = target_ticks)
+    # Data-free band above the data, where the time annotation sits
+    llims_plot = (llims[1], llims[2] + _MONTAGE_BAND_FRAC * (llims[2] - llims[1]))
+    marker_scale = max(_multipanel_scale(cfg, ncols; inner_ticks = false), 0.6)
 
     for (panel_idx, si) in enumerate(indices)
         row = cld(panel_idx, ncols)
@@ -188,7 +194,7 @@ function plot_hr_evolution(
             xticklabelsize = 18,
             yticklabelsize = 18,
             xreversed = true,
-            limits = (tlims..., llims...),
+            limits = (tlims..., llims_plot...),
             xticks = xtk_hr,
             yticks = ytk_hr,
             xticklabelsvisible = show_xlab,
@@ -207,13 +213,13 @@ function plot_hr_evolution(
             [r.log_luminosity for r in v];
             color = [_hr_color(r.stellar_type) for r in v],
             marker = [_hr_marker(r.stellar_type) for r in v],
-            markersize = 14,
+            markersize = 14 * marker_scale,
             strokewidth = 0,
         )
     end
 
-    colgap!(fig.layout, _MULTIPANEL_HGAP)
-    rowgap!(fig.layout, _MULTIPANEL_VGAP)
+    colgap!(fig.layout, gap)
+    rowgap!(fig.layout, gap)
 
     return _save_fig(cfg, filename, fig)
 end

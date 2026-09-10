@@ -30,11 +30,20 @@ function read_conf3(path::AbstractString)::Snapshot
 end
 
 """
-    read_all_conf3(dir::AbstractString, pattern::AbstractString = "conf.3_*") -> Vector{Snapshot}
+    read_all_conf3(dir, pattern = "conf.3_*"; threaded = Threads.nthreads() > 1) -> Vector{Snapshot}
 
-Read all conf.3 snapshot files matching `pattern` in `dir`, sorted by filename.
+Read every conf.3 snapshot matching `pattern` in `dir`, ordered by the
+numeric time suffix. With `threaded = true` (the default in a Julia session
+started with more than one thread) the files are read in chunks on
+`Threads.@spawn` tasks and assembled in file order, which matters once a
+run holds hundreds of snapshots of 10⁵ particles; the result is identical
+to the serial read. Corrupt files are skipped with a warning each.
 """
-function read_all_conf3(dir::AbstractString, pattern::AbstractString = "conf.3_*")::Vector{Snapshot}
+function read_all_conf3(
+    dir::AbstractString,
+    pattern::AbstractString = "conf.3_*";
+    threaded::Bool = Threads.nthreads() > 1,
+)::Vector{Snapshot}
     prefix = replace(pattern, "*" => "")
 
     files = filter(readdir(dir; join = false)) do f
@@ -51,21 +60,70 @@ function read_all_conf3(dir::AbstractString, pattern::AbstractString = "conf.3_*
     isempty(files) &&
         (@warn "No snapshot files matching '$pattern' found in $dir"; return Snapshot[])
 
-    snapshots = Snapshot[]
-    sizehint!(snapshots, length(files))
-    n_skipped = 0
-    p = Progress(length(files); desc = "Reading snapshots: ", showspeed = true)
-    for fname in files
+    return _read_ordered(
+        Snapshot,
+        read_conf3,
+        dir,
+        files;
+        desc = "Reading snapshots: ",
+        what = "snapshot",
+        threaded = threaded,
+    )
+end
+
+"""
+    _read_ordered(T, reader, dir, files; desc, what, threaded) -> Vector{T}
+
+Apply `reader(path)` to every file of `files` (already in the wanted order)
+and return the results in that order as a `Vector{T}`, skipping the files
+whose read throws (a warning naming each, then a count). Serial, or chunked
+over one `Threads.@spawn` task per thread when `threaded`; the progress bar
+is shared, `next!` being thread-safe. Reading is pure, so the threaded
+result equals the serial one.
+"""
+function _read_ordered(
+    ::Type{T},
+    reader,
+    dir::AbstractString,
+    files::AbstractVector{<:AbstractString};
+    desc::AbstractString,
+    what::AbstractString,
+    threaded::Bool,
+)::Vector{T} where {T}
+    n = length(files)
+    results = Vector{Union{Nothing,T}}(nothing, n)
+    failures = Vector{Any}(nothing, n)
+    p = Progress(n; desc = desc, showspeed = true)
+    function read_one!(i)
         try
-            push!(snapshots, read_conf3(joinpath(dir, fname)))
+            results[i] = reader(joinpath(dir, files[i]))
         catch e
-            n_skipped += 1
-            @warn "Skipping corrupt snapshot: $fname" exception=(e, catch_backtrace())
+            failures[i] = (e, catch_backtrace())
         end
         next!(p)
+        return nothing
     end
-    n_skipped > 0 && @warn "$n_skipped / $(length(files)) snapshot files were corrupt and skipped"
-    return snapshots
+    if threaded && n > 1
+        chunk = cld(n, min(Threads.nthreads(), n))
+        tasks = [Threads.@spawn foreach(read_one!, lo:min(lo + chunk - 1, n)) for lo in 1:chunk:n]
+        foreach(wait, tasks)
+    else
+        foreach(read_one!, 1:n)
+    end
+    out = T[]
+    sizehint!(out, n)
+    n_skipped = 0
+    for i in 1:n
+        r = results[i]
+        if r === nothing
+            n_skipped += 1
+            @warn "Skipping corrupt $what: $(files[i])" exception = failures[i]
+        else
+            push!(out, r)
+        end
+    end
+    n_skipped > 0 && @warn "$n_skipped / $n $what files were corrupt and skipped"
+    return out
 end
 
 # ---------------------------------------------------------------------------

@@ -113,19 +113,56 @@ _fig_two_panel(cfg::VisualizationConfig) =
     (_figsize_px(cfg)[1], round(Int, _figsize_px(cfg)[2] * 1.45))
 
 """
-Multi-panel grid — each panel matches the single-panel size.
-Returns `(total_width, total_height)` in Makie screen units.
-Use the same `hgap`/`vgap` values with `colgap!`/`rowgap!` on the layout.
+Multi-panel grids stay one column wide: the canvas keeps the preset width,
+the `ncols` panels share it minus the gaps at `panel_aspect` (height over
+width; the preset's ratio by default), and the rows stack. A montage
+therefore enters a document at native size like every other figure; at the
+`single` preset a three-column grid has 25 mm panels, so montage callers
+use three ticks per axis. `extra_width` is reserved on the right (a shared
+colorbar) and taken from the panel area. The panel gap is
+[`_multipanel_gap`](@ref): compact when the inner tick labels are hidden,
+the stack value otherwise; use it with `colgap!`/`rowgap!`. Single-column
+stacks (`ncols = 1`) keep panels of the full single-panel size. Returns
+`(total_width, total_height)` in Makie screen units.
 """
 const _MULTIPANEL_HGAP = 70
 const _MULTIPANEL_VGAP = 70
+const _MULTIPANEL_GAP_COMPACT = 24
 
-function _fig_multipanel(cfg::VisualizationConfig, nrows::Int, ncols::Int)
+"""Gap between the panels of a grid: compact when `ncols > 1` and the inner tick labels are hidden, `_MULTIPANEL_HGAP` otherwise."""
+_multipanel_gap(ncols::Int; inner_ticks::Bool = true) =
+    (ncols > 1 && !inner_ticks) ? _MULTIPANEL_GAP_COMPACT : _MULTIPANEL_HGAP
+
+"""Fraction of the data range kept free above the data in montage panels, so the in-axis time annotation never meets a marker."""
+const _MONTAGE_BAND_FRAC = 0.18
+
+"""Width of one panel of a grid relative to the single-panel width (1 for stacks); scales markers with the panel."""
+function _multipanel_scale(
+    cfg::VisualizationConfig,
+    ncols::Int;
+    inner_ticks::Bool = true,
+    extra_width::Real = 0,
+)
+    ncols == 1 && return 1.0
+    pw = _figsize_px(cfg)[1]
+    gap = _multipanel_gap(ncols; inner_ticks)
+    return (pw - extra_width - (ncols - 1) * gap) / ncols / pw
+end
+
+function _fig_multipanel(
+    cfg::VisualizationConfig,
+    nrows::Int,
+    ncols::Int;
+    inner_ticks::Bool = true,
+    panel_aspect::Union{Nothing,Real} = nothing,
+    extra_width::Real = 0,
+)
     pw, ph = _figsize_px(cfg)
-    return (
-        ncols * pw + (ncols - 1) * _MULTIPANEL_HGAP,
-        nrows * ph + (nrows - 1) * _MULTIPANEL_VGAP,
-    )
+    ncols == 1 && return (pw, nrows * ph + (nrows - 1) * _MULTIPANEL_VGAP)
+    gap = _multipanel_gap(ncols; inner_ticks)
+    panel_w = (pw - extra_width - (ncols - 1) * gap) / ncols
+    aspect = panel_aspect === nothing ? ph / pw : Float64(panel_aspect)
+    return (pw, round(Int, nrows * panel_w * aspect + (nrows - 1) * gap))
 end
 
 # ---------------------------------------------------------------------------

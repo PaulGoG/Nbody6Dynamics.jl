@@ -4094,6 +4094,61 @@ rbar = 1.0
     end
 
     # =====================================================================
+    @testset "Multi-panel canvas stays one column wide" begin
+        for col in ("single", "double")
+            cfg = VisualizationConfig(; column = col)
+            pw, ph = Nbody6Dynamics._figsize_px(cfg)
+            # Grids keep the column width whatever the column count; stacks are unchanged
+            @test Nbody6Dynamics._fig_multipanel(cfg, 2, 3)[1] == pw
+            @test Nbody6Dynamics._fig_multipanel(cfg, 1, 2; inner_ticks = false)[1] == pw
+            @test Nbody6Dynamics._fig_multipanel(cfg, 2, 1) ==
+                  (pw, 2 * ph + Nbody6Dynamics._MULTIPANEL_VGAP)
+            # Three panels of the preset aspect, compact gaps
+            w3, h3 = Nbody6Dynamics._fig_multipanel(cfg, 2, 3; inner_ticks = false)
+            gap = Nbody6Dynamics._MULTIPANEL_GAP_COMPACT
+            panel_w = (pw - 2 * gap) / 3
+            @test h3 == round(Int, 2 * panel_w * ph / pw + gap)
+            # Square panels are taller; a reserved colorbar column narrows them
+            @test Nbody6Dynamics._fig_multipanel(
+                cfg,
+                2,
+                3;
+                inner_ticks = false,
+                panel_aspect = 1.0,
+            )[2] > h3
+            @test Nbody6Dynamics._fig_multipanel(
+                cfg,
+                2,
+                3;
+                inner_ticks = false,
+                panel_aspect = 1.0,
+                extra_width = 110,
+            )[2] < Nbody6Dynamics._fig_multipanel(
+                cfg,
+                2,
+                3;
+                inner_ticks = false,
+                panel_aspect = 1.0,
+            )[2]
+        end
+        @test Nbody6Dynamics._multipanel_gap(3; inner_ticks = false) ==
+              Nbody6Dynamics._MULTIPANEL_GAP_COMPACT
+        @test Nbody6Dynamics._multipanel_gap(3; inner_ticks = true) ==
+              Nbody6Dynamics._MULTIPANEL_HGAP
+        @test Nbody6Dynamics._multipanel_gap(1; inner_ticks = false) ==
+              Nbody6Dynamics._MULTIPANEL_HGAP
+        # Marker scale follows the panel width; the annotation band is a data-free strip
+        cfg_s = VisualizationConfig(; column = "single")
+        @test Nbody6Dynamics._multipanel_scale(cfg_s, 1) == 1.0
+        s3 = Nbody6Dynamics._multipanel_scale(cfg_s, 3; inner_ticks = false)
+        @test 0.25 < s3 < 1 / 3
+        @test Nbody6Dynamics._multipanel_scale(cfg_s, 3; inner_ticks = false, extra_width = 110) <
+              s3
+        @test Nbody6Dynamics._multipanel_scale(cfg_s, 3; inner_ticks = true) < s3
+        @test 0 < Nbody6Dynamics._MONTAGE_BAND_FRAC < 0.5
+    end
+
+    # =====================================================================
     # Edge cases for pure helpers and degenerate reader inputs
     # =====================================================================
     @testset "Degenerate axis ranges" begin
@@ -4473,6 +4528,154 @@ rbar = 1.0
         @test info["run"]["mpi_ranks"] == 1
         @test info["telemetry"]["samples"] == summary["samples"]
         @test info["telemetry"]["threads_total"] == 2
+    end
+
+    # =====================================================================
+    @testset "Threaded snapshot reading" begin
+        dir = mktempdir()
+        write_snap(path, t, n) = open(path, "w") do io
+            _write_fortran_record(io, Int32[n, 1, 1, 20])
+            params = zeros(Float32, 20)
+            params[1] = Float32(t)
+            params[3] = 1.0f0
+            params[4] = 0.5f0
+            params[11] = 10.0f0
+            params[12] = 5.0f0
+            params[18] = 2.0f0
+            _write_fortran_record(io, params)
+            for i in 1:n
+                buf = IOBuffer()
+                write(
+                    buf,
+                    Float32(1 / n),
+                    Float32(i),
+                    Float32(-i),
+                    0.0f0,
+                    0.1f0,
+                    0.0f0,
+                    0.0f0,
+                    Int32(i),
+                )
+                _write_fortran_record(io, take!(buf))
+            end
+        end
+        for (k, t) in enumerate((0.0, 0.5, 1.0, 1.5, 2.0))
+            write_snap(joinpath(dir, "conf.3_$(t)"), t, 4 + k)
+        end
+        write(joinpath(dir, "conf.3_2.5"), "corrupt")
+        serial =
+            @test_logs (:warn, r"Skipping corrupt snapshot") (:warn, r"1 / 6 snapshot") read_all_conf3(
+                dir;
+                threaded = false,
+            )
+        threaded =
+            @test_logs (:warn, r"Skipping corrupt snapshot") (:warn, r"1 / 6 snapshot") read_all_conf3(
+                dir;
+                threaded = true,
+            )
+        @test length(serial) == length(threaded) == 5
+        @test [time_nb(s.header) for s in threaded] == [0.0, 0.5, 1.0, 1.5, 2.0]
+        @test all(
+            a.pos == b.pos && a.mass == b.mass && a.name == b.name for
+            (a, b) in zip(serial, threaded)
+        )
+        @test [nparticles(s) for s in threaded] == [5, 6, 7, 8, 9]
+        # The ordered reader is generic over the element type and the reader
+        names = Nbody6Dynamics._read_ordered(
+            String,
+            p -> uppercase(basename(p)),
+            dir,
+            ["conf.3_0.0", "conf.3_1.0"];
+            desc = "",
+            what = "name",
+            threaded = true,
+        )
+        @test names == ["CONF.3_0.0", "CONF.3_1.0"]
+        @test occursin(
+            "--threads=$(Threads.nthreads())",
+            string(Nbody6Dynamics._sweep_worker_command(dir)),
+        )
+    end
+
+    # =====================================================================
+    @testset "Live diagnostics panel" begin
+        fixture = joinpath(@__DIR__, "fixtures", "out1000")
+        panel = Nbody6Dynamics._live_diagnostics_panel(fixture)
+        @test panel isa String
+        @test occursin("Q", panel) && occursin("t [", panel)
+        @test count(==('\n'), panel) ≥ 8
+        dir = mktempdir()
+        one = joinpath(dir, "out1000")
+        write(
+            one,
+            " ADJUST:  TIME    0.00000E+00  T[Myr]   0.000E+00  Q   0.450E+00  DE   0.000E+00\n",
+        )
+        @test Nbody6Dynamics._live_diagnostics_panel(one) === nothing
+        @test Nbody6Dynamics._live_diagnostics_panel(joinpath(dir, "absent")) === nothing
+        # Config keys
+        @test SimulationConfig().live_diagnostics == false &&
+              SimulationConfig().live_interval == 30.0
+        cfg_path = joinpath(dir, "c.toml")
+        write(cfg_path, "[simulation]\nlive_diagnostics = true\nlive_interval = 5\n")
+        c = load_config(cfg_path)
+        @test c.simulation.live_diagnostics && c.simulation.live_interval == 5.0
+        write(cfg_path, "[simulation]\nlive_interval = 0.5\n")
+        @test_throws ErrorException load_config(cfg_path)
+    end
+
+    # =====================================================================
+    @testset "Telemetry readers and figure" begin
+        dir = mktempdir()
+        header = join(string.(fieldnames(TelemetrySample)), ",")
+        row(
+            i;
+            gpu = "NaN",
+        ) = "$(5.0 * i),3,$(200 + i),$(210 + i),$(10.0 * i),$(2.0 + 0.1 * i),1.5,$gpu,$gpu,$gpu,$gpu,$gpu"
+        write(
+            joinpath(dir, "telemetry.csv"),
+            header * "\n" * join([row(i) for i in 1:6], "\n") * "\n",
+        )
+        s = read_telemetry(joinpath(dir, "telemetry.csv"))
+        @test length(s) == 6 &&
+              s[1].elapsed_s == 5.0 &&
+              s[6].rss_mib == 206.0 &&
+              s[1].n_processes == 3
+        @test isnan(s[1].gpu_util_pct) && s[3].cores_busy == 2.3
+        # Columns matched by name, in any order; a missing column or a ragged row is an error
+        cols = split(header, ',')
+        perm = reverse(cols)
+        write(
+            joinpath(dir, "perm.csv"),
+            join(perm, ",") * "\n" * join(reverse(split(row(2), ',')), ",") * "\n",
+        )
+        @test read_telemetry(joinpath(dir, "perm.csv"))[1].elapsed_s == 10.0
+        write(joinpath(dir, "short.csv"), "elapsed_s,rss_mib\n1,2\n")
+        @test_throws ArgumentError read_telemetry(joinpath(dir, "short.csv"))
+        write(joinpath(dir, "ragged.csv"), header * "\n1,2,3\n")
+        @test_throws ArgumentError read_telemetry(joinpath(dir, "ragged.csv"))
+        @test read_telemetry(joinpath(dir, "empty.csv") |> p -> (write(p, ""); p)) ==
+              TelemetrySample[]
+        # Segments are concatenated with cumulative offsets
+        write(
+            joinpath(dir, "telemetry_2.csv"),
+            header * "\n" * join([row(i) for i in 1:2], "\n") * "\n",
+        )
+        all_s = read_run_telemetry(dir)
+        @test length(all_s) == 8 && all_s[7].elapsed_s == 30.0 + 5.0 && all_s[8].elapsed_s == 40.0
+        @test read_run_telemetry(joinpath(dir, "nowhere")) == TelemetrySample[]
+        # Figures: two panels without GPU samples, three with them
+        vis = VisualizationConfig(; enabled = true, format = "png", dpi = 100, output_dir = dir)
+        p2 = plot_telemetry(all_s, vis; filename = "tel_cpu")
+        @test p2 !== nothing && isfile(p2)
+        gpu_rows = join([row(i; gpu = "$(50 + i)") for i in 1:6], "\n")
+        write(joinpath(dir, "gpu.csv"), header * "\n" * gpu_rows * "\n")
+        p3 = plot_telemetry(read_telemetry(joinpath(dir, "gpu.csv")), vis; filename = "tel_gpu")
+        @test p3 !== nothing && isfile(p3)
+        @test plot_telemetry(s[1:1], vis; filename = "tel_one") === nothing
+        # Time axis units follow the span
+        @test Nbody6Dynamics._telemetry_time_axis([0.0, 60.0])[1] == [0.0, 60.0]
+        @test Nbody6Dynamics._telemetry_time_axis([0.0, 600.0])[1] == [0.0, 10.0]
+        @test Nbody6Dynamics._telemetry_time_axis([0.0, 7200.0])[1] == [0.0, 2.0]
     end
 
     # =====================================================================

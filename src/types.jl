@@ -69,6 +69,9 @@ run ID generation, and runtime telemetry.
   `END RUN`; beyond that it is terminated and the segment is recorded as
   completed (the engine has been seen to finish its integration and never
   exit). `0` disables
+- `live_diagnostics`: with `monitor`, print in-terminal sparklines of the
+  virial ratio and energy error every `live_interval` seconds (opt-in;
+  interactive terminals only, never in the log file)
 """
 Base.@kwdef struct SimulationConfig
     run_test::Bool = true
@@ -80,6 +83,8 @@ Base.@kwdef struct SimulationConfig
     gpu_list::Vector{Int} = Int[]
     run_id_prefix::String = "run"
     monitor::Bool = false   # opt-in live progress ticker (§9); interactive stderr only
+    live_diagnostics::Bool = false
+    live_interval::Float64 = 30.0
     telemetry_interval::Float64 = 5.0
     startup_timeout::Float64 = 0.0
     exit_grace::Float64 = 120.0

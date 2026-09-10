@@ -6,6 +6,23 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Live sparklines (F8): `[simulation] live_diagnostics` with `live_interval`
+  prints, through the interactive monitor, UnicodePlots sparklines of the
+  virial ratio and `log10 |ΔE/E|` against time from the ADJUST records so
+  far; stderr only, never the log file. New dependency `UnicodePlots`.
+- Threaded snapshot reading (F10): `read_all_conf3(dir; threaded)` reads
+  the files in chunks on `Threads.@spawn` tasks and assembles them in time
+  order (default on when Julia has more than one thread; identical result to
+  the serial read); the ordered reader `_read_ordered` is generic. Sweep
+  worker processes inherit the driver's thread count, which
+  `Base.julia_cmd` does not carry.
+- Run telemetry figure: `read_telemetry`/`read_run_telemetry` read the
+  sampler's `telemetry*.csv` (segments of restarted runs concatenated with
+  cumulative offsets) and `plot_telemetry` draws cores busy with the host
+  load average on a twin axis, resident memory (RSS, high-water mark) and,
+  when sampled, GPU utilisation, as stacked panels with the means and the
+  peak RSS as legend entries; `generate_plots` draws it for every run
+  directory holding telemetry (`telemetry` in the plot suite).
 - GPU build target (F12). `[build] cuda_arch` lists the CUDA architectures
   the kernels are compiled for (`sm_90` Hopper, `sm_120` consumer
   Blackwell, …); empty means the compute capabilities `nvidia-smi` reports,
@@ -202,6 +219,14 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   the engine source and two small confirmation runs.
 
 ### Changed
+- Multi-panel montages (`plot_snapshot_evolution`, `plot_hr_evolution`) are
+  one column wide: `_fig_multipanel` keeps the preset width and divides it
+  among the panels (a reserved colorbar column comes out of the panel
+  area) instead of multiplying the width by the column count, so a montage
+  enters a document at native size. Montage panels use three ticks per
+  axis, a compact gap when the inner tick labels are hidden, a data-free
+  band above the data for the time annotation, and markers scaled with the
+  panel width. Two-panel stacks are unchanged.
 - The derived initial neighbour radius is `2 r_h (2 NNBOPT/N_min)^{1/3}`
   (capped at the member half-mass radius): the undoubled value hung the
   engine's neighbour-list initialisation on one of three random

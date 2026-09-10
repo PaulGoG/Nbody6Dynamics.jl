@@ -320,7 +320,13 @@ function _execute_simulation(
         # Live ticker is opt-in and interactive-only; the Fortran stdout is
         # captured to out1000 regardless.
         if sim.monitor && stderr isa Base.TTY
-            _monitor_stdout_file(stdout_path, process, t_start)
+            _monitor_stdout_file(
+                stdout_path,
+                process,
+                t_start;
+                live = sim.live_diagnostics,
+                live_interval = sim.live_interval,
+            )
         end
         wait(process)
         watchdog === nothing || (watchdog.stop[] = true)
@@ -559,10 +565,17 @@ the process is alive even during quiet periods. When a diagnostics line
 (ADJUST or TIME[NB]) is detected, it prints as a full log line and resets
 the spinner.
 """
-function _monitor_stdout_file(path::String, process::Base.Process, t_start::Float64 = time())
+function _monitor_stdout_file(
+    path::String,
+    process::Base.Process,
+    t_start::Float64 = time();
+    live::Bool = false,
+    live_interval::Real = 30.0,
+)
     last_pos = 0
     spin_idx = 1
     last_event_t = t_start   # wall-clock of last printed diagnostics line
+    last_live = t_start      # wall-clock of the last sparkline panel
 
     while process_running(process)
         new_output = false
@@ -582,6 +595,17 @@ function _monitor_stdout_file(path::String, process::Base.Process, t_start::Floa
                     last_pos = position(io)
                 end
             end
+        end
+
+        # Opt-in in-terminal sparklines of the diagnostics so far (§9): printed
+        # as a block below the log lines; the spinner resumes underneath.
+        if live && time() - last_live ≥ live_interval
+            panel = _live_diagnostics_panel(path)
+            if panel !== nothing
+                print(stderr, "\r\e[K")
+                println(stderr, panel)
+            end
+            last_live = time()
         end
 
         # Heartbeat spinner (overwritten in-place) when no new diagnostics
@@ -610,6 +634,70 @@ function _monitor_stdout_file(path::String, process::Base.Process, t_start::Floa
             end
         end
     end
+end
+
+"""
+    _live_diagnostics_panel(stdout_path; width = 60, height = 6) -> Union{Nothing,String}
+
+In-terminal sparklines of the run so far, from the ADJUST records of the
+stdout capture: the virial ratio `Q = T/|W|` and `log10 |ΔE/E|` against
+time (Myr when the scaling is known, N-body units otherwise), drawn with
+UnicodePlots at `width × height` characters each and returned as one
+string. `nothing` with fewer than two adjustments, or when the file cannot
+be parsed yet (a line may be half written).
+"""
+function _live_diagnostics_panel(
+    stdout_path::AbstractString;
+    width::Int = 60,
+    height::Int = 6,
+)::Union{Nothing,String}
+    isfile(stdout_path) || return nothing
+    diag = try
+        read_diagnostics(stdout_path)
+    catch
+        return nothing
+    end
+    adj = diag.adjust
+    length(adj) ≥ 2 || return nothing
+    physical = any(r -> r.time_myr > 0, adj)
+    t = physical ? [r.time_myr for r in adj] : [r.time_nb for r in adj]
+    xlabel = physical ? "t [Myr]" : "t [NB]"
+    q = [r.qvir for r in adj]
+    plots = String[]
+    push!(
+        plots,
+        sprint(
+            show,
+            UnicodePlots.lineplot(
+                t,
+                q;
+                xlabel = xlabel,
+                ylabel = "Q",
+                width = width,
+                height = height,
+                name = "Q = T/|W|",
+            ),
+        ),
+    )
+    nz = [i for i in eachindex(adj) if adj[i].de_rel != 0]
+    if length(nz) ≥ 2
+        push!(
+            plots,
+            sprint(
+                show,
+                UnicodePlots.lineplot(
+                    t[nz],
+                    log10.(abs.([adj[i].de_rel for i in nz]));
+                    xlabel = xlabel,
+                    ylabel = "log10|dE/E|",
+                    width = width,
+                    height = height,
+                    name = "energy error",
+                ),
+            ),
+        )
+    end
+    return join(plots, "\n")
 end
 
 """

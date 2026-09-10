@@ -86,6 +86,8 @@ function _parse_simulation(d::Dict)
         gpu_list = Vector{Int}(get(d, "gpu_list", Int[])),
         run_id_prefix = get(d, "run_id_prefix", "run"),
         monitor = get(d, "monitor", false),
+        live_diagnostics = get(d, "live_diagnostics", false),
+        live_interval = Float64(get(d, "live_interval", 30.0)),
         telemetry_interval = Float64(get(d, "telemetry_interval", 5.0)),
         startup_timeout = Float64(get(d, "startup_timeout", 0.0)),
         exit_grace = Float64(get(d, "exit_grace", 120.0)),
@@ -211,6 +213,8 @@ function _validate(cfg::Nbody6Config)
         error("config: simulation.startup_timeout must be ≥ 0 [s]; got $(sim.startup_timeout)")
     sim.exit_grace ≥ 0 ||
         error("config: simulation.exit_grace must be ≥ 0 [s]; got $(sim.exit_grace)")
+    sim.live_interval ≥ 1 ||
+        error("config: simulation.live_interval must be ≥ 1 [s]; got $(sim.live_interval)")
     isempty(sim.runs_dir) && error("config: simulation.runs_dir must be nonempty")
     isempty(sim.run_id_prefix) && error("config: simulation.run_id_prefix must be nonempty")
     isempty(sim.input_file) && error("config: simulation.input_file must be nonempty")
