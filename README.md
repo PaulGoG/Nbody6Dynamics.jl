@@ -35,6 +35,7 @@ Nbody6Dynamics/
 ├── Manifest.toml                    # Version-controlled — exact dependency versions
 ├── activate.jl                      # Activates and instantiates the package environment
 ├── config.toml                      # Main pipeline configuration (edit this)
+├── deps/cuda/                       # helper_cuda.h, helper_string.h from NVIDIA cuda-samples v13.0 (CUDA 13 build of the engine)
 ├── src/
 │   ├── Nbody6Dynamics.jl               # Module root; run_pipeline orchestrator; exports
 │   ├── types.jl                     # Config structs (incl. PlotStyle), Snapshot, records, UnitScaling
@@ -220,7 +221,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | I/O readers | Working | `conf.3` (standard + extended; `read_all_conf3` reads in threaded chunks when Julia has more than one thread), `out1000` diagnostics (ADJUST + physical scaling; virial ratio Q = T/\|W\|, equilibrium at 0.5), `lagr.7`, and `esc.11` (incl. the ANGLE PHI / ANGLE THETA escape-direction columns) / `sev.83_*` / `bev.82_*` in the fork's real formats; `STELLAR_TYPE_LABELS` follow the Hurley convention (13 = NS, 14 = BH); `UnitScaling.zmbar` is the total-mass scale factor M*, not the mean stellar mass. HDF5 reader removed — the fork's KZ(46) H5Part layout was never supported; `.h5part` files are detected and warned about |
 | Plotting / animation | Working | Publication theme: no titles, no minor ticks, Computer Modern fonts, dashed grey low-opacity grid on line plots; presentation knobs config-driven via `[visualization.style]` (`PlotStyle`); escaper suite (cumulative mass loss, velocity classes, escape anisotropy) and SSE-quantity plots (mass segregation, t/T_MS evolutionary clock, core-mass growth); binary suite (pair counts with the Heggie hard/soft split, binary fraction, `a`–`e` diagrams, period histograms); existing figures are never overwritten (safesave-style `#1`, `#2`, … backups) |
 | Load latency | Working | PrecompileTools workload over the configuration, diagnostics-reader and merger-IC paths; the first `load_config` of a session no longer compiles |
-| Tests | Passing | 1371/1371 as of this commit (plus 33 engine-dependent tests behind `NBODY6_BINARY_TESTS=1` and a GPU-gated set behind `NBODY6_GPU_TESTS=1`), incl. physics validation, adversarial external-input tests, telemetry/thread-control, per-cluster structure, restart, and tidal-field tests |
+| Tests | Passing | 1382/1382 as of this commit (plus 33 engine-dependent tests behind `NBODY6_BINARY_TESTS=1` and a GPU-gated set behind `NBODY6_GPU_TESTS=1`), incl. physics validation, adversarial external-input tests, telemetry/thread-control, per-cluster structure, restart, and tidal-field tests |
 
 ## Testing
 

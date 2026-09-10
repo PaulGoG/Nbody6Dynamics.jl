@@ -18,6 +18,7 @@ enable_hdf5     = true
 enable_gpu      = false
 cuda_path       = ""
 cuda_arch       = []            # CUDA architectures, "sm_<major><minor>" (e.g. ["sm_90"]); [] = detect with nvidia-smi
+nvcc_flags      = []            # extra nvcc options, e.g. ["-allow-unsupported-compiler"] or ["-ccbin", "gcc-14"]
 nproc           = 0             # ≥ 0; 0 = auto-detect
 
 [simulation]

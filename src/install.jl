@@ -125,8 +125,9 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
             end
         end
         make_args = ["-j$np"]
-        if !isempty(cuda_archs)
-            cuflags = _cuflags_with_arch(joinpath(makefile_dir, "Makefile"), cuda_archs)
+        if build.enable_gpu
+            cuflags =
+                _cuflags_with_arch(joinpath(makefile_dir, "Makefile"), cuda_archs, build.nvcc_flags)
             push!(make_args, "CUFLAGS=$cuflags")
         end
         t_build = time()
@@ -146,18 +147,33 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
 end
 
 """
-    _cuflags_with_arch(makefile, archs) -> String
+Directory of the CUDA helper headers shipped with the package (`helper_cuda.h`,
+`helper_string.h` from NVIDIA's cuda-samples, tag v13.0). The engine's own
+copy under `extra_inc/cuda` dates from 2012 and reads `cudaDeviceProp`
+fields (`clockRate`, `computeMode`) that CUDA 13.0 removed, so it no longer
+compiles with a CUDA 13 toolkit; this directory precedes it in the `nvcc`
+include path.
+"""
+const _CUDA_HELPER_DIR = joinpath(_PROJECT_ROOT, "deps", "cuda")
 
-The `CUFLAGS` value `./configure` wrote into `makefile` (`-O3`, the
-`CUDA_5` define, the `helper_cuda.h` include path) extended with the
-[`cuda_gencode_flags`](@ref) of `archs`, for a `make CUFLAGS=...`
-command-line override. Without the override `nvcc` compiles for its
-default target, which the driver JIT-compiles from PTX on every newer
-device.
+"""
+    _cuflags_with_arch(makefile, archs, nvcc_flags = String[];
+                       helper_dir = _CUDA_HELPER_DIR) -> String
+
+The `CUFLAGS` value for the `make CUFLAGS=...` command-line override of a
+GPU build: the include path of the shipped CUDA helper headers
+(`helper_dir`, ahead of the engine's stale copy), then the value
+`./configure` wrote into `makefile` (`-O3`, the `CUDA_5` define, the
+engine's own include path), the [`cuda_gencode_flags`](@ref) of `archs`
+and finally `nvcc_flags` verbatim. Without the architecture flags `nvcc`
+compiles for its default target, which the driver JIT-compiles from PTX on
+every newer device.
 """
 function _cuflags_with_arch(
     makefile::AbstractString,
     archs::AbstractVector{<:AbstractString},
+    nvcc_flags::AbstractVector{<:AbstractString} = String[];
+    helper_dir::AbstractString = _CUDA_HELPER_DIR,
 )::String
     base = "-O3"
     if isfile(makefile)
@@ -168,8 +184,11 @@ function _cuflags_with_arch(
             break
         end
     end
+    parts = String["-I $helper_dir", base]
     gencode = cuda_gencode_flags(archs)
-    return isempty(gencode) ? base : base * " " * gencode
+    isempty(gencode) || push!(parts, gencode)
+    append!(parts, String.(nvcc_flags))
+    return join(parts, " ")
 end
 
 """
@@ -205,6 +224,8 @@ function _write_build_info(
         d["cuda_path"] = String(cuda_path)
         d["cuda_arch"] = String.(cuda_archs)
         d["nvcc_release"] = nvcc_release(cuda_path)
+        d["nvcc_flags"] = String.(build.nvcc_flags)
+        d["cuda_helper_dir"] = _CUDA_HELPER_DIR
     end
     path = joinpath(dirname(binary), "BUILD_INFO.toml")
     open(path, "w") do io

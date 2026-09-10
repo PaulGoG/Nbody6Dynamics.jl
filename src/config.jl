@@ -71,6 +71,7 @@ function _parse_build(d::Dict)
         enable_gpu = get(d, "enable_gpu", false),
         cuda_path = get(d, "cuda_path", ""),
         cuda_arch = Vector{String}(get(d, "cuda_arch", String[])),
+        nvcc_flags = Vector{String}(get(d, "nvcc_flags", String[])),
         nproc = get(d, "nproc", 0),
     )
 end
@@ -179,6 +180,9 @@ function _validate(cfg::Nbody6Config)
             "config: build.cuda_arch entries must be CUDA architecture names of the form " *
             "\"sm_<major><minor>\" (e.g. \"sm_90\", \"sm_120\"); got \"$arch\"",
         )
+    end
+    for flag in bld.nvcc_flags
+        isempty(strip(flag)) && error("config: build.nvcc_flags entries must be nonempty")
     end
 
     # [simulation]

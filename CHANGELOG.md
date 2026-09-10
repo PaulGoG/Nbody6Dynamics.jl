@@ -6,6 +6,11 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- `[build] nvcc_flags`: extra `nvcc` options for the GPU build (host-compiler
+  overrides such as `-allow-unsupported-compiler`), recorded in
+  `BUILD_INFO.toml`.
+- `deps/cuda/`: `helper_cuda.h` and `helper_string.h` from NVIDIA's
+  cuda-samples (tag v13.0, BSD-3 licence alongside).
 - `.mailmap` folding the earlier author identities into one.
 - Activation scripts for every environment: `activate.jl` (package),
   `docs/activate.jl` and `bench/activate.jl` (auxiliary environments,
@@ -346,6 +351,11 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- GPU builds with a CUDA 13 toolkit: the engine's vendored `helper_cuda.h`
+  reads `cudaDeviceProp.clockRate` and `.computeMode`, which CUDA 13.0
+  removed; the `CUFLAGS` override now puts `deps/cuda` ahead of the engine's
+  `extra_inc/cuda` and is passed for every GPU build, not only when target
+  architectures were resolved.
 - `scan_output`/`postprocess_external` read the engine's `bev.82_*`
   records (`:binary_evo`, category "Regularised binaries", the three
   binary figures in the plot inventory), so the external path produces the

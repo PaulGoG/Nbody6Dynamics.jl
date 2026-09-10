@@ -85,6 +85,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `enable_gpu`      | Bool     | `false` | Enable GPU acceleration (requires CUDA) |
 | `cuda_path`       | String   | `""`    | CUDA installation path; empty = auto-detect |
 | `cuda_arch`       | [String] | `[]`    | CUDA architectures compiled into the GPU kernels, `sm_<major><minor>` (`"sm_90"` H100/H200, `"sm_120"` RTX 50 series); native code for each plus PTX for the highest. Empty = the compute capabilities `nvidia-smi` reports, or the `nvcc` default target when no device is visible (see [GPU builds](#gpu-builds-and-target-architectures)) |
+| `nvcc_flags`      | [String] | `[]`    | Extra `nvcc` options appended to the GPU build flags, e.g. `["-allow-unsupported-compiler"]` or `["-ccbin", "gcc-14"]` when the host compiler is newer than the toolkit supports; entries must be nonempty |
 | `nproc`           | Int      | `0`     | Parallel `make` jobs; 0 = auto-detect; must be ≥ 0 |
 
 ### `[simulation]`
@@ -255,6 +256,8 @@ julia scripts/run_setup.jl input_files/gpu/cpu_pipeline.toml   # CPU reference b
 julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml   # GPU build + run
 NBODY6_GPU_BACKEND=backend/Nbody6PPGPU-beijing-gpu julia bench/gpu_scaling.jl 20000,50000,100000 4,8 "0" 0.25   # "0;0,1" with two devices
 ```
+
+The toolkit need not be on `PATH`: the build looks at `CUDA_HOME`, `/usr/local/cuda` and the other standard locations, or at `cuda_path`, and exports the toolkit's `bin` and `lib64` to `configure`, `make` and the launch script. CUDA 13 toolkits work: the engine's own copy of `helper_cuda.h` reads `cudaDeviceProp` fields that CUDA 13.0 removed, so the build places the package's `deps/cuda` (NVIDIA's current samples headers) ahead of it in the `nvcc` include path. A host compiler newer than the toolkit supports is handled with `nvcc_flags = ["-allow-unsupported-compiler"]` or `["-ccbin", "gcc-14"]`.
 
 Each run's `RUN_INFO.toml` carries the build record (`[build]`: architectures, `nvcc` release), the devices the engine initialised (`run.gpu_devices`), the GPU telemetry summary and the kernel label of the throughput profile; the benchmark prints the GPU speed-up over the CPU binary at equal N and threads and writes `bench/results/gpu_scaling_<timestamp>.csv`. To use one binary on several machines set `cuda_arch = ["sm_90", "sm_120"]` explicitly; `gpu_list = [0, 1]` puts two devices in one process.
 

@@ -17,6 +17,7 @@ enable_hdf5 = false
 enable_gpu = true
 cuda_path = ""            # "" = auto-detect (CUDA_HOME, /usr/local/cuda, nvcc on PATH)
 cuda_arch = []            # [] = compute capabilities from nvidia-smi; e.g. ["sm_90", "sm_120"] for one binary on H200 and RTX 50
+nvcc_flags = []           # extra nvcc options, e.g. ["-allow-unsupported-compiler"] or ["-ccbin", "gcc-14"]
 nproc = 0                 # >= 0; 0 = every core
 
 [simulation]

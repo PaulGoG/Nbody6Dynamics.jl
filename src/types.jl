@@ -36,6 +36,9 @@ architectures, and parallel make.
   each plus PTX for the highest. Empty = the compute capabilities of the
   devices visible to `nvidia-smi`, or the `nvcc` default target (PTX
   JIT-compiled at the first launch) when no device is visible
+- `nvcc_flags`: extra `nvcc` options appended to the GPU build's `CUFLAGS`
+  (e.g. `["-allow-unsupported-compiler"]` or `["-ccbin", "gcc-14"]` when
+  the host compiler is newer than the toolkit supports)
 """
 Base.@kwdef struct BuildConfig
     configure_flags::Vector{String} = ["--enable-mcmodel=large", "--with-par=b1m"]
@@ -44,6 +47,7 @@ Base.@kwdef struct BuildConfig
     enable_gpu::Bool = false
     cuda_path::String = ""
     cuda_arch::Vector{String} = String[]
+    nvcc_flags::Vector{String} = String[]
     nproc::Int = 0
 end
 

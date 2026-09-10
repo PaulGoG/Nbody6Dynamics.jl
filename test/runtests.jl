@@ -368,12 +368,42 @@ format = "pdf"
         # CUFLAGS override built from the configured Makefile
         mk = joinpath(dir, "Makefile")
         write(mk, "NVCC = nvcc\nCUFLAGS =  -O3 -D CUDA_5 -I ../extra_inc/cuda\nLIBS = -lm\n")
+        helper = Nbody6Dynamics._CUDA_HELPER_DIR
         @test Nbody6Dynamics._cuflags_with_arch(mk, ["sm_90"]) ==
-              "-O3 -D CUDA_5 -I ../extra_inc/cuda " * cuda_gencode_flags(["sm_90"])
+              "-I $helper -O3 -D CUDA_5 -I ../extra_inc/cuda " * cuda_gencode_flags(["sm_90"])
+        @test Nbody6Dynamics._cuflags_with_arch(mk, String[], ["-allow-unsupported-compiler"]) ==
+              "-I $helper -O3 -D CUDA_5 -I ../extra_inc/cuda -allow-unsupported-compiler"
+        @test Nbody6Dynamics._cuflags_with_arch(
+            mk,
+            ["sm_90"],
+            ["-ccbin", "gcc-14"];
+            helper_dir = "/h",
+        ) ==
+              "-I /h -O3 -D CUDA_5 -I ../extra_inc/cuda " *
+              cuda_gencode_flags(["sm_90"]) *
+              " -ccbin gcc-14"
+        # The shipped helper headers replace the engine's 2012 copy, whose inline
+        # functions read cudaDeviceProp fields that CUDA 13.0 removed.
+        for name in ("helper_cuda.h", "helper_string.h", "LICENSE")
+            @test isfile(joinpath(helper, name))
+        end
+        helper_src = read(joinpath(helper, "helper_cuda.h"), String)
+        @test !occursin(r"deviceProp\.(clockRate|computeMode)", helper_src)
+        @test occursin("cudaDevAttrClockRate", helper_src) &&
+              occursin("checkCudaErrors", helper_src)
+        # nvcc_flags: parsed, round-tripped, validated
+        flags_cfg = load_config(
+            write_cfg("[build]\nenable_gpu = true\nnvcc_flags = [\"-ccbin\", \"gcc-14\"]\n"),
+        )
+        @test flags_cfg.build.nvcc_flags == ["-ccbin", "gcc-14"]
+        save_config(flags_cfg, rt)
+        @test load_config(rt).build.nvcc_flags == ["-ccbin", "gcc-14"]
+        @test BuildConfig().nvcc_flags == String[]
+        @test_throws ErrorException load_config(write_cfg("[build]\nnvcc_flags = [\" \"]\n"))
         @test Nbody6Dynamics._cuflags_with_arch(joinpath(dir, "absent"), ["sm_90"]) ==
-              "-O3 " * cuda_gencode_flags(["sm_90"])
+              "-I $helper -O3 " * cuda_gencode_flags(["sm_90"])
         @test Nbody6Dynamics._cuflags_with_arch(mk, String[]) ==
-              "-O3 -D CUDA_5 -I ../extra_inc/cuda"
+              "-I $helper -O3 -D CUDA_5 -I ../extra_inc/cuda"
 
         # Binary selection by suffix tags
         src = joinpath(dir, "backend")
