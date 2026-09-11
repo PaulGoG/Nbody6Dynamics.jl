@@ -14,7 +14,9 @@ const _VALIDATION_STAGES = (:suite, :gpu, :cpu, :bench)
 Run the acceptance sequence of a CUDA host and collect everything under
 `<base_dir>/runs/gpu_validation_<host>_<timestamp>/`: `HOST_INFO.toml`
 (hardware fingerprint with the GPU query, compute capabilities, CUDA path
-and `nvcc` release, `gcc` and `gfortran` versions, Julia, package commit),
+and `nvcc` release, `gcc` and `gfortran` versions, the host compilers
+`nvcc` can be offered and the verdict of the host-compiler probe, Julia,
+package commit),
 one `<stage>.log` per stage, the benchmark CSV, the `RUN_INFO.toml` and
 `telemetry.csv` of every benchmark run, and `VALIDATION.toml` (command,
 status, exit code and duration per stage, the run directories the pipelines
@@ -77,6 +79,8 @@ function run_gpu_validation(;
     end
     @info "GPU validation directory: $out_dir"
     @info "Host: $(host["host"]); GPU: $(host["gpu"]); nvcc: $(host["nvcc_release"])"
+    @info "nvcc host-compiler probe: $(first(eachline(IOBuffer(host["nvcc_probe"]))))" flags =
+        host["nvcc_host_flags"]
 
     n_devices = length(host["compute_capabilities"])
     gpu_lists =
@@ -155,8 +159,10 @@ _safe_hostname() = replace(gethostname(), r"[^A-Za-z0-9_-]" => "_")
     _validation_host_record(base_dir) -> Dict{String,Any}
 
 The hardware fingerprint with the GPU query, plus the compute capabilities,
-CUDA path and `nvcc` release, `gcc` and `gfortran` banner lines, and the
-package commit of `base_dir`.
+CUDA path and `nvcc` release, `gcc` and `gfortran` banner lines, the banner
+of every host compiler the build could offer `nvcc` through `-ccbin`
+([`_host_compiler_candidates`](@ref)), the outcome of the host-compiler
+probe ([`_nvcc_probe_record`](@ref)), and the package commit of `base_dir`.
 """
 function _validation_host_record(base_dir::AbstractString)::Dict{String,Any}
     d = _hardware_fingerprint(; gpu_probe = true)
@@ -168,7 +174,35 @@ function _validation_host_record(base_dir::AbstractString)::Dict{String,Any}
     d["nvcc_release"] = nvcc_release(cuda_path)
     d["gcc"] = _tool_banner(`gcc --version`)
     d["gfortran"] = _tool_banner(`gfortran --version`)
+    d["host_compilers"] = Dict{String,String}(
+        cc => _tool_banner(`$cc --version`) for cc in _host_compiler_candidates()
+    )
+    flags, verdict = _nvcc_probe_record(cuda_path, d["nvcc_release"])
+    d["nvcc_host_flags"] = flags
+    d["nvcc_probe"] = verdict
     return d
+end
+
+"""
+    _nvcc_probe_record(cuda_path, release) -> (flags, verdict)
+
+The host-compiler probe ([`_nvcc_host_compiler_flags`](@ref)) run for the
+host record: the options it settled on and `"passed"`, or no options and
+the probe's message — the `nvcc` output of every attempt — when no host
+compiler works. Without an `nvcc` release the probe is skipped.
+"""
+function _nvcc_probe_record(
+    cuda_path::AbstractString,
+    release::AbstractString,
+)::Tuple{Vector{String},String}
+    isempty(release) && return (String[], "skipped: nvcc unavailable")
+    flags = try
+        _nvcc_host_compiler_flags(cuda_path)
+    catch e
+        e isa ErrorException || rethrow()
+        return (String[], sprint(showerror, e))
+    end
+    return (flags, "passed")
 end
 
 """First output line of `cmd`, or `"unavailable"` when the tool is absent or fails."""

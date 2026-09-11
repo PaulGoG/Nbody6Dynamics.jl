@@ -8,12 +8,15 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ### Added
 - `run_gpu_validation` and `scripts/run_gpu_validation.jl`: the acceptance
   sequence of a CUDA host (GPU-gated suite, GPU and CPU pipelines, scaling
-  benchmark) as logged stages, with the host record, every log, the
-  benchmark results and a summary under `runs/gpu_validation_<host>_<stamp>/`.
+  benchmark) as logged stages, with the host record (including the host
+  compilers found for `-ccbin` and the verdict of the `nvcc` host-compiler
+  probe), every log, the benchmark results and a summary under
+  `runs/gpu_validation_<host>_<stamp>/`.
 - GPU builds probe `nvcc` on a trivial kernel and add
   `-allow-unsupported-compiler` themselves, with a warning, when the toolkit
   rejects the host compiler; the effective options are recorded in
-  `BUILD_INFO.toml`.
+  `BUILD_INFO.toml`. When no host compiler works, the error quotes the
+  `nvcc` output of every attempt.
 - `[build] nvcc_flags`: extra `nvcc` options for the GPU build (host-compiler
   overrides such as `-allow-unsupported-compiler`), recorded in
   `BUILD_INFO.toml`.
@@ -363,8 +366,8 @@ changes; all numerical outputs unchanged).
   accepts (GCC 16 with CUDA 13.1): the `nvcc` probe now tries
   `-allow-unsupported-compiler`, then `-ccbin` with `CUDAHOSTCXX` and the
   versioned `g++`/`clang++` compilers on `PATH`, captures the compiler
-  output through a file and reports an excerpt; a configured `-ccbin` is
-  final. The validation driver skips the benchmark stage, with the reason
+  output through a file and reports an excerpt of every attempt; a
+  configured `-ccbin` is final. The validation driver skips the benchmark stage, with the reason
   recorded, when a binary it needs is missing.
 - The build dependency check accepts an `nvcc` under the configured or
   auto-detected toolkit rather than only on `PATH`; the GPU-gated tests

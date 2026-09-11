@@ -631,6 +631,40 @@ format = "pdf"
         @test hopeless isa ErrorException
         @test occursin("nor with -allow-unsupported-compiler", hopeless.msg)
         @test occursin("gcc15-c++", hopeless.msg) && occursin("lines omitted", hopeless.msg)
+        @test occursin("--- default host compiler ---", hopeless.msg) &&
+              occursin("--- -allow-unsupported-compiler ---", hopeless.msg)
+        # Every attempt's own output is reported, so a rejected -ccbin candidate
+        # can be diagnosed from the message alone.
+        echoing = fake_nvcc(
+            mktempdir(),
+            "echo \"nvcc args: \$*\" >&2\n" *
+            "echo 'unsupported GNU version! gcc versions later than 15 are not supported!' >&2\nexit 1\n",
+        )
+        per_attempt = try
+            Nbody6Dynamics._nvcc_host_compiler_flags(echoing; candidates = ["/nonexistent/g++-99"])
+        catch err
+            err
+        end
+        @test per_attempt isa ErrorException
+        @test occursin(
+            r"--- -ccbin /nonexistent/g\+\+-99 ---\nnvcc args: [^\n]* -ccbin /nonexistent/g\+\+-99\n",
+            per_attempt.msg,
+        )
+        @test occursin(
+            r"--- -allow-unsupported-compiler ---\nnvcc args: [^\n]* -allow-unsupported-compiler\n",
+            per_attempt.msg,
+        )
+        # Host-record verdict of the probe
+        @test Nbody6Dynamics._nvcc_probe_record("/nonexistent/cuda", "") ==
+              (String[], "skipped: nvcc unavailable")
+        flags, verdict = Nbody6Dynamics._nvcc_probe_record(echoing, "13.1")
+        @test flags == String[] && occursin("--- default host compiler ---", verdict)
+        flags, verdict =
+            @test_logs (:warn, r"building with -allow-unsupported-compiler") Nbody6Dynamics._nvcc_probe_record(
+                accepts_override,
+                "13.1",
+            )
+        @test flags == ["-allow-unsupported-compiler"] && verdict == "passed"
         # A configured -ccbin is final: no search, the failure is reported as is
         pinned_fail = try
             Nbody6Dynamics._nvcc_host_compiler_flags(
@@ -686,9 +720,13 @@ format = "pdf"
             "gcc",
             "gfortran",
             "package_commit",
+            "host_compilers",
+            "nvcc_host_flags",
+            "nvcc_probe",
         )
             @test haskey(host, key)
         end
+        @test host["nvcc_probe"] isa String && host["nvcc_host_flags"] isa Vector
         summary = Nbody6Dynamics.TOML.parsefile(joinpath(out, "VALIDATION.toml"))
         @test summary["dry_run"] && summary["stages"] == ["suite", "bench"]
         @test summary["results"]["suite"]["status"] == "planned"

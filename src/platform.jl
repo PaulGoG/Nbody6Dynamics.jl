@@ -316,8 +316,9 @@ Returns the options the build must add: empty when the compilation
 succeeds or `nvcc` cannot be run at all (the build reports that itself);
 `["-allow-unsupported-compiler"]`, with a warning quoting the compiler's
 message, when `nvcc` rejects the host compiler version and accepts it
-with the override. Any other failure throws with the `nvcc` output, before
-anything is cloned or built.
+with the override; `["-ccbin", cc]` for the first of `candidates` it
+accepts. When nothing works it throws, before anything is cloned or built,
+with the `nvcc` output of every attempt.
 """
 function _nvcc_host_compiler_flags(
     cuda_path::AbstractString = "";
@@ -353,35 +354,44 @@ function _nvcc_host_compiler_flags(
             _output_excerpt(output),
         )
         unsupported = _unsupported_host_compiler(output)
-        tried = String[]
+        attempts = Pair{String,String}["default host compiler" => output]
         if unsupported
-            ok_override, _ = attempt([override])
+            ok_override, output_override = attempt([override])
             if ok_override
                 @warn "nvcc rejects the host compiler version; building with $override. Set " *
                       "build.nvcc_flags = [\"-ccbin\", \"<older g++>\"] instead if the build misbehaves." nvcc_message =
                     _output_excerpt(output, 3, 0)
                 return [override]
             end
-            push!(tried, override)
+            push!(attempts, override => output_override)
         end
         for cc in candidates
-            ok_cc, _ = attempt(["-ccbin", cc])
+            ok_cc, output_cc = attempt(["-ccbin", cc])
             if ok_cc
                 @warn "nvcc cannot use the default host compiler; building with -ccbin $cc" nvcc_message =
                     _output_excerpt(output, 3, 0)
                 return ["-ccbin", cc]
             end
-            push!(tried, "-ccbin $cc")
+            push!(attempts, "-ccbin $cc" => output_cc)
         end
+        tried = first.(attempts[2:end])
         error(
             "nvcc cannot compile a trivial kernel with the default host compiler" *
             (isempty(tried) ? "" : " nor with " * join(tried, ", ")) *
             ". Install a host compiler the toolkit supports (CUDA 13: GCC ≤ 15, e.g. Fedora's " *
             "gcc15-c++ package providing g++-15) or set build.nvcc_flags = [\"-ccbin\", " *
-            "\"<path to a supported g++>\"]. nvcc output:\n" *
-            _output_excerpt(output),
+            "\"<path to a supported g++>\"]. nvcc output of each attempt:\n" *
+            _attempt_report(attempts),
         )
     end
+end
+
+"""One section per probe attempt: a `--- <label> ---` line, then the excerpt of that attempt's `nvcc` output."""
+function _attempt_report(attempts::AbstractVector{Pair{String,String}})::String
+    return join(
+        ("--- $label ---\n" * _output_excerpt(output) for (label, output) in attempts),
+        "\n",
+    )
 end
 
 """
