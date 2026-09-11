@@ -653,6 +653,33 @@ format = "pdf"
         lines = readlines(log)
         @test "red" in lines && "err line" in lines
         @test Nbody6Dynamics._tee_run(`$julia -e 'exit(3)'`, log) == 3
+        # A process killed by a signal reports exitcode 0 through libuv, so
+        # the runner must report 128 + signal or a crash is recorded as a
+        # success (this silently turned a segfaulted stage into "passed").
+        @test Nbody6Dynamics._tee_run(`sh -c 'kill -s SEGV $$'`, log) == 139
+        # Signal deaths are retried once, keeping the crash output
+        sdir = mktempdir()
+        slog = joinpath(sdir, "stage.log")
+        code, attempts =
+            @test_logs (:warn, r"killed by signal 11") Nbody6Dynamics._run_stage_with_retry(
+                `sh -c 'kill -s SEGV $$'`,
+                slog,
+                :suite,
+            )
+        @test (code, attempts) == (139, 2)
+        @test isfile(joinpath(sdir, "stage.signal11.log"))
+        # A stage that crashes once and then succeeds is reported as passed
+        marker = joinpath(sdir, "once")
+        retried = `sh -c "if [ -e $marker ]; then exit 0; else touch $marker; kill -s SEGV \$\$; fi"`
+        code, attempts =
+            @test_logs (:warn, r"killed by signal 11") Nbody6Dynamics._run_stage_with_retry(
+                retried,
+                joinpath(sdir, "flaky.log"),
+                :cpu,
+            )
+        @test (code, attempts) == (0, 2)
+        # An ordinary failure is not retried
+        @test Nbody6Dynamics._run_stage_with_retry(`$julia -e 'exit(3)'`, slog, :gpu) == (3, 1)
         @test Nbody6Dynamics._tool_banner(
             `$julia -e 'println("banner line"); println("second")'`,
         ) == "banner line"

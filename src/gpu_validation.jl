@@ -110,8 +110,10 @@ function run_gpu_validation(;
             log = joinpath(out_dir, "$s.log")
             @info "Stage :$s → $(basename(log))"
             t0 = time()
-            code = _tee_run(cmd, log)
+            code, attempts = _run_stage_with_retry(cmd, log, s)
             entry["exit_code"] = code
+            attempts > 1 && (entry["attempts"] = attempts)
+            code ≥ 128 && (entry["signal"] = code - 128)
             entry["status"] = code == 0 ? "passed" : "failed"
             entry["seconds"] = round(time() - t0; digits = 1)
             entry["log"] = basename(log)
@@ -274,8 +276,10 @@ const _ANSI_ESCAPE = r"\e\[[0-9;?]*[A-Za-z]|\r"
 
 Run `cmd` with stdout and stderr merged, echoing every line to this
 process's stdout and writing it to `logfile` with terminal escape
-sequences and carriage returns removed. Returns the exit code; a command
-that cannot be spawned throws.
+sequences and carriage returns removed. Returns the exit code, and
+`128 + signal` for a process killed by a signal — a signal-killed process
+reports `exitcode == 0` through libuv, so returning that alone would record
+a crash as a success. A command that cannot be spawned throws.
 """
 function _tee_run(cmd::Base.AbstractCmd, logfile::AbstractString)::Int
     out = Pipe()
@@ -289,7 +293,32 @@ function _tee_run(cmd::Base.AbstractCmd, logfile::AbstractString)::Int
         end
     end
     wait(proc)
-    return proc.exitcode
+    return proc.termsignal == 0 ? Int(proc.exitcode) : 128 + Int(proc.termsignal)
+end
+
+"""
+    _run_stage_with_retry(cmd, log, stage) -> (code, attempts)
+
+Run `cmd` through [`_tee_run`](@ref), writing to `log`. A stage killed by a
+signal is an upstream crash rather than a verdict on the package — Julia
+1.13's optimiser segfaults intermittently during JIT compilation, and it has
+cost whole validation runs — so that output is kept as
+`<stage>.signal<N>.log` and the command is run once more. Returns the final
+exit code and the number of attempts.
+"""
+function _run_stage_with_retry(
+    cmd::Base.AbstractCmd,
+    log::AbstractString,
+    stage::Symbol,
+)::Tuple{Int,Int}
+    code = _tee_run(cmd, log)
+    code < 128 && return (code, 1)
+    signal = code - 128
+    crash_log = string(splitext(log)[1], ".signal", signal, ".log")
+    mv(log, crash_log; force = true)
+    @warn "Stage :$stage was killed by signal $signal; its output is kept in " *
+          "$(basename(crash_log)) and the stage is being run once more."
+    return (_tee_run(cmd, log), 2)
 end
 
 function _write_validation_summary(out_dir::AbstractString, summary::Dict{String,Any})

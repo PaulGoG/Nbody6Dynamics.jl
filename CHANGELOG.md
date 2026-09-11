@@ -368,6 +368,15 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- **A validation stage killed by a signal was recorded as `passed`.** libuv
+  reports `exitcode == 0` for a signal-killed process and the stage runner
+  returned only that, so a segfaulted stage produced a green result with an
+  empty run: on one host the CPU reference "passed" in 22.6 s having built
+  and simulated nothing. `_tee_run` now returns `128 + signal`, the summary
+  records `signal`, and a stage killed by a signal is retried once with its
+  first output kept as `<stage>.signal<N>.log` (`attempts` in the summary),
+  since the cause is an intermittent Julia 1.13 optimiser crash during JIT
+  compilation rather than anything the package controls.
 - An interrupted `git clone` of the engine (a killed run, a host reset) left
   a directory without `configure`, and the next build took it for a finished
   checkout and died on a bare `ENOENT` spawning `./configure`. The source
