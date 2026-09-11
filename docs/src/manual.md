@@ -245,20 +245,33 @@ Other facts of the GPU build:
 
 ### Validated hardware
 
-The GPU path has been validated end to end on one host: an NVIDIA RTX 5070 Ti (compute capability 12.0, `sm_120`, 16 GiB) with CUDA 13.1, driver 610.57.04, glibc 2.43 and GCC 16.2.1 on Fedora 44, driven by an i9-13900KS. The four validation stages pass there, including the GPU-gated tests. Measured against the AVX build of the same engine on the same host, for two King clusters merging on a Kepler orbit:
+The GPU path has been validated end to end on four hosts spanning four NVIDIA generations and two toolchain eras:
 
-| N | Host threads | CPU wall [s] | GPU wall [s] | Speed-up |
+| GPU | Compute capability | CUDA | Host CPU | OS, glibc, GCC |
 |---|---|---|---|---|
-| 19 638 | 4 | 3.6 | 2.0 | 1.80 |
-| 19 638 | 8 | 2.5 | 1.8 | 1.39 |
-| 49 226 | 4 | 18.6 | 5.6 | 3.32 |
-| 49 226 | 8 | 12.2 | 4.8 | 2.54 |
-| 98 426 | 4 | 69.0 | 14.9 | 4.63 |
-| 98 426 | 8 | 42.8 | 12.3 | 3.48 |
+| RTX 5090, 32 GiB | 12.0 | 13.1 | Ryzen 9 9950X | Fedora 44, 2.43, 16.2.1 |
+| RTX 5070 Ti, 16 GiB | 12.0 | 13.1 | i9-13900KS | Fedora 44, 2.43, 16.2.1 |
+| RTX 2080 Super Max-Q, 8 GiB | 7.5 | 13.1 | i7-10750H | Fedora 44, 2.43, 16.2.1 |
+| Tesla T4, 15 GiB | 7.5 | 11.8 | EPYC 7551P | Ubuntu 20.04, 2.31, 9.4 |
 
-Three properties of these numbers matter when planning runs. The GPU build is ahead at every size measured, so there is no size below which the CPU build is the better choice; any crossover lies under N ≈ 2×10⁴, where a run costs seconds either way. The speed-up grows with N and has not flattened at 10⁵, where the device still reports only 14 % utilisation and 860 MiB in use: this card is not the limit. What does limit the gain is the irregular force, which stays on the host — at N ≈ 10⁵ it is 74 % of the engine's accounted time against 12 % for the regular force, so further device speed buys little and the next gain must come from larger N.
+No host needed a package change. The `nvcc` host-compiler probe selected the plain toolchain on the Ubuntu 20.04 host and `-ccbin g++-15 -U_GNU_SOURCE -D_DEFAULT_SOURCE` on the Fedora ones on its own, so the same configuration file builds on a 2020 userspace with CUDA 11.8 and on a 2026 one with CUDA 13.1.
 
-The device computes the regular force in single precision and returns it as `double`. Over a 50 Myr merger of 2 × 25 000 stars this shows up as a cumulative energy error of −3.4×10⁻³ against −1.9×10⁻³ for the CPU build, both within what `qe = 0.01` tolerates. A study needing tighter energy conservation should use the CPU build or a shorter regular-force timestep.
+Measured against the AVX build of the same engine on the same host, for two King clusters merging on a Kepler orbit, the CUDA build is ahead at every size measured:
+
+| N | Host threads | RTX 5090 | RTX 5070 Ti | RTX 2080 Super Max-Q |
+|---|---|---|---|---|
+| 19 638 | 4 | 2.00 | 1.95 | 1.84 |
+| 19 638 | 8 | 1.46 | 1.39 | 1.69 |
+| 49 226 | 4 | 3.38 | 3.38 | 2.93 |
+| 49 226 | 8 | 2.62 | 2.54 | 2.75 |
+| 98 426 | 4 | 4.55 | 4.61 | 4.02 |
+| 98 426 | 8 | 3.26 | 3.52 | 3.77 |
+
+There is no size below which the CPU build is the better choice; any crossover lies under N ≈ 2×10⁴, where a run costs seconds either way. Beyond that, the fleet shows what actually governs the gain. Force-kernel throughput spans a factor 5.7 across these three cards at N ≈ 10⁵ — 4.2, 15.2 and 23.9 TFLOP s⁻¹ — while the end-to-end speed-up spans only 4.02 to 4.61, and the 2019 mobile card reaches 87 % of what the RTX 5090 delivers. The pipeline is bound by the irregular force, which stays on the host: it takes 47 % to 89 % of the engine's accounted time in these runs, and mean device utilisation is 6 % to 22 %. Peak device memory is under 0.6 GiB at N = 10⁵, so an 8 GiB card is not the constraint either. Below N ≈ 10⁵, a faster card is not how this pipeline gets faster; more concurrent jobs per card and faster host cores are.
+
+Halving the host threads costs almost nothing on the GPU path. A four-thread CUDA job reaches 79 %, 81 % and 98 % of the corresponding eight-thread wall time on the three hosts above, and the speed-up over the AVX build is always larger at four threads. Four threads per job is the better unit for parameter sweeps.
+
+The device computes the regular force in single precision and returns it as `double`. Over a 50 Myr merger of 2 × 25 000 stars, the fleet's cumulative energy errors run from −3.4×10⁻³ to +2.5×10⁻³ and the largest per-step excursion from 4.7×10⁻⁴ to 1.6×10⁻³, all well within what `qe = 0.01` tolerates, with no systematic separation between the CUDA and AVX builds. The same case ends with 47 023 to 47 119 of 47 999 bodies bound across all hosts, a 0.20 % spread that reflects chaotic divergence under a different summation order rather than a numerical defect. Results are reproducible to the last digit for a fixed host, binary and thread count, and only statistically so across hosts, so an energy error should always be quoted with the machine that produced it. A study needing tighter energy conservation should use the CPU build or a shorter regular-force timestep.
 
 ### Recipe for a CUDA host
 
