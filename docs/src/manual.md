@@ -243,6 +243,23 @@ Other facts of the GPU build:
 - The upstream authors advise the GPU build only above roughly 5×10⁴ bodies: below that the regular force is a minor share of the work and host–device transfers can make the run slower. `bench/gpu_scaling.jl` measures the crossover on the machine at hand.
 - HDF5 output is unnecessary for the Julia side (it reads `conf.3`), so a GPU build can use `enable_hdf5 = false`.
 
+### Validated hardware
+
+The GPU path has been validated end to end on one host: an NVIDIA RTX 5070 Ti (compute capability 12.0, `sm_120`, 16 GiB) with CUDA 13.1, driver 610.57.04, glibc 2.43 and GCC 16.2.1 on Fedora 44, driven by an i9-13900KS. The four validation stages pass there, including the GPU-gated tests. Measured against the AVX build of the same engine on the same host, for two King clusters merging on a Kepler orbit:
+
+| N | Host threads | CPU wall [s] | GPU wall [s] | Speed-up |
+|---|---|---|---|---|
+| 19 638 | 4 | 3.6 | 2.0 | 1.80 |
+| 19 638 | 8 | 2.5 | 1.8 | 1.39 |
+| 49 226 | 4 | 18.6 | 5.6 | 3.32 |
+| 49 226 | 8 | 12.2 | 4.8 | 2.54 |
+| 98 426 | 4 | 69.0 | 14.9 | 4.63 |
+| 98 426 | 8 | 42.8 | 12.3 | 3.48 |
+
+Three properties of these numbers matter when planning runs. The GPU build is ahead at every size measured, so there is no size below which the CPU build is the better choice; any crossover lies under N ≈ 2×10⁴, where a run costs seconds either way. The speed-up grows with N and has not flattened at 10⁵, where the device still reports only 14 % utilisation and 860 MiB in use: this card is not the limit. What does limit the gain is the irregular force, which stays on the host — at N ≈ 10⁵ it is 74 % of the engine's accounted time against 12 % for the regular force, so further device speed buys little and the next gain must come from larger N.
+
+The device computes the regular force in single precision and returns it as `double`. Over a 50 Myr merger of 2 × 25 000 stars this shows up as a cumulative energy error of −3.4×10⁻³ against −1.9×10⁻³ for the CPU build, both within what `qe = 0.01` tolerates. A study needing tighter energy conservation should use the CPU build or a shorter regular-force timestep.
+
 ### Recipe for a CUDA host
 
 Shipped under `input_files/gpu/`: `gpu_pipeline.toml` clones and builds the engine with CUDA into `backend/Nbody6PPGPU-beijing-gpu` (architectures from `nvidia-smi`, HDF5 off) and runs `merger_50k.toml`, two King clusters of 25 000 stars, on device 0 with eight host threads; `cpu_pipeline.toml` builds the AVX engine into the default tree and runs the same merger, so the two are comparable binary against binary. The order on a fresh host:

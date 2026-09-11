@@ -6,6 +6,10 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- Manual: a "Validated hardware" section recording the first host the GPU
+  path was validated on (RTX 5070 Ti, CUDA 13.1, Fedora 44) with the
+  measured speed-ups, the size range they hold over, and the
+  single-precision regular force on the device.
 - `publication_theme()`: the publication theme as a value, for `with_theme`
   scoping.
 - `run_gpu_validation` and `scripts/run_gpu_validation.jl`: the acceptance
