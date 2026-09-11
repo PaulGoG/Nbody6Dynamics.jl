@@ -89,13 +89,20 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
     # ------------------------------------------------------------------
     # 5. Configure (output suppressed — only errors shown)
     # ------------------------------------------------------------------
-    @info "Running ./configure ..."
-    configure_args = copy(build.configure_flags)
-    build.enable_mpi || push!(configure_args, "--disable-mpi")
-    build.enable_gpu || push!(configure_args, "--disable-gpu")
+    # Build environment: inherit current ENV, then overlay our variables.
+    # configure needs it as much as make: the engine's configure looks for
+    # nvcc on PATH, and its --with-cuda fallback reuses the cached result of
+    # that check, so a toolkit off PATH is found only through PATH.
+    build_env = copy(ENV)
+    build_env["OMP_STACKSIZE"] = "4096M"
+    if build.enable_gpu && !isempty(cuda_path)
+        merge!(build_env, cuda_env_vars(cuda_path))
+    end
 
+    @info "Running ./configure ..."
+    configure_args = _configure_args(build, cuda_path)
     cd(src_dir) do
-        _run_quiet(`./configure $configure_args`; label = "configure")
+        _run_quiet(Cmd(`./configure $configure_args`; env = build_env); label = "configure")
     end
 
     # ------------------------------------------------------------------
@@ -113,13 +120,6 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
     isdir(makefile_dir) || (makefile_dir = src_dir)
 
     np = build.nproc > 0 ? build.nproc : nproc_available()
-
-    # Build environment: inherit current ENV, then overlay our variables
-    build_env = copy(ENV)
-    build_env["OMP_STACKSIZE"] = "4096M"
-    if build.enable_gpu && !isempty(cuda_path)
-        merge!(build_env, cuda_env_vars(cuda_path))
-    end
 
     cd(makefile_dir) do
         if install.clean_build
@@ -299,6 +299,23 @@ end
 # ---------------------------------------------------------------------------
 # Binary locator
 # ---------------------------------------------------------------------------
+
+"""
+    _configure_args(build, cuda_path) -> Vector{String}
+
+The engine's `configure` arguments: the configured flags, `--disable-mpi`
+and `--disable-gpu` unless enabled, and, for a GPU build with a detected
+toolkit, `--with-cuda=<cuda_path>` unless the flags already carry one.
+"""
+function _configure_args(build, cuda_path::AbstractString)::Vector{String}
+    args = String.(build.configure_flags)
+    build.enable_mpi || push!(args, "--disable-mpi")
+    build.enable_gpu || push!(args, "--disable-gpu")
+    if build.enable_gpu && !isempty(cuda_path) && !any(startswith("--with-cuda"), args)
+        push!(args, "--with-cuda=$cuda_path")
+    end
+    return args
+end
 
 """
 Run a command with stdout/stderr redirected to a temp file.

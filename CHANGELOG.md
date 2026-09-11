@@ -364,6 +364,11 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- GPU builds with the toolkit off `PATH` failed in the engine's `configure`
+  ("Cannot find CUDA compiler nvcc"): the CUDA environment reached `make`
+  and the launch script but not `configure`, whose `--with-cuda` fallback
+  never runs (it reuses the cached `PATH` check). `configure` now runs with
+  the toolkit's `bin` on `PATH` and an explicit `--with-cuda=<path>`.
 - GPU builds on hosts whose glibc (2.42 and later: Fedora 43/44, Ubuntu
   26.04, Debian 13) declares `rsqrt`/`rsqrtf` with an exception
   specification the CUDA ≤ 13.1 headers lack: `nvcc` rejected every host

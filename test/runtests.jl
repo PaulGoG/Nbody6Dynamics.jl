@@ -274,6 +274,30 @@ format = "pdf"
 
     # =====================================================================
     @testset "GPU build target" begin
+        # configure arguments: the engine's configure finds nvcc only on PATH
+        # (its --with-cuda fallback reuses the cached PATH check), so the
+        # build exports the toolkit's bin and names the prefix explicitly.
+        build_of(body) =
+            (p = joinpath(mktempdir(), "cfg.toml"); write(p, body); load_config(p).build)
+        cpu_args = Nbody6Dynamics._configure_args(
+            build_of("[build]\nenable_gpu = false\n"),
+            "/usr/local/cuda",
+        )
+        @test "--disable-gpu" in cpu_args && "--disable-mpi" in cpu_args
+        @test !any(startswith("--with-cuda"), cpu_args)
+        @test Nbody6Dynamics._configure_args(
+            build_of("[build]\nenable_gpu = true\nconfigure_flags = [\"--with-par=b1m\"]\n"),
+            "/opt/cuda-13.1",
+        ) == ["--with-par=b1m", "--disable-mpi", "--with-cuda=/opt/cuda-13.1"]
+        @test Nbody6Dynamics._configure_args(
+            build_of("[build]\nenable_gpu = true\nconfigure_flags = [\"--with-cuda=/x\"]\n"),
+            "/opt/cuda-13.1",
+        ) == ["--with-cuda=/x", "--disable-mpi"]
+        @test !any(
+            startswith("--with-cuda"),
+            Nbody6Dynamics._configure_args(build_of("[build]\nenable_gpu = true\n"), ""),
+        )
+
         # Architecture names and code-generation flags
         @test cuda_arch_from_compute_cap("9.0") == "sm_90"
         @test cuda_arch_from_compute_cap("12.0") == "sm_120"
