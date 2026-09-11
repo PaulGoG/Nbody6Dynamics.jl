@@ -311,14 +311,17 @@ end
     _nvcc_host_compiler_flags(cuda_path = ""; nvcc_flags = String[]) -> Vector{String}
 
 Compile a trivial kernel with `nvcc` (under `cuda_path/bin` when given)
-and `nvcc_flags` to learn whether the toolkit accepts the host compiler.
-Returns the options the build must add: empty when the compilation
-succeeds or `nvcc` cannot be run at all (the build reports that itself);
-`["-allow-unsupported-compiler"]`, with a warning quoting the compiler's
-message, when `nvcc` rejects the host compiler version and accepts it
-with the override; `["-ccbin", cc]` for the first of `candidates` it
-accepts. When nothing works it throws, before anything is cloned or built,
-with the `nvcc` output of every attempt.
+and `nvcc_flags` to learn whether the toolkit accepts the host compiler
+and the host's C library. Returns the options the build must add: empty
+when the compilation succeeds or `nvcc` cannot be run at all (the build
+reports that itself); `["-allow-unsupported-compiler"]`, with a warning
+quoting the compiler's message, when `nvcc` rejects the host compiler
+version and accepts it with the override; `["-ccbin", cc]` for the first
+of `candidates` it accepts. Every host-compiler choice is tried as is and,
+when the output shows the glibc conflict of [`_glibc_c2y_conflict`](@ref),
+once more with [`_GLIBC_C2Y_FLAGS`](@ref) appended, which then form part
+of the result. When nothing works it throws, before anything is cloned or
+built, with the `nvcc` output of every attempt.
 """
 function _nvcc_host_compiler_flags(
     cuda_path::AbstractString = "";
@@ -340,50 +343,114 @@ function _nvcc_host_compiler_flags(
             `$nvcc -c $src -o $obj $(String.(nvcc_flags)) $(String.(extra))`,
             joinpath(dir, "probe.log"),
         )
-        ok, output = try
+        first_try = try
             attempt(String[])
         catch e
             e isa Base.IOError || rethrow()
             @debug "nvcc host-compiler probe skipped: nvcc cannot be run" nvcc exception = e
             return String[]
         end
-        ok && return String[]
+        attempts = Pair{String,String}[]
+        # One host-compiler choice: as is, then, when the output shows the
+        # glibc conflict, with the feature-macro override appended. Returns
+        # the flags that worked or `nothing` after recording every output.
+        function probe_choice(label, extra, first = nothing)
+            ok, output = first === nothing ? attempt(extra) : first
+            ok && return extra
+            push!(attempts, label => output)
+            _glibc_c2y_conflict(output) || return nothing
+            with_glibc = vcat(extra, _GLIBC_C2Y_FLAGS)
+            ok_glibc, output_glibc = attempt(with_glibc)
+            ok_glibc && return with_glibc
+            push!(attempts, "$label with $(join(_GLIBC_C2Y_FLAGS, " "))" => output_glibc)
+            return nothing
+        end
+        flags = probe_choice("default host compiler", String[], first_try)
+        flags === nothing || return _report_probe_flags(flags, attempts)
         pinned && error(
             "nvcc cannot compile a trivial kernel with the configured host compiler " *
-            "(build.nvcc_flags = $(String.(nvcc_flags))); output:\n" *
-            _output_excerpt(output),
+            "(build.nvcc_flags = $(String.(nvcc_flags)))." *
+            _glibc_conflict_advice(attempts) *
+            " nvcc output of each attempt:\n" *
+            _attempt_report(attempts),
         )
-        unsupported = _unsupported_host_compiler(output)
-        attempts = Pair{String,String}["default host compiler" => output]
-        if unsupported
-            ok_override, output_override = attempt([override])
-            if ok_override
-                @warn "nvcc rejects the host compiler version; building with $override. Set " *
-                      "build.nvcc_flags = [\"-ccbin\", \"<older g++>\"] instead if the build misbehaves." nvcc_message =
-                    _output_excerpt(output, 3, 0)
-                return [override]
-            end
-            push!(attempts, override => output_override)
+        if _unsupported_host_compiler(attempts[1].second)
+            flags = probe_choice(override, [override])
+            flags === nothing || return _report_probe_flags(flags, attempts)
         end
         for cc in candidates
-            ok_cc, output_cc = attempt(["-ccbin", cc])
-            if ok_cc
-                @warn "nvcc cannot use the default host compiler; building with -ccbin $cc" nvcc_message =
-                    _output_excerpt(output, 3, 0)
-                return ["-ccbin", cc]
-            end
-            push!(attempts, "-ccbin $cc" => output_cc)
+            flags = probe_choice("-ccbin $cc", ["-ccbin", cc])
+            flags === nothing || return _report_probe_flags(flags, attempts)
         end
-        tried = first.(attempts[2:end])
         error(
-            "nvcc cannot compile a trivial kernel with the default host compiler" *
-            (isempty(tried) ? "" : " nor with " * join(tried, ", ")) *
-            ". Install a host compiler the toolkit supports (CUDA 13: GCC ≤ 15, e.g. Fedora's " *
+            "nvcc cannot compile a trivial kernel with any host-compiler option tried (" *
+            join(first.(attempts), "; ") *
+            "). Install a host compiler the toolkit supports (CUDA 13: GCC ≤ 15, e.g. Fedora's " *
             "gcc15-c++ package providing g++-15) or set build.nvcc_flags = [\"-ccbin\", " *
-            "\"<path to a supported g++>\"]. nvcc output of each attempt:\n" *
+            "\"<path to a supported g++>\"]." *
+            _glibc_conflict_advice(attempts) *
+            " nvcc output of each attempt:\n" *
             _attempt_report(attempts),
         )
     end
+end
+
+"""
+`nvcc` options that keep glibc's GNU-extension declarations out of the CUDA
+sources: glibc 2.42 and later declare `rsqrt`/`rsqrtf` (C2Y) with an
+exception specification the CUDA ≤ 13.1 headers lack, and `g++` defines
+`_GNU_SOURCE` by default, which exposes them. `_DEFAULT_SOURCE` keeps the
+POSIX and BSD interfaces (`gettimeofday`, `strcasecmp`) the engine's GPU
+sources use.
+"""
+const _GLIBC_C2Y_FLAGS = ["-U_GNU_SOURCE", "-D_DEFAULT_SOURCE"]
+
+"""`true` when `nvcc` output shows the glibc/CUDA header conflict on the C2Y math functions."""
+function _glibc_c2y_conflict(output::AbstractString)::Bool
+    return occursin("exception specification is incompatible", output) &&
+           occursin("mathcalls.h", output)
+end
+
+"""
+    _report_probe_flags(flags, attempts) -> flags
+
+Log what the probe settled on — the host-compiler override or `-ccbin`
+choice, and the glibc feature-macro override with the header-patch
+alternative — quoting the message of the attempt that motivated each, and
+return `flags` unchanged.
+"""
+function _report_probe_flags(
+    flags::Vector{String},
+    attempts::AbstractVector{Pair{String,String}},
+)::Vector{String}
+    isempty(flags) && return flags
+    host = filter(f -> !(f in _GLIBC_C2Y_FLAGS), flags)
+    if "-allow-unsupported-compiler" in host
+        @warn "nvcc rejects the host compiler version; building with -allow-unsupported-compiler. Set " *
+              "build.nvcc_flags = [\"-ccbin\", \"<older g++>\"] instead if the build misbehaves." nvcc_message =
+            _output_excerpt(attempts[1].second, 3, 0)
+    elseif "-ccbin" in host
+        @warn "nvcc cannot use the default host compiler; building with $(join(host, " "))" nvcc_message =
+            _output_excerpt(attempts[1].second, 3, 0)
+    end
+    if any(f -> f in _GLIBC_C2Y_FLAGS, flags)
+        @warn "the host's glibc declares rsqrt and rsqrtf with an exception specification the CUDA " *
+              "headers lack (glibc ≥ 2.42 against CUDA ≤ 13.1); building with " *
+              "$(join(_GLIBC_C2Y_FLAGS, " ")), which keeps glibc's GNU-extension declarations out of " *
+              "the CUDA sources. The alternative is to patch <toolkit>/targets/x86_64-linux/include/" *
+              "crt/math_functions.h, adding noexcept(true) to the rsqrt and rsqrtf declarations (root)." nvcc_message =
+            _output_excerpt(attempts[end].second, 3, 0)
+    end
+    return flags
+end
+
+"""Advice appended to the probe's error when an attempt showed the glibc conflict and the override did not resolve it; empty otherwise."""
+function _glibc_conflict_advice(attempts::AbstractVector{Pair{String,String}})::String
+    any(_glibc_c2y_conflict(output) for (_, output) in attempts) || return ""
+    return " The host's glibc conflicts with the CUDA headers (rsqrt/rsqrtf exception " *
+           "specification) and $(join(_GLIBC_C2Y_FLAGS, " ")) did not resolve it: patch " *
+           "<toolkit>/targets/x86_64-linux/include/crt/math_functions.h (add noexcept(true) to " *
+           "rsqrt and rsqrtf, root) or install a toolkit release that supports this glibc."
 end
 
 """One section per probe attempt: a `--- <label> ---` line, then the excerpt of that attempt's `nvcc` output."""

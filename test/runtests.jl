@@ -629,7 +629,7 @@ format = "pdf"
             err
         end
         @test hopeless isa ErrorException
-        @test occursin("nor with -allow-unsupported-compiler", hopeless.msg)
+        @test occursin("default host compiler; -allow-unsupported-compiler", hopeless.msg)
         @test occursin("gcc15-c++", hopeless.msg) && occursin("lines omitted", hopeless.msg)
         @test occursin("--- default host compiler ---", hopeless.msg) &&
               occursin("--- -allow-unsupported-compiler ---", hopeless.msg)
@@ -654,6 +654,78 @@ format = "pdf"
             r"--- -allow-unsupported-compiler ---\nnvcc args: [^\n]* -allow-unsupported-compiler\n",
             per_attempt.msg,
         )
+        # glibc ≥ 2.42 declares rsqrt/rsqrtf with an exception specification
+        # the CUDA headers lack: the probe retries with the feature-macro
+        # override, alone or on top of the host-compiler choice.
+        glibc_line =
+            "/usr/include/bits/mathcalls.h(206): error: exception specification is incompatible " *
+            "with that of previous function \"rsqrt\" (declared at line 629 of crt/math_functions.h)"
+        @test Nbody6Dynamics._glibc_c2y_conflict(glibc_line)
+        @test !Nbody6Dynamics._glibc_c2y_conflict(
+            "unsupported GNU version! gcc versions later than 15",
+        )
+        glibc_msg = "echo '$glibc_line' >&2\nexit 1\n"
+        glibc_only = fake_nvcc(
+            mktempdir(),
+            "case \" \$* \" in *' -U_GNU_SOURCE -D_DEFAULT_SOURCE '*) exit 0;; esac\n" * glibc_msg,
+        )
+        flags =
+            @test_logs (:warn, r"glibc declares rsqrt and rsqrtf") Nbody6Dynamics._nvcc_host_compiler_flags(
+                glibc_only;
+                candidates = String[],
+            )
+        @test flags == ["-U_GNU_SOURCE", "-D_DEFAULT_SOURCE"]
+        # A configured -ccbin stays in nvcc_flags; only the override is added
+        flags =
+            @test_logs (:warn, r"glibc declares rsqrt and rsqrtf") Nbody6Dynamics._nvcc_host_compiler_flags(
+                glibc_only;
+                nvcc_flags = ["-ccbin", "/usr/bin/true"],
+                candidates = String[],
+            )
+        @test flags == ["-U_GNU_SOURCE", "-D_DEFAULT_SOURCE"]
+        # Host compiler rejected AND the glibc conflict (Fedora 44 with CUDA
+        # 13.1): the first accepted -ccbin candidate, with the override
+        both = fake_nvcc(
+            mktempdir(),
+            "case \" \$* \" in\n" *
+            "  *' -ccbin /usr/bin/true -U_GNU_SOURCE -D_DEFAULT_SOURCE '*) exit 0;;\n" *
+            "  *' -ccbin /usr/bin/true '*) " *
+            glibc_msg *
+            ";;\n" *
+            "esac\n" *
+            "echo 'unsupported GNU version! gcc versions later than 15 are not supported!' >&2\nexit 1\n",
+        )
+        flags = @test_logs (:warn, r"building with -ccbin /usr/bin/true") (
+            :warn,
+            r"glibc declares rsqrt and rsqrtf",
+        ) Nbody6Dynamics._nvcc_host_compiler_flags(
+            both;
+            candidates = ["/nonexistent/g++-99", "/usr/bin/true"],
+        )
+        @test flags == ["-ccbin", "/usr/bin/true", "-U_GNU_SOURCE", "-D_DEFAULT_SOURCE"]
+        # The override does not help: every attempt is reported, with the
+        # header-patch advice
+        glibc_stuck = fake_nvcc(mktempdir(), glibc_msg)
+        stuck = try
+            Nbody6Dynamics._nvcc_host_compiler_flags(glibc_stuck; candidates = String[])
+        catch err
+            err
+        end
+        @test stuck isa ErrorException
+        @test occursin("default host compiler with -U_GNU_SOURCE -D_DEFAULT_SOURCE", stuck.msg)
+        @test occursin("math_functions.h", stuck.msg) && occursin("noexcept(true)", stuck.msg)
+        stuck_pinned = try
+            Nbody6Dynamics._nvcc_host_compiler_flags(
+                glibc_stuck;
+                nvcc_flags = ["-ccbin", "/usr/bin/false"],
+                candidates = String[],
+            )
+        catch err
+            err
+        end
+        @test stuck_pinned isa ErrorException &&
+              occursin("configured host compiler", stuck_pinned.msg)
+        @test occursin("math_functions.h", stuck_pinned.msg)
         # Host-record verdict of the probe
         @test Nbody6Dynamics._nvcc_probe_record("/nonexistent/cuda", "") ==
               (String[], "skipped: nvcc unavailable")
@@ -720,6 +792,7 @@ format = "pdf"
             "gcc",
             "gfortran",
             "package_commit",
+            "glibc",
             "host_compilers",
             "nvcc_host_flags",
             "nvcc_probe",

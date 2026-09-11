@@ -364,6 +364,14 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- GPU builds on hosts whose glibc (2.42 and later: Fedora 43/44, Ubuntu
+  26.04, Debian 13) declares `rsqrt`/`rsqrtf` with an exception
+  specification the CUDA ≤ 13.1 headers lack: `nvcc` rejected every host
+  compiler with "exception specification is incompatible". The probe
+  recognises the conflict and retries the host-compiler choice with
+  `-U_GNU_SOURCE -D_DEFAULT_SOURCE`, keeps the override in the build flags,
+  and names the header-patch alternative when that does not resolve it;
+  the validation host record carries the glibc version.
 - Plain-text labels (axis labels, tick labels, annotations, legends) were
   rendered in Makie's default sans font instead of Computer Modern whenever
   the package was loaded from its precompile cache: the theme held FreeType

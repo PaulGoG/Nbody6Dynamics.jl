@@ -14,9 +14,9 @@ const _VALIDATION_STAGES = (:suite, :gpu, :cpu, :bench)
 Run the acceptance sequence of a CUDA host and collect everything under
 `<base_dir>/runs/gpu_validation_<host>_<timestamp>/`: `HOST_INFO.toml`
 (hardware fingerprint with the GPU query, compute capabilities, CUDA path
-and `nvcc` release, `gcc` and `gfortran` versions, the host compilers
-`nvcc` can be offered and the verdict of the host-compiler probe, Julia,
-package commit),
+and `nvcc` release, `gcc`, `gfortran` and glibc versions, the host
+compilers `nvcc` can be offered and the verdict of the host-compiler probe,
+Julia, package commit),
 one `<stage>.log` per stage, the benchmark CSV, the `RUN_INFO.toml` and
 `telemetry.csv` of every benchmark run, and `VALIDATION.toml` (command,
 status, exit code and duration per stage, the run directories the pipelines
@@ -159,8 +159,8 @@ _safe_hostname() = replace(gethostname(), r"[^A-Za-z0-9_-]" => "_")
     _validation_host_record(base_dir) -> Dict{String,Any}
 
 The hardware fingerprint with the GPU query, plus the compute capabilities,
-CUDA path and `nvcc` release, `gcc` and `gfortran` banner lines, the banner
-of every host compiler the build could offer `nvcc` through `-ccbin`
+CUDA path and `nvcc` release, `gcc`, `gfortran` and glibc banner lines, the
+banner of every host compiler the build could offer `nvcc` through `-ccbin`
 ([`_host_compiler_candidates`](@ref)), the outcome of the host-compiler
 probe ([`_nvcc_probe_record`](@ref)), and the package commit of `base_dir`.
 """
@@ -174,6 +174,7 @@ function _validation_host_record(base_dir::AbstractString)::Dict{String,Any}
     d["nvcc_release"] = nvcc_release(cuda_path)
     d["gcc"] = _tool_banner(`gcc --version`)
     d["gfortran"] = _tool_banner(`gfortran --version`)
+    d["glibc"] = _tool_banner(`getconf GNU_LIBC_VERSION`)
     d["host_compilers"] = Dict{String,String}(
         cc => _tool_banner(`$cc --version`) for cc in _host_compiler_candidates()
     )
