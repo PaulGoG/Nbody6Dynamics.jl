@@ -75,16 +75,7 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
         rm(src_dir; recursive = true)
     end
 
-    if !isdir(src_dir)
-        @info "Cloning $(install.source_url) → $src_dir"
-        run(`git clone $(install.source_url) $src_dir`)
-        if !isempty(install.ref)
-            @info "Checking out backend reference $(install.ref)"
-            _run_quiet(`git -C $src_dir checkout --quiet $(install.ref)`; label = "checkout")
-        end
-    else
-        @info "Source directory already exists: $src_dir (reference left as is)"
-    end
+    _ensure_source_tree(src_dir, install)
 
     # ------------------------------------------------------------------
     # 5. Configure (output suppressed — only errors shown)
@@ -299,6 +290,59 @@ end
 # ---------------------------------------------------------------------------
 # Binary locator
 # ---------------------------------------------------------------------------
+
+"""
+    _ensure_source_tree(src_dir, install)
+
+Leave `src_dir` holding a usable engine checkout: clone it when absent,
+keep it as it is when it carries a `configure` script, and repair it when
+it does not. A directory without `configure` is a truncated checkout — an
+interrupted `git clone` (a killed run, a host reset) leaves exactly that,
+and the build would fail later with a bare `ENOENT` on `./configure`. The
+repair restores the tracked files with `git checkout --force`, which keeps
+untracked work, and falls back to removing the directory and cloning again
+only when there is no usable git state left to restore from.
+"""
+function _ensure_source_tree(src_dir::AbstractString, install)
+    if !isdir(src_dir)
+        _clone_source(src_dir, install)
+        return nothing
+    end
+    if _source_tree_ready(src_dir)
+        @info "Source directory already exists: $src_dir (reference left as is)"
+        return nothing
+    end
+    @warn "Engine source tree at $src_dir has no configure script: the checkout is " *
+          "incomplete (an interrupted clone leaves this). Restoring it."
+    ref = isempty(install.ref) ? "HEAD" : install.ref
+    if isdir(joinpath(src_dir, ".git"))
+        try
+            _run_quiet(`git -C $src_dir checkout --force $ref`; label = "checkout")
+        catch e
+            e isa Union{ProcessFailedException,Base.IOError} || rethrow()
+            @debug "restoring the checkout failed; cloning again" exception = e
+        end
+        _source_tree_ready(src_dir) && return nothing
+    end
+    @warn "The checkout cannot be restored; removing $src_dir and cloning again."
+    rm(src_dir; recursive = true)
+    _clone_source(src_dir, install)
+    return nothing
+end
+
+"""`true` when `src_dir` holds the engine's `configure` script, which every complete checkout has (it is tracked upstream)."""
+_source_tree_ready(src_dir::AbstractString)::Bool = isfile(joinpath(src_dir, "configure"))
+
+"""Clone `install.source_url` into `src_dir` and check out `install.ref` when one is configured."""
+function _clone_source(src_dir::AbstractString, install)
+    @info "Cloning $(install.source_url) → $src_dir"
+    run(`git clone $(install.source_url) $src_dir`)
+    if !isempty(install.ref)
+        @info "Checking out backend reference $(install.ref)"
+        _run_quiet(`git -C $src_dir checkout --quiet $(install.ref)`; label = "checkout")
+    end
+    return nothing
+end
 
 """
     _configure_args(build, cuda_path) -> Vector{String}

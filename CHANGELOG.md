@@ -364,6 +364,12 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- An interrupted `git clone` of the engine (a killed run, a host reset) left
+  a directory without `configure`, and the next build took it for a finished
+  checkout and died on a bare `ENOENT` spawning `./configure`. The source
+  tree is now checked before use and repaired: `git checkout --force` first,
+  which keeps untracked work, then a fresh clone when no usable git state
+  remains.
 - GPU builds with the toolkit off `PATH` failed in the engine's `configure`
   ("Cannot find CUDA compiler nvcc"): the CUDA environment reached `make`
   and the launch script but not `configure`, whose `--with-cuda` fallback

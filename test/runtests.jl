@@ -273,6 +273,50 @@ format = "pdf"
     end
 
     # =====================================================================
+    @testset "Engine source tree validation" begin
+        # A local repository standing in for the upstream engine: `configure`
+        # is tracked there, so a checkout without it is incomplete.
+        quiet(cmd) = run(pipeline(cmd; stdout = devnull, stderr = devnull))
+        origin = mktempdir()
+        write(joinpath(origin, "configure"), "#!/bin/sh\nexit 0\n")
+        quiet(`git -C $origin init --quiet`)
+        quiet(`git -C $origin add configure`)
+        quiet(`git -C $origin -c user.email=t@t -c user.name=t commit --quiet -m init`)
+        inst = Nbody6Dynamics.InstallConfig(; source_url = origin, ref = "")
+        src = joinpath(mktempdir(), "engine")
+
+        # Absent → cloned
+        Nbody6Dynamics._ensure_source_tree(src, inst)
+        @test Nbody6Dynamics._source_tree_ready(src)
+
+        # Complete → left as it is, untracked work untouched
+        marker = joinpath(src, "untracked.txt")
+        write(marker, "keep me")
+        Nbody6Dynamics._ensure_source_tree(src, inst)
+        @test isfile(marker) && read(marker, String) == "keep me"
+
+        # Truncated checkout (an interrupted clone) → restored from git,
+        # untracked work kept
+        rm(joinpath(src, "configure"))
+        @test !Nbody6Dynamics._source_tree_ready(src)
+        @test_logs (:warn, r"checkout is incomplete") match_mode = :any Nbody6Dynamics._ensure_source_tree(
+            src,
+            inst,
+        )
+        @test Nbody6Dynamics._source_tree_ready(src)
+        @test isfile(marker)
+
+        # No usable git state left → removed and cloned again
+        rm(joinpath(src, "configure"))
+        rm(joinpath(src, ".git"); recursive = true)
+        @test_logs (:warn, r"cannot be restored") match_mode = :any Nbody6Dynamics._ensure_source_tree(
+            src,
+            inst,
+        )
+        @test Nbody6Dynamics._source_tree_ready(src)
+        @test !isfile(marker)
+    end
+
     @testset "GPU build target" begin
         # configure arguments: the engine's configure finds nvcc only on PATH
         # (its --with-cuda fallback reuses the cached PATH check), so the
