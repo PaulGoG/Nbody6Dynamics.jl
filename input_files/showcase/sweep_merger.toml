@@ -1,5 +1,7 @@
-# Base configuration of the showcase sweep: two equal King clusters, 2 pc
-# half-mass radii on a 10 pc orbit (the geometry of the showcase document).
+# Base configuration of the showcase sweep: two equal King clusters of 1 pc
+# half-mass radius on a 5 pc orbit. The infall time from apocentre is half the
+# Kepler period, 12 Myr at e = 0.5 against 8 Myr at e = 0.9, so both grid points
+# coalesce within the run and the eccentricity axis separates them.
 
 [merger]
 seed = 1
@@ -10,7 +12,7 @@ orbit_mode = "kepler"
 model = "king"
 N = 500
 W0 = 6.0
-rbar = 2.0
+rbar = 1.0
 imf = "kroupa"
 body1 = 50.0
 bodyn = 0.1
@@ -19,21 +21,24 @@ bodyn = 0.1
 model = "king"
 N = 500
 W0 = 6.0
-rbar = 2.0
+rbar = 1.0
 imf = "kroupa"
 body1 = 50.0
 bodyn = 0.1
 
 [merger.orbit]
-apocentre = 10.0
+apocentre = 5.0
 eccentricity = 0.5
 
 [merger.output]
 format = "nbody"
 truncate_jacobi = true
-tcrit_myr = 12.0
+tcrit_myr = 20.0
 dtadj_myr = 0.5
 deltat_myr = 1.0
+
+[merger.nbody6]
+qe = 0.01           # energy-error tolerance of the ADJUST check
 
 [merger.stellar]
 dtplot_myr = 4.0

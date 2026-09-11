@@ -5,6 +5,49 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 
 ## [Unreleased]
 
+### Fixed
+- Montage panels no longer clip their annotation or collide their tick
+  labels. `plot_snapshot_evolution` showed per-panel tick values on every
+  panel under adaptive zoom; across three columns at one column width the
+  labels of adjacent panels ran together and the time annotation was cut
+  off by the panel. Per-panel tick values are now drawn only up to
+  `_MAX_TICKED_MONTAGE_COLS` columns, and a wider individually zoomed
+  montage states each panel's half-width on a second annotation line, over
+  a taller data-free band, so the scale stays readable without tick
+  values. Under global limits the border panels are labelled as before.
+- Sweep figures are drawn with the publication theme. The sweep driver
+  reaches them through `sweep_figures` rather than `generate_plots`, which
+  was the only place the theme was activated, so every figure of a sweep
+  came out in Makie's default sans font while the per-run figures of the
+  same study were in Computer Modern.
+- `plot_control_comparison`'s legend no longer overruns the figure: two
+  entry families on one row are wider than the canvas and the last label
+  was clipped. The families are banked into two rows and the role label is
+  "Control".
+- The `λ_R` annotation of `plot_remnant_rotation` is no longer crossed by
+  the coalescence marker when coalescence falls early in the run.
+  `_emptiest_corner` represented the marker as one data point, which a
+  full-height vertical line is not; it takes an `avoid_x` now and rules out
+  both corners on the marker's side.
+
+### Changed
+- The shipped showcase configurations set `qe = 0.01`. A merger remnant can
+  assemble a dominant hard binary out of a population that contained none,
+  and the default `2e-4` then halts the run; the equal-mass case stopped at
+  13 of 20 Myr that way. The tidal case keeps `qe = 0.05`, which it needs
+  because the engine charges the external field's work to the energy error.
+- The showcase sweep is rebased on 1 pc clusters on a 5 pc orbit followed
+  for 20 Myr. On the previous geometry (2 pc clusters, 10 pc orbit, 12 Myr)
+  the Kepler period is 67 Myr and the clusters never coalesced at all —
+  they closed from 10 pc to 8.1 pc and stopped — so the sweep compared two
+  infalls rather than two mergers. The infall time is now half the Kepler
+  period, 12 Myr at `e = 0.5` against 8 Myr at `e = 0.9`, both inside the
+  run, and the measured coalescence times separate the grid points by far
+  more than the seed scatter.
+- `input_files/showcase/flagship_{merger,pipeline}.toml`: two King clusters
+  of 25 000 stars followed for 50 Myr on eight threads, the scale at which
+  the GPU path was validated, as a showcase case on the CPU build.
+
 ### Added
 - Manual: a "Validated hardware" section recording the first host the GPU
   path was validated on (RTX 5070 Ti, CUDA 13.1, Fedora 44) with the

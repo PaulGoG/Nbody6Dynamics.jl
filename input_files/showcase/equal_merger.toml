@@ -1,5 +1,7 @@
 # Equal-mass King clusters on an eccentric orbit that coalesces within the run.
 # Intervals in Myr; the generator converts them with the realised time unit.
+# A hard binary forms in the remnant without primordial binaries and carries a
+# large share of the binding energy, so the relaxed tolerance is needed here too.
 
 [merger]
 seed = 21
@@ -34,6 +36,9 @@ truncate_jacobi = true
 tcrit_myr = 20.0
 dtadj_myr = 0.5
 deltat_myr = 1.0
+
+[merger.nbody6]
+qe = 0.01           # energy-error tolerance of the ADJUST check
 
 [merger.stellar]
 dtplot_myr = 2.0
