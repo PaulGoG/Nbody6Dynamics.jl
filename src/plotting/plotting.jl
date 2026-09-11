@@ -164,6 +164,20 @@ _multipanel_gap(ncols::Int; inner_ticks::Bool = true) =
 """Fraction of the data range kept free above the data in montage panels, so the in-axis time annotation never meets a marker."""
 const _MONTAGE_BAND_FRAC = 0.18
 
+"""
+Widest montage grid whose panels can still carry their own tick values at one
+column width.  Beyond it three sets of tick labels collide across the row and
+the in-axis annotation is clipped by the panel, so an individually zoomed
+montage states each panel's half-width in its annotation instead.
+"""
+const _MAX_TICKED_MONTAGE_COLS = 2
+
+"""Relative drop of the second annotation line of a montage panel, clear of the first."""
+const _MONTAGE_ANNOTATION_DY = 0.13
+
+"""Data-free band of a montage panel carrying a second annotation line (time and half-width)."""
+const _MONTAGE_BAND_FRAC_TWO_LINE = 0.32
+
 """Width of one axis box of a grid (`_fig_multipanel` conventions) in canvas units."""
 function _multipanel_box_width(
     cfg::VisualizationConfig,
@@ -521,18 +535,26 @@ function _emptiest_corner(
     corners = (:tl, :tr, :br),
     width::Real = 0.35,
     height::Real = 0.2,
+    avoid_x::Real = NaN,
 )
     isempty(xs) && return first(corners)
     x0, x1 = extrema(xs)
     y0, y1 = extrema(ys)
     dx = max(x1 - x0, eps(Float64))
     dy = max(y1 - y0, eps(Float64))
+    u_avoid = isfinite(avoid_x) ? (avoid_x - x0) / dx : NaN
     counts = map(corners) do c
+        right = c in (:tr, :br)
+        top = c in (:tl, :tr)
+        # A vertical event marker spans the whole panel height, so it rules out
+        # both corners of its own side however empty the data leave them; one
+        # data point at the marker's position cannot express that.
+        if isfinite(u_avoid) && (right ? u_avoid ≥ 1 - width : u_avoid ≤ width)
+            return typemax(Int)
+        end
         count(zip(xs, ys)) do (x, y)
             u = (x - x0) / dx
             v = (y - y0) / dy
-            right = c in (:tr, :br)
-            top = c in (:tl, :tr)
             (right ? u ≥ 1 - width : u ≤ width) && (top ? v ≥ 1 - height : v ≤ height)
         end
     end

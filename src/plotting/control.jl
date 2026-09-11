@@ -82,7 +82,10 @@ function plot_control_comparison(
             LineElement(; color = grey, linewidth = 2.0, linestyle = :dash),
         ],
     )
-    push!(labels, AbstractString["Merger", "Isolated control"])
+    # "Control" rather than "Isolated control": with a grid-axis family beside
+    # it the longer label pushes the horizontal legend past the figure width and
+    # is clipped. The caption carries what the control is.
+    push!(labels, AbstractString["Merger", "Control"])
     push!(titles, "Run:")
     Legend(
         fig[0, :],
@@ -90,7 +93,9 @@ function plot_control_comparison(
         labels,
         titles;
         orientation = :horizontal,
-        nbanks = length(values) > 4 ? 2 : 1,
+        # Two families on one row overrun the figure width; banking each of them
+        # keeps the legend inside it.
+        nbanks = (length(titles) ≥ 2 || length(values) > 4) ? 2 : 1,
         framevisible = false,
         titleposition = :left,
         tellheight = true,

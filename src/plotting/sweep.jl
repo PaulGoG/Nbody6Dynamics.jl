@@ -168,12 +168,18 @@ The comparison figures of a sweep for one grid axis
 the sweep has more than one seed, the ensemble figures of the same
 quantities ([`plot_sweep_ensemble`](@ref)), and the merger–control pairs
 when the sweep carries controls ([`plot_control_comparison`](@ref)).
+
+The sweep driver reaches these figures without going through
+[`generate_plots`](@ref), so the publication theme is activated here as well;
+otherwise a sweep's figures come out in Makie's default font while every
+per-run figure of the same study is in Computer Modern.
 """
 function sweep_figures(
     sweep_dir::AbstractString,
     cfg::VisualizationConfig;
     axis::AbstractString = "",
 )
+    set_publication_theme!()
     paths = [
         plot_sweep_lagrangian(sweep_dir, cfg; axis = axis),
         plot_sweep_energy(sweep_dir, cfg; axis = axis),

@@ -88,9 +88,14 @@ end
 
 Multi-panel figure showing cluster evolution across snapshots.  Positions
 are shown in pc and time annotations in Myr when `cfg.units == "physical"`.
+
 When the spatial extent varies dramatically across panels (e.g. merger runs),
-per-panel adaptive zoom is enabled and tick labels are shown on every panel
-so the reader can infer the scale from the axis values.
+each panel is zoomed on its own data.  Panels then need their own tick values,
+which fit only in a grid of at most `_MAX_TICKED_MONTAGE_COLS` columns; in a
+wider grid the panels carry no tick values and each annotation states that
+panel's half-width instead, so the scale is still readable and the labels of
+adjacent panels cannot run into each other.  Under global limits (the extent is
+comparable throughout) only the border panels are labelled.
 """
 function plot_snapshot_evolution(
     snaps::Vector{Snapshot},
@@ -124,22 +129,31 @@ function plot_snapshot_evolution(
         # Check if adaptive zoom is needed
         use_adaptive = _needs_adaptive_zoom(snaps, indices, ix, iy, cfg.style.zoom_frac)
 
+        # Per-panel zoom means every panel needs its own tick values, and three
+        # of those do not fit across one column width: the labels of adjacent
+        # panels run into each other and the time annotation is clipped. Beyond
+        # _MAX_TICKED_MONTAGE_COLS the panels therefore carry no tick values and
+        # the annotation states each panel's own half-width instead.
+        inner_ticks = use_adaptive && ncols <= _MAX_TICKED_MONTAGE_COLS
+        scale_in_annotation = use_adaptive && !inner_ticks
+        # The half-width line needs a taller data-free band than the time alone.
+        band = scale_in_annotation ? _MONTAGE_BAND_FRAC_TWO_LINE : _MONTAGE_BAND_FRAC
+
         # One column wide, square panels, the shared colorbar column taken
         # from the panel area; inner tick labels show only under adaptive zoom.
-        gap = _multipanel_gap(ncols; inner_ticks = use_adaptive)
+        gap = _multipanel_gap(ncols; inner_ticks)
         fig = Figure(;
             size = _fig_multipanel(
                 cfg,
                 nrows,
                 ncols;
-                inner_ticks = use_adaptive,
-                panel_aspect = 1 + _MONTAGE_BAND_FRAC,
+                inner_ticks,
+                panel_aspect = 1 + band,
                 extra_width = _COLORBAR_WIDTH,
             ),
         )
         target_ticks = ncols > 1 ? 3 : 5
-        marker_scale =
-            _multipanel_scale(cfg, ncols; inner_ticks = use_adaptive, extra_width = _COLORBAR_WIDTH)
+        marker_scale = _multipanel_scale(cfg, ncols; inner_ticks, extra_width = _COLORBAR_WIDTH)
 
         # Global limits (used when adaptive is off)
         all_x = reduce(vcat, [snaps[i].pos[ix, :] .* r_scales[i] for i in indices])
@@ -157,10 +171,12 @@ function plot_snapshot_evolution(
             show_xlab = row == nrows
             show_ylab = col == 1
 
-            # Tick labels: always visible when adaptive (scales differ),
-            # only on border panels otherwise
-            show_xtick = use_adaptive || show_xlab
-            show_ytick = use_adaptive || show_ylab
+            # Tick labels: per panel when adaptive zoom can afford them, only on
+            # border panels under global limits, and nowhere when the panels are
+            # zoomed individually but too narrow to label (the border panel's
+            # values would then be read as everyone's).
+            show_xtick = scale_in_annotation ? false : (inner_ticks || show_xlab)
+            show_ytick = scale_in_annotation ? false : (inner_ticks || show_ylab)
 
             # Per-panel or global limits
             if use_adaptive
@@ -171,7 +187,7 @@ function plot_snapshot_evolution(
             xtk = _nice_ticks(xlo, xhi; target_n = target_ticks)
             ytk = _nice_ticks(ylo, yhi; target_n = target_ticks)
             # Data-free band above the data, where the time annotation sits
-            yhi += _MONTAGE_BAND_FRAC * (yhi - ylo)
+            yhi += band * (yhi - ylo)
 
             t_val = physical ? time_myr(snap.header) : time_nb(snap.header)
 
@@ -193,6 +209,9 @@ function plot_snapshot_evolution(
                 ygridvisible = false,
             )
             _annotate!(ax, _time_annotation(t_val, physical))
+            # xhi is the half-width: _square_limits is symmetric about zero.
+            scale_in_annotation &&
+                _annotate!(ax, _extent_annotation(xhi, unit_str); dy = _MONTAGE_ANNOTATION_DY)
 
             log_m = log10.(max.(Float64.(snap.mass), 1e-30))
             ms = max(cfg.style.marker_min, _marker_size(cfg, nparticles(snap)) * marker_scale)
@@ -252,6 +271,14 @@ function _time_annotation(t_val::Real, physical::Bool)
     return physical ? latexstring("t = $(t_str)\\;\\mathrm{Myr}") :
            latexstring("t = $(t_str)\\;[\\mathrm{NB}]")
 end
+
+"""
+Half-extent annotation (`± 42 pc`) of a montage panel zoomed on its own data.
+It sits under the time annotation and replaces the tick values, which such a
+panel is too narrow to carry; two significant digits keep it inside the panel.
+"""
+_extent_annotation(half_width::Real, unit::AbstractString) =
+    latexstring("\\pm $(@sprintf("%.2g", half_width))\\;\\mathrm{$(unit)}")
 
 """
     _needs_adaptive_zoom(snaps, indices, ix, iy, zoom_frac) -> Bool

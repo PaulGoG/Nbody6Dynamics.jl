@@ -142,6 +142,7 @@ function plot_remnant_rotation(
                 _with_marker(t[valid], ax_t.t_coal),
                 _with_marker(diag.lambda_r[valid], maximum(diag.lambda_r[valid]));
                 corners = (:tl, :tr),
+                avoid_x = ax_t.t_coal,
             ),
             color = c_r,
         )
