@@ -852,7 +852,7 @@ function _write_merger_ic_metadata(
         "meta" => Dict{String,Any}(
             "generated_at" => Dates.format(now(), "yyyy-mm-dd HH:MM:SS"),
             "schema_version" => 3,   # 3: explicit-orbit velocities in km s⁻¹
-            "commit" => _git_commit(_PROJECT_ROOT),
+            "commit" => _source_stamp(_PROJECT_ROOT),
             "seed" => seed,
             "external_rng" => external_rng,
             "N_total" => N_total,

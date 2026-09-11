@@ -24,6 +24,31 @@ function _git_commit(dir::AbstractString)::String
 end
 
 """
+    _source_stamp(dir) -> String
+
+Provenance identity of the source tree at `dir`: the git commit
+([`_git_commit`](@ref)) when one is available, otherwise the `version` of a
+`Project.toml` there suffixed with `+nogit`, otherwise `"unknown"`.
+
+A tree deployed to a compute host by file copy carries no `.git`, so the
+commit is unobtainable exactly where provenance matters most — every run of
+the 2026-09-11 fleet campaign recorded `package_commit = "unknown"`. The
+version fallback ties such a run to a release at least.
+"""
+function _source_stamp(dir::AbstractString)::String
+    commit = _git_commit(dir)
+    commit == "unknown" || return commit
+    project = joinpath(dir, "Project.toml")
+    isfile(project) || return "unknown"
+    version = try
+        get(TOML.parsefile(project), "version", nothing)
+    catch
+        nothing
+    end
+    return version === nothing ? "unknown" : "v$(version)+nogit"
+end
+
+"""
     _with_run_log(f, run_dir) -> result of f()
 
 Run `f()` with the current logger teed to a plain-text, ANSI-free

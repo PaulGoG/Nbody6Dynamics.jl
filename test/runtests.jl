@@ -1135,6 +1135,33 @@ format = "pdf"
     end
 
     # =====================================================================
+    @testset "Source provenance stamp" begin
+        # A tree deployed by file copy has no .git: the version of its
+        # Project.toml stands in for the commit rather than "unknown".
+        mktempdir() do dir
+            @test Nbody6Dynamics._source_stamp(dir) == "unknown"
+
+            write(
+                joinpath(dir, "Project.toml"),
+                """
+                name = "Deployed"
+                uuid = "11111111-2222-3333-4444-555555555555"
+                version = "0.3.1"
+                """,
+            )
+            @test Nbody6Dynamics._source_stamp(dir) == "v0.3.1+nogit"
+
+            # A Project.toml without a version stays unknown.
+            write(joinpath(dir, "Project.toml"), "name = \"Deployed\"\n")
+            @test Nbody6Dynamics._source_stamp(dir) == "unknown"
+        end
+
+        # This repository is a git checkout, so the commit wins.
+        stamp = Nbody6Dynamics._source_stamp(Nbody6Dynamics._PROJECT_ROOT)
+        @test stamp == "unknown" || !occursin("+nogit", stamp)
+    end
+
+    # =====================================================================
     @testset "Fortran binary I/O" begin
         # Create a synthetic Fortran binary file
         fpath = joinpath(TESTDIR, "test_fortran.bin")

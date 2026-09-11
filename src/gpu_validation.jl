@@ -170,7 +170,7 @@ function _validation_host_record(base_dir::AbstractString)::Dict{String,Any}
     d = _hardware_fingerprint(; gpu_probe = true)
     cuda_path = detect_cuda_path()
     d["date"] = Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")
-    d["package_commit"] = _git_commit(base_dir)
+    d["package_commit"] = _source_stamp(base_dir)
     d["compute_capabilities"] = detect_compute_capabilities()
     d["cuda_path"] = cuda_path
     d["nvcc_release"] = nvcc_release(cuda_path)

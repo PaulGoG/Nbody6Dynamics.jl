@@ -917,7 +917,7 @@ function _write_run_summary(
     d = Dict{String,Any}(
         "run" => run_table,
         "provenance" => Dict{String,Any}(
-            "package_commit" => _git_commit(_PROJECT_ROOT),
+            "package_commit" => _source_stamp(_PROJECT_ROOT),
             "backend_commit" =>
                 _git_commit(joinpath(_PROJECT_ROOT, "backend", "Nbody6PPGPU-beijing")),
         ),
