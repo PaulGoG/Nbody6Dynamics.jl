@@ -4437,6 +4437,25 @@ rbar = 1.0
         # Degenerate equal endpoints still yield ≥ 2 ticks
         vals3, _ = Nbody6Dynamics._log_ticks(2.0, 2.0)
         @test length(vals3) ≥ 2
+        # Plain decimals throughout on a short axis within 10⁻³–10⁴ (the
+        # virial-ratio panel: 0.5 … 10, never "5 × 10⁻¹ … 10¹")
+        vals4, labels4 = Nbody6Dynamics._log_ticks(0.45, 13.0)
+        @test vals4 == [0.5, 1.0, 2.0, 5.0, 10.0]
+        @test [Nbody6Dynamics._log_tick_label(v, true) for v in vals4] == ["0.5", "1", "2", "5", "10"]
+        @test all(l -> !occursin("times", String(l)) && !occursin("^", String(l)), labels4)
+        @test [
+            Nbody6Dynamics._log_tick_label(v, true) for v in (0.001, 0.01, 0.1, 100.0, 50000.0)
+        ] == ["0.001", "0.01", "0.1", "100", "50000"]
+        # Exponent form beyond the plain window, with the mandatory collapses
+        _, labels5 = Nbody6Dynamics._log_ticks(1e-8, 1e-3)
+        @test occursin("10^{-8}", String(labels5[1])) && occursin("10^{-3}", String(labels5[end]))
+        _, labels6 = Nbody6Dynamics._log_ticks(0.5, 1e6)
+        @test occursin("1", String(labels6[1])) && !occursin("10", String(labels6[1]))
+        @test String(labels6[2]) == "\$10\$" && occursin("10^{2}", String(labels6[3]))
+        @test Nbody6Dynamics._log_tick_label(2e-7, false) == "2\\times 10^{-7}"
+        @test Nbody6Dynamics._log_tick_label(0.2, false) == "0.2"
+        @test Nbody6Dynamics._log_tick_label(20.0, false) == "20"
+        @test Nbody6Dynamics._log_tick_label(200.0, false) == "2\\times 10^{2}"
     end
 
     @testset "Degenerate reader inputs" begin

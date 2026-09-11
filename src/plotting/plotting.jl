@@ -361,7 +361,11 @@ end
 
 Decade-anchored ticks for `log10`-scaled axes: `10^n` at every decade in
 range, with 2× and 5× intermediates when the range spans ≤ 2 decades.
-`10^0` renders as `1`, per the axis-typography standard.
+Labels follow the axis-typography standard: plain decimals throughout
+(`0.01, 0.1, 1, 10, 100`) when every tick lies within 10⁻³–10⁴ and the
+ticks span at most four decades; otherwise the exponent form, in which
+`10^0`, `10^1` and the 2×/5× multiples of `10^{-1}`–`10^{1}` still
+collapse to `1`, `10`, `0.2`, `5`, `20`.
 """
 function _log_ticks(lo::Real, hi::Real)
     lo, hi = min(lo, hi), max(lo, hi)
@@ -378,16 +382,27 @@ function _log_ticks(lo::Real, hi::Real)
         lo * (1 - 1e-9) ≤ v ≤ hi * (1 + 1e-9) && push!(vals, v)
     end
     length(vals) < 2 && (vals = [10.0^e_lo, 10.0^e_hi])
-    labels = map(vals) do v
-        e = floor(Int, log10(v) + 1e-9)
-        m = round(Int, v / 10.0^e)
-        if m == 1
-            e == 0 ? L"1" : latexstring("10^{$(e)}")
-        else
-            e == 0 ? latexstring("$(m)") : latexstring("$(m)\\times 10^{$(e)}")
-        end
-    end
+    exponents = [floor(Int, log10(v) + 1e-9) for v in vals]
+    plain = all(e -> -3 ≤ e ≤ 4, exponents) && maximum(exponents) - minimum(exponents) ≤ 4
+    labels = [latexstring(_log_tick_label(v, plain)) for v in vals]
     return (vals, labels)
+end
+
+"""
+    _log_tick_label(v, plain) -> String
+
+LaTeX body of a log-axis tick label for `v = m × 10^e` with `m` ∈ {1, 2, 5}:
+the plain decimal when `plain` is set or `-1 ≤ e ≤ 1` (the mandatory
+collapses `10^0 → 1`, `10^1 → 10`, `2 × 10^{-1} → 0.2`), otherwise
+`10^{e}` or `m \\times 10^{e}`.
+"""
+function _log_tick_label(v::Real, plain::Bool)::String
+    e = floor(Int, log10(v) + 1e-9)
+    m = round(Int, v / 10.0^e)
+    if plain || -1 ≤ e ≤ 1
+        return e < 0 ? string(round(v; digits = -e)) : string(round(Int, v))
+    end
+    return m == 1 ? "10^{$(e)}" : "$(m)\\times 10^{$(e)}"
 end
 
 """

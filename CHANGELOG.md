@@ -362,6 +362,11 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- Log-axis tick labels: plain decimals throughout (`0.5, 1, 2, 5, 10`
+  instead of `5 × 10⁻¹ … 10¹`) on axes whose ticks lie within 10⁻³–10⁴ and
+  span at most four decades; in the exponent form `10^1` and the 2×/5×
+  multiples of `10^{-1}`–`10^{1}` collapse (`10`, `0.2`, `20`) as the
+  typography standard prescribes.
 - GPU builds on hosts whose default compiler is newer than the toolkit
   accepts (GCC 16 with CUDA 13.1): the `nvcc` probe now tries
   `-allow-unsupported-compiler`, then `-ccbin` with `CUDAHOSTCXX` and the
