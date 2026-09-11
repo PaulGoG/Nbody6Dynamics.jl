@@ -8,62 +8,84 @@
 
 # Makie's MathTeXEngine renders L"..." strings in Computer Modern automatically.
 
-# Computer Modern via MathTeXEngine's texfont API (direct dependency) —
-# no depot scanning, no silent fallback: if the fonts are missing this
-# fails loudly at load time rather than degrading to serif.
-const _CM_FONT = (regular = texfont(:text), bold = texfont(:bold), italic = texfont(:italic))
+# Computer Modern via MathTeXEngine's texfont API (direct dependency). The
+# faces are resolved when the theme is built, never in a constant: a
+# FreeType face created while the package precompiles is serialised with a
+# null pointer, and Makie then falls back to its default sans font for every
+# plain-text label without a word (LaTeX strings, which MathTeXEngine
+# renders with its live faces, were the only text in Computer Modern).
 
-const PUBLICATION_THEME = Theme(
-    fontsize = 22,
-    fonts = _CM_FONT,
-    figure_padding = 16,
-    Axis = (
-        xlabelsize = 20,
-        ylabelsize = 20,
-        xticklabelsize = 16,
-        yticklabelsize = 16,
-        xlabelpadding = 10.0,
-        ylabelpadding = 10.0,
-        spinewidth = 1.5,
-        xtickwidth = 1.2,
-        ytickwidth = 1.2,
-        xtickalign = 1.0,     # ticks face inward
-        ytickalign = 1.0,
-        xticksize = 8,
-        yticksize = 8,
-        # No minor ticks; grey dashed major grid at very low opacity.
-        # Dense scatter plots (cluster projections, HR) disable the grid
-        # locally via x/ygridvisible = false.
-        xminorticksvisible = false,
-        yminorticksvisible = false,
-        xgridvisible = true,
-        ygridvisible = true,
-        xgridstyle = :dash,
-        ygridstyle = :dash,
-        xgridcolor = (:grey, 0.12),
-        ygridcolor = (:grey, 0.12),
-        topspinevisible = true,
-        rightspinevisible = true,
-    ),
-    Legend = (
-        framevisible = true,
-        framewidth = 1.0,
-        labelsize = 15,
-        patchsize = (25, 14),
-        padding = (8, 8, 6, 6),
-        rowgap = 4,
-    ),
-    Lines = (linewidth = 2.2,),
-    Colorbar = (labelsize = 18, ticklabelsize = 14, tickalign = 1.0, width = 14),
-)
+"""
+    _cm_fonts() -> NamedTuple
+
+MathTeXEngine's Computer Modern faces (`texfont(:text)`, `:bold`,
+`:italic`) for the `fonts` attribute of the theme, taken from the live
+registry at call time.
+"""
+_cm_fonts() = (regular = texfont(:text), bold = texfont(:bold), italic = texfont(:italic))
+
+"""
+    publication_theme() -> Theme
+
+The publication theme: Computer Modern fonts from MathTeXEngine, boxed axes
+with inward ticks, no minor ticks, faint dashed grid, framed legends. Built
+on every call so that the font faces are live ones, not faces captured at
+precompile time. `with_theme(publication_theme()) do … end` scopes it;
+[`set_publication_theme!`](@ref) activates it globally.
+"""
+function publication_theme()
+    return Theme(
+        fontsize = 22,
+        fonts = _cm_fonts(),
+        figure_padding = 16,
+        Axis = (
+            xlabelsize = 20,
+            ylabelsize = 20,
+            xticklabelsize = 16,
+            yticklabelsize = 16,
+            xlabelpadding = 10.0,
+            ylabelpadding = 10.0,
+            spinewidth = 1.5,
+            xtickwidth = 1.2,
+            ytickwidth = 1.2,
+            xtickalign = 1.0,     # ticks face inward
+            ytickalign = 1.0,
+            xticksize = 8,
+            yticksize = 8,
+            # No minor ticks; grey dashed major grid at very low opacity.
+            # Dense scatter plots (cluster projections, HR) disable the grid
+            # locally via x/ygridvisible = false.
+            xminorticksvisible = false,
+            yminorticksvisible = false,
+            xgridvisible = true,
+            ygridvisible = true,
+            xgridstyle = :dash,
+            ygridstyle = :dash,
+            xgridcolor = (:grey, 0.12),
+            ygridcolor = (:grey, 0.12),
+            topspinevisible = true,
+            rightspinevisible = true,
+        ),
+        Legend = (
+            framevisible = true,
+            framewidth = 1.0,
+            labelsize = 15,
+            patchsize = (25, 14),
+            padding = (8, 8, 6, 6),
+            rowgap = 4,
+        ),
+        Lines = (linewidth = 2.2,),
+        Colorbar = (labelsize = 18, ticklabelsize = 14, tickalign = 1.0, width = 14),
+    )
+end
 
 """
     set_publication_theme!()
 
-Activate the publication-quality Makie theme with Computer Modern fonts globally.
+Activate [`publication_theme`](@ref) globally.
 """
 function set_publication_theme!()
-    set_theme!(PUBLICATION_THEME)
+    set_theme!(publication_theme())
 end
 
 # ---------------------------------------------------------------------------

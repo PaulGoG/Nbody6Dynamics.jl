@@ -477,7 +477,7 @@ pop.n_hard, pop.n_soft, pop.binary_fraction
 
 ## 9. Visualisation
 
-All plots use the built-in publication theme, activated globally with `set_publication_theme!()` (called automatically by the pipeline).
+All plots use the built-in publication theme, activated globally with `set_publication_theme!()` (called automatically by the pipeline); `publication_theme()` returns it as a value for `with_theme` scoping. The theme is built at call time so that its Computer Modern faces come from MathTeXEngine's live registry: a face captured while the package precompiles carries a null FreeType pointer, and Makie would then render every plain-text label in its default sans font without warning.
 
 ### Theme rules
 

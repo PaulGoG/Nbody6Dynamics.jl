@@ -718,7 +718,7 @@ export ClusterStructure, cluster_structure, plot_cluster_structure, bound_fracti
 export RadialProfile, radial_profile, cluster_profiles, system_profile, model_density
 export plot_density_profiles, plot_velocity_dispersion
 export animate_cluster, animate_hr, animate_lagrangian
-export set_publication_theme!
+export set_publication_theme!, publication_theme
 export generate_run_id, restart_simulation, export_for_paper
 export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 export detect_platform, check_dependencies, detect_cuda_path

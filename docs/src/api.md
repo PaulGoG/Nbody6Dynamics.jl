@@ -151,6 +151,7 @@ semi_major_axis_pc
 
 ```@docs
 set_publication_theme!
+publication_theme
 plot_snapshot
 plot_snapshot_evolution
 plot_energy

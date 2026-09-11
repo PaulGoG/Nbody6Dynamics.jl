@@ -6,6 +6,8 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 ## [Unreleased]
 
 ### Added
+- `publication_theme()`: the publication theme as a value, for `with_theme`
+  scoping.
 - `run_gpu_validation` and `scripts/run_gpu_validation.jl`: the acceptance
   sequence of a CUDA host (GPU-gated suite, GPU and CPU pipelines, scaling
   benchmark) as logged stages, with the host record (including the host
@@ -362,6 +364,13 @@ changes; all numerical outputs unchanged).
   policy prescribes (run narratives and usage examples belong to docs).
 
 ### Fixed
+- Plain-text labels (axis labels, tick labels, annotations, legends) were
+  rendered in Makie's default sans font instead of Computer Modern whenever
+  the package was loaded from its precompile cache: the theme held FreeType
+  faces created at precompile time, serialised with null pointers, and Makie
+  fell back silently. The theme is now built at call time from
+  MathTeXEngine's live faces; LaTeX strings were never affected. A test
+  asserts live faces in the (fresh) test process.
 - Log-axis tick labels: plain decimals throughout (`0.5, 1, 2, 5, 10`
   instead of `5 × 10⁻¹ … 10¹`) on axes whose ticks lie within 10⁻³–10⁴ and
   span at most four decades; in the exponent form `10^1` and the 2×/5×

@@ -2311,6 +2311,14 @@ $(extra)
     # =====================================================================
     @testset "Plotting (smoke tests)" begin
         Nbody6Dynamics.set_publication_theme!()
+        # The theme's faces must be live in this (fresh) process: a face
+        # captured at precompile time has a null FreeType pointer and Makie
+        # falls back to its sans default without warning.
+        theme_fonts = publication_theme().fonts
+        for key in (:regular, :bold, :italic)
+            @test getfield(theme_fonts[key][], :ft_ptr) != C_NULL
+        end
+        @test theme_fonts[:regular][] === Nbody6Dynamics.texfont(:text)
 
         vis = VisualizationConfig(;
             output_dir = joinpath(TESTDIR, "test_plots"),
