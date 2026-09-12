@@ -13,7 +13,7 @@ const _VALIDATION_STAGES = (:suite, :gpu, :cpu, :bench)
 
 Run the acceptance sequence of a CUDA host and collect everything under
 `<base_dir>/runs/gpu_validation_<machine>_<timestamp>/`, `<machine>` being
-the hostname with compact CPU and GPU tags ([`_machine_id`](@ref)) so that
+the hostname with compact CPU and GPU tags so that
 machines sharing a hostname stay distinguishable: `HOST_INFO.toml`
 (hardware fingerprint with the GPU query, compute capabilities, CUDA path
 and `nvcc` release, `gcc`, `gfortran` and glibc versions, the host
@@ -41,8 +41,8 @@ after every stage, so an interrupted sequence leaves a readable record.
 
 A stage's verdict rests on its artefacts as well as its exit code: a `:gpu`
 or `:cpu` stage that exits zero without leaving a run directory marked
-`[pipeline] completed` is recorded `incomplete` with the reason
-([`_stage_incomplete`](@ref)), because the run summary is written when the
+`[pipeline] completed` is recorded `incomplete` with the reason,
+because the run summary is written when the
 engine exits and a process killed during post-processing or plotting would
 otherwise pass.
 With `dry_run = true` the host record and the planned commands are written
