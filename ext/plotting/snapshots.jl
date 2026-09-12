@@ -12,7 +12,7 @@ requested projections (:xy, :xz, :yz).  Positions are shown in pc and the
 time annotation in Myr when `cfg.units == "physical"` (header AS scaling);
 N-body units otherwise.
 """
-function plot_snapshot(
+function Nbody6Dynamics.plot_snapshot(
     snap::Snapshot,
     cfg::VisualizationConfig;
     filename::AbstractString = "snapshot",
@@ -97,7 +97,7 @@ panel's half-width instead, so the scale is still readable and the labels of
 adjacent panels cannot run into each other.  Under global limits (the extent is
 comparable throughout) only the border panels are labelled.
 """
-function plot_snapshot_evolution(
+function Nbody6Dynamics.plot_snapshot_evolution(
     snaps::Vector{Snapshot},
     cfg::VisualizationConfig;
     filename::AbstractString = "snapshot_evolution",

@@ -14,8 +14,9 @@
 # logic here — a previous copy of this script did, silently skipping the
 # merger phase.
 
-include(joinpath(@__DIR__, "..", "activate.jl"))
+include(joinpath(@__DIR__, "activate.jl"))
 
+using CairoMakie   # loads the figure routines (package extension)
 using Nbody6Dynamics
 
 function main()

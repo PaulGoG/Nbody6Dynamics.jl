@@ -14,7 +14,7 @@ include("models.jl")
 include("imf.jl")
 include("orbits.jl")
 include("output.jl")
-include("plotting.jl")
+# The IC diagnostic figures live in the Makie extension (ext/plotting/merger_ic.jl).
 
 # ---------------------------------------------------------------------------
 # Top-level merger pipeline
@@ -45,6 +45,11 @@ function run_merger_pipeline(
     output_dir::AbstractString = "",
     make_plots::Bool = true,
 )
+    make_plots && _require_plotting(
+        :run_merger_pipeline,
+        "Pass `make_plots = false` to generate the initial conditions without figures.",
+    )
+
     @info "═══ Merger IC Pipeline ═══"
     @info "Loading config: $config_path"
     cfg = load_merger_config(config_path)

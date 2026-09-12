@@ -8,6 +8,8 @@
 # [user manual](@ref "Nbody6Dynamics.jl — User Manual") covers `run_pipeline`
 # and the post-processing of a finished run.
 
+using CairoMakie #  the figure routines are a package extension; loading a
+#                   Makie backend brings them into the session
 using Nbody6Dynamics
 
 # ## The merger configuration

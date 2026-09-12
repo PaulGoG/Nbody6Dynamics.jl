@@ -33,7 +33,7 @@ on every call so that the font faces are live ones, not faces captured at
 precompile time. `with_theme(publication_theme()) do … end` scopes it;
 [`set_publication_theme!`](@ref) activates it globally.
 """
-function publication_theme()
+function Nbody6Dynamics.publication_theme()
     return Theme(
         fontsize = 22,
         fonts = _cm_fonts(),
@@ -84,7 +84,7 @@ end
 
 Activate [`publication_theme`](@ref) globally.
 """
-function set_publication_theme!()
+function Nbody6Dynamics.set_publication_theme!()
     set_theme!(publication_theme())
 end
 
@@ -649,21 +649,3 @@ const _SEMANTIC_COLORS = Dict{Symbol,Makie.RGBAf}(
 
 """Darkened same-hue edge colour for `band!` fills (edge at full opacity)."""
 _band_edge(c::Makie.RGBAf) = Makie.RGBAf(0.7 * c.r, 0.7 * c.g, 0.7 * c.b, 1.0)
-
-# ---------------------------------------------------------------------------
-# Include plot source files
-# ---------------------------------------------------------------------------
-
-include("snapshots.jl")
-include("lagrangian.jl")
-include("energy.jl")
-include("hr.jl")
-include("escapers.jl")
-include("sse.jl")
-include("animation.jl")
-include("merger.jl")
-include("binaries.jl")
-include("sweep.jl")
-include("ensemble.jl")
-include("remnant.jl")
-include("control.jl")

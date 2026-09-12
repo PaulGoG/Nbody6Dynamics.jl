@@ -66,7 +66,7 @@ When `cfg.units == "physical"` and `units` is provided, times are shown in
 Myr and radii in pc; N-body units otherwise (lagr.7 carries no header, so
 the scaling must be supplied by the caller).
 """
-function plot_lagrangian(
+function Nbody6Dynamics.plot_lagrangian(
     lagr::LagrangianData,
     cfg::VisualizationConfig;
     filename::AbstractString = "lagrangian_radii",

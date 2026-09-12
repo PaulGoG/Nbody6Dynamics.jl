@@ -14,7 +14,7 @@ RI or mass are skipped (both axes are logarithmic).
 Warns and returns `nothing` when no record passes the validity filter;
 otherwise saves the figure and returns `nothing`.
 """
-function plot_mass_segregation(
+function Nbody6Dynamics.plot_mass_segregation(
     sev::StellarEvolutionSnapshot,
     cfg::VisualizationConfig;
     filename::AbstractString = "mass_segregation",
@@ -70,7 +70,7 @@ are skipped.
 Warns and returns `nothing` when no main-sequence record carries a valid
 TM; otherwise saves the figure and returns `nothing`.
 """
-function plot_evolutionary_clock(
+function Nbody6Dynamics.plot_evolutionary_clock(
     sev::StellarEvolutionSnapshot,
     cfg::VisualizationConfig;
     filename::AbstractString = "evolutionary_clock",
@@ -168,7 +168,7 @@ Warns and returns `nothing` when there are no evolved stars with a valid
 core mass — early snapshots are MS-only; otherwise saves the figure and
 returns `nothing`.
 """
-function plot_core_mass(
+function Nbody6Dynamics.plot_core_mass(
     sevs::Vector{StellarEvolutionSnapshot},
     cfg::VisualizationConfig;
     filename::AbstractString = "core_mass_growth",

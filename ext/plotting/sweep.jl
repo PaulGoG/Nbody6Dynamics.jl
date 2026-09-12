@@ -3,17 +3,6 @@
 # by the value of one grid axis (seeds share the colour)
 # =============================================================================
 
-"""Completed points of a sweep of the given `kind` (`"merger"` by default,
-`"control"`, or `""` for all) as `(entry, run_dir)` pairs."""
-function _sweep_done_points(sweep_dir::AbstractString; kind::AbstractString = "merger")
-    idx = read_sweep_index(sweep_dir)
-    pts = [
-        (p, joinpath(p["dir"], _SWEEP_RUN_ID)) for p in idx["points"] if
-        p["status"] == "done" && (isempty(kind) || get(p, "kind", "merger") == kind)
-    ]
-    return idx, pts
-end
-
 """Colour per axis value: the Okabe–Ito cycle up to seven values, a viridis
 sampling beyond."""
 function _sweep_axis_colors(values::AbstractVector)
@@ -86,7 +75,7 @@ Lagrangian radius of mass fraction `fraction` against physical time for
 every completed point of the sweep, coloured by the value of `axis` (the
 first grid axis by default); seeds share the colour.
 """
-function plot_sweep_lagrangian(
+function Nbody6Dynamics.plot_sweep_lagrangian(
     sweep_dir::AbstractString,
     cfg::VisualizationConfig;
     axis::AbstractString = "",
@@ -129,7 +118,7 @@ Relative energy error |ΔE/E| per adjustment against physical time for
 every completed point, on a logarithmic axis, coloured by the value of
 `axis`.
 """
-function plot_sweep_energy(
+function Nbody6Dynamics.plot_sweep_energy(
     sweep_dir::AbstractString,
     cfg::VisualizationConfig;
     axis::AbstractString = "",
@@ -174,7 +163,7 @@ The sweep driver reaches these figures without going through
 otherwise a sweep's figures come out in Makie's default font while every
 per-run figure of the same study is in Computer Modern.
 """
-function sweep_figures(
+function Nbody6Dynamics.sweep_figures(
     sweep_dir::AbstractString,
     cfg::VisualizationConfig;
     axis::AbstractString = "",

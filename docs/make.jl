@@ -5,7 +5,14 @@ include(joinpath(@__DIR__, "activate.jl"))
 using Documenter
 using DocumenterCitations
 using Literate
+using CairoMakie
 using Nbody6Dynamics
+
+# The figure routines are a package extension; its module carries their
+# docstrings, so the API page can only list them with the extension loaded.
+const MakieExt = Base.get_extension(Nbody6Dynamics, :Nbody6DynamicsMakieExt)
+MakieExt === nothing &&
+    error("the Makie extension did not load; the API reference would be incomplete")
 
 # The walkthrough is a Literate script; its markdown is generated at build
 # time (and not tracked) with Documenter @example blocks, which execute.
@@ -20,7 +27,7 @@ Literate.markdown(
 bib = CitationBibliography(joinpath(@__DIR__, "src", "references.bib"); style = :authoryear)
 
 makedocs(;
-    modules = [Nbody6Dynamics],
+    modules = [Nbody6Dynamics, MakieExt],
     sitename = "Nbody6Dynamics.jl",
     authors = "Paul-Adrian Gogîță",
     repo = Documenter.Remotes.GitHub("PaulGoG", "Nbody6Dynamics.jl"),

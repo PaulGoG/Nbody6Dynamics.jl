@@ -511,6 +511,25 @@ pop.n_hard, pop.n_soft, pop.binary_fraction
 
 ## 9. Visualisation
 
+### The figure backend is an extension
+
+Every figure routine — `plot_*`, `animate_*`, `generate_plots`, `sweep_figures`, `remnant_figures`, `publication_theme` — lives in the package extension `Nbody6DynamicsMakieExt`, which Julia loads as soon as a Makie backend is in the session:
+
+```julia
+using CairoMakie
+using Nbody6Dynamics
+```
+
+The package itself declares no plotting dependency. A headless host therefore installs 109 packages instead of 278 and never fetches or precompiles Cairo, Pango, GLib, HarfBuzz or the font artifacts: initial conditions, engine build, integration, readers, diagnostics, sweeps and benchmarks are all backend-free. The distinction is not cosmetic — on a compute server whose system GLib is older than the artifact one, the plotting stack is exactly what fails to load, and before the split it took the numerical work down with it.
+
+Consequences to know:
+
+- Without a backend, a figure routine throws `PlottingUnavailable` naming the remedy; it never fails with an `UndefVarError`.
+- `run_pipeline` with `[visualization] enabled = true`, `run_merger_pipeline(...; make_plots = true)` and `postprocess_external(...; make_plots = true)` check for the backend **before** doing any work, so a missing backend costs nothing instead of costing an integration. Set the flag to `false` for a numerics-only run.
+- `plotting_available()` reports whether the extension is loaded.
+- The entry scripts under `scripts/` run in their own environment (`scripts/Project.toml`) which carries the backend, so `julia scripts/run_setup.jl config.toml` plots as before. `bench/` has no backend, by design.
+- A sweep worker inherits the driver's environment and loads the backend only if the driver has one, so sweeps behave like the session that launched them.
+
 All plots use the built-in publication theme, activated globally with `set_publication_theme!()` (called automatically by the pipeline); `publication_theme()` returns it as a value for `with_theme` scoping. The theme is built at call time so that its Computer Modern faces come from MathTeXEngine's live registry: a face captured while the package precompiles carries a null FreeType pointer, and Makie would then render every plain-text label in its default sans font without warning.
 
 ### Theme rules

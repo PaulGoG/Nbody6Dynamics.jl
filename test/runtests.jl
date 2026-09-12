@@ -1,5 +1,11 @@
 using Test
+using CairoMakie   # triggers the figure extension; the smoke tests need it
 using Nbody6Dynamics
+
+# The figure routines and their helpers live in the package extension; tests
+# that reach for an internal of the figure layer go through this module.
+const MakieExt = Base.get_extension(Nbody6Dynamics, :Nbody6DynamicsMakieExt)
+MakieExt === nothing && error("the Makie extension is not loaded; the figure tests cannot run")
 
 # Temporary directory for test artifacts
 const TESTDIR = mktempdir()
@@ -1981,9 +1987,9 @@ $(extra)
 
         # Annotation corner: the least occupied of the data's bounding box
         xs = collect(0.0:0.1:1.0)
-        @test Nbody6Dynamics._emptiest_corner(xs, xs) == :tl          # rising series frees the top-left
-        @test Nbody6Dynamics._emptiest_corner(xs, 1 .- xs) == :tr     # falling series frees the top-right
-        @test Nbody6Dynamics._emptiest_corner(Float64[], Float64[]) == :tl
+        @test MakieExt._emptiest_corner(xs, xs) == :tl          # rising series frees the top-left
+        @test MakieExt._emptiest_corner(xs, 1 .- xs) == :tr     # falling series frees the top-right
+        @test MakieExt._emptiest_corner(Float64[], Float64[]) == :tl
     end
 
     # =====================================================================
@@ -2628,6 +2634,63 @@ $(extra)
     end
 
     # =====================================================================
+    @testset "Figure extension" begin
+        # This process loaded CairoMakie, so the extension is in and every
+        # declared entry point has an implementation behind its fallback.
+        @test plotting_available()
+        @test Base.get_extension(Nbody6Dynamics, :Nbody6DynamicsMakieExt) !== nothing
+        for entry_point in Nbody6Dynamics._PLOTTING_ENTRY_POINTS
+            @test length(methods(getfield(Nbody6Dynamics, entry_point))) > 1
+        end
+        # With a backend loaded, wrong arguments stay a MethodError instead
+        # of being reported as a missing backend.
+        @test_throws MethodError plot_energy(:not_a_diagnostics_object)
+        # The fallbacks and the methods the extension adds to the same
+        # functions must not be ambiguous with one another.
+        @test isempty(detect_ambiguities(Nbody6Dynamics, MakieExt))
+
+        msg = sprint(showerror, Nbody6Dynamics.PlottingUnavailable(:plot_energy, "Remedy line."))
+        @test occursin("using CairoMakie", msg)
+        @test occursin("Remedy line.", msg)
+
+        # A session without a backend: the package loads, never pulls Makie
+        # in, reports the remedy from an entry point, and refuses a pipeline
+        # that must produce figures before it builds or integrates anything.
+        headless = """
+        using Nbody6Dynamics
+        println("available=", plotting_available())
+        try
+            plot_energy("a", "b")
+        catch e
+            println("entry=", nameof(typeof(e)), ":", e.entry_point)
+        end
+        cfg_path = tempname() * ".toml"
+        write(cfg_path, join([
+            "[install]", "enabled = false",
+            "[simulation]", "run_test = false",
+            "[postprocess]", "enabled = false",
+            "[visualization]", "enabled = true",
+        ], "\\n"))
+        try
+            run_pipeline(load_config(cfg_path))
+        catch e
+            println("pipeline=", nameof(typeof(e)), ":", e.entry_point)
+            println("hint=", !isempty(e.hint))
+        end
+        rm(cfg_path; force = true)
+        println("makie_loaded=", any(m -> nameof(m) === :Makie, Base.loaded_modules_array()))
+        """
+        out = readchomp(
+            `$(Base.julia_cmd()) --project=$(Nbody6Dynamics._PROJECT_ROOT) --startup-file=no -e $headless`,
+        )
+        @test occursin("available=false", out)
+        @test occursin("entry=PlottingUnavailable:plot_energy", out)
+        @test occursin("pipeline=PlottingUnavailable:run_pipeline", out)
+        @test occursin("hint=true", out)
+        @test occursin("makie_loaded=false", out)
+    end
+
+    # =====================================================================
     @testset "Plotting (smoke tests)" begin
         Nbody6Dynamics.set_publication_theme!()
         # The theme's faces must be live in this (fresh) process: a face
@@ -2637,7 +2700,7 @@ $(extra)
         for key in (:regular, :bold, :italic)
             @test getfield(theme_fonts[key][], :ft_ptr) != C_NULL
         end
-        @test theme_fonts[:regular][] === Nbody6Dynamics.texfont(:text)
+        @test theme_fonts[:regular][] === MakieExt.texfont(:text)
 
         vis = VisualizationConfig(;
             output_dir = joinpath(TESTDIR, "test_plots"),
@@ -2988,7 +3051,7 @@ $(extra)
 
     # =====================================================================
     @testset "Auto FPS calculation" begin
-        _auto_fps = Nbody6Dynamics._auto_fps
+        _auto_fps = MakieExt._auto_fps
 
         # Few frames → clamped to min
         @test _auto_fps(5; target_duration = 12.0, min_fps = 1, max_fps = 10) == 1
@@ -4583,7 +4646,7 @@ rbar = 1.0
 
         # Envelope statistics helper: NaNs are skipped, all-NaN columns stay NaN
         env = [1.0 NaN 3.0; 5.0 NaN 1.0]
-        lo, hi, mean_vals = Nbody6Dynamics._envelope_stats(env)
+        lo, hi, mean_vals = MakieExt._envelope_stats(env)
         @test lo == [1.0, NaN, 1.0] || (lo[1] == 1.0 && isnan(lo[2]) && lo[3] == 1.0)
         @test hi[1] == 5.0 && isnan(hi[2]) && hi[3] == 3.0
         @test mean_vals[1] == 3.0 && isnan(mean_vals[2]) && mean_vals[3] == 2.0
@@ -4676,64 +4739,43 @@ rbar = 1.0
     @testset "Multi-panel canvas stays one column wide" begin
         for col in ("single", "double")
             cfg = VisualizationConfig(; column = col)
-            pw, ph = Nbody6Dynamics._figsize_px(cfg)
+            pw, ph = MakieExt._figsize_px(cfg)
             # Grids keep the column width whatever the column count; stacks are unchanged
-            @test Nbody6Dynamics._fig_multipanel(cfg, 2, 3)[1] == pw
-            @test Nbody6Dynamics._fig_multipanel(cfg, 1, 2; inner_ticks = false)[1] == pw
-            @test Nbody6Dynamics._fig_multipanel(cfg, 2, 1) ==
-                  (pw, 2 * ph + Nbody6Dynamics._MULTIPANEL_VGAP)
+            @test MakieExt._fig_multipanel(cfg, 2, 3)[1] == pw
+            @test MakieExt._fig_multipanel(cfg, 1, 2; inner_ticks = false)[1] == pw
+            @test MakieExt._fig_multipanel(cfg, 2, 1) == (pw, 2 * ph + MakieExt._MULTIPANEL_VGAP)
             # Three boxes of the preset aspect, compact gaps, one decoration strip each way
-            w3, h3 = Nbody6Dynamics._fig_multipanel(cfg, 2, 3; inner_ticks = false)
-            gap = Nbody6Dynamics._MULTIPANEL_GAP_COMPACT
-            strip = Nbody6Dynamics._AXIS_PROTRUSION
+            w3, h3 = MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false)
+            gap = MakieExt._MULTIPANEL_GAP_COMPACT
+            strip = MakieExt._AXIS_PROTRUSION
             box_w = (pw - strip - 2 * gap) / 3
-            @test box_w == Nbody6Dynamics._multipanel_box_width(cfg, 3; inner_ticks = false)
+            @test box_w == MakieExt._multipanel_box_width(cfg, 3; inner_ticks = false)
             @test h3 == round(Int, 2 * box_w * ph / pw + gap + strip)
-            @test Nbody6Dynamics._fig_multipanel(
-                cfg,
-                2,
-                3;
-                inner_ticks = false,
-                extra_height = 30,
-            )[2] == round(Int, 2 * box_w * ph / pw + gap + strip + 30)
+            @test MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false, extra_height = 30)[2] ==
+                  round(Int, 2 * box_w * ph / pw + gap + strip + 30)
             # Square panels are taller; a reserved colorbar column narrows them
-            @test Nbody6Dynamics._fig_multipanel(
-                cfg,
-                2,
-                3;
-                inner_ticks = false,
-                panel_aspect = 1.0,
-            )[2] > h3
-            @test Nbody6Dynamics._fig_multipanel(
+            @test MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false, panel_aspect = 1.0)[2] >
+                  h3
+            @test MakieExt._fig_multipanel(
                 cfg,
                 2,
                 3;
                 inner_ticks = false,
                 panel_aspect = 1.0,
                 extra_width = 110,
-            )[2] < Nbody6Dynamics._fig_multipanel(
-                cfg,
-                2,
-                3;
-                inner_ticks = false,
-                panel_aspect = 1.0,
-            )[2]
+            )[2] < MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false, panel_aspect = 1.0)[2]
         end
-        @test Nbody6Dynamics._multipanel_gap(3; inner_ticks = false) ==
-              Nbody6Dynamics._MULTIPANEL_GAP_COMPACT
-        @test Nbody6Dynamics._multipanel_gap(3; inner_ticks = true) ==
-              Nbody6Dynamics._MULTIPANEL_HGAP
-        @test Nbody6Dynamics._multipanel_gap(1; inner_ticks = false) ==
-              Nbody6Dynamics._MULTIPANEL_HGAP
+        @test MakieExt._multipanel_gap(3; inner_ticks = false) == MakieExt._MULTIPANEL_GAP_COMPACT
+        @test MakieExt._multipanel_gap(3; inner_ticks = true) == MakieExt._MULTIPANEL_HGAP
+        @test MakieExt._multipanel_gap(1; inner_ticks = false) == MakieExt._MULTIPANEL_HGAP
         # Marker scale follows the panel width; the annotation band is a data-free strip
         cfg_s = VisualizationConfig(; column = "single")
-        @test Nbody6Dynamics._multipanel_scale(cfg_s, 1) == 1.0
-        s3 = Nbody6Dynamics._multipanel_scale(cfg_s, 3; inner_ticks = false)
+        @test MakieExt._multipanel_scale(cfg_s, 1) == 1.0
+        s3 = MakieExt._multipanel_scale(cfg_s, 3; inner_ticks = false)
         @test 0.25 < s3 < 1 / 3
-        @test Nbody6Dynamics._multipanel_scale(cfg_s, 3; inner_ticks = false, extra_width = 110) <
-              s3
-        @test Nbody6Dynamics._multipanel_scale(cfg_s, 3; inner_ticks = true) < s3
-        @test 0 < Nbody6Dynamics._MONTAGE_BAND_FRAC < 0.5
+        @test MakieExt._multipanel_scale(cfg_s, 3; inner_ticks = false, extra_width = 110) < s3
+        @test MakieExt._multipanel_scale(cfg_s, 3; inner_ticks = true) < s3
+        @test 0 < MakieExt._MONTAGE_BAND_FRAC < 0.5
     end
 
     # =====================================================================
@@ -4741,48 +4783,46 @@ rbar = 1.0
     # =====================================================================
     @testset "Degenerate axis ranges" begin
         # Identical stars (equal-mass, unevolved) give zero-span HR data
-        @test Nbody6Dynamics._padded_range(3.678, 3.678) == (3.578, 3.778)
-        lo, hi = Nbody6Dynamics._padded_range(3.0, 4.0)
+        @test MakieExt._padded_range(3.678, 3.678) == (3.578, 3.778)
+        lo, hi = MakieExt._padded_range(3.0, 4.0)
         @test lo ≈ 2.94 && hi ≈ 4.06
-        @test !isempty(Nbody6Dynamics._logval_ticks(3.62, 3.74))
-        @test Nbody6Dynamics._logval_ticks(3.678, 3.678) == [3.678]
-        @test !isempty(Nbody6Dynamics._nice_ticks(1.0, 1.0001))
-        @test Nbody6Dynamics._nice_ticks(0.0, 10.0) == collect(0.0:1.0:10.0) ||
-              !isempty(Nbody6Dynamics._nice_ticks(0.0, 10.0))
+        @test !isempty(MakieExt._logval_ticks(3.62, 3.74))
+        @test MakieExt._logval_ticks(3.678, 3.678) == [3.678]
+        @test !isempty(MakieExt._nice_ticks(1.0, 1.0001))
+        @test MakieExt._nice_ticks(0.0, 10.0) == collect(0.0:1.0:10.0) ||
+              !isempty(MakieExt._nice_ticks(0.0, 10.0))
     end
 
     @testset "Log-tick generator edge cases" begin
         # >2 in-range decades → decades only
-        vals, _ = Nbody6Dynamics._log_ticks(0.05, 50.0)
+        vals, _ = MakieExt._log_ticks(0.05, 50.0)
         @test vals == [0.1, 1.0, 10.0]
         # ≤2 in-range decades → 2×/5× intermediates appear
-        vals2, labels2 = Nbody6Dynamics._log_ticks(0.5, 30.0)
+        vals2, labels2 = MakieExt._log_ticks(0.5, 30.0)
         @test all(v -> v in vals2, (0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
         # 10^0 renders as plain "1"
         lab1 = String(labels2[findfirst(==(1.0), vals2)])
         @test occursin("1", lab1) && !occursin("10", lab1)
         # Degenerate equal endpoints still yield ≥ 2 ticks
-        vals3, _ = Nbody6Dynamics._log_ticks(2.0, 2.0)
+        vals3, _ = MakieExt._log_ticks(2.0, 2.0)
         @test length(vals3) ≥ 2
         # Plain decimals throughout on a short axis within 10⁻³–10⁴ (the
         # virial-ratio panel: 0.5 … 10, never "5 × 10⁻¹ … 10¹")
-        vals4, labels4 = Nbody6Dynamics._log_ticks(0.45, 13.0)
+        vals4, labels4 = MakieExt._log_ticks(0.45, 13.0)
         @test vals4 == [0.5, 1.0, 2.0, 5.0, 10.0]
-        @test [Nbody6Dynamics._log_tick_label(v, true) for v in vals4] == ["0.5", "1", "2", "5", "10"]
+        @test [MakieExt._log_tick_label(v, true) for v in vals4] == ["0.5", "1", "2", "5", "10"]
         @test all(l -> !occursin("times", String(l)) && !occursin("^", String(l)), labels4)
-        @test [
-            Nbody6Dynamics._log_tick_label(v, true) for v in (0.001, 0.01, 0.1, 100.0, 50000.0)
-        ] == ["0.001", "0.01", "0.1", "100", "50000"]
+        @test [MakieExt._log_tick_label(v, true) for v in (0.001, 0.01, 0.1, 100.0, 50000.0)] == ["0.001", "0.01", "0.1", "100", "50000"]
         # Exponent form beyond the plain window, with the mandatory collapses
-        _, labels5 = Nbody6Dynamics._log_ticks(1e-8, 1e-3)
+        _, labels5 = MakieExt._log_ticks(1e-8, 1e-3)
         @test occursin("10^{-8}", String(labels5[1])) && occursin("10^{-3}", String(labels5[end]))
-        _, labels6 = Nbody6Dynamics._log_ticks(0.5, 1e6)
+        _, labels6 = MakieExt._log_ticks(0.5, 1e6)
         @test occursin("1", String(labels6[1])) && !occursin("10", String(labels6[1]))
         @test String(labels6[2]) == "\$10\$" && occursin("10^{2}", String(labels6[3]))
-        @test Nbody6Dynamics._log_tick_label(2e-7, false) == "2\\times 10^{-7}"
-        @test Nbody6Dynamics._log_tick_label(0.2, false) == "0.2"
-        @test Nbody6Dynamics._log_tick_label(20.0, false) == "20"
-        @test Nbody6Dynamics._log_tick_label(200.0, false) == "2\\times 10^{2}"
+        @test MakieExt._log_tick_label(2e-7, false) == "2\\times 10^{-7}"
+        @test MakieExt._log_tick_label(0.2, false) == "0.2"
+        @test MakieExt._log_tick_label(20.0, false) == "20"
+        @test MakieExt._log_tick_label(200.0, false) == "2\\times 10^{2}"
     end
 
     @testset "Degenerate reader inputs" begin
@@ -5280,9 +5320,9 @@ rbar = 1.0
         @test p3 !== nothing && isfile(p3)
         @test plot_telemetry(s[1:1], vis; filename = "tel_one") === nothing
         # Time axis units follow the span
-        @test Nbody6Dynamics._telemetry_time_axis([0.0, 60.0])[1] == [0.0, 60.0]
-        @test Nbody6Dynamics._telemetry_time_axis([0.0, 600.0])[1] == [0.0, 10.0]
-        @test Nbody6Dynamics._telemetry_time_axis([0.0, 7200.0])[1] == [0.0, 2.0]
+        @test MakieExt._telemetry_time_axis([0.0, 60.0])[1] == [0.0, 60.0]
+        @test MakieExt._telemetry_time_axis([0.0, 600.0])[1] == [0.0, 10.0]
+        @test MakieExt._telemetry_time_axis([0.0, 7200.0])[1] == [0.0, 2.0]
     end
 
     # =====================================================================
@@ -5613,6 +5653,9 @@ config_file = ""
         # Method ambiguities are checked for this package only — recursing
         # into the Makie/SciML dependency tree reports upstream noise.
         Aqua.test_all(Nbody6Dynamics; ambiguities = false, persistent_tasks = false)
+        # Aqua's ambiguity check spawns a process that `require`s each module
+        # it is given; an extension is not loadable that way, so the package
+        # is checked here and the pair in the figure-extension testset.
         Aqua.test_ambiguities(Nbody6Dynamics)
     end
 
@@ -5622,9 +5665,13 @@ config_file = ""
         # stable dependency surface (full explicit-import migration is
         # tracked in the roadmap). These checks catch the real hazards:
         # stale explicit imports, self-qualified names, and accesses of
-        # non-owning modules.
+        # non-owning modules. The extension imports the core internals it
+        # needs explicitly, so its list is held to the same standard.
         @test check_no_stale_explicit_imports(Nbody6Dynamics) === nothing
         @test check_no_self_qualified_accesses(Nbody6Dynamics) === nothing
+        makie_ext = Base.get_extension(Nbody6Dynamics, :Nbody6DynamicsMakieExt)
+        @test check_no_stale_explicit_imports(makie_ext) === nothing
+        @test check_no_self_qualified_accesses(makie_ext) === nothing
     end
 
     @testset "Static QA — JET" begin
@@ -5633,5 +5680,11 @@ config_file = ""
         # internals (e.g. @sync's sync_end, tuple broadcasting) produce
         # known false positives outside our control.
         JET.test_package(Nbody6Dynamics; target_modules = (Nbody6Dynamics,))
+        # The figure layer is not covered here: `report_package` takes a
+        # package and an extension is not one, and `report_file` on the
+        # extension analyses it against the package's own project, where the
+        # Makie trigger packages are weak dependencies and cannot be
+        # resolved. Aqua's ambiguity check above and the figure smoke tests
+        # are what the extension has instead.
     end
 end  # top-level testset

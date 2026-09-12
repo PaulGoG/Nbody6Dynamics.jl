@@ -14,7 +14,7 @@ For every completed merger point with a completed control, the series of
 `axis`; seeds share the colour. Legend families: the axis values and the
 line roles.
 """
-function plot_control_comparison(
+function Nbody6Dynamics.plot_control_comparison(
     sweep_dir::AbstractString,
     cfg::VisualizationConfig;
     quantity::Symbol = :lagrangian,

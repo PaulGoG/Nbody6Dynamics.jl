@@ -14,7 +14,7 @@
 # runs/gpu_validation_<host>_<timestamp>/ (see `run_gpu_validation`). The
 # exit code is 1 when any stage failed.
 
-include(joinpath(@__DIR__, "..", "activate.jl"))
+include(joinpath(@__DIR__, "activate.jl"))
 
 using Nbody6Dynamics
 using TOML

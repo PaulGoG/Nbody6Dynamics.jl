@@ -8,8 +8,9 @@
 
 const PROJ = normpath(joinpath(@__DIR__, ".."))
 
-include(joinpath(PROJ, "activate.jl"))
+include(joinpath(@__DIR__, "activate.jl"))
 
+using CairoMakie   # loads the figure routines (package extension)
 using Nbody6Dynamics, TOML, Dates
 
 cd(PROJ)

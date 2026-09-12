@@ -25,7 +25,7 @@ other axes are held at `fixed[key]`, or at their first value when not
 given; the fixed values are annotated. `fixed` may name only other grid
 axes. A sweep without grid axes yields one ensemble in a single colour.
 """
-function plot_sweep_ensemble(
+function Nbody6Dynamics.plot_sweep_ensemble(
     sweep_dir::AbstractString,
     cfg::VisualizationConfig;
     quantity::Symbol = :lagrangian,

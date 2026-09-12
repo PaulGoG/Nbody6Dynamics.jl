@@ -24,13 +24,24 @@ remnant they leave 12 Myr later, produced end to end by this package.*
 cd Nbody6Dynamics
 
 # Install Julia dependencies (one-time)
-julia activate.jl
+julia activate.jl          # package environment
+julia scripts/activate.jl  # entry scripts: the package plus its figure backend
 
 # Edit configuration
 $EDITOR config.toml
 
 # Run the full pipeline
-julia --project=. -e 'using Nbody6Dynamics; run_pipeline(load_config("config.toml"))'
+julia scripts/run_setup.jl config.toml
+```
+
+The figure routines are a package extension (see [Visualisation](@ref "9. Visualisation")): a
+session that produces figures loads a Makie backend first, a numerics-only session needs
+neither the backend nor its dependencies.
+
+```julia
+using CairoMakie
+using Nbody6Dynamics
+run_pipeline(load_config("config.toml"))
 ```
 
 ## Usage Modes

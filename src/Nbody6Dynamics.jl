@@ -3,7 +3,6 @@ module Nbody6Dynamics
 using TOML
 using Dates
 using Printf
-using CairoMakie
 using LaTeXStrings
 using ProgressMeter
 using Random
@@ -12,7 +11,6 @@ using OrdinaryDiffEqTsit5
 using Logging
 using LoggingExtras: FormatLogger, MinLevelLogger, TeeLogger
 using LinearAlgebra: BLAS
-using MathTeXEngine: texfont
 using UnicodePlots: UnicodePlots
 using PrecompileTools: @setup_workload, @compile_workload
 
@@ -79,10 +77,9 @@ include("sweep.jl")
 include("ensemble.jl")
 
 # ---------------------------------------------------------------------------
-# Plotting (sets publication theme on load)
+# Figure interface (implemented by the Makie extension, see ext/)
 # ---------------------------------------------------------------------------
-include("plotting/plotting.jl")
-include("plotting/telemetry.jl")
+include("plotting_api.jl")
 
 # ---------------------------------------------------------------------------
 # External post-processing (standalone, config-free)
@@ -192,296 +189,6 @@ function postprocess(
 end
 
 """
-    _plot_binary_diagnostics(bevs, results, vis)
-
-Binary-population figures for `bevs`. The hard/soft energy scale and the
-stellar count per epoch come from the conf.3 snapshots when present
-([`binary_scales`](@ref)); without snapshots the stellar count falls back
-to the ADJUST diagnostics and the pairs are left unclassified.
-"""
-function _plot_binary_diagnostics(
-    bevs::Vector{BinaryEvolutionSnapshot},
-    results::Dict{Symbol,Any},
-    vis::VisualizationConfig,
-)
-    snaps = get(results, :snapshots, Snapshot[])::Vector{Snapshot}
-    scales = binary_scales(bevs, snaps)
-    if scales === nothing
-        n_stars = nothing
-        if haskey(results, :diagnostics)
-            adj = (results[:diagnostics]::DiagnosticsData).adjust
-            if !isempty(adj)
-                t_adj = [a.time_myr for a in adj]
-                n_stars = [adj[argmin(abs.(t_adj .- b.time_myr))].n for b in bevs]
-            end
-        end
-        pop = binary_population(bevs; n_stars = n_stars)
-        m_mean = fill(NaN, length(bevs))
-        sigma = fill(NaN, length(bevs))
-    else
-        pop = binary_population(
-            bevs;
-            n_stars = scales.n_stars,
-            m_mean = scales.m_mean,
-            sigma_kms = scales.sigma_kms,
-        )
-        m_mean = scales.m_mean
-        sigma = scales.sigma_kms
-    end
-    plot_binary_population(pop, vis; filename = "binary_population")
-    plot_binary_period_distribution(bevs, vis; filename = "binary_period_distribution")
-    epochs =
-        length(bevs) > 1 ?
-        ((1, "binary_orbital_elements_initial"), (length(bevs), "binary_orbital_elements_final")) :
-        ((1, "binary_orbital_elements_initial"),)
-    for (idx, fname) in epochs
-        plot_binary_orbital_elements(
-            bevs[idx],
-            vis;
-            m_mean = m_mean[idx],
-            sigma_kms = sigma[idx],
-            filename = fname,
-        )
-    end
-    return nothing
-end
-
-"""
-    generate_plots(results::Dict{Symbol,Any}, vis::VisualizationConfig;
-                   sim_dir::AbstractString = "", animations::Bool = true)
-
-Generate all available plots (and, when `animations = true`, GIF
-animations) from post-processing results, saving into `vis.output_dir`.
-`sim_dir` names the directory holding the raw simulation output; when given,
-it is searched for `merger_summary.txt` to produce the merger-specific
-figures (inter-cluster separation, per-cluster virial ratio).
-
-This is the single plot dispatcher — both the config-driven pipeline
-(via the `Nbody6Config` method) and [`postprocess_external`](@ref) route
-through it.
-"""
-function generate_plots(
-    results::Dict{Symbol,Any},
-    vis::VisualizationConfig;
-    sim_dir::AbstractString = "",
-    animations::Bool = true,
-)
-    set_publication_theme!()
-
-    if haskey(results, :snapshots)
-        snaps = results[:snapshots]::Vector{Snapshot}
-        if !isempty(snaps)
-            @info "Plotting final snapshot..."
-            plot_snapshot(snaps[end], vis; filename = "snapshot_final")
-            if length(snaps) > 1
-                @info "Plotting snapshot evolution..."
-                plot_snapshot_evolution(snaps, vis; filename = "snapshot_evolution")
-            end
-
-            # Merger-specific: inter-cluster separation and per-cluster virial.
-            # merger_summary.txt lives in the simulation output directory.
-            if !isempty(sim_dir) && isdir(sim_dir)
-                summary_path = joinpath(sim_dir, "merger_summary.txt")
-                if isfile(summary_path) && length(snaps) ≥ 2
-                    ranges = parse_merger_summary(summary_path)
-                    if !isempty(ranges)
-                        if length(ranges) ≥ 2
-                            @info "Plotting inter-cluster separation..."
-                            plot_cluster_separation(snaps, ranges, vis)
-                        end
-                        @info "Plotting per-cluster virial ratio..."
-                        plot_cluster_virial(snaps, ranges, vis)
-                        @info "Plotting per-cluster structure..."
-                        plot_cluster_structure(
-                            snaps,
-                            ranges,
-                            vis;
-                            lagr = get(results, :lagr, nothing),
-                        )
-                        # Radial profiles against the generating models (merger_ic.toml)
-                        ic_meta = joinpath(sim_dir, "merger_ic.toml")
-                        specs =
-                            isfile(ic_meta) ? load_merger_ic_result(sim_dir).cluster_specs : nothing
-                        specs === nothing || length(specs) == length(ranges) || (specs = nothing)
-                        @info "Plotting density profiles (initial and final snapshots)..."
-                        plot_density_profiles(
-                            snaps[1],
-                            ranges,
-                            vis;
-                            specs = specs,
-                            filename = "merger_density_profiles_initial",
-                        )
-                        plot_density_profiles(
-                            snaps[end],
-                            ranges,
-                            vis;
-                            specs = specs,
-                            filename = "merger_density_profiles_final",
-                        )
-                        @info "Plotting velocity dispersion profiles (final snapshot)..."
-                        plot_velocity_dispersion(snaps[end], ranges, vis)
-                        @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
-                        diag = remnant_diagnostics(snaps, ranges)
-                        write_remnant_diagnostics(
-                            joinpath(dirname(abspath(sim_dir)), "remnant_diagnostics.csv"),
-                            diag,
-                        )
-                        remnant_figures(diag, vis)
-                    end
-                end
-            end
-        end
-    end
-
-    if haskey(results, :diagnostics)
-        diag = results[:diagnostics]::DiagnosticsData
-        if !isempty(diag.adjust)
-            @info "Plotting energy diagnostics..."
-            plot_energy(diag, vis; filename = "energy")
-            plot_particle_count(diag, vis; filename = "particle_count")
-        end
-    end
-
-    # Unit scaling for readers whose files carry no header (lagr.7):
-    # derived from the diagnostics when available, else NB units.
-    scaling =
-        haskey(results, :diagnostics) ? extract_scaling(results[:diagnostics]::DiagnosticsData) :
-        nothing
-
-    if haskey(results, :lagr)
-        lagr = results[:lagr]::LagrangianData
-        if !isempty(lagr.time)
-            @info "Plotting Lagrangian radii..."
-            plot_lagrangian(lagr, vis; filename = "lagrangian_radii", units = scaling)
-        end
-    end
-
-    if haskey(results, :escapers)
-        escs = results[:escapers]::Vector{EscaperRecord}
-        if !isempty(escs)
-            @info "Plotting escaper analysis..."
-            plot_escapers(escs, vis; filename = "escapers")
-            plot_escape_anisotropy(escs, vis; filename = "escape_anisotropy")
-        end
-    end
-
-    if haskey(results, :stellar_evo)
-        sevs = results[:stellar_evo]::Vector{StellarEvolutionSnapshot}
-        if !isempty(sevs)
-            # Three HR diagrams: beginning, middle, end
-            mid = max(1, length(sevs) ÷ 2)
-            hr_epochs = [
-                (1, "hr_diagram_early"),
-                (mid, "hr_diagram_mid"),
-                (length(sevs), "hr_diagram_final"),
-            ]
-            for (idx, fname) in hr_epochs
-                @info "Plotting HR diagram (epoch $idx/$(length(sevs)))..."
-                plot_hr(sevs[idx], vis; filename = fname)
-            end
-            if length(sevs) > 1
-                @info "Plotting HR evolution..."
-                plot_hr_evolution(sevs, vis; filename = "hr_evolution")
-            end
-            @info "Plotting SSE quantities..."
-            plot_mass_segregation(sevs[end], vis; filename = "mass_segregation")
-            plot_evolutionary_clock(sevs[end], vis; filename = "evolutionary_clock")
-            plot_core_mass(sevs, vis; filename = "core_mass_growth")
-        end
-    end
-
-    if haskey(results, :binary_evo)
-        bevs = results[:binary_evo]::Vector{BinaryEvolutionSnapshot}
-        if !isempty(bevs)
-            @info "Plotting binary population..."
-            _plot_binary_diagnostics(bevs, results, vis)
-        end
-    end
-
-    # Run telemetry: the sampler's CSVs live in the run directory above the
-    # output directory (absent for output produced outside the pipeline).
-    if !isempty(sim_dir) && isdir(sim_dir)
-        samples = read_run_telemetry(dirname(abspath(sim_dir)))
-        if length(samples) ≥ 2
-            @info "Plotting run telemetry..."
-            plot_telemetry(samples, vis; filename = "telemetry")
-        end
-    end
-
-    # --- Animations (GIF) ---
-    if animations
-        if haskey(results, :snapshots)
-            snaps = results[:snapshots]::Vector{Snapshot}
-            if length(snaps) > 1
-                @info "Animating cluster evolution..."
-                animate_cluster(snaps, vis; filename = "cluster_evolution")
-            end
-        end
-
-        if haskey(results, :lagr)
-            lagr = results[:lagr]::LagrangianData
-            if length(lagr.time) > 1
-                @info "Animating Lagrangian radii..."
-                animate_lagrangian(lagr, vis; filename = "lagrangian_anim", units = scaling)
-            end
-        end
-
-        if haskey(results, :stellar_evo)
-            sevs = results[:stellar_evo]::Vector{StellarEvolutionSnapshot}
-            if length(sevs) > 1
-                @info "Animating HR diagram evolution..."
-                animate_hr(sevs, vis; filename = "hr_evolution_anim")
-            end
-        end
-    end
-
-    # --- Merger IC diagnostic plots ---
-    if haskey(results, :merger_ic)
-        merger_res = results[:merger_ic]::MergerICResult
-        @info "Plotting merger IC diagnostics..."
-        plot_merger_ic(merger_res, vis)
-    end
-
-    @info "All plots and animations saved to: $(vis.output_dir)"
-    return nothing
-end
-
-"""
-    generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
-                   run_dir::AbstractString = "")
-
-Config-driven wrapper around the `VisualizationConfig` method.
-
-When `run_dir` is provided (e.g. `runs/run_XXXX/`), plots are saved to
-`run_dir/<visualization.output_dir>/` (typically `runs/run_XXXX/plots/`) and
-`run_dir/output/` is searched for merger metadata. Otherwise, falls back to
-`visualization.output_dir` relative to the package root.
-"""
-function generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config; run_dir::AbstractString = "")
-    # Build a VisualizationConfig with the output_dir resolved to the run
-    vis = if !isempty(run_dir)
-        plots_dir = joinpath(run_dir, cfg.visualization.output_dir)
-        # Forward EVERY field except output_dir — a missed field here means
-        # the user's [visualization] settings are silently dropped on the
-        # main pipeline path (this has happened twice; see git history).
-        VisualizationConfig(;
-            enabled = cfg.visualization.enabled,
-            format = cfg.visualization.format,
-            dpi = cfg.visualization.dpi,
-            column = cfg.visualization.column,
-            figsize = cfg.visualization.figsize,
-            units = cfg.visualization.units,
-            output_dir = plots_dir,
-            style = cfg.visualization.style,
-        )
-    else
-        cfg.visualization
-    end
-    sim_dir = !isempty(run_dir) ? joinpath(run_dir, "output") : ""
-    return generate_plots(results, vis; sim_dir = sim_dir)
-end
-
-"""
     run_pipeline(cfg::Nbody6Config; base_dir = _PROJECT_ROOT, run_id = "") -> Dict{Symbol,Any}
 
 Top-level orchestrator that runs the full pipeline (or any subset) based on
@@ -532,6 +239,14 @@ function run_pipeline(
     base_dir::AbstractString = _PROJECT_ROOT,
     run_id::AbstractString = "",
 )::Dict{Symbol,Any}
+    # A run that must end in figures is refused before the build and the
+    # integration, not after them: the backend is a property of the session,
+    # and discovering it missing at phase 4 would cost the whole run.
+    cfg.visualization.enabled && _require_plotting(
+        :run_pipeline,
+        "Set `[visualization] enabled = false` to run the pipeline without figures.",
+    )
+
     # Phases actually performed, stamped into RUN_INFO.toml at the end so an
     # interrupted pipeline is distinguishable from a finished one.
     t_pipeline = time()
@@ -730,7 +445,7 @@ export ClusterStructure, cluster_structure, plot_cluster_structure, bound_fracti
 export RadialProfile, radial_profile, cluster_profiles, system_profile, model_density
 export plot_density_profiles, plot_velocity_dispersion
 export animate_cluster, animate_hr, animate_lagrangian
-export set_publication_theme!, publication_theme
+export set_publication_theme!, publication_theme, plotting_available
 export generate_run_id, restart_simulation, export_for_paper
 export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 export detect_platform, check_dependencies, detect_cuda_path

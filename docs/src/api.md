@@ -149,7 +149,13 @@ semi_major_axis_pc
 
 ## Plotting
 
+The figure routines below are implemented by the package extension
+`Nbody6DynamicsMakieExt` and require a Makie backend in the session
+(`using CairoMakie`); see [Visualisation](@ref "9. Visualisation").
+
 ```@docs
+plotting_available
+Nbody6Dynamics.PlottingUnavailable
 set_publication_theme!
 publication_theme
 plot_snapshot

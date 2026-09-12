@@ -68,28 +68,36 @@ Nbody6Dynamics/
 │   │   ├── models.jl                # Plummer & King (ODE-solved) density samplers
 │   │   ├── imf.jl                   # Kroupa (2001) IMF, rescaled & equal-mass variants
 │   │   ├── orbits.jl                # Kepler two-body + explicit N-cluster orbits, Jacobi radius, virialise!
-│   │   ├── output.jl                # dat.10 writer, merger.inp generator (seed → NRAND)
-│   │   └── plotting.jl              # Merger IC diagnostic plots
+│   │   └── output.jl                # dat.10 writer, merger.inp generator (seed → NRAND)
+│   └── plotting_api.jl              # Figure interface: the public routines, implemented by the Makie extension
+├── ext/
+│   ├── Nbody6DynamicsMakieExt.jl    # Extension module, loaded by `using CairoMakie`
 │   └── plotting/
-│       ├── plotting.jl              # Publication theme (Computer Modern fonts)
+│       ├── common.jl                # Publication theme (Computer Modern fonts), figure sizing, axis helpers
+│       ├── dispatch.jl              # generate_plots: the single figure dispatcher
 │       ├── snapshots.jl             # Projection scatter plots, cluster separation & per-cluster virial
 │       ├── energy.jl                # Energy error & particle count from diagnostics
 │       ├── lagrangian.jl            # Lagrangian radii evolution
 │       ├── hr.jl                    # HR diagrams colour-coded by stellar type
 │       ├── escapers.jl              # Escaper analysis: cumulative mass loss, velocities, anisotropy
 │       ├── sse.jl                   # SSE-quantity plots: mass segregation, t/T_MS clock, core masses
-│       ├── merger.jl                # Merger IC overview figures
+│       ├── merger.jl                # Merger-run figures: separation, per-cluster virial and structure
+│       ├── merger_ic.jl             # Merger IC diagnostic figures
 │       ├── binaries.jl              # Binary population, a–e diagram, period distribution
 │       ├── remnant.jl               # Remnant figures: rotation parameters and profile, structure, mass segregation
 │       ├── sweep.jl                 # Sweep comparison figures on common axes (Lagrangian radius, energy error)
 │       ├── control.jl               # Merger against isolated control, paired series per sweep point
 │       ├── ensemble.jl              # Ensemble figures: median and 68/95 % bands per grid point
 │       ├── animation.jl             # GIF animations (cluster, HR, Lagrangian)
-│       └── telemetry.jl             # telemetry.csv readers and the run telemetry figure
+│       └── telemetry.jl             # Run telemetry figure
 ├── scripts/
 │   ├── run_setup.jl                 # CLI wrapper: load config → run_pipeline
 │   ├── run_sweep.jl                 # CLI wrapper: sweep TOML → run_sweep → comparison figures
-│   └── run_verif_suite.jl           # Three-target verification suite
+│   ├── run_verif_suite.jl           # Three-target verification suite
+│   ├── run_gpu_validation.jl        # CLI wrapper: logged validation stages of a CUDA host
+│   ├── activate.jl                  # Activates the script environment (package + CairoMakie)
+│   ├── Project.toml                 # Script environment: the package and its figure backend
+│   └── Manifest.toml                # Version-controlled — exact script dependency versions
 ├── test/
 │   ├── runtests.jl                  # Full unit + physics-validation suite
 │   ├── test_external_adversarial_inner.jl  # Adversarial external post-processing tests
@@ -146,11 +154,23 @@ Every environment ships an activation script that activates and instantiates it 
 
 ```bash
 julia activate.jl          # package environment (required)
+julia scripts/activate.jl  # entry scripts: the package plus its figure backend
 julia docs/activate.jl     # documentation build (optional)
 julia bench/activate.jl    # benchmarks (optional)
 ```
 
-The scripts under `scripts/`, `docs/` and `bench/` include their environment's activation script, so they need no `--project` flag; the docs and bench environments develop the package by a relative path and always run against the local source. Building the Fortran backend additionally needs `git`, `gfortran`/`make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
+The scripts under `scripts/`, `docs/` and `bench/` include their environment's activation script, so they need no `--project` flag; those environments develop the package by a relative path and always run against the local source. Building the Fortran backend additionally needs `git`, `gfortran`/`make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
+
+### Figures are an extension
+
+The figure routines are a package extension triggered by a Makie backend, so the package itself depends on no plotting stack: the core environment resolves to 109 packages instead of 278, and a headless host neither installs nor precompiles Cairo, Pango, GLib or HarfBuzz. Initial conditions, engine build, integration, readers, diagnostics and benchmarks all run without them.
+
+```julia
+using CairoMakie        # brings in every plot_*, animate_* and generate_plots
+using Nbody6Dynamics
+```
+
+Without a backend the figure routines report the remedy instead of failing obscurely, and a pipeline whose `[visualization] enabled = true` is refused before it builds or integrates anything rather than after. `plotting_available()` answers the question in code. The entry scripts under `scripts/` load CairoMakie for you; a numerics-only session (`julia activate.jl`, then `using Nbody6Dynamics`) does not.
 
 ## Entry Points
 
@@ -159,6 +179,7 @@ One invocation each; details in the sections below.
 | Task | Invocation |
 |------|------------|
 | Instantiate the package environment | `julia activate.jl` |
+| Instantiate the script environment (figures) | `julia scripts/activate.jl` |
 | Run the main pipeline | `julia scripts/run_setup.jl [config.toml]` |
 | Run a parameter sweep | `julia scripts/run_sweep.jl input_files/sweep_demo.toml [--dry-run]` |
 | Run a showcase case | `julia scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (also `binary_`, `tidal_`; the sweep via `scripts/run_sweep.jl input_files/showcase/sweep.toml`) |

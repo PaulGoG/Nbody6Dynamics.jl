@@ -5,6 +5,40 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 
 ## [Unreleased]
 
+### Changed (breaking)
+- The figure routines are a package extension. `CairoMakie` and
+  `MathTeXEngine` moved from `[deps]` to `[weakdeps]`, and every `plot_*`,
+  `animate_*`, `generate_plots`, `sweep_figures`, `remnant_figures`,
+  `publication_theme` and `set_publication_theme!` is now implemented in
+  `ext/Nbody6DynamicsMakieExt.jl`, loaded automatically once a Makie backend
+  is in the session. **A session that wants figures must `using CairoMakie`.**
+  The core environment resolves to 109 packages instead of 278: a headless
+  host no longer installs or precompiles Cairo, Pango, GLib, HarfBuzz or the
+  font artifacts to generate initial conditions, build the engine, integrate,
+  read output, compute diagnostics or benchmark. This was not hypothetical —
+  on the fleet's compute server the plotting stack was the one thing that
+  would not load, and it took a pure-numerics benchmark down with it.
+
+  Where a figure is expected but no backend is loaded, the package now says
+  so precisely: the routines throw `PlottingUnavailable` naming the remedy,
+  and `run_pipeline` (`[visualization] enabled = true`),
+  `run_merger_pipeline(; make_plots = true)` and
+  `postprocess_external(; make_plots = true)` refuse **before** building or
+  integrating anything, instead of after. `plotting_available()` reports the
+  state of the extension.
+- The entry scripts run in their own environment, `scripts/Project.toml`
+  (package + CairoMakie, tracked Manifest, `scripts/activate.jl`), so
+  `julia scripts/run_setup.jl config.toml` and the other invocations are
+  unchanged. `bench/` deliberately has no backend.
+- Sweep workers now inherit the driver's environment rather than the package
+  environment, and load the backend only when the driver has one: a point's
+  pipeline needs the same figure backend as the sweep that launched it.
+- The plotting-free routines that had accumulated in the figure files moved
+  back into the package: `parse_merger_summary` and `per_cluster_virial`
+  (to `cluster_structure.jl`), `read_telemetry` and `read_run_telemetry`
+  (to `telemetry.jl`), `_sweep_done_points` (to `sweep.jl`). They are
+  available without a backend, as they always should have been.
+
 ### Fixed
 - Montage panels no longer clip their annotation or collide their tick
   labels. `plot_snapshot_evolution` showed per-panel tick values on every

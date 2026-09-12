@@ -13,46 +13,6 @@ const _COALESCENCE_RATIO_MAX = 2.0
 const _COALESCENCE_MEAN_SEP_FACTOR = 1.5
 
 """
-    parse_merger_summary(path::AbstractString) -> Vector{Vector{Int}}
-
-Read `merger_summary.txt` and return the body indices (`dat.10` order,
-1-based) of every initial cluster from the post-truncation body counts
-and, when present, the pair counts: pairs of all clusters come first,
-cluster by cluster, then the singles, so a cluster with binaries owns two
-contiguous blocks. Returns an empty vector if the file cannot be parsed.
-"""
-function parse_merger_summary(path::AbstractString)::Vector{Vector{Int}}
-    isfile(path) || return Vector{Int}[]
-
-    counts = Tuple{Int,Int}[]   # (bodies after truncation, pairs)
-    # Match e.g. "Cluster 5: plummer, imf=kroupa, N=1000 (after trunc: 966, binaries: 12),"
-    # Tolerant of extra comma-separated fields between the profile name and
-    # the N=… count (the summary format has grown fields before; the
-    # write→parse round-trip test in runtests.jl guards this coupling).
-    pattern = r"Cluster\s+\d+:\s+.*?\bN=\d+\s+\(after trunc:\s+(\d+)(?:,\s*binaries:\s+(\d+))?\)"
-    for line in eachline(path)
-        m = match(pattern, line)
-        m === nothing && continue
-        n_b = m.captures[2] === nothing ? 0 : parse(Int, m.captures[2])
-        push!(counts, (parse(Int, m.captures[1]), n_b))
-    end
-    isempty(counts) && return Vector{Int}[]
-
-    nbin0 = sum(last, counts)
-    members = Vector{Vector{Int}}(undef, length(counts))
-    pair_offset = 0
-    single_offset = 2nbin0
-    for (i, (n, n_b)) in enumerate(counts)
-        n_s = n - 2n_b
-        blocks = [(pair_offset + 1):(pair_offset + 2n_b), (single_offset + 1):(single_offset + n_s)]
-        members[i] = _members_from_blocks(blocks)
-        pair_offset += 2n_b
-        single_offset += n_s
-    end
-    return members
-end
-
-"""
     plot_cluster_separation(snaps, cluster_ranges, cfg;
                             filename = "merger_cluster_separation")
 
@@ -65,7 +25,7 @@ The time at which the ratio `max_sep / mean_sep` drops below a heuristic
 threshold is marked as an estimated "coalescence time". After that epoch the
 initial cluster decomposition is no longer physically meaningful.
 """
-function plot_cluster_separation(
+function Nbody6Dynamics.plot_cluster_separation(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
@@ -225,79 +185,6 @@ function plot_cluster_separation(
     return _save_fig(cfg, filename, fig)
 end
 
-# -----------------------------------------------------------------------------
-# Per-cluster virial ratio (COM-subtracted, self-gravity only)
-# -----------------------------------------------------------------------------
-
-"""
-    _cluster_virial_snapshot(snap, rng; bound_only = true) -> (Q, n_mem)
-
-Virial ratio `Q = T/|W|` of the members of an initial cluster in one
-snapshot, with the centre-of-mass velocity subtracted and only the
-self-gravity among the selected members in `W`. With `bound_only` the
-selection is the self-consistently bound subset ([`_bound_members`](@ref)),
-which removes tidally stripped stars and kicked stellar remnants; otherwise
-every present member counts. `n_mem` is the number of present members.
-Returns `(NaN, n_mem)` with fewer than 3 selected members or a
-non-negative `W`. N-body units (`G = 1`).
-"""
-function _cluster_virial_snapshot(snap::Snapshot, rng::AbstractVector{Int}; bound_only::Bool = true)
-    idx = _member_indices(snap, rng)
-    n_mem = length(idx)
-    n_mem < 3 && return (NaN, n_mem)
-    pos = Float64.(snap.pos[:, idx])
-    vel = Float64.(snap.vel[:, idx])
-    m = Float64.(snap.mass[idx])
-    sel = bound_only ? _bound_members(pos, vel, m) : collect(1:n_mem)
-    length(sel) < 3 && return (NaN, n_mem)
-    p = pos[:, sel]
-    v = vel[:, sel]
-    ms = m[sel]
-    M = sum(ms)
-    M > 0 || return (NaN, n_mem)
-    vc = vec(sum(v .* ms'; dims = 2)) ./ M
-    T = 0.0
-    @inbounds for i in eachindex(ms)
-        T += 0.5 * ms[i] * ((v[1, i] - vc[1])^2 + (v[2, i] - vc[2])^2 + (v[3, i] - vc[3])^2)
-    end
-    W = 0.5 * sum(ms .* _self_potential(p, ms))
-    W < 0 || return (NaN, n_mem)
-    return (T / abs(W), n_mem)
-end
-
-"""
-    per_cluster_virial(snaps, cluster_ranges; bound_only = true)
-        -> (Q::Matrix{Float64}, n_mem::Matrix{Int})
-
-Internal virial ratio of every initial cluster at every snapshot, `Q[i, k]`
-for cluster `i` at snapshot `k` (`NaN` with fewer than 3 selected members).
-By default only the members bound to the cluster enter `T` and `W`
-([`_bound_members`](@ref)); `bound_only = false` uses every present member
-and is dominated by kicked remnants after the first supernovae.
-
-Complexity: O(Σ_i N_i²) per snapshot and bound-selection pass; manageable
-for N_i ≲ 10⁴.
-"""
-function per_cluster_virial(
-    snaps::Vector{Snapshot},
-    cluster_ranges::AbstractVector{<:AbstractVector{Int}};
-    bound_only::Bool = true,
-)
-    n_cl = length(cluster_ranges)
-    n_t = length(snaps)
-    Q = fill(NaN, n_cl, n_t)
-    n_mem = zeros(Int, n_cl, n_t)
-
-    for (k, snap) in enumerate(snaps)
-        for (i, rng) in enumerate(cluster_ranges)
-            q, nm = _cluster_virial_snapshot(snap, rng; bound_only = bound_only)
-            Q[i, k] = q
-            n_mem[i, k] = nm
-        end
-    end
-    return Q, n_mem
-end
-
 """
     plot_cluster_virial(snaps, cluster_ranges, cfg;
                         filename = "merger_cluster_virial")
@@ -318,7 +205,7 @@ whatever remains self-bound inside the remnant, so the curve loses its
 meaning as a cluster diagnostic; the departure from `Q ≈ 0.5` is a rough
 proxy for the time of coalescence.
 """
-function plot_cluster_virial(
+function Nbody6Dynamics.plot_cluster_virial(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
@@ -430,7 +317,7 @@ difference between the configuration and its members visible. For more
 than five clusters the min–max envelope and mean are drawn. Radii in pc and
 times in Myr when `cfg.units == "physical"`.
 """
-function plot_cluster_structure(
+function Nbody6Dynamics.plot_cluster_structure(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
@@ -562,7 +449,7 @@ initial half-mass radius and its bound mass at this snapshot. A ratio strip
 more than five clusters the min–max envelope and mean of the ratio are
 drawn. Radii in pc and densities in M☉ pc⁻³ when `cfg.units == "physical"`.
 """
-function plot_density_profiles(
+function Nbody6Dynamics.plot_density_profiles(
     snap::Snapshot,
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
@@ -718,7 +605,7 @@ labelled. Velocities in km s⁻¹ and radii in pc when `cfg.units ==
 "physical"`. For more than five clusters the min–max envelope and mean of
 `σ_r` and `β` are drawn.
 """
-function plot_velocity_dispersion(
+function Nbody6Dynamics.plot_velocity_dispersion(
     snap::Snapshot,
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;

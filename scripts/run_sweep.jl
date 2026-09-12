@@ -11,8 +11,9 @@
 # sweep_summary.csv, and draws the comparison figures into <sweep>/plots.
 # With --dry-run the directories and derived configs are written only.
 
-include(joinpath(@__DIR__, "..", "activate.jl"))
+include(joinpath(@__DIR__, "activate.jl"))
 
+using CairoMakie   # loads the figure routines (package extension)
 using Nbody6Dynamics
 
 function main()

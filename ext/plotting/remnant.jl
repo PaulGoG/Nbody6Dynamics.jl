@@ -60,7 +60,7 @@ Two stacked panels sharing the time axis: the ordered-motion parameter
 ``\\cos θ`` of the spin axis with the initial orbital angular momentum,
 with the coalescence time marked.
 """
-function plot_remnant_rotation(
+function Nbody6Dynamics.plot_remnant_rotation(
     diag::RemnantDiagnostics,
     cfg::VisualizationConfig;
     filename::AbstractString = "remnant_rotation",
@@ -165,7 +165,7 @@ end
 ``v_\\mathrm{rot}/σ`` against cylindrical radius for the shells of a
 [`RotationProfile`](@ref); `rbar` converts NB lengths to pc.
 """
-function plot_rotation_profile(
+function Nbody6Dynamics.plot_rotation_profile(
     profile::RotationProfile,
     cfg::VisualizationConfig;
     rbar::Real = 1.0,
@@ -210,7 +210,7 @@ end
 Core and half-mass radii of the bound remnant against time above the ratio
 ``r_h / r_c``, with the coalescence time marked.
 """
-function plot_remnant_structure(
+function Nbody6Dynamics.plot_remnant_structure(
     diag::RemnantDiagnostics,
     cfg::VisualizationConfig;
     filename::AbstractString = "remnant_structure",
@@ -262,7 +262,7 @@ end
 radius ratio of the massive subset, with the threshold, coalescence and
 segregation times marked.
 """
-function plot_mass_segregation_evolution(
+function Nbody6Dynamics.plot_mass_segregation_evolution(
     diag::RemnantDiagnostics,
     cfg::VisualizationConfig;
     lambda_threshold::Real = _MSR_THRESHOLD,
@@ -332,7 +332,7 @@ end
 The four remnant figures: rotation parameters, rotation profile of the
 last analysed snapshot, structure, and mass segregation.
 """
-function remnant_figures(diag::RemnantDiagnostics, cfg::VisualizationConfig)
+function Nbody6Dynamics.remnant_figures(diag::RemnantDiagnostics, cfg::VisualizationConfig)
     paths = String[
         plot_remnant_rotation(diag, cfg),
         plot_remnant_structure(diag, cfg),

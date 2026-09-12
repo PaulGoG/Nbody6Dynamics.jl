@@ -10,7 +10,7 @@ Two-panel figure: (top) relative energy error vs time, (bottom) virial ratio.
 The time axis is in Myr when `cfg.units == "physical"` (from the ADJUST
 records), N-body units otherwise.
 """
-function plot_energy(
+function Nbody6Dynamics.plot_energy(
     diag::DiagnosticsData,
     cfg::VisualizationConfig;
     filename::AbstractString = "energy",
@@ -109,7 +109,7 @@ Two-panel figure: (top) bound particle count N, (bottom) KS binary pairs.
 Each uses a linear y-axis since N and N_pairs evolve on different scales.
 The time axis is in Myr when `cfg.units == "physical"`.
 """
-function plot_particle_count(
+function Nbody6Dynamics.plot_particle_count(
     diag::DiagnosticsData,
     cfg::VisualizationConfig;
     filename::AbstractString = "particle_count",

@@ -16,7 +16,7 @@ Generate all diagnostic plots for a merger IC:
 
 All plots use the publication theme and are saved to `vis.output_dir`.
 """
-function plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
+function Nbody6Dynamics.plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
     set_publication_theme!()
     mkpath(vis.output_dir)
 

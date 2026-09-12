@@ -70,7 +70,7 @@ evolution snapshot, coloured by stellar type K*.
 
 Returns the output file path.
 """
-function plot_hr(
+function Nbody6Dynamics.plot_hr(
     sev::StellarEvolutionSnapshot,
     cfg::VisualizationConfig;
     filename::AbstractString = "hr_diagram",
@@ -137,7 +137,7 @@ Selects up to `max_panels` snapshots spaced evenly in time.
 
 Returns the output file path.
 """
-function plot_hr_evolution(
+function Nbody6Dynamics.plot_hr_evolution(
     sevs::Vector{StellarEvolutionSnapshot},
     cfg::VisualizationConfig;
     filename::AbstractString = "hr_evolution",

@@ -390,12 +390,21 @@ function run_sweep_point(point_dir::AbstractString)
     return nothing
 end
 
-"""Command of a worker process for `point_dir`: the current Julia with the
-package project and the driver's thread count (`Base.julia_cmd` does not
-carry `--threads`), calling [`run_sweep_point`](@ref)."""
+"""Command of a worker process for `point_dir`: the current Julia in the
+driver's own environment, with the driver's thread count (`Base.julia_cmd`
+does not carry `--threads`), calling [`run_sweep_point`](@ref).
+
+The worker reproduces the driver's session rather than the package
+environment, because each point runs a full pipeline and therefore needs the
+same figure backend the driver has: without it `run_pipeline` refuses a point
+whose config asks for figures. The backend is loaded only when the driver
+itself has one, so a sweep of a headless numerics-only study stays free of
+the plotting stack."""
 function _sweep_worker_command(point_dir::AbstractString)
     julia = Base.julia_cmd()
-    return `$julia --threads=$(Threads.nthreads()) --project=$(_PROJECT_ROOT) --startup-file=no -e "using Nbody6Dynamics; run_sweep_point(ARGS[1])" $point_dir`
+    project = dirname(Base.active_project())
+    preamble = plotting_available() ? "using CairoMakie; " : ""
+    return `$julia --threads=$(Threads.nthreads()) --project=$project --startup-file=no -e "$(preamble)using Nbody6Dynamics; run_sweep_point(ARGS[1])" $point_dir`
 end
 
 """Fail before launching anything when the backend binary of the base
@@ -607,4 +616,15 @@ function sweep_visualization(cfg::SweepConfig, sweep_dir::AbstractString)
     fields = Dict{Symbol,Any}(k => getfield(base, k) for k in fieldnames(VisualizationConfig))
     fields[:output_dir] = joinpath(sweep_dir, "plots")
     return VisualizationConfig(; fields...)
+end
+
+"""Completed points of a sweep of the given `kind` (`"merger"` by default,
+`"control"`, or `""` for all) as `(entry, run_dir)` pairs."""
+function _sweep_done_points(sweep_dir::AbstractString; kind::AbstractString = "merger")
+    idx = read_sweep_index(sweep_dir)
+    pts = [
+        (p, joinpath(p["dir"], _SWEEP_RUN_ID)) for p in idx["points"] if
+        p["status"] == "done" && (isempty(kind) || get(p, "kind", "merger") == kind)
+    ]
+    return idx, pts
 end

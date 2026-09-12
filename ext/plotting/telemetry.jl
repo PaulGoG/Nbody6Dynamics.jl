@@ -1,100 +1,8 @@
 # =============================================================================
-# Run telemetry: readers for the sampler's CSVs and the time-series figure
+# Run telemetry figure
 # =============================================================================
-
-"""
-    read_telemetry(path) -> Vector{TelemetrySample}
-
-Read a telemetry CSV written by the sampler (header = the field names of
-[`TelemetrySample`](@ref), matched by name in any order). Empty cells and
-`NaN` read as `NaN`; `n_processes` is rounded to an integer. Throws an
-`ArgumentError` when a field of the sample is missing from the header or a
-row has the wrong number of cells.
-"""
-function read_telemetry(path::AbstractString)::Vector{TelemetrySample}
-    lines = filter(!isempty, strip.(readlines(path)))
-    isempty(lines) && return TelemetrySample[]
-    header = String.(strip.(split(lines[1], ',')))
-    names = string.(fieldnames(TelemetrySample))
-    col = Dict(h => i for (i, h) in enumerate(header))
-    missing_names = filter(n -> !haskey(col, n), names)
-    isempty(missing_names) || throw(
-        ArgumentError(
-            "telemetry CSV $path lacks the column(s) $(join(missing_names, ", ")); " *
-            "header: $(join(header, ", "))",
-        ),
-    )
-    samples = TelemetrySample[]
-    for line in lines[2:end]
-        cells = strip.(split(line, ','))
-        length(cells) == length(header) || throw(
-            ArgumentError(
-                "telemetry CSV $path: a row has $(length(cells)) cells for $(length(header)) columns",
-            ),
-        )
-        value(n) = something(tryparse(Float64, cells[col[n]]), NaN)
-        push!(
-            samples,
-            TelemetrySample(
-                value("elapsed_s"),
-                round(Int, something(tryparse(Float64, cells[col["n_processes"]]), 0.0)),
-                value("rss_mib"),
-                value("hwm_mib"),
-                value("cpu_time_s"),
-                value("cores_busy"),
-                value("load_1min"),
-                value("gpu_util_pct"),
-                value("gpu_mem_util_pct"),
-                value("gpu_mem_used_mib"),
-                value("gpu_power_w"),
-                value("gpu_temp_c"),
-            ),
-        )
-    end
-    return samples
-end
-
-"""
-    read_run_telemetry(run_dir) -> Vector{TelemetrySample}
-
-Every telemetry segment of a run (`telemetry.csv`, `telemetry_2.csv`, …,
-one per launch) concatenated in segment order, the elapsed time of each
-segment offset by the last elapsed time of the previous one, since restarts
-run one after another. Empty when the run directory holds no telemetry.
-"""
-function read_run_telemetry(run_dir::AbstractString)::Vector{TelemetrySample}
-    isdir(run_dir) || return TelemetrySample[]
-    files = filter(f -> match(r"^telemetry(_\d+)?\.csv$", f) !== nothing, readdir(run_dir))
-    segment_index(f) = f == "telemetry.csv" ? 1 : parse(Int, match(r"_(\d+)\.csv$", f).captures[1])
-    sort!(files; by = segment_index)
-    samples = TelemetrySample[]
-    offset = 0.0
-    for f in files
-        seg = read_telemetry(joinpath(run_dir, f))
-        isempty(seg) && continue
-        for s in seg
-            push!(
-                samples,
-                TelemetrySample(
-                    s.elapsed_s + offset,
-                    s.n_processes,
-                    s.rss_mib,
-                    s.hwm_mib,
-                    s.cpu_time_s,
-                    s.cores_busy,
-                    s.load_1min,
-                    s.gpu_util_pct,
-                    s.gpu_mem_util_pct,
-                    s.gpu_mem_used_mib,
-                    s.gpu_power_w,
-                    s.gpu_temp_c,
-                ),
-            )
-        end
-        offset = samples[end].elapsed_s
-    end
-    return samples
-end
+# The CSV readers live in the core package (src/telemetry.jl); only the
+# figure needs a plotting backend.
 
 """Colours of the telemetry series (Okabe–Ito): cores busy, resident memory, GPU utilisation."""
 const _TELEMETRY_COLORS = (
@@ -148,7 +56,7 @@ memory utilisation dashed. The mean cores busy, the peak RSS and the mean
 GPU utilisation appear as the legend entries' quantitative takeaways.
 Returns the output path, or `nothing` with fewer than two samples.
 """
-function plot_telemetry(
+function Nbody6Dynamics.plot_telemetry(
     samples::Vector{TelemetrySample},
     cfg::VisualizationConfig;
     filename::AbstractString = "telemetry",

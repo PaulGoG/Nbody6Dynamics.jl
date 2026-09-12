@@ -290,6 +290,10 @@ function postprocess_external(
     )
     units in ("physical", "nbody") ||
         error("postprocess_external: units must be \"physical\" or \"nbody\"; got \"$units\"")
+    make_plots && _require_plotting(
+        :postprocess_external,
+        "Pass `make_plots = false` to read and check the output without figures.",
+    )
 
     # ── Scan ──
     scan = scan_output(dir)

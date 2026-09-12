@@ -37,7 +37,7 @@ Myr when `cfg.units == "physical"` (header AS scaling); N-body otherwise.
 
 Returns a vector of output file paths.
 """
-function animate_cluster(
+function Nbody6Dynamics.animate_cluster(
     snaps::Vector{Snapshot},
     cfg::VisualizationConfig;
     filename::AbstractString = "cluster_evolution",
@@ -189,7 +189,7 @@ Animate HR diagram evolution across stellar evolution snapshots.
 
 Returns the output file path.
 """
-function animate_hr(
+function Nbody6Dynamics.animate_hr(
     sevs::Vector{StellarEvolutionSnapshot},
     cfg::VisualizationConfig;
     filename::AbstractString = "hr_evolution_anim",
@@ -291,7 +291,7 @@ Animate Lagrangian radii evolution with a sweeping time cursor.
 
 Returns the output file path.
 """
-function animate_lagrangian(
+function Nbody6Dynamics.animate_lagrangian(
     lagr::LagrangianData,
     cfg::VisualizationConfig;
     filename::AbstractString = "lagrangian_anim",

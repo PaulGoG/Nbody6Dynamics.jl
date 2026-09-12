@@ -24,7 +24,7 @@ and, when classified, hard and soft) above the binary fraction
 fraction ``N_\\mathrm{hard} / N_\\mathrm{pairs}`` in per cent. The net change
 of the pair count is annotated in the upper panel.
 """
-function plot_binary_population(
+function Nbody6Dynamics.plot_binary_population(
     pop::BinaryPopulation,
     cfg::VisualizationConfig;
     filename::AbstractString = "binary_population",
@@ -178,7 +178,7 @@ the pairs are classed by the Heggie criterion, the class fractions are
 annotated, and the boundary semi-major axis of a pair of the mean
 component-mass product is marked.
 """
-function plot_binary_orbital_elements(
+function Nbody6Dynamics.plot_binary_orbital_elements(
     bev::BinaryEvolutionSnapshot,
     cfg::VisualizationConfig;
     m_mean::Real = NaN,
@@ -275,7 +275,7 @@ Histogram of ``\\log_{10}(P/\\mathrm{d})`` of the regularised pairs at the
 first epoch (filled) and, when more than one snapshot is given, at the last
 epoch (dashed outline), with the pair counts annotated.
 """
-function plot_binary_period_distribution(
+function Nbody6Dynamics.plot_binary_period_distribution(
     bevs::AbstractVector{BinaryEvolutionSnapshot},
     cfg::VisualizationConfig;
     filename::AbstractString = "binary_period_distribution",
