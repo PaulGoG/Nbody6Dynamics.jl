@@ -283,7 +283,11 @@ julia activate.jl
 julia scripts/run_gpu_validation.jl        # under tmux or nohup: the CPU reference of the 2 × 25k merger is the long stage
 ```
 
-`run_gpu_validation` runs four logged stages as separate Julia processes and collects everything to pull back under `runs/gpu_validation_<host>_<timestamp>/`: `HOST_INFO.toml` (GPU, driver, compute capabilities, CUDA path, `nvcc`, `gcc`, `gfortran`, glibc, the host compilers found for `-ccbin` and the verdict of the host-compiler probe, Julia, package commit), `suite.log` (the test suite with `NBODY6_GPU_TESTS=1`: CUDA build in a temporary tree, N = 1000 on one device, then on two when present), `gpu.log` (`gpu_pipeline.toml`), `cpu.log` (`cpu_pipeline.toml`), `bench.log` with the benchmark CSV and the `RUN_INFO.toml` and `telemetry.csv` of every benchmark run, and `VALIDATION.toml` (status, exit code and duration per stage, the run directories created). A failed stage does not stop the later ones; the benchmark stage is skipped, with the reason recorded, when a build tree it needs is missing. `--dry-run` writes the host record and the planned commands only; `--stages=suite,gpu` selects stages; `--n=`, `--threads=`, `--gpus="0;0,1"` and `--tcrit=` set the benchmark grid (the GPU lists default to device 0, plus devices 0 and 1 when two are visible). The same stages by hand:
+`run_gpu_validation` runs four logged stages as separate Julia processes and collects everything to pull back under `runs/gpu_validation_<machine>_<timestamp>/`: `HOST_INFO.toml` (GPU, driver, compute capabilities, CUDA path, `nvcc`, `gcc`, `gfortran`, glibc, the host compilers found for `-ccbin` and the verdict of the host-compiler probe, Julia, package commit), `suite.log` (the test suite with `NBODY6_GPU_TESTS=1`: CUDA build in a temporary tree, N = 1000 on one device, then on two when present), `gpu.log` (`gpu_pipeline.toml`), `cpu.log` (`cpu_pipeline.toml`), `bench.log` with the benchmark CSV and the `RUN_INFO.toml` and `telemetry.csv` of every benchmark run, and `VALIDATION.toml` (status, exit code and duration per stage, the run directories created). A failed stage does not stop the later ones; the benchmark stage is skipped, with the reason recorded, when a build tree it needs is missing.
+
+A stage is judged by what it produced, not only by how it exited. A pipeline stage that exits zero is recorded `incomplete`, with the reason, unless it also left a run directory carrying the `[pipeline] completed` marker: the run summary is written the moment the engine exits, so a process killed during post-processing or plotting leaves a directory that would otherwise pass inspection. A stage killed by a signal is recorded with that signal, its output kept as `<stage>.signal<N>.log`, and retried once.
+
+`<machine>` is the identity of the machine rather than its hostname: the hostname followed by compact CPU and GPU tags, as `[hardware] machine` in every run summary and host record. Hostnames are frequently not unique across a cloned workstation deployment, which would otherwise make the returned datasets indistinguishable. `--dry-run` writes the host record and the planned commands only; `--stages=suite,gpu` selects stages; `--n=`, `--threads=`, `--gpus="0;0,1"` and `--tcrit=` set the benchmark grid (the GPU lists default to device 0, plus devices 0 and 1 when two are visible). The same stages by hand:
 
 ```bash
 NBODY6_GPU_TESTS=1 julia --project=. -e 'using Pkg; Pkg.test()'
@@ -315,7 +319,7 @@ Each run gets a unique ID `{prefix}_YYYYMMDD_HHMMSS_{4hex}` (e.g. `run_20260325_
 ```
 runs/run_20260325_143022_a1f3/
 ├── config.toml          # frozen snapshot of the configuration used
-├── RUN_INFO.toml        # run summary: identity/timing/thread layout, commits, hardware fingerprint, telemetry summary, file inventory
+├── RUN_INFO.toml        # run summary: identity/timing/thread layout, commits, hardware fingerprint, telemetry summary, file inventory, pipeline completion
 ├── telemetry.csv        # hardware telemetry time series (when telemetry_interval > 0)
 ├── nbody6dynamics.log   # teed pipeline log
 ├── output/              # all simulation artefacts

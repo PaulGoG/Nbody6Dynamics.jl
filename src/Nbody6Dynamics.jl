@@ -532,10 +532,16 @@ function run_pipeline(
     base_dir::AbstractString = _PROJECT_ROOT,
     run_id::AbstractString = "",
 )::Dict{Symbol,Any}
+    # Phases actually performed, stamped into RUN_INFO.toml at the end so an
+    # interrupted pipeline is distinguishable from a finished one.
+    t_pipeline = time()
+    phases = String[]
+
     # ── Phase 1: Install / Build ──
     if cfg.install.enabled
         @info "Phase 1: Installing Nbody6++..."
         setup_nbody6(cfg; base_dir = base_dir)
+        push!(phases, "install")
     end
 
     # ── Phase 1.5: Merger IC Generation ──
@@ -564,6 +570,7 @@ function run_pipeline(
 
         merger_result = generate_merger_ic(merger_cfg; output_dir = ic_dir)
         @info "  Merger ICs written to: $ic_dir"
+        push!(phases, "merger_ic")
     end
 
     # ── Phase 2: Simulation ──
@@ -577,6 +584,7 @@ function run_pipeline(
             @info "Phase 2: Running simulation..."
             run_dir = run_simulation(cfg; base_dir = base_dir, run_id = run_id)
         end
+        push!(phases, "simulation")
     else
         @info "Phase 2: Simulation skipped (run_test = false)"
         if isempty(run_dir) && isempty(cfg.postprocess.data_dir)
@@ -590,9 +598,11 @@ function run_pipeline(
         if !isempty(cfg.postprocess.data_dir)
             @info "Phase 3: Post-processing external data: $(cfg.postprocess.data_dir)"
             results = postprocess(cfg)
+            push!(phases, "postprocess")
         elseif !isempty(run_dir)
             @info "Phase 3: Post-processing run: $(basename(run_dir))"
             results = postprocess(cfg; run_dir = run_dir)
+            push!(phases, "postprocess")
         else
             @warn "Phase 3: No data to post-process (no run_dir and no data_dir)"
         end
@@ -615,8 +625,10 @@ function run_pipeline(
             ""
         end
         generate_plots(results, cfg; run_dir = plot_run_dir)
+        push!(phases, "plots")
     end
 
+    _stamp_pipeline_completion(run_dir, phases, time() - t_pipeline)
     return results
 end
 

@@ -1135,6 +1135,130 @@ format = "pdf"
     end
 
     # =====================================================================
+    @testset "Machine identity" begin
+        # Model strings are stripped of vendor and marketing boilerplate.
+        @test Nbody6Dynamics._hardware_tag("13th Gen Intel(R) Core(TM) i9-13900KS") == "i9-13900KS"
+        @test Nbody6Dynamics._hardware_tag("AMD Ryzen 9 9950X 16-Core Processor") == "Ryzen-9-9950X"
+        @test Nbody6Dynamics._hardware_tag("NVIDIA GeForce RTX 5090, 32607 MiB, 610.57.04, 12.0") ==
+              "RTX-5090"
+        @test Nbody6Dynamics._hardware_tag("Tesla T4, 15360 MiB, 575.57.08, 7.5") == "Tesla-T4"
+        @test Nbody6Dynamics._hardware_tag("") == ""
+        @test Nbody6Dynamics._hardware_tag("unavailable") == ""
+        @test length(Nbody6Dynamics._hardware_tag("A"^40)) ≤ 16
+
+        # The whole point: one hostname, three machines, three identities.
+        shared = "workstation-01"
+        ids = map((
+            ("AMD Ryzen 9 9950X 16-Core Processor", "NVIDIA GeForce RTX 5090, 32607 MiB"),
+            ("13th Gen Intel(R) Core(TM) i9-13900KS", "NVIDIA GeForce RTX 5070 Ti, 16303 MiB"),
+            ("13th Gen Intel(R) Core(TM) i9-13900KS", "AMD Radeon Pro W7900, 46068 MiB"),
+        )) do (cpu, gpu)
+            Nbody6Dynamics._machine_id(Dict("host" => shared, "cpu_model" => cpu, "gpu" => gpu))
+        end
+        @test length(unique(ids)) == 3
+        @test all(startswith(id, shared) for id in ids)
+        @test ids[1] == "workstation-01-Ryzen-9-9950X-RTX-5090"
+
+        # Only the first device of a multi-GPU record contributes.
+        @test Nbody6Dynamics._machine_id(
+            Dict(
+                "host" => "h",
+                "cpu_model" => "unknown",
+                "gpu" => "Tesla T4, 15360 MiB; Tesla T4, 15360 MiB",
+            ),
+        ) == "h-Tesla-T4"
+
+        # Without usable hardware strings the identity degrades to the hostname.
+        @test Nbody6Dynamics._machine_id(Dict("host" => "plain")) == "plain"
+        @test Nbody6Dynamics._machine_id(
+            Dict("host" => "plain", "cpu_model" => "unknown", "gpu" => "unavailable"),
+        ) == "plain"
+
+        # The fingerprint always carries one.
+        fp = Nbody6Dynamics._hardware_fingerprint()
+        @test haskey(fp, "machine")
+        @test startswith(fp["machine"], fp["host"])
+    end
+
+    # =====================================================================
+    @testset "Pipeline completion marker" begin
+        mktempdir() do dir
+            # No summary to amend.
+            @test Nbody6Dynamics._stamp_pipeline_completion(dir, ["simulation"], 1.0) == false
+            @test Nbody6Dynamics._pipeline_completed(dir) == false
+            @test Nbody6Dynamics._stamp_pipeline_completion("", ["simulation"], 1.0) == false
+
+            # A summary written by the engine phase alone is not "completed":
+            # this is the state the three killed stages of 2026-09-11 left.
+            info = joinpath(dir, "RUN_INFO.toml")
+            open(info, "w") do io
+                Nbody6Dynamics.TOML.print(
+                    io,
+                    Dict("run" => Dict("id" => "merger_cpu_x", "segments" => 1)),
+                )
+            end
+            @test Nbody6Dynamics._pipeline_completed(dir) == false
+
+            @test Nbody6Dynamics._stamp_pipeline_completion(
+                dir,
+                ["merger_ic", "simulation", "postprocess", "plots"],
+                12.25,
+            )
+            @test Nbody6Dynamics._pipeline_completed(dir)
+
+            # Amending preserves what the run summary already held.
+            parsed = Nbody6Dynamics.TOML.parsefile(info)
+            @test parsed["run"]["id"] == "merger_cpu_x"
+            @test parsed["pipeline"]["phases"] ==
+                  ["merger_ic", "simulation", "postprocess", "plots"]
+            @test parsed["pipeline"]["elapsed_seconds"] ≈ 12.2 atol = 0.1
+
+            # Unreadable summary: false, not an exception.
+            write(info, "this is not TOML {{{")
+            @test Nbody6Dynamics._pipeline_completed(dir) == false
+        end
+    end
+
+    # =====================================================================
+    @testset "Validation stage completeness check" begin
+        mktempdir() do base
+            runs = joinpath(base, "runs")
+            mkpath(runs)
+            t0 = time()
+
+            # The suite and benchmark stages are judged by exit code alone.
+            @test Nbody6Dynamics._stage_incomplete(:suite, base, t0) === nothing
+            @test Nbody6Dynamics._stage_incomplete(:bench, base, t0) === nothing
+
+            # A pipeline stage that produced nothing at all.
+            reason = Nbody6Dynamics._stage_incomplete(:cpu, base, t0)
+            @test reason !== nothing
+            @test occursin("no run directory", reason)
+
+            # A run directory whose summary stops at the engine phase.
+            run_dir = joinpath(runs, "merger_cpu_20260911_194002_b4b0")
+            mkpath(run_dir)
+            open(joinpath(run_dir, "RUN_INFO.toml"), "w") do io
+                Nbody6Dynamics.TOML.print(
+                    io,
+                    Dict("run" => Dict("id" => "merger_cpu_20260911_194002_b4b0")),
+                )
+            end
+            reason = Nbody6Dynamics._stage_incomplete(:cpu, base, t0)
+            @test reason !== nothing
+            @test occursin("completed", reason)
+
+            # Once the pipeline stamps completion the stage is accepted.
+            @test Nbody6Dynamics._stamp_pipeline_completion(run_dir, ["simulation"], 1.0)
+            @test Nbody6Dynamics._stage_incomplete(:cpu, base, t0) === nothing
+
+            # Validation directories are not run directories.
+            mkpath(joinpath(runs, "gpu_validation_workstation-01_20260911_185714"))
+            @test Nbody6Dynamics._stage_incomplete(:cpu, base, t0) === nothing
+        end
+    end
+
+    # =====================================================================
     @testset "Source provenance stamp" begin
         # A tree deployed by file copy has no .git: the version of its
         # Project.toml stands in for the commit rather than "unknown".

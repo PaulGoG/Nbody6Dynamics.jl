@@ -590,6 +590,80 @@ end
 # ---------------------------------------------------------------------------
 
 """
+    _hardware_tag(text; limit = 16) -> String
+
+Compact, filesystem-safe tag for a CPU or GPU model string: vendor and
+marketing boilerplate removed, the remainder reduced to alphanumeric groups
+joined by `-` and truncated to `limit` characters. `""` for an empty or
+unknown model.
+
+# Example
+```julia-repl
+julia> Nbody6Dynamics._hardware_tag("13th Gen Intel(R) Core(TM) i9-13900KS")
+"i9-13900KS"
+
+julia> Nbody6Dynamics._hardware_tag("NVIDIA GeForce RTX 5090, 32607 MiB, 610.57.04, 12.0")
+"RTX-5090"
+```
+"""
+function _hardware_tag(text::AbstractString; limit::Int = 16)::String
+    # Only the model matters; the nvidia-smi record carries VRAM and driver too.
+    model = String(first(split(text, ',')))
+    isempty(strip(model)) && return ""
+    lowercase(strip(model)) == "unknown" && return ""
+    lowercase(strip(model)) == "unavailable" && return ""
+    for pattern in (
+        r"\((R|TM)\)"i,
+        r"\b\d+th Gen\b"i,
+        r"\bNVIDIA\b"i,
+        r"\bGeForce\b"i,
+        r"\bAMD\b"i,
+        r"\bIntel\b"i,
+        # Before the bare "Core": "16-Core Processor" must go whole.
+        r"\b\d+-Core\b"i,
+        r"\bCore\b"i,
+        r"\bProcessor\b"i,
+        r"\bCPU\b"i,
+        r"\bwith Max-Q Design\b"i,
+        r"@.*$",
+    )
+        model = replace(model, pattern => " ")
+    end
+    parts = filter(!isempty, split(model, r"[^A-Za-z0-9]+"))
+    isempty(parts) && return ""
+    tag = join(parts, "-")
+    return length(tag) > limit ? tag[1:limit] : tag
+end
+
+"""
+    _machine_id(fingerprint) -> String
+
+Machine identity for a fleet in which the hostname is not unique: the
+hostname followed by compact CPU and GPU tags. Several machines of a
+cloned workstation deployment can answer to one hostname while differing in
+CPU and GPU, which leaves the results they return indistinguishable. Falls
+back to the bare hostname when neither model is known.
+
+# Example
+```julia-repl
+julia> Nbody6Dynamics._machine_id(Dict("host" => "ws", "cpu_model" => "AMD Ryzen 9 9950X 16-Core Processor",
+                                       "gpu" => "NVIDIA GeForce RTX 5090, 32607 MiB, 610.57.04, 12.0"))
+"ws-Ryzen-9-9950X-RTX-5090"
+```
+"""
+function _machine_id(fingerprint::AbstractDict)::String
+    host = String(get(fingerprint, "host", "unknown-host"))
+    tags = filter(
+        !isempty,
+        [
+            _hardware_tag(String(get(fingerprint, "cpu_model", ""))),
+            _hardware_tag(String(first(split(String(get(fingerprint, "gpu", "")), ';')))),
+        ],
+    )
+    return isempty(tags) ? host : join(vcat(host, tags), "-")
+end
+
+"""
     _hardware_fingerprint(; gpu_probe = false) -> Dict{String,Any}
 
 Platform fingerprint for run metadata, using Julia's own introspection:
@@ -626,6 +700,8 @@ function _hardware_fingerprint(; gpu_probe::Bool = false)::Dict{String,Any}
         end
         d["gpu"] = isempty(gpu) ? "unavailable" : join(strip.(split(String(gpu), '\n')), "; ")
     end
+    # Hostnames are not unique across this fleet; `machine` is.
+    d["machine"] = _machine_id(d)
     return d
 end
 

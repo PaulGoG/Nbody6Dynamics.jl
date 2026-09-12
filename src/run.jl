@@ -940,3 +940,58 @@ function _write_run_summary(
     end
     return nothing
 end
+
+"""
+    _stamp_pipeline_completion(run_dir, phases, elapsed) -> Bool
+
+Record in `run_dir/RUN_INFO.toml` that the pipeline ran to its end, as
+`[pipeline]` with `completed = true`, the phases performed and the total
+wall time. Returns `false`, without raising, when there is no run directory
+or no summary to amend.
+
+A run summary is written as soon as the engine exits, so its presence says
+only that the simulation finished — post-processing and plotting come
+afterwards and a run killed in between leaves a summary that looks
+complete. Three stages of the 2026-09-11 fleet campaign died exactly there
+and were recorded as successes. This marker is what distinguishes a
+finished pipeline from an interrupted one, and
+[`_pipeline_completed`](@ref) is what reads it back.
+"""
+function _stamp_pipeline_completion(
+    run_dir::AbstractString,
+    phases::AbstractVector{<:AbstractString},
+    elapsed::Real,
+)::Bool
+    isempty(run_dir) && return false
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(info_path) || return false
+    d = TOML.parsefile(info_path)
+    d["pipeline"] = Dict{String,Any}(
+        "completed" => true,
+        "finished" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
+        "phases" => String.(phases),
+        "elapsed_seconds" => round(Float64(elapsed); digits = 1),
+    )
+    open(info_path, "w") do io
+        TOML.print(io, d)
+    end
+    return true
+end
+
+"""
+    _pipeline_completed(run_dir) -> Bool
+
+Whether `run_dir/RUN_INFO.toml` carries the `[pipeline] completed` marker of
+[`_stamp_pipeline_completion`](@ref). `false` for a missing directory,
+a missing summary, an unreadable one, or a run that predates the marker.
+"""
+function _pipeline_completed(run_dir::AbstractString)::Bool
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(info_path) || return false
+    return try
+        pipeline_table = get(TOML.parsefile(info_path), "pipeline", Dict{String,Any}())
+        get(pipeline_table, "completed", false) === true
+    catch
+        false
+    end
+end

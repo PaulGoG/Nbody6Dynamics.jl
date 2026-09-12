@@ -12,7 +12,9 @@ const _VALIDATION_STAGES = (:suite, :gpu, :cpu, :bench)
                        dry_run = false) -> String
 
 Run the acceptance sequence of a CUDA host and collect everything under
-`<base_dir>/runs/gpu_validation_<host>_<timestamp>/`: `HOST_INFO.toml`
+`<base_dir>/runs/gpu_validation_<machine>_<timestamp>/`, `<machine>` being
+the hostname with compact CPU and GPU tags ([`_machine_id`](@ref)) so that
+machines sharing a hostname stay distinguishable: `HOST_INFO.toml`
 (hardware fingerprint with the GPU query, compute capabilities, CUDA path
 and `nvcc` release, `gcc`, `gfortran` and glibc versions, the host
 compilers `nvcc` can be offered and the verdict of the host-compiler probe,
@@ -36,6 +38,13 @@ Each stage is a separate Julia process whose output is echoed and written
 to its log with terminal escape sequences removed; a failing stage is
 recorded and the later stages still run. `VALIDATION.toml` is rewritten
 after every stage, so an interrupted sequence leaves a readable record.
+
+A stage's verdict rests on its artefacts as well as its exit code: a `:gpu`
+or `:cpu` stage that exits zero without leaving a run directory marked
+`[pipeline] completed` is recorded `incomplete` with the reason
+([`_stage_incomplete`](@ref)), because the run summary is written when the
+engine exits and a process killed during post-processing or plotting would
+otherwise pass.
 With `dry_run = true` the host record and the planned commands are written
 and nothing is executed. Returns the validation directory.
 
@@ -70,14 +79,17 @@ function run_gpu_validation(;
 
     t_start = time()
     stamp = Dates.format(Dates.now(), "yyyymmdd_HHMMSS")
-    out_dir = joinpath(base_dir, "runs", "gpu_validation_$(_safe_hostname())_$stamp")
+    # The host record is taken first: its machine identity names the directory,
+    # because the hostname alone does not distinguish the machines of a fleet.
+    host = _validation_host_record(base_dir)
+    out_dir = joinpath(base_dir, "runs", "gpu_validation_$(_safe_name(host["machine"]))_$stamp")
     mkpath(out_dir)
 
-    host = _validation_host_record(base_dir)
     open(joinpath(out_dir, "HOST_INFO.toml"), "w") do io
         TOML.print(io, host)
     end
     @info "GPU validation directory: $out_dir"
+    @info "Machine: $(host["machine"])"
     @info "Host: $(host["host"]); GPU: $(host["gpu"]); nvcc: $(host["nvcc_release"])"
     @info "nvcc host-compiler probe: $(first(eachline(IOBuffer(host["nvcc_probe"]))))" flags =
         host["nvcc_host_flags"]
@@ -114,11 +126,22 @@ function run_gpu_validation(;
             entry["exit_code"] = code
             attempts > 1 && (entry["attempts"] = attempts)
             code ≥ 128 && (entry["signal"] = code - 128)
-            entry["status"] = code == 0 ? "passed" : "failed"
             entry["seconds"] = round(time() - t0; digits = 1)
             entry["log"] = basename(log)
-            code == 0 ? (@info "Stage :$s passed ($(_format_elapsed(time() - t0)))") :
-            (@warn "Stage :$s failed with exit code $code; see $(basename(log))")
+            # A zero exit code is necessary but not sufficient: a pipeline
+            # stage killed after its engine finished leaves a run directory
+            # that looks complete. Demand the completion marker as well.
+            incomplete = code == 0 ? _stage_incomplete(s, base_dir, t0) : nothing
+            entry["status"] =
+                code != 0 ? "failed" : incomplete === nothing ? "passed" : "incomplete"
+            incomplete === nothing || (entry["reason"] = incomplete)
+            if code != 0
+                @warn "Stage :$s failed with exit code $code; see $(basename(log))"
+            elseif incomplete !== nothing
+                @warn "Stage :$s exited 0 but did not finish: $incomplete; see $(basename(log))"
+            else
+                @info "Stage :$s passed ($(_format_elapsed(time() - t0)))"
+            end
         end
         summary["results"][String(s)] = entry
         _write_validation_summary(out_dir, summary)
@@ -154,8 +177,38 @@ function _stage_prerequisite(stage::Symbol, base_dir::AbstractString)::Union{Not
            " (the :cpu and :gpu stages produce them)"
 end
 
-"""Host name with the characters outside `[A-Za-z0-9_-]` replaced by `_`, for a directory name."""
-_safe_hostname() = replace(gethostname(), r"[^A-Za-z0-9_-]" => "_")
+"""
+    _stage_incomplete(stage, base_dir, t0) -> Union{Nothing,String}
+
+`nothing` when a stage that exited zero also left the artefacts it is
+supposed to produce, otherwise the reason it did not. The `:gpu` and `:cpu`
+stages must each leave one run directory under `base_dir/runs` started at or
+after `t0` and carrying the `[pipeline] completed` marker; `:suite` and
+`:bench` are judged by their exit code alone, the benchmark because
+[`_collect_bench_artefacts`](@ref) reports what it gathered.
+
+An exit code is not enough on its own. In the fleet campaign of 2026-09-11
+three pipeline stages were killed after the engine had finished — one
+mid-integration, two while plotting — and every one of them was recorded as
+a success because the run summary had already been written.
+"""
+function _stage_incomplete(stage::Symbol, base_dir::AbstractString, t0::Real)::Union{Nothing,String}
+    stage in (:gpu, :cpu) || return nothing
+    runs_dir = joinpath(base_dir, "runs")
+    isdir(runs_dir) || return "no runs directory under $(basename(base_dir))/runs"
+    candidates = filter(readdir(runs_dir; join = true)) do d
+        isdir(d) && !startswith(basename(d), "gpu_validation_") && mtime(d) ≥ t0 - 1
+    end
+    isempty(candidates) && return "the stage left no run directory under runs/"
+    finished = filter(_pipeline_completed, candidates)
+    isempty(finished) || return nothing
+    newest = basename(argmax(mtime, candidates))
+    return "runs/$newest has no [pipeline] completed marker: the pipeline was " *
+           "interrupted after the engine exited (post-processing or plotting)"
+end
+
+"""A name with the characters outside `[A-Za-z0-9_-]` replaced by `_`, for a directory name."""
+_safe_name(name::AbstractString) = replace(String(name), r"[^A-Za-z0-9_-]" => "_")
 
 """
     _validation_host_record(base_dir) -> Dict{String,Any}
