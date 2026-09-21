@@ -40,7 +40,7 @@ results = run_pipeline(cfg)
 ## 2. Prerequisites
 
 - **Linux** (tested on Fedora and Ubuntu)
-- **Julia 1.10+** through [juliaup](https://github.com/JuliaLang/juliaup); the tracked Manifests were resolved with Julia 1.13
+- **Julia 1.10+** through [juliaup](https://github.com/JuliaLang/juliaup); development and the validated hosts run Julia 1.13. Manifests are not under version control: each environment resolves from its `Project.toml` on first activation, and every run stores the manifest it resolved as `environment_manifest.toml`
 - **GCC toolchain**: `gcc`, `g++`, `gfortran`, `make`
 - **Git** (for cloning the simulation code)
 

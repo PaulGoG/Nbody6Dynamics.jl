@@ -2,10 +2,11 @@
 # output. It is the package plus a Makie backend: the figure routines are a
 # package extension, so the pipeline scripts — which all end in figures — name
 # CairoMakie here rather than in the package itself. The package is developed
-# by a path relative to this directory so that the tracked Manifest stays
-# portable across machines. The scripts under scripts/ include this file; on a
-# new machine `julia scripts/activate.jl` bootstraps the environment on its
-# own (expect a few minutes the first time: the plotting stack precompiles).
+# by a path relative to this directory, so the environment resolves against
+# the local source on any machine. The scripts under scripts/ include this
+# file; on a new machine `julia scripts/activate.jl` bootstraps the
+# environment on its own (expect a few minutes the first time: the plotting
+# stack precompiles).
 using Pkg
 Pkg.activate(@__DIR__; io = devnull)
 cd(@__DIR__) do

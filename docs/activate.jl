@@ -1,6 +1,6 @@
 # Activates and instantiates the documentation environment without console
-# output. The package is developed by a path relative to this directory so
-# that the tracked Manifest stays portable across machines. make.jl includes
+# output. The package is developed by a path relative to this directory, so
+# the environment resolves against the local source on any machine. make.jl includes
 # this file; on a new machine `julia docs/activate.jl` bootstraps the
 # environment on its own.
 using Pkg

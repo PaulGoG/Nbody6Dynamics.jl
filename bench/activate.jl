@@ -1,6 +1,6 @@
 # Activates and instantiates the benchmark environment without console
-# output. The package is developed by a path relative to this directory so
-# that the tracked Manifest stays portable across machines. The benchmark
+# output. The package is developed by a path relative to this directory, so
+# the environment resolves against the local source on any machine. The benchmark
 # scripts include this file; on a new machine `julia bench/activate.jl`
 # bootstraps the environment on its own.
 using Pkg
