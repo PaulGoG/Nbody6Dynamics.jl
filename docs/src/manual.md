@@ -26,7 +26,7 @@
 2. **Generate merger initial conditions** (optional; see [Multi-Cluster Merger Simulations](@ref))
 3. **Execute** the simulation with proper environment setup
 4. **Parse** output files into Julia data structures
-5. **Generate** publication-quality plots and GIF animations
+5. **Generate** figures and GIF animations
 
 Everything is driven by a single `config.toml`; every parsed key and its default is listed below. The single entry point is:
 
@@ -53,10 +53,10 @@ Optional, depending on config: MPI (`mpicc`, `mpif90`, `mpirun`), CUDA toolkit (
 ```bash
 cd Nbody6Dynamics
 julia activate.jl                                   # resolves, instantiates and precompiles the package environment
-julia --project=. -e 'using Pkg; Pkg.test()'
+julia -e 'include("activate.jl"); Pkg.test()'
 ```
 
-`activate.jl` activates and instantiates the package environment silently; `docs/activate.jl` and `bench/activate.jl` do the same for the documentation and benchmark environments, developing the package by a relative path. The scripts under `scripts/`, `docs/` and `bench/` include their environment's activation script, so they run without a `--project` flag. The first `using Nbody6Dynamics` after an install or a source change precompiles the package together with a small workload (configuration parsing, the diagnostics reader, a merger initial-condition generation), so those paths run compiled in every later session.
+`activate.jl` activates and instantiates the package environment silently; `docs/activate.jl` and `bench/activate.jl` do the same for the documentation and benchmark environments, developing the package by a relative path. The scripts under `scripts/`, `docs/` and `bench/` include their environment's activation script, so they run without a project flag. The first `using Nbody6Dynamics` after an install or a source change precompiles the package together with a small workload (configuration parsing, the diagnostics reader, a merger initial-condition generation), so those paths run compiled in every later session.
 
 ---
 
@@ -290,7 +290,7 @@ A stage is judged by what it produced, not only by how it exited. A pipeline sta
 `<machine>` is the identity of the machine rather than its hostname: the hostname followed by compact CPU and GPU tags, as `[hardware] machine` in every run summary and host record. Hostnames are frequently not unique across a cloned workstation deployment, which would otherwise make the returned datasets indistinguishable. `--dry-run` writes the host record and the planned commands only; `--stages=suite,gpu` selects stages; `--n=`, `--threads=`, `--gpus="0;0,1"` and `--tcrit=` set the benchmark grid (the GPU lists default to device 0, plus devices 0 and 1 when two are visible). The same stages by hand:
 
 ```bash
-NBODY6_GPU_TESTS=1 julia --project=. -e 'using Pkg; Pkg.test()'
+NBODY6_GPU_TESTS=1 julia -e 'include("activate.jl"); Pkg.test()'
 julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml
 julia scripts/run_setup.jl input_files/gpu/cpu_pipeline.toml
 NBODY6_GPU_BACKEND=backend/Nbody6PPGPU-beijing-gpu julia bench/gpu_scaling.jl 20000,50000,100000 4,8 "0" 0.25   # "0;0,1" with two devices
@@ -520,7 +520,7 @@ using CairoMakie
 using Nbody6Dynamics
 ```
 
-The package itself declares no plotting dependency. A headless host therefore installs 109 packages instead of 278 and never fetches or precompiles Cairo, Pango, GLib, HarfBuzz or the font artifacts: initial conditions, engine build, integration, readers, diagnostics, sweeps and benchmarks are all backend-free. The distinction is not cosmetic — on a compute server whose system GLib is older than the artifact one, the plotting stack is exactly what fails to load, and before the split it took the numerical work down with it.
+The package itself declares no plotting dependency. A headless host therefore never fetches or precompiles Cairo, Pango, GLib, HarfBuzz or the font artifacts: initial conditions, engine build, integration, readers, diagnostics, sweeps and benchmarks are all backend-free. The distinction matters on a compute server whose system GLib is older than the artifact one: there the plotting stack is what fails to load, and the numerical work is unaffected by it.
 
 Consequences to know:
 

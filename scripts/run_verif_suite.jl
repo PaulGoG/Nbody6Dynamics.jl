@@ -3,7 +3,7 @@
 # Verification suite runner — launches three targets in-process via
 # run_pipeline(cfg), the only entry point that handles merger mode correctly.
 #
-#   julia --project=. scripts/run_verif_suite.jl
+#   julia scripts/run_verif_suite.jl
 # =============================================================================
 
 const PROJ = normpath(joinpath(@__DIR__, ".."))

@@ -4,7 +4,7 @@
 # =============================================================================
 #
 # Usage:
-#   julia --project=path/to/Nbody6Dynamics scripts/run_sweep.jl sweep.toml [--dry-run]
+#   julia scripts/run_sweep.jl sweep.toml [--dry-run]
 #
 # Prepares one directory per grid point × seed, runs the points as
 # concurrent worker processes (`run_sweep`), writes sweep_index.toml and

@@ -4,15 +4,14 @@
 # =============================================================================
 #
 # Usage:
-#   julia --project=path/to/Nbody6Dynamics scripts/run_setup.jl [config.toml]
+#   julia scripts/run_setup.jl [config.toml]
 #
 # If no config path is given, it defaults to config.toml in the project root.
 #
 # This script is a thin wrapper around `run_pipeline`, which is the single
 # orchestrator handling every phase (install → merger ICs → simulation →
-# post-processing → plots) from the config flags. Do not re-implement phase
-# logic here — a previous copy of this script did, silently skipping the
-# merger phase.
+# post-processing → plots) from the config flags. Phase logic stays there, so
+# every entry point selects the same phases from the same flags.
 
 include(joinpath(@__DIR__, "activate.jl"))
 
