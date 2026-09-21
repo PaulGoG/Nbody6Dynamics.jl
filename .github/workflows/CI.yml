@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ['1.10', '1']   # LTS + current stable
+        version: ['1.13', '1']   # compat floor + current stable; add the LTS once the suite has passed on it
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
