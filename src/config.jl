@@ -39,8 +39,7 @@ function save_config(cfg::Nbody6Config, path::AbstractString)
         "visualization" => _struct_to_dict(cfg.visualization),
         "merger" => _struct_to_dict(cfg.merger),
     )
-    # TOML cannot serialize Tuples or nested structs — convert explicitly
-    d["visualization"]["figsize"] = collect(d["visualization"]["figsize"])
+    # TOML cannot serialize nested structs — convert explicitly
     d["visualization"]["style"] = _struct_to_dict(cfg.visualization.style)
     open(path, "w") do io
         TOML.print(io, d)
@@ -122,24 +121,24 @@ function _parse_merger_pipeline(d::Dict)
 end
 
 function _parse_visualization(d::Dict)
-    fs = get(d, "figsize", [8.0, 6.0])
     st = get(d, "style", Dict{String,Any}())
     style = PlotStyle(;
-        marker_budget = Float64(get(st, "marker_budget", 18000.0)),
-        marker_min = Float64(get(st, "marker_min", 4.0)),
-        marker_max = Float64(get(st, "marker_max", 20.0)),
+        marker_budget = Float64(get(st, "marker_budget", 27000.0)),
+        marker_min = Float64(get(st, "marker_min", 6.0)),
+        marker_max = Float64(get(st, "marker_max", 30.0)),
         q_log_threshold = Float64(get(st, "q_log_threshold", 10.0)),
         q_floor = Float64(get(st, "q_floor", 1e-3)),
         zoom_frac = Float64(get(st, "zoom_frac", 0.15)),
         anim_fps = Int(get(st, "anim_fps", 0)),
         anim_target_seconds = Float64(get(st, "anim_target_seconds", 12.0)),
+        anim_px_per_unit = Float64(get(st, "anim_px_per_unit", 1.4)),
     )
     VisualizationConfig(;
         enabled = get(d, "enabled", true),
         format = get(d, "format", "pdf"),
         dpi = get(d, "dpi", 300),
-        column = get(d, "column", "single"),
-        figsize = (Float64(fs[1]), Float64(fs[2])),
+        export_width = Float64(get(d, "export_width", 6.5)),
+        column = get(d, "column", ""),
         units = get(d, "units", "physical"),
         output_dir = get(d, "output_dir", "plots"),
         style = style,
@@ -265,8 +264,8 @@ function _validate(cfg::Nbody6Config)
     vis.units in ("physical", "nbody") ||
         error("config: visualization.units must be \"physical\" or \"nbody\"; got \"$(vis.units)\"")
     vis.dpi ≥ 72 || error("config: visualization.dpi must be ≥ 72; got $(vis.dpi)")
-    (vis.figsize[1] > 0 && vis.figsize[2] > 0) ||
-        error("config: visualization.figsize entries must be > 0; got $(vis.figsize)")
+    vis.export_width > 0 ||
+        error("config: visualization.export_width must be > 0; got $(vis.export_width)")
 
     # [visualization.style]
     st.marker_budget > 0 ||
@@ -283,6 +282,9 @@ function _validate(cfg::Nbody6Config)
         "config: visualization.style.zoom_frac must satisfy 0 < zoom_frac ≤ 1; got $(st.zoom_frac)",
     )
     st.anim_fps ≥ 0 || error("config: visualization.style.anim_fps must be ≥ 0; got $(st.anim_fps)")
+    st.anim_px_per_unit > 0 || error(
+        "config: visualization.style.anim_px_per_unit must be > 0; got $(st.anim_px_per_unit)",
+    )
     st.anim_target_seconds > 0 || error(
         "config: visualization.style.anim_target_seconds must be > 0; got $(st.anim_target_seconds)",
     )

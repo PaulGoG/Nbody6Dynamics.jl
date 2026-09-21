@@ -54,13 +54,8 @@ function make_base_cfg()
             "snapshot_format" => "conf3",
             "snapshot_pattern" => "conf.3_*",
         ),
-        "visualization" => Dict(
-            "enabled" => true,
-            "format" => "png",
-            "dpi" => 300,
-            "output_dir" => "plots",
-            "figsize" => [8, 6],
-        ),
+        "visualization" =>
+            Dict("enabled" => true, "format" => "png", "dpi" => 300, "output_dir" => "plots"),
     )
 end
 

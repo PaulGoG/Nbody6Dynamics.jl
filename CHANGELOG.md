@@ -29,6 +29,20 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   every panel. `plot_hr(sevs, vis; epoch, bevs)` is the run-level method;
   `plot_hr(sev, vis)` remains for a single snapshot. `plot_core_mass` uses the
   same class colours.
+- Figures are composed in layout units and exported at a printed width. A
+  single panel is a 900 × 600 canvas, each further stacked panel adds 350, an
+  auxiliary strip 180, and grids of panels are 1200 wide or more; the theme is
+  26-unit labels and legends over 22-unit tick labels, 3-unit data lines,
+  14-unit markers with a 1.5-unit edge, frameless horizontal legends. The
+  canvas width becomes `[visualization] export_width` inches on the page
+  (default 6.5), so text and line weights keep their proportions and the file
+  enters a document at native size; `column = "single"` or `"double"` is a
+  journal override of that width, and `figsize` is gone. Raster output is at
+  least 4 pixels per layout unit; animation frames follow
+  `[visualization.style] anim_px_per_unit`. The default marker sizes are
+  rescaled to the larger canvas. Every figure routine draws inside
+  `with_theme(publication_theme())`: the session's theme is neither needed
+  nor changed.
 - The resolved manifests are no longer under version control.
 - Julia 1.13 is the compat floor: it is the version the package is developed
   and validated on. The auxiliary environments take the package through

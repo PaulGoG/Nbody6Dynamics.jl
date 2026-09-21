@@ -142,9 +142,9 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 |--------------|---------|---------|-------------|
 | `enabled`    | Bool    | `true`  | Enable plot generation |
 | `format`     | String  | `"pdf"` | Static plot format; one of `"pdf"`, `"svg"`, `"png"` (animations are always GIF) |
-| `dpi`        | Int     | `300`   | Resolution for raster formats; must be ≥ 72 |
-| `column`     | String  | `"single"` | Journal-width preset; one of `"single"`, `"double"`, `""` (empty = free-form `figsize`) |
-| `figsize`    | [Float] | `[8.0, 6.0]` | Figure size in inches `[width, height]`; both entries must be > 0 |
+| `dpi`        | Int     | `300`   | Least resolution of raster output at the printed width; must be ≥ 72 (raster exports are never coarser than 4 pixels per layout unit) |
+| `export_width` | Float | `6.5`   | Printed width of an export in inches; must be > 0. Figures are composed on canvases fixed by their type (a single panel is 900 × 600 layout units) and exported so that the canvas width becomes this width, text and line weights scaling with it; the export enters a document at native size |
+| `column`     | String  | `""`    | Journal target, one of `""`, `"single"` (3.4 in), `"double"` (7.05 in): exports at that column width instead of `export_width` |
 | `units`      | String  | `"physical"` | Axis units; one of `"physical"`, `"nbody"` |
 | `output_dir` | String  | `"plots"` | Plot directory, relative to each run directory |
 
@@ -154,14 +154,15 @@ Presentation knobs collected in the `PlotStyle` struct (`cfg.visualization.style
 
 | Key                   | Type  | Default   | Description |
 |-----------------------|-------|-----------|-------------|
-| `marker_budget`       | Float | `18000.0` | Scatter marker size is `clamp(marker_budget/N, marker_min, marker_max)`; must be > 0 |
-| `marker_min`          | Float | `4.0`     | Lower clamp bound for the scatter marker size [pt]; must satisfy `0 < marker_min ≤ marker_max` |
-| `marker_max`          | Float | `20.0`    | Upper clamp bound for the scatter marker size [pt]; must be ≥ `marker_min` |
+| `marker_budget`       | Float | `27000.0` | Scatter marker size is `clamp(marker_budget/N, marker_min, marker_max)`; must be > 0 |
+| `marker_min`          | Float | `6.0`     | Lower clamp bound for the scatter marker size [layout units]; must satisfy `0 < marker_min ≤ marker_max` |
+| `marker_max`          | Float | `30.0`    | Upper clamp bound for the scatter marker size [layout units]; must be ≥ `marker_min` |
 | `q_log_threshold`     | Float | `10.0`    | Switch virial-ratio axes to log scale when `max(Q)` exceeds this; must be > 0 |
 | `q_floor`             | Float | `1e-3`    | Clamp floor for the virial ratio on *log-scale* axes only; must satisfy `0 < q_floor < 1` |
 | `zoom_frac`           | Float | `0.15`    | Extent-ratio threshold for adaptive per-panel zoom in snapshot evolution plots and cluster animations; must satisfy `0 < zoom_frac ≤ 1` |
 | `anim_fps`            | Int   | `0`       | Animation frame rate; `0` selects automatically from frame count; must be ≥ 0 |
 | `anim_target_seconds` | Float | `12.0`    | Target GIF duration used by the automatic FPS selection; must be > 0 |
+| `anim_px_per_unit`    | Float | `1.4`     | Pixels per layout unit of animation frames (a single-panel canvas is 900 × 600 units); must be > 0 |
 
 ### `[merger]`
 

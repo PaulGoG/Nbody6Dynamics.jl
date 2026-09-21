@@ -62,7 +62,7 @@ stellar_evo_pattern = "sev.83_*"
 [visualization]
 enabled = false
 dpi = 150
-figsize = [10, 8]
+export_width = 5.0
 """,
         )
 
@@ -81,7 +81,7 @@ figsize = [10, 8]
         @test cfg.postprocess.read_binary_evo == true
         @test cfg.postprocess.binary_evo_pattern == "bev.82_*"
         @test cfg.visualization.dpi == 150
-        @test cfg.visualization.figsize == (10, 8)
+        @test cfg.visualization.export_width == 5.0
         @test cfg.install.source_url == "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
     end
 
@@ -109,7 +109,7 @@ enabled = true
 
 [visualization]
 dpi = 300
-figsize = [12, 9]
+export_width = 7.0
 """,
         )
 
@@ -126,7 +126,7 @@ figsize = [12, 9]
         @test cfg2.simulation.omp_threads == 6
         @test cfg2.simulation.telemetry_interval == 2.5
         @test cfg2.visualization.dpi == cfg.visualization.dpi
-        @test cfg2.visualization.figsize == cfg.visualization.figsize
+        @test cfg2.visualization.export_width == cfg.visualization.export_width
     end
 
     # =====================================================================
@@ -209,7 +209,7 @@ format = "pdf"
             ("column", "[visualization]\ncolumn = \"triple\"\n", "visualization.column"),
             ("units", "[visualization]\nunits = \"cgs\"\n", "visualization.units"),
             ("dpi", "[visualization]\ndpi = 50\n", "visualization.dpi"),
-            ("figsize", "[visualization]\nfigsize = [0.0, 6.0]\n", "visualization.figsize"),
+            ("export_width", "[visualization]\nexport_width = 0.0\n", "visualization.export_width"),
             (
                 "marker_budget",
                 "[visualization.style]\nmarker_budget = 0.0\n",
@@ -2886,7 +2886,6 @@ $(extra)
             output_dir = joinpath(TESTDIR, "test_plots"),
             format = "png",
             dpi = 72,
-            figsize = (6, 4),
         )
 
         # --- Snapshot plots ---
@@ -2982,12 +2981,7 @@ $(extra)
         Nbody6Dynamics.set_publication_theme!()
 
         plots_dir = joinpath(TESTDIR, "test_plots_f23")
-        vis = VisualizationConfig(;
-            output_dir = plots_dir,
-            format = "png",
-            dpi = 72,
-            figsize = (6, 4),
-        )
+        vis = VisualizationConfig(; output_dir = plots_dir, format = "png", dpi = 72)
 
         # --- Escaper plots ---
         escs = [
@@ -3275,7 +3269,6 @@ $(extra)
             output_dir = joinpath(TESTDIR, "test_anims"),
             format = "png",
             dpi = 72,
-            figsize = (4, 3),
         )
 
         # Build two simple test snapshots
@@ -4955,46 +4948,104 @@ rbar = 1.0
     end
 
     # =====================================================================
-    @testset "Multi-panel canvas stays one column wide" begin
-        for col in ("single", "double")
+    @testset "Canvases in layout units, export at the printed width" begin
+        # The canvas is fixed by the figure type; the configuration only
+        # sets the width it is printed at.
+        for col in ("", "single", "double")
             cfg = VisualizationConfig(; column = col)
-            pw, ph = MakieExt._figsize_px(cfg)
-            # Grids keep the column width whatever the column count; stacks are unchanged
-            @test MakieExt._fig_multipanel(cfg, 2, 3)[1] == pw
-            @test MakieExt._fig_multipanel(cfg, 1, 2; inner_ticks = false)[1] == pw
-            @test MakieExt._fig_multipanel(cfg, 2, 1) == (pw, 2 * ph + MakieExt._MULTIPANEL_VGAP)
-            # Three boxes of the preset aspect, compact gaps, one decoration strip each way
-            w3, h3 = MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false)
-            gap = MakieExt._MULTIPANEL_GAP_COMPACT
-            strip = MakieExt._AXIS_PROTRUSION
-            box_w = (pw - strip - 2 * gap) / 3
-            @test box_w == MakieExt._multipanel_box_width(cfg, 3; inner_ticks = false)
-            @test h3 == round(Int, 2 * box_w * ph / pw + gap + strip)
-            @test MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false, extra_height = 30)[2] ==
-                  round(Int, 2 * box_w * ph / pw + gap + strip + 30)
-            # Square panels are taller; a reserved colorbar column narrows them
-            @test MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false, panel_aspect = 1.0)[2] >
-                  h3
-            @test MakieExt._fig_multipanel(
-                cfg,
-                2,
-                3;
-                inner_ticks = false,
-                panel_aspect = 1.0,
-                extra_width = 110,
-            )[2] < MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false, panel_aspect = 1.0)[2]
+            @test MakieExt._figsize_px(cfg) == (900, 600)
+            @test MakieExt._fig_two_panel(cfg) == (900, 950)
+            @test MakieExt._fig_with_colorbar(cfg) == (900 + MakieExt._COLORBAR_WIDTH, 600)
         end
+        cfg = VisualizationConfig(; export_width = 5.5)
+        @test MakieExt._export_width_in(cfg) == 5.5
+        @test MakieExt._export_width_in(VisualizationConfig(; column = "single")) == 3.4
+        @test MakieExt._export_width_in(VisualizationConfig(; column = "double")) == 7.05
+
+        # Stacks: a single panel plus 350 per further row, plus what is reserved
+        @test MakieExt._fig_multipanel(cfg, 2, 1) == (900, 950)
+        @test MakieExt._fig_multipanel(cfg, 3, 1; extra_height = 180) == (900, 1480)
+        # Grids: at least 1200 wide, 500 per column beyond that
+        @test MakieExt._grid_canvas_width.((1, 2, 3, 4)) == (900, 1200, 1500, 2000)
+        gap = MakieExt._MULTIPANEL_GAP_COMPACT
+        strip = MakieExt._AXIS_PROTRUSION
+        box_w = (1500 - strip - 2 * gap) / 3
+        @test box_w == MakieExt._multipanel_box_width(cfg, 3; inner_ticks = false)
+        w3, h3 = MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false)
+        @test w3 == 1500
+        @test h3 == round(Int, 2 * box_w * 600 / 900 + gap + strip)
+        @test MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false, extra_height = 30)[2] ==
+              round(Int, 2 * box_w * 600 / 900 + gap + strip + 30)
+        # Square panels are taller; a reserved colorbar column narrows them
+        square = MakieExt._fig_multipanel(cfg, 2, 3; inner_ticks = false, panel_aspect = 1.0)[2]
+        @test square > h3
+        @test MakieExt._fig_multipanel(
+            cfg,
+            2,
+            3;
+            inner_ticks = false,
+            panel_aspect = 1.0,
+            extra_width = MakieExt._COLORBAR_WIDTH,
+        )[2] < square
         @test MakieExt._multipanel_gap(3; inner_ticks = false) == MakieExt._MULTIPANEL_GAP_COMPACT
         @test MakieExt._multipanel_gap(3; inner_ticks = true) == MakieExt._MULTIPANEL_HGAP
         @test MakieExt._multipanel_gap(1; inner_ticks = false) == MakieExt._MULTIPANEL_HGAP
         # Marker scale follows the panel width; the annotation band is a data-free strip
-        cfg_s = VisualizationConfig(; column = "single")
-        @test MakieExt._multipanel_scale(cfg_s, 1) == 1.0
-        s3 = MakieExt._multipanel_scale(cfg_s, 3; inner_ticks = false)
-        @test 0.25 < s3 < 1 / 3
-        @test MakieExt._multipanel_scale(cfg_s, 3; inner_ticks = false, extra_width = 110) < s3
-        @test MakieExt._multipanel_scale(cfg_s, 3; inner_ticks = true) < s3
+        @test MakieExt._multipanel_scale(cfg, 1) == 1.0
+        s3 = MakieExt._multipanel_scale(cfg, 3; inner_ticks = false)
+        @test s3 ≈ box_w / 900
+        @test MakieExt._multipanel_scale(cfg, 3; inner_ticks = false, extra_width = 140) < s3
+        @test MakieExt._multipanel_scale(cfg, 3; inner_ticks = true) < s3
         @test 0 < MakieExt._MONTAGE_BAND_FRAC < 0.5
+
+        # The canvas width becomes the printed width: 900 units over 6.5 in
+        # is 0.52 pt per unit (468 pt), over a 3.4 in column 0.272; a grid
+        # 1500 wide over the same 6.5 in is 0.312. Raster output is never
+        # coarser than 4 pixels per unit and follows dpi above that.
+        std = VisualizationConfig(; dpi = 300)
+        @test MakieExt._export_scale(std, 900).pt_per_unit ≈ 0.52
+        @test MakieExt._export_scale(std, 1500).pt_per_unit ≈ 0.312
+        @test MakieExt._export_scale(VisualizationConfig(; column = "single"), 900).pt_per_unit ≈
+              0.272
+        @test MakieExt._export_scale(std, 900).px_per_unit == 4.0
+        @test MakieExt._export_scale(VisualizationConfig(; dpi = 1200), 900).px_per_unit ≈
+              1200 * 6.5 / 900
+        mktempdir() do dir
+            fig = CairoMakie.Figure(; size = (900, 600))
+            CairoMakie.Axis(fig[1, 1])
+            png = MakieExt._save_fig(
+                VisualizationConfig(; format = "png", dpi = 72, output_dir = dir),
+                "probe",
+                fig,
+            )
+            header = read(png)[17:24]
+            @test reinterpret(UInt32, reverse(header[1:4]))[1] == 3600
+            @test reinterpret(UInt32, reverse(header[5:8]))[1] == 2400
+            pdf = MakieExt._save_fig(
+                VisualizationConfig(; format = "pdf", output_dir = dir),
+                "probe",
+                fig,
+            )
+            @test filesize(pdf) > 0
+        end
+    end
+
+    @testset "Figure routines scope the theme" begin
+        CairoMakie.set_theme!()
+        ambient = CairoMakie.Makie.to_value(CairoMakie.Makie.theme(nothing, :fontsize))
+        MakieExt.@publication function _theme_probe(x)
+            x < 0 && return nothing
+            return CairoMakie.Makie.to_value(CairoMakie.Makie.theme(nothing, :fontsize))
+        end
+        @test _theme_probe(1) == MakieExt._STYLE.label == 26
+        @test _theme_probe(-1) === nothing
+        @test CairoMakie.Makie.to_value(CairoMakie.Makie.theme(nothing, :fontsize)) == ambient
+        theme = publication_theme()
+        @test theme.linewidth[] == 3
+        @test theme.markersize[] == 14
+        @test theme.figure_padding[] == 10
+        @test theme.Axis.xticklabelsize[] == 22
+        @test theme.Legend.framevisible[] == false
     end
 
     # =====================================================================

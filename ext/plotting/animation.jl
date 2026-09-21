@@ -29,7 +29,7 @@ Myr when `cfg.units == "physical"` (header AS scaling); N-body otherwise.
 
 # Arguments
 - `snaps`: ordered vector of `Snapshot`s
-- `cfg`: visualisation configuration (figsize, dpi, output_dir)
+- `cfg`: visualisation configuration (output_dir, animation style)
 - `filename`: output filename stem (`.gif` appended automatically)
 - `projections`: spatial projections to animate (any of :xy, :xz, :yz)
 - `fps`: frames per second (`nothing` = use `cfg.style.anim_fps`; `0` there
@@ -156,7 +156,13 @@ function Nbody6Dynamics.animate_cluster(
         colgap!(fig.layout, _COLORBAR_COLGAP)
 
         _backup_existing(outpath)
-        record(fig, outpath, 1:nframes; framerate = fps) do i
+        record(
+            fig,
+            outpath,
+            1:nframes;
+            framerate = fps,
+            px_per_unit = cfg.style.anim_px_per_unit,
+        ) do i
             frame_idx[] = i
             if use_adaptive
                 xlo, xhi, ylo, yhi = frame_limits[i]
@@ -256,7 +262,7 @@ function Nbody6Dynamics.animate_lagrangian(
     @info "Animating Lagrangian radii: $nt frames → $outpath  ($(fps) fps, ~$(round(Int, nt/fps)) s)"
 
     _backup_existing(outpath)
-    record(fig, outpath, 1:nt; framerate = fps) do i
+    record(fig, outpath, 1:nt; framerate = fps, px_per_unit = cfg.style.anim_px_per_unit) do i
         frame_idx[] = i
     end
 

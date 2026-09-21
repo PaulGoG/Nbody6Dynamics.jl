@@ -31,7 +31,8 @@ enabled = true
 enabled = false
 format = "png"
 dpi = 300
-column = "single"
+export_width = 6.5
+column = ""
 units = "physical"
 output_dir = "plots"
 

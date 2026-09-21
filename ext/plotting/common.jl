@@ -1,12 +1,15 @@
 # =============================================================================
-# Plotting submodule — includes all visualisation routines
+# Shared theme, layout, export and helper routines of the figure layer
 # =============================================================================
+#
+# Every figure is composed in layout units on a canvas fixed by its type, under
+# one theme, and exported so that the canvas width becomes the printed width:
+# text, line weights and markers keep their proportions whatever the target.
+# A journal column is an override of the printed width, never of the layout.
 
 # ---------------------------------------------------------------------------
-# Publication-quality theme with Computer Modern (LaTeX) fonts
+# Theme
 # ---------------------------------------------------------------------------
-
-# Makie's MathTeXEngine renders L"..." strings in Computer Modern automatically.
 
 # Computer Modern via MathTeXEngine's texfont API (direct dependency). The
 # faces are resolved when the theme is built, never in a constant: a
@@ -25,96 +28,150 @@ registry at call time.
 _cm_fonts() = (regular = texfont(:text), bold = texfont(:bold), italic = texfont(:italic))
 
 """
+    _STYLE
+
+Sizes and weights by role, in layout units. Figure routines name the role a
+mark plays instead of a number, so one series family looks the same in every
+figure: `data` for the series plotted, `fit` for a model or secondary curve
+beside it, `envelope` for the extremes about a mean, `ghost` for greyed
+background curves, `guide` for reference lines (dashed, labelled), `band_edge`
+for the outline of an area fill of opacity `band_alpha`; `marker` with a
+`marker_stroke` edge of the same, darker hue; `label`, `tick` and `annotation`
+font sizes.
+"""
+const _STYLE = (
+    data = 3.0,
+    fit = 2.0,
+    envelope = 1.5,
+    ghost = 1.5,
+    guide = 1.5,
+    band_edge = 2.5,
+    band_alpha = 0.35,
+    marker = 14.0,
+    marker_stroke = 1.5,
+    spine = 1.5,
+    label = 26,
+    tick = 22,
+    annotation = 21,
+)
+
+"""
     publication_theme() -> Theme
 
-The publication theme: Computer Modern fonts from MathTeXEngine, boxed axes
-with inward ticks, no minor ticks, faint dashed grid, framed legends. Built
-on every call so that the font faces are live ones, not faces captured at
-precompile time. `with_theme(publication_theme()) do … end` scopes it;
-[`set_publication_theme!`](@ref) activates it globally.
+The publication theme: Computer Modern fonts from MathTeXEngine, 26-unit
+labels and legends over 22-unit tick labels, boxed axes with inward ticks and
+no minor ticks, a faint dashed grid, frameless horizontal legends, 3-unit
+data lines and 14-unit markers with a 1.5-unit edge. Built on every call so
+that the font faces are live ones, not faces captured at precompile time.
+Every figure routine of the package draws inside
+`with_theme(publication_theme())`, so the session's own theme is neither
+needed nor changed; [`set_publication_theme!`](@ref) activates it globally
+for figures composed by hand.
 """
 function Nbody6Dynamics.publication_theme()
     return Theme(
-        fontsize = 22,
         fonts = _cm_fonts(),
-        figure_padding = 16,
+        fontsize = _STYLE.label,
+        figure_padding = 10,
+        linewidth = _STYLE.data,
+        markersize = _STYLE.marker,
         Axis = (
-            xlabelsize = 20,
-            ylabelsize = 20,
-            xticklabelsize = 16,
-            yticklabelsize = 16,
-            xlabelpadding = 10.0,
-            ylabelpadding = 10.0,
-            spinewidth = 1.5,
-            xtickwidth = 1.2,
-            ytickwidth = 1.2,
-            xtickalign = 1.0,     # ticks face inward
-            ytickalign = 1.0,
-            xticksize = 8,
-            yticksize = 8,
-            # No minor ticks; grey dashed major grid at very low opacity.
-            # Dense scatter plots (cluster projections, HR) disable the grid
-            # locally via x/ygridvisible = false.
-            xminorticksvisible = false,
-            yminorticksvisible = false,
-            xgridvisible = true,
-            ygridvisible = true,
+            spinewidth = _STYLE.spine,
+            xticklabelsize = _STYLE.tick,
+            yticklabelsize = _STYLE.tick,
+            xlabelpadding = 8.0,
+            ylabelpadding = 8.0,
             xgridstyle = :dash,
             ygridstyle = :dash,
             xgridcolor = (:grey, 0.12),
             ygridcolor = (:grey, 0.12),
+            xminorticksvisible = false,
+            yminorticksvisible = false,
+            xtickalign = 1,       # ticks face inward
+            ytickalign = 1,
+            xtickwidth = _STYLE.spine,
+            ytickwidth = _STYLE.spine,
+            xticksize = 10,
+            yticksize = 10,
             topspinevisible = true,
             rightspinevisible = true,
         ),
+        Lines = (linewidth = _STYLE.data,),
+        Scatter = (strokewidth = _STYLE.marker_stroke,),
         Legend = (
-            framevisible = true,
-            framewidth = 1.0,
-            labelsize = 15,
-            patchsize = (25, 14),
-            padding = (8, 8, 6, 6),
+            framevisible = false,
+            orientation = :horizontal,
+            titlefont = :bold,
+            patchsize = (34, 20),
             rowgap = 4,
+            padding = (0, 0, 0, 0),
         ),
-        Lines = (linewidth = 2.2,),
-        Colorbar = (labelsize = 18, ticklabelsize = 14, tickalign = 1.0, width = 14),
+        Colorbar = (
+            labelsize = _STYLE.label,
+            ticklabelsize = _STYLE.tick,
+            tickalign = 1,
+            width = 18,
+        ),
     )
 end
 
 """
     set_publication_theme!()
 
-Activate [`publication_theme`](@ref) globally.
+Activate [`publication_theme`](@ref) globally, for figures composed by hand
+from Makie calls. The figure routines of the package do not depend on it.
 """
 function Nbody6Dynamics.set_publication_theme!()
     set_theme!(publication_theme())
 end
 
+"""
+    @publication function Nbody6Dynamics.plot_something(args...; kwargs...) … end
+
+Define a figure routine whose body runs inside
+`with_theme(publication_theme())`. The theme then holds however the routine
+is reached — from the dispatcher, a sweep driver or a user's session — and
+the session's global theme is left alone.
+"""
+macro publication(definition)
+    Meta.isexpr(definition, :function) && length(definition.args) == 2 ||
+        throw(ArgumentError("@publication expects a long-form function definition"))
+    body = definition.args[2]
+    definition.args[2] = quote
+        with_theme(publication_theme()) do
+            $body
+        end
+    end
+    return esc(definition)
+end
+
 # ---------------------------------------------------------------------------
-# Common helpers
+# Canvases and export
 # ---------------------------------------------------------------------------
 
-# Journal column-width presets (final printed size, inches) and the internal
-# render scale: figures are designed at final×_PRINT_SCALE canvas units so
-# the 22 pt theme text lands at 22/_PRINT_SCALE ≈ 8.8 pt and 2.2-unit lines
-# at ≈ 0.9 pt when the export is reduced to the true column width.
-const _PRINT_SCALE = 2.5
-const _COLUMN_PRESETS = Dict(
-    "single" => (3.4, 2.6),    # ≈ 86–90 mm single column
-    "double" => (7.05, 4.35),  # ≈ 178–183 mm double column
+"""
+Canvas sizes in layout units: a single panel, the height each further stacked
+main panel and each auxiliary strip (ratio, residual, census) adds, and the
+least width of a grid of panels together with the width it takes per column.
+"""
+const _CANVAS = (
+    width = 900,
+    height = 600,
+    stacked_panel = 350,
+    strip = 180,
+    grid_width = 1200,
+    grid_column = 500,
 )
 
-"""Render scale of the canvas relative to the final printed size (1.0 for
-free-form `figsize` canvases, `_PRINT_SCALE` for column presets)."""
-_render_scale(cfg::VisualizationConfig) = haskey(_COLUMN_PRESETS, cfg.column) ? _PRINT_SCALE : 1.0
+"""Printed widths of the journal column presets [in]."""
+const _COLUMN_WIDTH_IN = Dict("single" => 3.4, "double" => 7.05)
 
-"""Canvas size in Makie units (1 unit = 1 pt): column preset × render scale,
-or the free-form `figsize` inches when `column` is empty/unknown."""
-function _figsize_px(cfg::VisualizationConfig)
-    if haskey(_COLUMN_PRESETS, cfg.column)
-        w, h = _COLUMN_PRESETS[cfg.column]
-        return (w * _PRINT_SCALE * 72, h * _PRINT_SCALE * 72)
-    end
-    return (cfg.figsize[1] * 72, cfg.figsize[2] * 72)
-end
+"""Canvas of a single-panel figure in layout units. The configuration sets the printed width of the export, not the canvas."""
+_figsize_px(::VisualizationConfig) = (_CANVAS.width, _CANVAS.height)
+
+"""Printed width of an export [in]: the journal column when `cfg.column` names one, `cfg.export_width` otherwise."""
+_export_width_in(cfg::VisualizationConfig)::Float64 =
+    get(_COLUMN_WIDTH_IN, cfg.column, cfg.export_width)
 
 # ---------------------------------------------------------------------------
 # Standardised figure sizes for publication-consistent box dimensions
@@ -124,38 +181,41 @@ end
 # primary axis box remains the same physical size.
 
 """Extra canvas width reserved for a right-side colorbar column."""
-const _COLORBAR_WIDTH = 110
+const _COLORBAR_WIDTH = 140
 
 """Single-panel with a right-side colorbar — extra width keeps axis box size."""
 _fig_with_colorbar(cfg::VisualizationConfig) =
     (_figsize_px(cfg)[1] + _COLORBAR_WIDTH, _figsize_px(cfg)[2])
 
-"""Two vertically stacked panels (e.g. energy + virial)."""
+"""Two vertically stacked main panels (e.g. energy + virial)."""
 _fig_two_panel(cfg::VisualizationConfig) =
-    (_figsize_px(cfg)[1], round(Int, _figsize_px(cfg)[2] * 1.45))
+    (_figsize_px(cfg)[1], _figsize_px(cfg)[2] + _CANVAS.stacked_panel)
 
 """
-Multi-panel grids stay one column wide: the canvas keeps the preset width,
-the `ncols` axis boxes share it minus one axis-decoration strip
-(`_AXIS_PROTRUSION`, the outer y label and tick labels), the reserved
-`extra_width` (a shared colorbar column) and the gaps, at `panel_aspect`
-(height over width; the preset's ratio by default); the rows stack and one
-decoration strip is added below for the x label and tick labels, plus
-`extra_height` for anything above the grid (an annotation row). A montage
-therefore enters a document at native size like every other figure; at the
-`single` preset a three-column grid has boxes of about 18 mm, so montage
-callers use three ticks per axis. The panel gap is
-[`_multipanel_gap`](@ref): compact when the inner tick labels are hidden,
-the stack value otherwise; use it with `colgap!`/`rowgap!`. Single-column
-stacks (`ncols = 1`) keep panels of the full single-panel size. Returns
-`(total_width, total_height)` in Makie screen units.
+Grids of panels get a wider canvas than a single panel —
+`max(_CANVAS.grid_width, ncols × _CANVAS.grid_column)` layout units — shared by
+the `ncols` axis boxes after one axis-decoration strip (`_AXIS_PROTRUSION`,
+the outer y label and tick labels), the reserved `extra_width` (a shared
+colorbar column) and the gaps, at `panel_aspect` (height over width; that of
+the single panel by default); the rows stack and one decoration strip is
+added below for the x label and tick labels, plus `extra_height` for whatever
+sits above or below the grid (a legend row, an auxiliary strip). The panel
+gap is [`_multipanel_gap`](@ref): compact when the inner tick labels are
+hidden, the stack value otherwise; use it with `colgap!`/`rowgap!`.
+Single-column stacks (`ncols = 1`) are a full single panel plus
+`_CANVAS.stacked_panel` for every further row. Returns
+`(total_width, total_height)` in layout units.
 """
-const _MULTIPANEL_HGAP = 70
-const _MULTIPANEL_VGAP = 70
-const _MULTIPANEL_GAP_COMPACT = 24
+const _MULTIPANEL_HGAP = 84
+const _MULTIPANEL_VGAP = 84
+const _MULTIPANEL_GAP_COMPACT = 28
 
-"""Canvas units one axis label and its tick labels take along one side (22 pt label, 18 pt ticks, pads)."""
-const _AXIS_PROTRUSION = 64
+"""Layout units one axis label and its tick labels take along one side (label, tick labels, pads)."""
+const _AXIS_PROTRUSION = 84
+
+"""Canvas width of a figure with `ncols` columns of panels."""
+_grid_canvas_width(ncols::Int)::Int =
+    ncols == 1 ? _CANVAS.width : max(_CANVAS.grid_width, ncols * _CANVAS.grid_column)
 
 """Gap between the panels of a grid: compact when `ncols > 1` and the inner tick labels are hidden, `_MULTIPANEL_HGAP` otherwise."""
 _multipanel_gap(ncols::Int; inner_ticks::Bool = true) =
@@ -185,9 +245,8 @@ function _multipanel_box_width(
     inner_ticks::Bool = true,
     extra_width::Real = 0,
 )
-    pw = _figsize_px(cfg)[1]
     gap = _multipanel_gap(ncols; inner_ticks)
-    return (pw - extra_width - _AXIS_PROTRUSION - (ncols - 1) * gap) / ncols
+    return (_grid_canvas_width(ncols) - extra_width - _AXIS_PROTRUSION - (ncols - 1) * gap) / ncols
 end
 
 """Width of one axis box of a grid relative to the single-panel width (1 for stacks); scales markers with the panel."""
@@ -211,12 +270,12 @@ function _fig_multipanel(
     extra_height::Real = 0,
 )
     pw, ph = _figsize_px(cfg)
-    ncols == 1 && return (pw, nrows * ph + (nrows - 1) * _MULTIPANEL_VGAP)
+    ncols == 1 && return (pw, ph + (nrows - 1) * _CANVAS.stacked_panel + round(Int, extra_height))
     gap = _multipanel_gap(ncols; inner_ticks)
     box_w = _multipanel_box_width(cfg, ncols; inner_ticks, extra_width)
     aspect = panel_aspect === nothing ? ph / pw : Float64(panel_aspect)
     height = nrows * box_w * aspect + (nrows - 1) * gap + _AXIS_PROTRUSION + extra_height
-    return (pw, round(Int, height))
+    return (_grid_canvas_width(ncols), round(Int, height))
 end
 
 # ---------------------------------------------------------------------------
@@ -322,22 +381,41 @@ function _anim_output_path(cfg::VisualizationConfig, basename::AbstractString)::
     return joinpath(cfg.output_dir, basename * ".gif")
 end
 
+"""Least raster density of an export, in pixels per layout unit."""
+const _MIN_PX_PER_UNIT = 4.0
+
+"""
+    _export_scale(cfg, canvas_width) -> (pt_per_unit, px_per_unit)
+
+Scales that map a canvas `canvas_width` layout units wide onto the printed
+width ([`_export_width_in`](@ref)): points per unit for vector output, and
+pixels per unit for raster output at `cfg.dpi` over that width, never
+coarser than `_MIN_PX_PER_UNIT`.
+"""
+function _export_scale(cfg::VisualizationConfig, canvas_width::Real)
+    width_in = _export_width_in(cfg)
+    return (
+        pt_per_unit = 72 * width_in / canvas_width,
+        px_per_unit = max(_MIN_PX_PER_UNIT, cfg.dpi * width_in / canvas_width),
+    )
+end
+
 """
     _save_fig(cfg, basename, fig) -> String
 
 Resolve the output path, back up any existing file (never-overwrite policy),
-save `fig` sized for print, and log the location. Vector formats (pdf/svg)
-are scaled so the document width equals the true column width; raster
-output gets `cfg.dpi` at that final size. Returns the path.
+save `fig` and log the location. The canvas width of `fig` becomes the
+printed width ([`_export_scale`](@ref)), so the export enters a document at
+native size. Returns the path.
 """
 function _save_fig(cfg::VisualizationConfig, basename::AbstractString, fig)::String
     path = _output_path(cfg, basename)
     _backup_existing(path)
-    s = _render_scale(cfg)
+    scale = _export_scale(cfg, size(fig.scene)[1])
     if cfg.format in ("pdf", "svg")
-        save(path, fig; pt_per_unit = 1 / s)
+        save(path, fig; pt_per_unit = scale.pt_per_unit)
     else
-        save(path, fig; px_per_unit = cfg.dpi / 72 / s)
+        save(path, fig; px_per_unit = scale.px_per_unit)
     end
     @info "Saved: $path"
     return path
@@ -483,7 +561,7 @@ _marker_size(cfg::VisualizationConfig, n::Integer) =
 # ---------------------------------------------------------------------------
 
 """Standard fontsize for in-axis annotations (quantitative takeaways)."""
-const _ANNOTATION_FONTSIZE = 16
+const _ANNOTATION_FONTSIZE = _STYLE.annotation
 
 """Row gap between the stacked panels of two-panel figures."""
 const _TWO_PANEL_ROWGAP = 12

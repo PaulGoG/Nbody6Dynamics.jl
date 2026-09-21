@@ -285,19 +285,10 @@ function Nbody6Dynamics.generate_plots(
     # Build a VisualizationConfig with the output_dir resolved to the run
     vis = if !isempty(run_dir)
         plots_dir = joinpath(run_dir, cfg.visualization.output_dir)
-        # Forward EVERY field except output_dir — a missed field here means
-        # the user's [visualization] settings are silently dropped on the
-        # main pipeline path (this has happened twice; see git history).
-        VisualizationConfig(;
-            enabled = cfg.visualization.enabled,
-            format = cfg.visualization.format,
-            dpi = cfg.visualization.dpi,
-            column = cfg.visualization.column,
-            figsize = cfg.visualization.figsize,
-            units = cfg.visualization.units,
-            output_dir = plots_dir,
-            style = cfg.visualization.style,
-        )
+        # Every field is carried over by construction, so a setting added to
+        # the struct cannot be dropped here.
+        fields = (f => getfield(cfg.visualization, f) for f in fieldnames(VisualizationConfig))
+        VisualizationConfig(; fields..., output_dir = plots_dir)
     else
         cfg.visualization
     end

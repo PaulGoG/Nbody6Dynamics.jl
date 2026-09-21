@@ -45,17 +45,16 @@ _hr_style(k::Int)::_HRClassStyle = _HR_CLASS_STYLE[STELLAR_CLASSES[k].key]
 const _HR_BACKDROP = :main_sequence
 _hr_is_backdrop(k::Int) = STELLAR_CLASSES[k].key === _HR_BACKDROP
 
-const _HR_MARKERSIZE = 14
-"""Marker size of the backdrop class relative to `_HR_MARKERSIZE`."""
+"""Marker size of the backdrop class relative to `_STYLE.marker`."""
 const _HR_BACKDROP_SCALE = 0.7
 """Height of the census strip relative to a single-panel figure."""
 const _HR_STRIP_FRAC = 0.3
-"""Canvas units one bank of the legend row takes (the group headers take one more)."""
-const _HR_LEGEND_BANK_HEIGHT = 26
-"""Canvas units one class entry of the legend takes along the row (marker, longest label, gap)."""
-const _HR_LEGEND_ENTRY_WIDTH = 160
-"""Canvas units the key group of the legend takes along the row."""
-const _HR_LEGEND_KEY_WIDTH = 190
+"""Layout units one bank of the legend row takes (the group headers take one more)."""
+const _HR_LEGEND_BANK_HEIGHT = 38
+"""Layout units one class entry of the legend takes along the row (marker, longest label, gap)."""
+const _HR_LEGEND_ENTRY_WIDTH = 270
+"""Layout units the key group of the legend takes along the row."""
+const _HR_LEGEND_KEY_WIDTH = 330
 const _HR_MIN_SPAN_DEX = 0.2
 
 """`(lo, hi)` widened by 6 % on each side, or to `_HR_MIN_SPAN_DEX` about the midpoint when narrower."""
@@ -145,7 +144,7 @@ function _draw_hr_population!(
                 points;
                 color = style.color,
                 marker = style.marker,
-                markersize = _HR_BACKDROP_SCALE * _HR_MARKERSIZE * scale,
+                markersize = _HR_BACKDROP_SCALE * _STYLE.marker * scale,
                 strokewidth = 0,
             )
             continue
@@ -155,16 +154,16 @@ function _draw_hr_population!(
             @lift(_hr_points($pop, k, false));
             color = style.color,
             marker = style.marker,
-            markersize = _HR_MARKERSIZE * scale,
+            markersize = _STYLE.marker * scale,
             strokecolor = _band_edge(style.color),
-            strokewidth = 1.5 * scale,
+            strokewidth = _STYLE.marker_stroke * scale,
         )
         scatter!(
             ax,
             @lift(_hr_points($pop, k, true));
             color = (style.color, 0.0),
             marker = style.marker,
-            markersize = _HR_MARKERSIZE * scale,
+            markersize = _STYLE.marker * scale,
             strokecolor = style.color,
             strokewidth = 2.5 * scale,
         )
@@ -183,7 +182,7 @@ observable `epochs` are marked by dashed guides.
 """
 function _draw_hr_census!(ax, run::_HRRun, epochs::Observable{Vector{Float64}})
     counts = class_counts(run.census)
-    vlines!(ax, epochs; color = (:grey, 0.7), linestyle = :dash, linewidth = 1.5)
+    vlines!(ax, epochs; color = (:grey, 0.7), linestyle = :dash, linewidth = _STYLE.guide)
     for k in _hr_strip_classes(run)
         style = _hr_style(k)
         n = [c > 0 ? Float64(c) : NaN for c in view(counts, :, k)]
@@ -194,10 +193,8 @@ function _draw_hr_census!(ax, run::_HRRun, epochs::Observable{Vector{Float64}})
             color = style.color,
             marker = style.marker,
             linestyle = style.linestyle,
-            linewidth = 2.2,
-            markersize = 10,
+            markersize = _STYLE.marker,
             strokecolor = _band_edge(style.color),
-            strokewidth = 1,
         )
     end
     return nothing
@@ -224,18 +221,15 @@ function _hr_legend_groups(run::_HRRun, strip::Bool, guide_label::AbstractString
         entry = _LegendElement[]
         strip &&
             !_hr_is_backdrop(k) &&
-            push!(
-                entry,
-                LineElement(; color = style.color, linestyle = style.linestyle, linewidth = 2.2),
-            )
+            push!(entry, LineElement(; color = style.color, linestyle = style.linestyle))
         push!(
             entry,
             MarkerElement(;
                 color = style.color,
                 marker = style.marker,
-                markersize = 12,
+                markersize = _STYLE.marker,
                 strokecolor = _band_edge(style.color),
-                strokewidth = _hr_is_backdrop(k) ? 0 : 1,
+                strokewidth = _hr_is_backdrop(k) ? 0 : _STYLE.marker_stroke,
             ),
         )
         push!(class_entries, entry)
@@ -249,9 +243,9 @@ function _hr_legend_groups(run::_HRRun, strip::Bool, guide_label::AbstractString
             _LegendElement[MarkerElement(;
                 color = (:black, 0.0),
                 marker = :circle,
-                markersize = 12,
+                markersize = _STYLE.marker,
                 strokecolor = :black,
-                strokewidth = 2,
+                strokewidth = 2.5,
             )],
         )
         push!(key_labels, "Member of a KS pair")
@@ -259,7 +253,11 @@ function _hr_legend_groups(run::_HRRun, strip::Bool, guide_label::AbstractString
     if strip
         push!(
             key_entries,
-            _LegendElement[LineElement(; color = (:grey, 0.7), linestyle = :dash, linewidth = 1.5)],
+            _LegendElement[LineElement(;
+                color = (:grey, 0.7),
+                linestyle = :dash,
+                linewidth = _STYLE.guide,
+            )],
         )
         push!(key_labels, guide_label)
     end
@@ -307,9 +305,6 @@ function _hr_figure(run::_HRRun, indices::Vector{Int}, cfg::VisualizationConfig)
     # Data-free band above the data, where the time annotation sits
     llims = (run.llims[1], run.llims[2] + _MONTAGE_BAND_FRAC * (run.llims[2] - run.llims[1]))
     scale = grid ? max(_multipanel_scale(cfg, ncols; inner_ticks = false), 0.6) : 1.0
-    label_sizes =
-        grid ? (xlabelsize = 22, ylabelsize = 22, xticklabelsize = 18, yticklabelsize = 18) : (;)
-
     populations = [Observable(run.populations[i]) for i in indices]
     for (panel, pop) in enumerate(populations)
         row, col = cld(panel, ncols), mod1(panel, ncols)
@@ -327,7 +322,6 @@ function _hr_figure(run::_HRRun, indices::Vector{Int}, cfg::VisualizationConfig)
             yticklabelsvisible = col == 1,
             xgridvisible = false,
             ygridvisible = false,
-            label_sizes...,
         )
         time_label = @lift(latexstring("t = ", _fmt_latex_sig3($pop.time_myr), "\\;\\mathrm{Myr}"))
         _annotate!(ax, time_label; corner = :tr)
@@ -348,7 +342,6 @@ function _hr_figure(run::_HRRun, indices::Vector{Int}, cfg::VisualizationConfig)
             xticks = _time_ticks(times[1], times[end]),
             yticks = _log_ticks(n_lims...),
             xgridvisible = false,   # the only vertical guides are the epochs
-            label_sizes...,
         )
         epochs = lift((ps...) -> Float64[p.time_myr for p in ps], populations...)
         _draw_hr_census!(ax, run, epochs)
@@ -369,7 +362,7 @@ function _hr_figure(run::_HRRun, indices::Vector{Int}, cfg::VisualizationConfig)
             framevisible = false,
             titleposition = :top,
             titlehalign = :left,
-            titlesize = Makie.theme(fig.scene, :Legend)[:labelsize][],
+            titlesize = _STYLE.label,
             tellheight = true,
             padding = (0, 0, 0, 0),
         )
@@ -517,7 +510,7 @@ function Nbody6Dynamics.animate_hr(
 
     fig, populations = _hr_figure(run, [1], cfg)
     _backup_existing(outpath)
-    record(fig, outpath, 1:nframes; framerate = fps) do i
+    record(fig, outpath, 1:nframes; framerate = fps, px_per_unit = cfg.style.anim_px_per_unit) do i
         populations[1][] = run.populations[i]
     end
 

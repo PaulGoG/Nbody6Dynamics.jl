@@ -53,21 +53,22 @@ binary_evo_pattern   = "bev.82_*"   # nonempty when read_binary_evo = true
 [visualization]
 enabled    = true
 format     = "png"              # one of: "pdf" | "svg" | "png"
-dpi        = 300                # ≥ 72
-column     = ""                 # one of: "single" | "double" | "" (use figsize)
-figsize    = [10, 8]            # inches; both > 0
+dpi          = 300              # minimum raster resolution at the printed width, ≥ 72
+export_width = 6.5              # printed width of an export [in], > 0
+column       = ""               # one of: "" | "single" | "double"; journal column width instead of export_width
 units      = "physical"         # one of: "physical" | "nbody"
 output_dir = "plots"
 
 [visualization.style]
-marker_budget       = 18000.0   # > 0
-marker_min          = 1.5       # 0 < marker_min ≤ marker_max
-marker_max          = 12.0      # ≥ marker_min
+marker_budget       = 27000.0   # > 0
+marker_min          = 2.2       # 0 < marker_min ≤ marker_max
+marker_max          = 18.0      # ≥ marker_min
 q_log_threshold     = 10.0      # > 0
 q_floor             = 1e-3      # 0 < q_floor < 1
 zoom_frac           = 0.15      # 0 < zoom_frac ≤ 1
 anim_fps            = 0         # ≥ 0; 0 = auto from frame count
 anim_target_seconds = 15.0      # > 0
+anim_px_per_unit    = 1.4       # pixels per canvas unit of animation frames, > 0
 
 [merger]
 enabled     = true

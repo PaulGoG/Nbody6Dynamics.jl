@@ -135,32 +135,42 @@ Stylistic plotting parameters, configurable via `[visualization.style]` in
 - `zoom_frac`: fraction of particles defining the adaptive zoom-in radius
 - `anim_fps`: animation frame rate; `0` selects automatically from frame count
 - `anim_target_seconds`: target duration used by the automatic FPS selection
+- `anim_px_per_unit`: pixels per canvas unit of animation frames (a single-panel
+  canvas is 900 × 600 units)
 """
 Base.@kwdef struct PlotStyle
-    marker_budget::Float64 = 18000.0
-    marker_min::Float64 = 4.0
-    marker_max::Float64 = 20.0
+    marker_budget::Float64 = 27000.0
+    marker_min::Float64 = 6.0
+    marker_max::Float64 = 30.0
     q_log_threshold::Float64 = 10.0
     q_floor::Float64 = 1e-3
     zoom_frac::Float64 = 0.15
     anim_fps::Int = 0
     anim_target_seconds::Float64 = 12.0
+    anim_px_per_unit::Float64 = 1.4
 end
 
 """
     VisualizationConfig
 
-Configuration for the plotting and animation phase.
-Controls output format (png/pdf/svg), DPI, figure size, output directory,
-and the [`PlotStyle`](@ref) presentation knobs.
+Configuration for the plotting and animation phase: output format
+(png/pdf/svg), the printed width of an export, output directory, and the
+[`PlotStyle`](@ref) presentation knobs.
+
+Figures are composed in layout units on canvases fixed by the figure type (a
+single panel is 900 × 600, stacked panels and auxiliary strips add height,
+panel grids are wider) and exported so that the canvas width becomes
+`export_width` inches on the page; text and line weights scale with it. A
+journal target is an explicit override: `column = "single"` or `"double"`
+exports at that column width instead. Either way the export enters a document
+at native size.
 """
 Base.@kwdef struct VisualizationConfig
     enabled::Bool = true
     format::String = "pdf"    # vector default; "png"/"svg" available
-    dpi::Int = 300      # raster resolution at FINAL print size
-    column::String = "single" # "single" | "double" journal-width preset;
-    # "" falls back to free-form figsize
-    figsize::Tuple{Float64,Float64} = (8.0, 6.0)  # inches; used only when column = ""
+    dpi::Int = 300      # minimum raster resolution at the printed width
+    export_width::Float64 = 6.5   # printed width of an export [in]
+    column::String = ""           # "" | "single" | "double": journal column width instead of export_width
     units::String = "physical"      # "physical" | "nbody" axis units
     output_dir::String = "plots"
     style::PlotStyle = PlotStyle()
