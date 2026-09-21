@@ -21,7 +21,7 @@ and, when classified, hard and soft) above the binary fraction
 fraction ``N_\\mathrm{hard} / N_\\mathrm{pairs}`` in per cent. The net change
 of the pair count is annotated in the upper panel.
 """
-function Nbody6Dynamics.plot_binary_population(
+@publication function Nbody6Dynamics.plot_binary_population(
     pop::BinaryPopulation,
     cfg::VisualizationConfig;
     filename::AbstractString = "binary_population",
@@ -45,7 +45,16 @@ function Nbody6Dynamics.plot_binary_population(
 
     # Counts (markers alone for a single epoch)
     if single
-        scatter!(ax1, t, pop.n_pairs; color = c_tot, markersize = 14, label = "All pairs")
+        scatter!(
+            ax1,
+            t,
+            pop.n_pairs;
+            color = c_tot,
+            markersize = _STYLE.marker,
+            strokecolor = _band_edge(c_tot),
+            strokewidth = _STYLE.marker_stroke,
+            label = "All pairs",
+        )
         if pop.classified
             scatter!(
                 ax1,
@@ -53,7 +62,9 @@ function Nbody6Dynamics.plot_binary_population(
                 pop.n_hard;
                 color = c_hard,
                 marker = :circle,
-                markersize = 12,
+                markersize = _STYLE.marker,
+                strokecolor = _band_edge(c_hard),
+                strokewidth = _STYLE.marker_stroke,
                 label = "Hard",
             )
             scatter!(
@@ -62,20 +73,22 @@ function Nbody6Dynamics.plot_binary_population(
                 pop.n_soft;
                 color = c_soft,
                 marker = :utriangle,
-                markersize = 12,
+                markersize = _STYLE.marker,
+                strokecolor = _band_edge(c_soft),
+                strokewidth = _STYLE.marker_stroke,
                 label = "Soft",
             )
         end
     else
-        lines!(ax1, t, pop.n_pairs; color = c_tot, linewidth = 2.5, label = "All pairs")
+        lines!(ax1, t, pop.n_pairs; color = c_tot, linewidth = _STYLE.data, label = "All pairs")
         if pop.classified
-            lines!(ax1, t, pop.n_hard; color = c_hard, linewidth = 2.0, label = "Hard")
+            lines!(ax1, t, pop.n_hard; color = c_hard, linewidth = _STYLE.data, label = "Hard")
             lines!(
                 ax1,
                 t,
                 pop.n_soft;
                 color = c_soft,
-                linewidth = 2.0,
+                linewidth = _STYLE.data,
                 linestyle = :dash,
                 label = "Soft",
             )
@@ -97,8 +110,17 @@ function Nbody6Dynamics.plot_binary_population(
     # Fractions
     fb = 100 .* pop.binary_fraction
     any(isfinite, fb) && (
-        single ? scatter!(ax2, t, fb; color = c_tot, markersize = 14, label = L"f_\mathrm{b}") :
-        lines!(ax2, t, fb; color = c_tot, linewidth = 2.5, label = L"f_\mathrm{b}")
+        single ?
+        scatter!(
+            ax2,
+            t,
+            fb;
+            color = c_tot,
+            markersize = _STYLE.marker,
+            strokecolor = _band_edge(c_tot),
+            strokewidth = _STYLE.marker_stroke,
+            label = L"f_\mathrm{b}",
+        ) : lines!(ax2, t, fb; color = c_tot, linewidth = _STYLE.data, label = L"f_\mathrm{b}")
     )
     if pop.classified
         fh = [np > 0 ? 100 * nh / np : NaN for (nh, np) in zip(pop.n_hard, pop.n_pairs)]
@@ -109,9 +131,11 @@ function Nbody6Dynamics.plot_binary_population(
             fh;
             color = c_hard,
             marker = :circle,
-            markersize = 12,
+            markersize = _STYLE.marker,
+            strokecolor = _band_edge(c_hard),
+            strokewidth = _STYLE.marker_stroke,
             label = "Hard fraction",
-        ) : lines!(ax2, t, fh; color = c_hard, linewidth = 2.0, label = "Hard fraction")
+        ) : lines!(ax2, t, fh; color = c_hard, linewidth = _STYLE.data, label = "Hard fraction")
     end
     if !any(isfinite, fb) && !pop.classified
         _no_data_note!(ax2, "No stellar count or energy scale available")
@@ -121,15 +145,21 @@ function Nbody6Dynamics.plot_binary_population(
     # One legend, two families: the pair counts of the upper panel and the
     # fractions of the lower one (colour encodes the quantity in both).
     # Concretely typed vectors: Makie reads `Vector{Any}` labels as multi-line text.
-    _el(c; marker = :circle, linestyle = :solid, lw = 2.0) =
-        single ? MarkerElement(; color = c, marker = marker, markersize = 12) :
-        LineElement(; color = c, linewidth = lw, linestyle = linestyle)
-    count_entries = _LegendElement[_el(c_tot; lw = 2.5)]
+    _el(c; marker = :circle, linestyle = :solid, lw = _STYLE.data) =
+        single ?
+        MarkerElement(;
+            color = c,
+            marker = marker,
+            markersize = _STYLE.marker,
+            strokecolor = _band_edge(c),
+            strokewidth = _STYLE.marker_stroke,
+        ) : LineElement(; color = c, linewidth = lw, linestyle = linestyle)
+    count_entries = _LegendElement[_el(c_tot)]
     count_labels = AbstractString["All pairs"]
     fraction_entries = _LegendElement[]
     fraction_labels = AbstractString[]
     any(isfinite, fb) &&
-        (push!(fraction_entries, _el(c_tot; lw = 2.5)); push!(fraction_labels, L"f_\mathrm{b}"))
+        (push!(fraction_entries, _el(c_tot)); push!(fraction_labels, L"f_\mathrm{b}"))
     if pop.classified
         push!(count_entries, _el(c_hard))
         push!(count_labels, L"Hard ($E_\mathrm{b} > \langle m \rangle \sigma^2$)")
@@ -175,7 +205,7 @@ the pairs are classed by the Heggie criterion, the class fractions are
 annotated, and the boundary semi-major axis of a pair of the mean
 component-mass product is marked.
 """
-function Nbody6Dynamics.plot_binary_orbital_elements(
+@publication function Nbody6Dynamics.plot_binary_orbital_elements(
     bev::BinaryEvolutionSnapshot,
     cfg::VisualizationConfig;
     m_mean::Real = NaN,
@@ -237,6 +267,7 @@ function Nbody6Dynamics.plot_binary_orbital_elements(
                 color = (c, 0.75),
                 marker = _binary_marker(is_hard),
                 markersize = ms,
+                strokewidth = 0,
                 label = label,
             )
         end
@@ -249,14 +280,15 @@ function Nbody6Dynamics.plot_binary_orbital_elements(
                 [a_hs_au];
                 color = :black,
                 linestyle = :dash,
-                linewidth = 1.5,
-                label = L"Hard/soft boundary, $\langle m_1 m_2 \rangle$",
+                linewidth = _STYLE.guide,
+                label = L"Hard–soft boundary at $\langle m_1 m_2 \rangle$",
             )
         end
         n_series = (n_hard > 0) + (n_soft > 0) + (lo < a_hs_au < hi)
-        n_series ≥ 2 && _top_legend!(fig, ax)
+        # Three entries at legend size overrun a single-panel canvas in one row.
+        n_series ≥ 2 && _top_legend!(fig, ax; nbanks = n_series > 2 ? 2 : 1)
     else
-        scatter!(ax, a_au, e; color = (c_tot, 0.75), markersize = ms)
+        scatter!(ax, a_au, e; color = (c_tot, 0.75), markersize = ms, strokewidth = 0)
         _annotate!(ax, latexstring("N_\\mathrm{pairs} = $(n)"); corner = :tl, color = c_tot)
     end
 
@@ -272,7 +304,7 @@ Histogram of ``\\log_{10}(P/\\mathrm{d})`` of the regularised pairs at the
 first epoch (filled) and, when more than one snapshot is given, at the last
 epoch (dashed outline), with the pair counts annotated.
 """
-function Nbody6Dynamics.plot_binary_period_distribution(
+@publication function Nbody6Dynamics.plot_binary_period_distribution(
     bevs::AbstractVector{BinaryEvolutionSnapshot},
     cfg::VisualizationConfig;
     filename::AbstractString = "binary_period_distribution",
@@ -313,7 +345,7 @@ function Nbody6Dynamics.plot_binary_period_distribution(
         bins = edges,
         color = (c0, 0.35),
         strokecolor = _band_edge(c0),
-        strokewidth = 1.5,
+        strokewidth = _STYLE.band_edge,
         label = label0,
     )
     if two
@@ -324,7 +356,7 @@ function Nbody6Dynamics.plot_binary_period_distribution(
             bins = edges,
             color = :black,
             linestyle = :dash,
-            linewidth = 2.0,
+            linewidth = _STYLE.data,
             label = label1,
         )
         _top_legend!(fig, ax)

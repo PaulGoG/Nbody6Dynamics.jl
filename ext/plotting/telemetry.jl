@@ -56,7 +56,7 @@ memory utilisation dashed. The mean cores busy, the peak RSS and the mean
 GPU utilisation appear as the legend entries' quantitative takeaways.
 Returns the output path, or `nothing` with fewer than two samples.
 """
-function Nbody6Dynamics.plot_telemetry(
+@publication function Nbody6Dynamics.plot_telemetry(
     samples::Vector{TelemetrySample},
     cfg::VisualizationConfig;
     filename::AbstractString = "telemetry",

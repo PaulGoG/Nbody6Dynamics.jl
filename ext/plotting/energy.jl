@@ -10,7 +10,7 @@ Two-panel figure: (top) relative energy error vs time, (bottom) virial ratio.
 The time axis is in Myr when `cfg.units == "physical"` (from the ADJUST
 records), N-body units otherwise.
 """
-function Nbody6Dynamics.plot_energy(
+@publication function Nbody6Dynamics.plot_energy(
     diag::DiagnosticsData,
     cfg::VisualizationConfig;
     filename::AbstractString = "energy",
@@ -88,7 +88,7 @@ function Nbody6Dynamics.plot_energy(
         [0.5];
         color = :gray50,
         linestyle = :dash,
-        linewidth = 1.0,
+        linewidth = _STYLE.guide,
         label = L"Q = 0.5\;\mathrm{(virial\;equilibrium)}",
     )
 
@@ -109,7 +109,7 @@ Two-panel figure: (top) bound particle count N, (bottom) KS binary pairs.
 Each uses a linear y-axis since N and N_pairs evolve on different scales.
 The time axis is in Myr when `cfg.units == "physical"`.
 """
-function Nbody6Dynamics.plot_particle_count(
+@publication function Nbody6Dynamics.plot_particle_count(
     diag::DiagnosticsData,
     cfg::VisualizationConfig;
     filename::AbstractString = "particle_count",
@@ -156,7 +156,7 @@ function Nbody6Dynamics.plot_particle_count(
     pct_str = @sprintf("%+.1f", 100 * (n1 - n0) / max(n0, 1))
     _annotate!(
         ax1,
-        latexstring("N: $(n0) \\rightarrow $(n1)\\;($(pct_str)\\%)");
+        latexstring("N: $(n0) \\rightarrow $(n1)\\;($(pct_str)\\,\\%)");
         corner = :tr,
         color = _SEMANTIC_COLORS[:n_particles],
     )

@@ -14,7 +14,7 @@ For every completed merger point with a completed control, the series of
 `axis`; seeds share the colour. Legend families: the axis values and the
 line roles.
 """
-function Nbody6Dynamics.plot_control_comparison(
+@publication function Nbody6Dynamics.plot_control_comparison(
     sweep_dir::AbstractString,
     cfg::VisualizationConfig;
     quantity::Symbol = :lagrangian,
@@ -50,8 +50,8 @@ function Nbody6Dynamics.plot_control_comparison(
         sc = _run_series(run_c, quantity; fraction = fraction)
         (sm === nothing || sc === nothing) && continue
         c = colors[_point_axis_value(p, axis)]
-        lines!(ax, sm[1], sm[2]; color = (c, 0.9), linewidth = 2.0)
-        lines!(ax, sc[1], sc[2]; color = (c, 0.9), linewidth = 2.0, linestyle = :dash)
+        lines!(ax, sm[1], sm[2]; color = (c, 0.9), linewidth = _STYLE.data)
+        lines!(ax, sc[1], sc[2]; color = (c, 0.9), linewidth = _STYLE.data, linestyle = :dash)
         lo = min(lo, minimum(sm[2]), minimum(sc[2]))
         hi = max(hi, maximum(sm[2]), maximum(sc[2]))
         n_pairs += 1
@@ -69,7 +69,9 @@ function Nbody6Dynamics.plot_control_comparison(
     if length(values) ≥ 2 && !isempty(axis)
         push!(
             entries,
-            _LegendElement[LineElement(; color = colors[v], linewidth = 2.0) for v in values],
+            _LegendElement[
+                LineElement(; color = colors[v], linewidth = _STYLE.data) for v in values
+            ],
         )
         push!(labels, AbstractString[_format_axis_value(v) for v in values])
         push!(titles, _axis_short(axis) * ":")
@@ -78,8 +80,8 @@ function Nbody6Dynamics.plot_control_comparison(
     push!(
         entries,
         _LegendElement[
-            LineElement(; color = grey, linewidth = 2.0),
-            LineElement(; color = grey, linewidth = 2.0, linestyle = :dash),
+            LineElement(; color = grey, linewidth = _STYLE.data),
+            LineElement(; color = grey, linewidth = _STYLE.data, linestyle = :dash),
         ],
     )
     # "Control" rather than "Isolated control": with a grid-axis family beside

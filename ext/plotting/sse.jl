@@ -14,7 +14,7 @@ RI or mass are skipped (both axes are logarithmic).
 Warns and returns `nothing` when no record passes the validity filter;
 otherwise saves the figure and returns `nothing`.
 """
-function Nbody6Dynamics.plot_mass_segregation(
+@publication function Nbody6Dynamics.plot_mass_segregation(
     sev::StellarEvolutionSnapshot,
     cfg::VisualizationConfig;
     filename::AbstractString = "mass_segregation",
@@ -70,7 +70,7 @@ are skipped.
 Warns and returns `nothing` when no main-sequence record carries a valid
 TM; otherwise saves the figure and returns `nothing`.
 """
-function Nbody6Dynamics.plot_evolutionary_clock(
+@publication function Nbody6Dynamics.plot_evolutionary_clock(
     sev::StellarEvolutionSnapshot,
     cfg::VisualizationConfig;
     filename::AbstractString = "evolutionary_clock",
@@ -115,11 +115,11 @@ function Nbody6Dynamics.plot_evolutionary_clock(
         push!(step_top, counts[j])
     end
     band!(ax, step_x, zeros(length(step_x)), step_top; color = (hist_color, 0.55))
-    lines!(ax, step_x, step_top; color = _band_edge(hist_color), linewidth = 1.5)
+    lines!(ax, step_x, step_top; color = _band_edge(hist_color), linewidth = _STYLE.band_edge)
 
     # Main-sequence turnoff boundary — labelled reference line.
     if hi > 1.0
-        vlines!(ax, [1.0]; color = :gray50, linestyle = :dash, linewidth = 1.0)
+        vlines!(ax, [1.0]; color = :gray50, linestyle = :dash, linewidth = _STYLE.guide)
         # The label goes on whichever side of the line has room; anchoring it
         # always to the right clips it when the axis ends just past t = T_MS.
         x_rel = 1.0 / hi
@@ -131,7 +131,7 @@ function Nbody6Dynamics.plot_evolutionary_clock(
             text = L"t = T_\mathrm{MS}",
             space = :relative,
             align = (to_right ? :left : :right, :top),
-            fontsize = 14,
+            fontsize = _STYLE.annotation,
             color = :gray30,
         )
     end
@@ -168,7 +168,7 @@ Warns and returns `nothing` when there are no evolved stars with a valid
 core mass — early snapshots are MS-only; otherwise saves the figure and
 returns `nothing`.
 """
-function Nbody6Dynamics.plot_core_mass(
+@publication function Nbody6Dynamics.plot_core_mass(
     sevs::Vector{StellarEvolutionSnapshot},
     cfg::VisualizationConfig;
     filename::AbstractString = "core_mass_growth",
@@ -208,8 +208,15 @@ function Nbody6Dynamics.plot_core_mass(
     # stripped remnants sit on the line).
     g_lo = min(m_lo, mc_lo) * 0.8
     g_hi = max(m_hi, mc_hi) * 1.2
-    lines!(ax, [g_lo, g_hi], [g_lo, g_hi]; color = :gray50, linestyle = :dash, linewidth = 1.0)
-    _annotate!(ax, L"M_\mathrm{c} = M"; corner = :br, fontsize = 14, color = :gray30)
+    lines!(
+        ax,
+        [g_lo, g_hi],
+        [g_lo, g_hi];
+        color = :gray50,
+        linestyle = :dash,
+        linewidth = _STYLE.guide,
+    )
+    _annotate!(ax, L"M_\mathrm{c} = M"; corner = :br, color = :gray30)
 
     # Classes, colours and markers of the HR figures
     classes_present = sort(unique(stellar_class_index(r.stellar_type) for r in evolved))
@@ -225,7 +232,7 @@ function Nbody6Dynamics.plot_core_mass(
             marker = style.marker,
             markersize = ms,
             strokecolor = _band_edge(style.color),
-            strokewidth = 1,
+            strokewidth = _STYLE.marker_stroke,
             label = STELLAR_CLASSES[k].label,
         )
     end

@@ -46,7 +46,7 @@ end
 function _fraction_pct_label(frac::Real)
     pct_val = frac * 100
     pct = isinteger(pct_val) ? @sprintf("%d", Int(pct_val)) : @sprintf("%.1f", pct_val)
-    return latexstring("$(pct)\\%")
+    return latexstring("$(pct)\\,\\%")
 end
 
 """Radii row `idx` scaled by `r_scale`, with non-positive values (empty
@@ -66,7 +66,7 @@ When `cfg.units == "physical"` and `units` is provided, times are shown in
 Myr and radii in pc; N-body units otherwise (lagr.7 carries no header, so
 the scaling must be supplied by the caller).
 """
-function Nbody6Dynamics.plot_lagrangian(
+@publication function Nbody6Dynamics.plot_lagrangian(
     lagr::LagrangianData,
     cfg::VisualizationConfig;
     filename::AbstractString = "lagrangian_radii",

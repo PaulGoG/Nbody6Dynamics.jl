@@ -49,6 +49,7 @@ function _scatter_escaper_classes!(ax, records, xf, yf, ms)
             color = color,
             marker = marker,
             markersize = ms,
+            strokewidth = 0,
         )
         push!(legend_elems, p)
         push!(legend_labels, label)
@@ -69,7 +70,7 @@ Escaper quantities are intrinsically physical (esc.11 tokens 6–13), so the
 axes are Myr / M☉ / km s⁻¹ regardless of `cfg.units`.  Warns and returns
 `nothing` for empty input; otherwise saves the figure and returns `nothing`.
 """
-function Nbody6Dynamics.plot_escapers(
+@publication function Nbody6Dynamics.plot_escapers(
     escapers::Vector{EscaperRecord},
     cfg::VisualizationConfig;
     filename::AbstractString = "escapers",
@@ -146,7 +147,7 @@ are distinguished by colour and marker; the escaper count is annotated.
 Warns and returns `nothing` when no record carries finite direction
 angles; otherwise saves the figure and returns `nothing`.
 """
-function Nbody6Dynamics.plot_escape_anisotropy(
+@publication function Nbody6Dynamics.plot_escape_anisotropy(
     escapers::Vector{EscaperRecord},
     cfg::VisualizationConfig;
     filename::AbstractString = "escape_anisotropy",

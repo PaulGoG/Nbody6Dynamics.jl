@@ -3,10 +3,6 @@
 # every grid point, coloured by the value of one grid axis
 # =============================================================================
 
-"""Alpha of the 68 % and 95 % bands."""
-const _BAND_ALPHA_68 = 0.35
-const _BAND_ALPHA_95 = 0.15
-
 """Fractions of the data range reserved above and below the bands; the
 annotation lives in the upper strip, which the bands never reach."""
 const _ENSEMBLE_HEADROOM = 0.18
@@ -25,7 +21,7 @@ other axes are held at `fixed[key]`, or at their first value when not
 given; the fixed values are annotated. `fixed` may name only other grid
 axes. A sweep without grid axes yields one ensemble in a single colour.
 """
-function Nbody6Dynamics.plot_sweep_ensemble(
+@publication function Nbody6Dynamics.plot_sweep_ensemble(
     sweep_dir::AbstractString,
     cfg::VisualizationConfig;
     quantity::Symbol = :lagrangian,
@@ -87,9 +83,13 @@ function Nbody6Dynamics.plot_sweep_ensemble(
     for e in ensembles
         c = colors[axis_value(e)]
         s = e.stats
-        band!(ax, s.time, s.q025, s.q975; color = (c, _BAND_ALPHA_95))
-        band!(ax, s.time, s.q16, s.q84; color = (c, _BAND_ALPHA_68))
-        lines!(ax, s.time, s.median; color = c, linewidth = 2.2)
+        band!(ax, s.time, s.q025, s.q975; color = (c, 0.5 * _STYLE.band_alpha))
+        lines!(ax, s.time, s.q025; color = _band_edge(c), linewidth = _STYLE.envelope)
+        lines!(ax, s.time, s.q975; color = _band_edge(c), linewidth = _STYLE.envelope)
+        band!(ax, s.time, s.q16, s.q84; color = (c, _STYLE.band_alpha))
+        lines!(ax, s.time, s.q16; color = _band_edge(c), linewidth = _STYLE.envelope)
+        lines!(ax, s.time, s.q84; color = _band_edge(c), linewidth = _STYLE.envelope)
+        lines!(ax, s.time, s.median; color = c, linewidth = _STYLE.data)
         for y in (s.median, s.q025, s.q975)
             append!(occ_x, s.time)
             append!(occ_y, quantity === :energy ? log10.(max.(y, eps())) : y)
@@ -139,7 +139,9 @@ function Nbody6Dynamics.plot_sweep_ensemble(
     if length(values) ≥ 2
         push!(
             entries,
-            _LegendElement[LineElement(; color = colors[v], linewidth = 2.2) for v in values],
+            _LegendElement[
+                LineElement(; color = colors[v], linewidth = _STYLE.data) for v in values
+            ],
         )
         push!(labels, AbstractString[_format_axis_value(v) for v in values])
         push!(titles, _axis_short(axis) * ":")
@@ -148,8 +150,16 @@ function Nbody6Dynamics.plot_sweep_ensemble(
     push!(
         entries,
         _LegendElement[
-            PolyElement(; color = (grey, _BAND_ALPHA_68)),
-            PolyElement(; color = (grey, _BAND_ALPHA_95)),
+            PolyElement(;
+                color = (grey, _STYLE.band_alpha),
+                strokecolor = _band_edge(grey),
+                strokewidth = _STYLE.envelope,
+            ),
+            PolyElement(;
+                color = (grey, 0.5 * _STYLE.band_alpha),
+                strokecolor = _band_edge(grey),
+                strokewidth = _STYLE.envelope,
+            ),
         ],
     )
     push!(labels, AbstractString["68 %", "95 %"])

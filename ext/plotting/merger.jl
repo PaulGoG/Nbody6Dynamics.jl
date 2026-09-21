@@ -25,7 +25,7 @@ The time at which the ratio `max_sep / mean_sep` drops below a heuristic
 threshold is marked as an estimated "coalescence time". After that epoch the
 initial cluster decomposition is no longer physically meaningful.
 """
-function Nbody6Dynamics.plot_cluster_separation(
+@publication function Nbody6Dynamics.plot_cluster_separation(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
@@ -81,7 +81,7 @@ function Nbody6Dynamics.plot_cluster_separation(
                 t[valid],
                 seps[p, valid];
                 color = _OKABE_ITO[mod1(p, length(_OKABE_ITO))],
-                linewidth = 1.8,
+                linewidth = _STYLE.data,
                 label = "$(i)–$(j)",
             )
             n_lines += 1
@@ -91,12 +91,15 @@ function Nbody6Dynamics.plot_cluster_separation(
         coal = coalescence_time(snaps, cluster_ranges)
         if coal.index !== nothing
             t_c = physical ? coal.time_myr : coal.time_nb
-            vlines!(ax, [t_c]; color = :black, linestyle = :dash, linewidth = 1.5)
+            vlines!(ax, [t_c]; color = :black, linestyle = :dash, linewidth = _STYLE.guide)
             text!(
                 ax,
                 t_c,
                 maximum(filter(!isnan, vec(seps)));
-                text = latexstring("t_\\mathrm{coalesce} = $(_fmt_latex_sig3(t_c))"),
+                text = latexstring(
+                    "t_\\mathrm{coalesce} = $(_fmt_latex_sig3(t_c))\\;",
+                    physical ? "\\mathrm{Myr}" : "[\\mathrm{NB}]",
+                ),
                 align = (:left, :top),
                 offset = (4, 0),
                 fontsize = _ANNOTATION_FONTSIZE,
@@ -111,9 +114,9 @@ function Nbody6Dynamics.plot_cluster_separation(
         band_plot = band!(ax, t[valid], d_min[valid], d_max[valid]; color = (sep_color, 0.25))
         # Darker same-hue edges on the band fill
         sep_edge = _band_edge(sep_color)
-        lines!(ax, t[valid], d_min[valid]; color = sep_edge, linewidth = 1.0)
-        lines!(ax, t[valid], d_max[valid]; color = sep_edge, linewidth = 1.0)
-        mean_plot = lines!(ax, t[valid], d_mean[valid]; color = sep_color, linewidth = 2.4)
+        lines!(ax, t[valid], d_min[valid]; color = sep_edge, linewidth = _STYLE.envelope)
+        lines!(ax, t[valid], d_max[valid]; color = sep_edge, linewidth = _STYLE.envelope)
+        mean_plot = lines!(ax, t[valid], d_mean[valid]; color = sep_color, linewidth = _STYLE.data)
 
         # Mark estimated coalescence: max/mean ratio and mean separation both
         # drop below their heuristic thresholds (consts at top of file)
@@ -131,7 +134,8 @@ function Nbody6Dynamics.plot_cluster_separation(
         merge_label = ""
         if idx_merge !== nothing && t[idx_merge] > first(t)
             t_merge = t[idx_merge]
-            merge_plot = vlines!(ax, [t_merge]; color = :black, linestyle = :dash, linewidth = 1.5)
+            merge_plot =
+                vlines!(ax, [t_merge]; color = :black, linestyle = :dash, linewidth = _STYLE.guide)
             merge_label = latexstring("t_\\mathrm{merge} \\approx $(round(t_merge; digits=2))")
         end
 
@@ -166,7 +170,7 @@ function Nbody6Dynamics.plot_cluster_separation(
             t,
             Float64.(survivor_count);
             color = count_color,
-            linewidth = 2.2,
+            linewidth = _STYLE.data,
             step = :post,
         )
 
@@ -205,7 +209,7 @@ whatever remains self-bound inside the remnant, so the curve loses its
 meaning as a cluster diagnostic; the departure from `Q ≈ 0.5` is a rough
 proxy for the time of coalescence.
 """
-function Nbody6Dynamics.plot_cluster_virial(
+@publication function Nbody6Dynamics.plot_cluster_virial(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
@@ -252,8 +256,8 @@ function Nbody6Dynamics.plot_cluster_virial(
                 t[valid],
                 Q_plot[i, valid];
                 color = _OKABE_ITO[mod1(i, length(_OKABE_ITO))],
-                linewidth = 1.8,
-                label = latexstring("\\mathrm{cluster}\\;$(i)"),
+                linewidth = _STYLE.data,
+                label = latexstring("\\mathrm{Cluster}\\;$(i)"),
             )
             n_series += 1
         end
@@ -271,14 +275,14 @@ function Nbody6Dynamics.plot_cluster_virial(
         )
         # Darker same-hue edges on the band fill
         vir_edge = _band_edge(vir_color)
-        lines!(ax, t[valid], q_min[valid]; color = vir_edge, linewidth = 1.0)
-        lines!(ax, t[valid], q_max[valid]; color = vir_edge, linewidth = 1.0)
+        lines!(ax, t[valid], q_min[valid]; color = vir_edge, linewidth = _STYLE.envelope)
+        lines!(ax, t[valid], q_max[valid]; color = vir_edge, linewidth = _STYLE.envelope)
         lines!(
             ax,
             t[valid],
             q_mean[valid];
             color = vir_color,
-            linewidth = 2.4,
+            linewidth = _STYLE.data,
             label = L"\mathrm{mean}",
         )
         n_series = 2
@@ -290,7 +294,7 @@ function Nbody6Dynamics.plot_cluster_virial(
         [0.5];
         color = :gray50,
         linestyle = :dash,
-        linewidth = 1.0,
+        linewidth = _STYLE.guide,
         label = L"Q = 0.5\;\mathrm{(virial\;equilibrium)}",
     )
 
@@ -317,7 +321,7 @@ difference between the configuration and its members visible. For more
 than five clusters the min–max envelope and mean are drawn. Radii in pc and
 times in Myr when `cfg.units == "physical"`.
 """
-function Nbody6Dynamics.plot_cluster_structure(
+@publication function Nbody6Dynamics.plot_cluster_structure(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
@@ -364,10 +368,10 @@ function Nbody6Dynamics.plot_cluster_structure(
                 t[valid],
                 r_h[i, valid];
                 color = color,
-                linewidth = 1.8,
-                label = latexstring("\\mathrm{cluster}\\;$(i)"),
+                linewidth = _STYLE.data,
+                label = latexstring("\\mathrm{Cluster}\\;$(i)"),
             )
-            lines!(ax2, t[valid], f_bound[i, valid]; color = color, linewidth = 1.8)
+            lines!(ax2, t[valid], f_bound[i, valid]; color = color, linewidth = _STYLE.data)
             n_series += 1
         end
     else
@@ -391,16 +395,16 @@ function Nbody6Dynamics.plot_cluster_structure(
                     t[valid],
                     mean[valid];
                     color = sep_color,
-                    linewidth = 2.4,
+                    linewidth = _STYLE.data,
                     label = L"\mathrm{mean}",
                 )
                 n_series = 2
             else
                 band!(ax, t[valid], lo[valid], hi[valid]; color = (sep_color, 0.25))
-                lines!(ax, t[valid], mean[valid]; color = sep_color, linewidth = 2.4)
+                lines!(ax, t[valid], mean[valid]; color = sep_color, linewidth = _STYLE.data)
             end
-            lines!(ax, t[valid], lo[valid]; color = sep_edge, linewidth = 1.0)
-            lines!(ax, t[valid], hi[valid]; color = sep_edge, linewidth = 1.0)
+            lines!(ax, t[valid], lo[valid]; color = sep_edge, linewidth = _STYLE.envelope)
+            lines!(ax, t[valid], hi[valid]; color = sep_edge, linewidth = _STYLE.envelope)
         end
     end
 
@@ -415,14 +419,14 @@ function Nbody6Dynamics.plot_cluster_structure(
                 lagr.radii[i50, :] .* r_unit;
                 color = :gray40,
                 linestyle = :dash,
-                linewidth = 1.4,
-                label = L"\mathrm{engine}\;r_{50}\;\mathrm{(global\;centre)}",
+                linewidth = _STYLE.fit,
+                label = L"\mathrm{Engine}\;r_{50}\;\mathrm{(global\;centre)}",
             )
             n_series += 1
         end
     end
 
-    hlines!(ax2, [1.0]; color = :gray50, linestyle = :dash, linewidth = 1.0)
+    hlines!(ax2, [1.0]; color = :gray50, linestyle = :dash, linewidth = _STYLE.guide)
     _annotate!(ax2, L"M_{\mathrm{bound},i} = M_i"; corner = :tl, dy = 0.10, color = :gray40)
     ylims!(ax2, 0.0, 1.08)
     linkxaxes!(ax1, ax2)
@@ -449,7 +453,7 @@ initial half-mass radius and its bound mass at this snapshot. A ratio strip
 more than five clusters the min–max envelope and mean of the ratio are
 drawn. Radii in pc and densities in M☉ pc⁻³ when `cfg.units == "physical"`.
 """
-function Nbody6Dynamics.plot_density_profiles(
+@publication function Nbody6Dynamics.plot_density_profiles(
     snap::Snapshot,
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
@@ -513,12 +517,12 @@ function Nbody6Dynamics.plot_density_profiles(
                 r,
                 ρ;
                 color = color,
-                linewidth = 1.8,
-                label = latexstring("\\mathrm{cluster}\\;$(i)"),
+                linewidth = _STYLE.data,
+                label = latexstring("\\mathrm{Cluster}\\;$(i)"),
             )
             n_series += 1
         else
-            lines!(ax1, r, ρ; color = (:gray50, 0.5), linewidth = 1.0)
+            lines!(ax1, r, ρ; color = (:gray50, 0.5), linewidth = _STYLE.ghost)
         end
         if with_model
             spec = specs[i]
@@ -527,8 +531,8 @@ function Nbody6Dynamics.plot_density_profiles(
             ρm = [ρ_model(x) for x in prof.r[valid]] .* ρ_unit
             ok = ρm .> 0
             if detail && any(ok)
-                lines!(ax1, r[ok], ρm[ok]; color = color, linestyle = :dash, linewidth = 1.4)
-                lines!(ax2, r[ok], ρ[ok] ./ ρm[ok]; color = color, linewidth = 1.8)
+                lines!(ax1, r[ok], ρm[ok]; color = color, linestyle = :dash, linewidth = _STYLE.fit)
+                lines!(ax2, r[ok], ρ[ok] ./ ρm[ok]; color = color, linewidth = _STYLE.data)
             end
             push!(ratios, ρ[ok] ./ ρm[ok])
             push!(r_ratio, r[ok])
@@ -559,8 +563,15 @@ function Nbody6Dynamics.plot_density_profiles(
             color = (c, 0.25),
             label = L"\min\;-\;\max\;\mathrm{range}",
         )
-        lines!(ax2, grid[valid], mean[valid]; color = c, linewidth = 2.2, label = L"\mathrm{mean}")
-        lines!(ax1, r_all[1:1], ρ_all[1:1]; color = :gray50, label = L"\mathrm{clusters}")
+        lines!(
+            ax2,
+            grid[valid],
+            mean[valid];
+            color = c,
+            linewidth = _STYLE.data,
+            label = L"\mathrm{mean}",
+        )
+        lines!(ax1, r_all[1:1], ρ_all[1:1]; color = :gray50, label = L"\mathrm{Clusters}")
         n_series = 2
     end
     if with_model && detail
@@ -570,13 +581,13 @@ function Nbody6Dynamics.plot_density_profiles(
             ρ_all[1:1];
             color = :black,
             linestyle = :dash,
-            linewidth = 1.4,
-            label = L"\mathrm{generating\;model}",
+            linewidth = _STYLE.fit,
+            label = L"\mathrm{Generating\;model}",
         )
         n_series += 1
     end
     if with_model
-        hlines!(ax2, [1.0]; color = :gray50, linestyle = :dash, linewidth = 1.0)
+        hlines!(ax2, [1.0]; color = :gray50, linestyle = :dash, linewidth = _STYLE.guide)
         _annotate!(ax2, L"\rho = \rho_{\mathrm{model}}"; corner = :tr, color = :gray40)
         # Within a factor of ten of the model; the outermost shells at a King
         # model's tidal edge run away and are clipped.
@@ -605,7 +616,7 @@ labelled. Velocities in km s⁻¹ and radii in pc when `cfg.units ==
 "physical"`. For more than five clusters the min–max envelope and mean of
 `σ_r` and `β` are drawn.
 """
-function Nbody6Dynamics.plot_velocity_dispersion(
+@publication function Nbody6Dynamics.plot_velocity_dispersion(
     snap::Snapshot,
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
@@ -654,8 +665,8 @@ function Nbody6Dynamics.plot_velocity_dispersion(
                 r,
                 prof.sigma_r[valid] .* v_unit;
                 color = color,
-                linewidth = 1.8,
-                label = latexstring("\\mathrm{cluster}\\;$(i)"),
+                linewidth = _STYLE.data,
+                label = latexstring("\\mathrm{Cluster}\\;$(i)"),
             )
             lines!(
                 ax1,
@@ -663,9 +674,9 @@ function Nbody6Dynamics.plot_velocity_dispersion(
                 prof.sigma_t[valid] .* v_unit;
                 color = color,
                 linestyle = :dash,
-                linewidth = 1.4,
+                linewidth = _STYLE.fit,
             )
-            lines!(ax2, r, prof.beta[valid]; color = color, linewidth = 1.8)
+            lines!(ax2, r, prof.beta[valid]; color = color, linewidth = _STYLE.data)
             n_series += 1
         else
             push!(rows_sr, prof.sigma_r[valid] .* v_unit)
@@ -708,12 +719,12 @@ function Nbody6Dynamics.plot_velocity_dispersion(
                     grid[valid],
                     mean[valid];
                     color = c,
-                    linewidth = 2.2,
+                    linewidth = _STYLE.data,
                     label = L"\sigma_r\;\mathrm{mean}",
                 )
             else
                 band!(ax, grid[valid], lo[valid], hi[valid]; color = (c, 0.25))
-                lines!(ax, grid[valid], mean[valid]; color = c, linewidth = 2.2)
+                lines!(ax, grid[valid], mean[valid]; color = c, linewidth = _STYLE.data)
             end
         end
         n_series = 2
@@ -725,12 +736,12 @@ function Nbody6Dynamics.plot_velocity_dispersion(
             [NaN];
             color = :black,
             linestyle = :dash,
-            linewidth = 1.4,
+            linewidth = _STYLE.fit,
             label = L"\sigma_t\;\mathrm{(dashed)}",
         )
         n_series += 1
     end
-    hlines!(ax2, [0.0]; color = :gray50, linestyle = :dash, linewidth = 1.0)
+    hlines!(ax2, [0.0]; color = :gray50, linestyle = :dash, linewidth = _STYLE.guide)
     _annotate!(ax2, L"\beta = 0\;\mathrm{(isotropic)}"; corner = :tr, color = :gray40)
     if !isempty(r_all)
         xt = _log_ticks(minimum(r_all), maximum(r_all))

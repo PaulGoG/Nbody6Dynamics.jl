@@ -2,7 +2,7 @@
 # Merger IC diagnostic plots
 # =============================================================================
 # Uses the same publication theme, figure sizing, axis helpers, and output
-# conventions as the main simulation plotting pipeline (src/plotting/).
+# conventions as the main simulation plotting pipeline (ext/plotting/).
 
 """
     plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
@@ -16,8 +16,10 @@ Generate all diagnostic plots for a merger IC:
 
 All plots use the publication theme and are saved to `vis.output_dir`.
 """
-function Nbody6Dynamics.plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
-    set_publication_theme!()
+@publication function Nbody6Dynamics.plot_merger_ic(
+    result::MergerICResult,
+    vis::VisualizationConfig,
+)
     mkpath(vis.output_dir)
 
     N = result.N_total
@@ -230,7 +232,7 @@ function Nbody6Dynamics.plot_merger_ic(result::MergerICResult, vis::Visualizatio
             vx_kms[sub] .* arrow_scale,
             vy_kms[sub] .* arrow_scale;
             color = col,
-            linewidth = 1.0,
+            linewidth = _STYLE.envelope,
             arrowsize = 4,
         )
         if per_cluster_legend
@@ -292,7 +294,7 @@ function Nbody6Dynamics.plot_merger_ic(result::MergerICResult, vis::Visualizatio
     hist_color = _OKABE_ITO[1]
     band!(ax_h, step_x, step_bot, step_top; color = (hist_color, 0.55))
     # Darker same-hue edge on the band fill
-    lines!(ax_h, step_x, step_top; color = _band_edge(hist_color), linewidth = 1.5)
+    lines!(ax_h, step_x, step_top; color = _band_edge(hist_color), linewidth = _STYLE.band_edge)
 
     # Reference slopes (the canonical Kroupa segment exponents and break
     # masses from imf.jl), normalised to the most populated bin (more robust
@@ -324,7 +326,7 @@ function Nbody6Dynamics.plot_merger_ic(result::MergerICResult, vis::Visualizatio
                 seg,
                 anchor_y .* (seg ./ anchor_m) .^ (1.0 - α);
                 color = c,
-                linewidth = 2,
+                linewidth = _STYLE.fit,
                 linestyle = :dash,
                 label = lbl,
             )
@@ -408,7 +410,7 @@ function Nbody6Dynamics.plot_merger_ic(result::MergerICResult, vis::Visualizatio
             r_mid[m_r],
             ρ[m_r];
             color = (col, line_alpha),
-            linewidth = 2,
+            linewidth = _STYLE.data,
             label = isnothing(label) ? nothing : label,
         )
         isnothing(label) || (n_labels += 1)

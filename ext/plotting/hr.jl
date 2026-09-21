@@ -104,9 +104,9 @@ _hr_strip_classes(run::_HRRun) = [k for k in run.classes if !_hr_is_backdrop(k)]
 """Whether the run has a history to show: at least two epochs and one class besides the backdrop."""
 _hr_has_strip(run::_HRRun) = length(run.census.time_myr) ≥ 2 && !isempty(_hr_strip_classes(run))
 
-"""Whether an evolved star of the run is ever a member of a KS pair."""
-function _hr_has_evolved_members(run::_HRRun)::Bool
-    return any(run.populations) do p
+"""Whether an evolved star is a member of a KS pair at any of the `epochs` of the run."""
+function _hr_has_evolved_members(run::_HRRun, epochs)::Bool
+    return any(view(run.populations, epochs)) do p
         any(i -> p.binary_member[i] && !_hr_is_backdrop(p.class[i]), eachindex(p.class))
     end
 end
@@ -165,7 +165,7 @@ function _draw_hr_population!(
             marker = style.marker,
             markersize = _STYLE.marker * scale,
             strokecolor = style.color,
-            strokewidth = 2.5 * scale,
+            strokewidth = _STYLE.band_edge * scale,
         )
     end
     return nothing
@@ -195,6 +195,7 @@ function _draw_hr_census!(ax, run::_HRRun, epochs::Observable{Vector{Float64}})
             linestyle = style.linestyle,
             markersize = _STYLE.marker,
             strokecolor = _band_edge(style.color),
+            strokewidth = _STYLE.marker_stroke,
         )
     end
     return nothing
@@ -210,7 +211,7 @@ function _census_axis_top(n_max::Integer)::Float64
 end
 
 """Legend groups of an HR figure: the classes of the run, then the marker and guide conventions in use."""
-function _hr_legend_groups(run::_HRRun, strip::Bool, guide_label::AbstractString)
+function _hr_legend_groups(run::_HRRun, strip::Bool, guide_label::AbstractString, drawn)
     # Without a strip nothing in the figure stands for a class that is not
     # drawn on the plane, so such a class gets no entry.
     listed = strip ? run.classes : [k for k in run.classes if STELLAR_CLASSES[k].luminous]
@@ -237,7 +238,9 @@ function _hr_legend_groups(run::_HRRun, strip::Bool, guide_label::AbstractString
     end
     key_entries = Vector{_LegendElement}[]
     key_labels = AbstractString[]
-    if _hr_has_evolved_members(run)
+    # Open markers exist only on the panels, so their entry follows the epochs
+    # drawn, unlike the class entries, which the strip always answers for.
+    if _hr_has_evolved_members(run, drawn)
         push!(
             key_entries,
             _LegendElement[MarkerElement(;
@@ -245,7 +248,7 @@ function _hr_legend_groups(run::_HRRun, strip::Bool, guide_label::AbstractString
                 marker = :circle,
                 markersize = _STYLE.marker,
                 strokecolor = :black,
-                strokewidth = 2.5,
+                strokewidth = _STYLE.band_edge,
             )],
         )
         push!(key_labels, "Member of a KS pair")
@@ -265,15 +268,16 @@ function _hr_legend_groups(run::_HRRun, strip::Bool, guide_label::AbstractString
 end
 
 """
-    _hr_figure(run, indices, cfg) -> (fig, populations)
+    _hr_figure(run, indices, cfg; drawn = indices) -> (fig, populations)
 
 The HR figure of `run` showing the epochs `indices`, one panel each in a
 grid of at most three columns: legend row, panels on shared axes with the
 time of each in a data-free band above the data, and the census strip.
 Returns the figure and the observable population of every panel; an
-animation steps a single panel through the run by assigning to it.
+animation steps a single panel through the run by assigning to it, and names
+in `drawn` the epochs it will show.
 """
-function _hr_figure(run::_HRRun, indices::Vector{Int}, cfg::VisualizationConfig)
+function _hr_figure(run::_HRRun, indices::Vector{Int}, cfg::VisualizationConfig; drawn = indices)
     n = length(indices)
     ncols = min(n, 3)
     nrows = cld(n, ncols)
@@ -281,7 +285,7 @@ function _hr_figure(run::_HRRun, indices::Vector{Int}, cfg::VisualizationConfig)
     strip = _hr_has_strip(run)
 
     class_entries, class_labels, key_entries, key_labels =
-        _hr_legend_groups(run, strip, n > 1 ? "Panel epoch" : "Epoch shown")
+        _hr_legend_groups(run, strip, n > 1 ? "Panel epoch" : "Epoch shown", drawn)
     legend = length(class_entries) + length(key_entries) ≥ 2
 
     pw, ph = _figsize_px(cfg)
@@ -304,7 +308,7 @@ function _hr_figure(run::_HRRun, indices::Vector{Int}, cfg::VisualizationConfig)
     yticks = _logval_ticks(run.llims...; target_n = target_ticks)
     # Data-free band above the data, where the time annotation sits
     llims = (run.llims[1], run.llims[2] + _MONTAGE_BAND_FRAC * (run.llims[2] - run.llims[1]))
-    scale = grid ? max(_multipanel_scale(cfg, ncols; inner_ticks = false), 0.6) : 1.0
+    scale = grid ? max(_multipanel_scale(cfg, ncols; inner_ticks = false), 0.75) : 1.0
     populations = [Observable(run.populations[i]) for i in indices]
     for (panel, pop) in enumerate(populations)
         row, col = cld(panel, ncols), mod1(panel, ncols)
@@ -403,7 +407,7 @@ holes it cannot draw.
 
 Returns the output file path.
 """
-function Nbody6Dynamics.plot_hr(
+@publication function Nbody6Dynamics.plot_hr(
     sevs::Vector{StellarEvolutionSnapshot},
     cfg::VisualizationConfig;
     epoch::Int = length(sevs),
@@ -420,7 +424,7 @@ function Nbody6Dynamics.plot_hr(
     return _save_fig(cfg, filename, fig)
 end
 
-function Nbody6Dynamics.plot_hr(
+@publication function Nbody6Dynamics.plot_hr(
     sev::StellarEvolutionSnapshot,
     cfg::VisualizationConfig;
     bev::Union{Nothing,BinaryEvolutionSnapshot} = nothing,
@@ -446,7 +450,7 @@ a class the panels miss still shows in the strip.
 
 Returns the output file path.
 """
-function Nbody6Dynamics.plot_hr_evolution(
+@publication function Nbody6Dynamics.plot_hr_evolution(
     sevs::Vector{StellarEvolutionSnapshot},
     cfg::VisualizationConfig;
     bevs::Vector{BinaryEvolutionSnapshot} = BinaryEvolutionSnapshot[],
@@ -487,7 +491,7 @@ changes, and the epoch guide moves along the census strip.
 
 Returns the output file path.
 """
-function Nbody6Dynamics.animate_hr(
+@publication function Nbody6Dynamics.animate_hr(
     sevs::Vector{StellarEvolutionSnapshot},
     cfg::VisualizationConfig;
     bevs::Vector{BinaryEvolutionSnapshot} = BinaryEvolutionSnapshot[],
@@ -508,7 +512,7 @@ function Nbody6Dynamics.animate_hr(
     outpath = _anim_output_path(cfg, filename)
     @info "Animating HR diagram: $nframes frames → $outpath  ($(fps) fps, ~$(round(Int, nframes/fps)) s)"
 
-    fig, populations = _hr_figure(run, [1], cfg)
+    fig, populations = _hr_figure(run, [1], cfg; drawn = eachindex(run.populations))
     _backup_existing(outpath)
     record(fig, outpath, 1:nframes; framerate = fps, px_per_unit = cfg.style.anim_px_per_unit) do i
         populations[1][] = run.populations[i]

@@ -80,8 +80,6 @@ function Nbody6Dynamics.generate_plots(
     sim_dir::AbstractString = "",
     animations::Bool = true,
 )
-    set_publication_theme!()
-
     if haskey(results, :snapshots)
         snaps = results[:snapshots]::Vector{Snapshot}
         if !isempty(snaps)

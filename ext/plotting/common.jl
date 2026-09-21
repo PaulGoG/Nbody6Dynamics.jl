@@ -72,7 +72,7 @@ function Nbody6Dynamics.publication_theme()
     return Theme(
         fonts = _cm_fonts(),
         fontsize = _STYLE.label,
-        figure_padding = 10,
+        figure_padding = (10, 30, 10, 10),   # right: the overhang of the last x tick label
         linewidth = _STYLE.data,
         markersize = _STYLE.marker,
         Axis = (
@@ -217,26 +217,28 @@ const _AXIS_PROTRUSION = 84
 _grid_canvas_width(ncols::Int)::Int =
     ncols == 1 ? _CANVAS.width : max(_CANVAS.grid_width, ncols * _CANVAS.grid_column)
 
+"""
+    _fit_canvas_to_boxes!(fig, nrows, ncols, box_width, aspect)
+
+Give the `nrows × ncols` panel cells of `fig` a fixed size — `box_width` wide,
+`aspect` times as high — and resize the canvas to the layout. For panels whose
+shape is prescribed (equal-aspect projections) the canvas must follow the
+boxes: sized the other way round, the boxes shrink inside their cells and
+leave blank gutters, and a colourbar spanning the rows overshoots them.
+"""
+function _fit_canvas_to_boxes!(fig::Figure, nrows::Int, ncols::Int, box_width::Real, aspect::Real)
+    foreach(c -> colsize!(fig.layout, c, Fixed(box_width)), 1:ncols)
+    foreach(r -> rowsize!(fig.layout, r, Fixed(box_width * aspect)), 1:nrows)
+    resize_to_layout!(fig)
+    return nothing
+end
+
 """Gap between the panels of a grid: compact when `ncols > 1` and the inner tick labels are hidden, `_MULTIPANEL_HGAP` otherwise."""
 _multipanel_gap(ncols::Int; inner_ticks::Bool = true) =
     (ncols > 1 && !inner_ticks) ? _MULTIPANEL_GAP_COMPACT : _MULTIPANEL_HGAP
 
 """Fraction of the data range kept free above the data in montage panels, so the in-axis time annotation never meets a marker."""
 const _MONTAGE_BAND_FRAC = 0.18
-
-"""
-Widest montage grid whose panels can still carry their own tick values at one
-column width.  Beyond it three sets of tick labels collide across the row and
-the in-axis annotation is clipped by the panel, so an individually zoomed
-montage states each panel's half-width in its annotation instead.
-"""
-const _MAX_TICKED_MONTAGE_COLS = 2
-
-"""Relative drop of the second annotation line of a montage panel, clear of the first."""
-const _MONTAGE_ANNOTATION_DY = 0.13
-
-"""Data-free band of a montage panel carrying a second annotation line (time and half-width)."""
-const _MONTAGE_BAND_FRAC_TWO_LINE = 0.32
 
 """Width of one axis box of a grid (`_fig_multipanel` conventions) in canvas units."""
 function _multipanel_box_width(
@@ -658,7 +660,7 @@ function _no_data_note!(ax, text)
         space = :relative,
         align = (:center, :center),
         color = :gray30,
-        fontsize = 18,
+        fontsize = _STYLE.annotation,
     )
     return nothing
 end

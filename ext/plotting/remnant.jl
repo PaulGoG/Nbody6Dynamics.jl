@@ -35,7 +35,7 @@ function _event_marker!(
     color = :black,
 )
     isfinite(x) || return nothing
-    vlines!(ax, [x]; color = color, linestyle = :dash, linewidth = 1.5)
+    vlines!(ax, [x]; color = color, linestyle = :dash, linewidth = _STYLE.guide)
     span = max(t_range[2] - t_range[1], eps(Float64))
     right_side = (x - t_range[1]) / span < 1 - _MARKER_EDGE_FRACTION
     text!(
@@ -60,7 +60,7 @@ Two stacked panels sharing the time axis: the ordered-motion parameter
 ``\\cos θ`` of the spin axis with the initial orbital angular momentum,
 with the coalescence time marked.
 """
-function Nbody6Dynamics.plot_remnant_rotation(
+@publication function Nbody6Dynamics.plot_remnant_rotation(
     diag::RemnantDiagnostics,
     cfg::VisualizationConfig;
     filename::AbstractString = "remnant_rotation",
@@ -75,7 +75,14 @@ function Nbody6Dynamics.plot_remnant_rotation(
     fig = Figure(; size = _fig_multipanel(cfg, 2, 1))
     ax1 = Axis(fig[1, 1]; ylabel = L"\lambda_R", xticks = ttk, xticklabelsvisible = false)
     valid = isfinite.(diag.lambda_r)
-    lines!(ax1, t[valid], diag.lambda_r[valid]; color = c_r, linewidth = 2.2, label = L"\lambda_R")
+    lines!(
+        ax1,
+        t[valid],
+        diag.lambda_r[valid];
+        color = c_r,
+        linewidth = _STYLE.data,
+        label = L"\lambda_R",
+    )
     ylims!(ax1, 0.0, 1.05)
     ax1b = Axis(
         fig[1, 1];
@@ -95,7 +102,7 @@ function Nbody6Dynamics.plot_remnant_rotation(
         t[validp],
         diag.lambda_peebles[validp];
         color = c_p,
-        linewidth = 2.0,
+        linewidth = _STYLE.data,
         linestyle = :dash,
         label = L"\lambda_P",
     )
@@ -109,8 +116,8 @@ function Nbody6Dynamics.plot_remnant_rotation(
         xticks = ttk,
     )
     valida = isfinite.(diag.spin_alignment)
-    lines!(ax2, t[valida], diag.spin_alignment[valida]; color = :black, linewidth = 2.0)
-    hlines!(ax2, [1.0]; color = (:grey, 0.6), linestyle = :dot, linewidth = 1.2)
+    lines!(ax2, t[valida], diag.spin_alignment[valida]; color = :black, linewidth = _STYLE.data)
+    hlines!(ax2, [1.0]; color = (:grey, 0.6), linestyle = :dot, linewidth = _STYLE.guide)
     # The guide label sits at the end of the axis furthest from the
     # coalescence marker, so the two never cross.
     label_left =
@@ -150,8 +157,8 @@ function Nbody6Dynamics.plot_remnant_rotation(
     _top_legend!(
         fig,
         _LegendElement[
-            LineElement(; color = c_r, linewidth = 2.2),
-            LineElement(; color = c_p, linewidth = 2.0, linestyle = :dash),
+            LineElement(; color = c_r, linewidth = _STYLE.data),
+            LineElement(; color = c_p, linewidth = _STYLE.data, linestyle = :dash),
         ],
         AbstractString[L"\lambda_R", L"\lambda_P"],
     )
@@ -165,7 +172,7 @@ end
 ``v_\\mathrm{rot}/σ`` against cylindrical radius for the shells of a
 [`RotationProfile`](@ref); `rbar` converts NB lengths to pc.
 """
-function Nbody6Dynamics.plot_rotation_profile(
+@publication function Nbody6Dynamics.plot_rotation_profile(
     profile::RotationProfile,
     cfg::VisualizationConfig;
     rbar::Real = 1.0,
@@ -188,10 +195,12 @@ function Nbody6Dynamics.plot_rotation_profile(
         R[valid],
         profile.v_rot_over_sigma[valid];
         color = c_r,
-        linewidth = 2.0,
-        markersize = 12,
+        linewidth = _STYLE.data,
+        markersize = _STYLE.marker,
+        strokecolor = _band_edge(c_r),
+        strokewidth = _STYLE.marker_stroke,
     )
-    hlines!(ax, [0.0]; color = (:grey, 0.6), linestyle = :dot, linewidth = 1.2)
+    hlines!(ax, [0.0]; color = (:grey, 0.6), linestyle = :dot, linewidth = _STYLE.guide)
     if isfinite(lambda_r)
         _annotate!(
             ax,
@@ -210,7 +219,7 @@ end
 Core and half-mass radii of the bound remnant against time above the ratio
 ``r_h / r_c``, with the coalescence time marked.
 """
-function Nbody6Dynamics.plot_remnant_structure(
+@publication function Nbody6Dynamics.plot_remnant_structure(
     diag::RemnantDiagnostics,
     cfg::VisualizationConfig;
     filename::AbstractString = "remnant_structure",
@@ -234,14 +243,22 @@ function Nbody6Dynamics.plot_remnant_structure(
     )
     vc = isfinite.(r_c)
     vh = isfinite.(r_h)
-    lines!(ax1, t[vc], r_c[vc]; color = c_core, linewidth = 2.2, label = L"r_c")
-    lines!(ax1, t[vh], r_h[vh]; color = c_half, linewidth = 2.2, linestyle = :dash, label = L"r_h")
+    lines!(ax1, t[vc], r_c[vc]; color = c_core, linewidth = _STYLE.data, label = L"r_c")
+    lines!(
+        ax1,
+        t[vh],
+        r_h[vh];
+        color = c_half,
+        linewidth = _STYLE.data,
+        linestyle = :dash,
+        label = L"r_h",
+    )
     r_top = 1.15 * maximum(vcat(r_c[vc], r_h[vh]); init = 1.0)
     ylims!(ax1, 0.0, r_top)
     ax2 = Axis(fig[2, 1]; xlabel = ax_t.label, ylabel = L"r_h / r_c", xticks = ttk)
     ratio = r_h ./ r_c
     vr = isfinite.(ratio)
-    lines!(ax2, t[vr], ratio[vr]; color = :black, linewidth = 2.0)
+    lines!(ax2, t[vr], ratio[vr]; color = :black, linewidth = _STYLE.data)
     q_top = 1.15 * maximum(ratio[vr]; init = 1.0)
     ylims!(ax2, 0.0, q_top)
     linkxaxes!(ax1, ax2)
@@ -262,7 +279,7 @@ end
 radius ratio of the massive subset, with the threshold, coalescence and
 segregation times marked.
 """
-function Nbody6Dynamics.plot_mass_segregation_evolution(
+@publication function Nbody6Dynamics.plot_mass_segregation_evolution(
     diag::RemnantDiagnostics,
     cfg::VisualizationConfig;
     lambda_threshold::Real = _MSR_THRESHOLD,
@@ -287,14 +304,20 @@ function Nbody6Dynamics.plot_mass_segregation_evolution(
             diag.lambda_msr[v] .+ diag.lambda_msr_err[v];
             color = (c_msr, 0.25),
         )
-        lines!(ax1, t[v], diag.lambda_msr[v]; color = c_msr, linewidth = 2.2)
+        lines!(ax1, t[v], diag.lambda_msr[v]; color = c_msr, linewidth = _STYLE.data)
         hi = maximum(diag.lambda_msr[v] .+ diag.lambda_msr_err[v])
         l_top = 1.15 * max(hi, lambda_threshold)
     else
         _no_data_note!(ax1, "Too few members for the segregation estimate")
     end
     ylims!(ax1, 0.0, l_top)
-    hlines!(ax1, [lambda_threshold]; color = (:grey, 0.7), linestyle = :dot, linewidth = 1.4)
+    hlines!(
+        ax1,
+        [lambda_threshold];
+        color = (:grey, 0.7),
+        linestyle = :dot,
+        linewidth = _STYLE.guide,
+    )
     text!(
         ax1,
         t[end],
@@ -307,13 +330,14 @@ function Nbody6Dynamics.plot_mass_segregation_evolution(
         fontsize = _ANNOTATION_FONTSIZE,
         color = :grey,
     )
-    hlines!(ax1, [1.0]; color = (:grey, 0.5), linestyle = :dash, linewidth = 1.0)
+    hlines!(ax1, [1.0]; color = (:grey, 0.5), linestyle = :dash, linewidth = _STYLE.guide)
 
     ax2 =
         Axis(fig[2, 1]; xlabel = ax_t.label, ylabel = L"r_{h,\mathrm{massive}} / r_h", xticks = ttk)
     vs = isfinite.(diag.segregation_ratio)
-    any(vs) && lines!(ax2, t[vs], diag.segregation_ratio[vs]; color = c_msr, linewidth = 2.0)
-    hlines!(ax2, [1.0]; color = (:grey, 0.5), linestyle = :dash, linewidth = 1.0)
+    any(vs) &&
+        lines!(ax2, t[vs], diag.segregation_ratio[vs]; color = c_msr, linewidth = _STYLE.data)
+    hlines!(ax2, [1.0]; color = (:grey, 0.5), linestyle = :dash, linewidth = _STYLE.guide)
     s_top = any(vs) ? 1.15 * max(maximum(diag.segregation_ratio[vs]), 1.0) : 1.2
     ylims!(ax2, 0.0, s_top)
     linkxaxes!(ax1, ax2)

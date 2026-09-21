@@ -5043,7 +5043,8 @@ rbar = 1.0
         theme = publication_theme()
         @test theme.linewidth[] == 3
         @test theme.markersize[] == 14
-        @test theme.figure_padding[] == 10
+        # 10 all round, 30 on the right for the overhang of the last x tick label
+        @test theme.figure_padding[] == (10, 30, 10, 10)
         @test theme.Axis.xticklabelsize[] == 22
         @test theme.Legend.framevisible[] == false
     end

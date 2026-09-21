@@ -37,7 +37,7 @@ Myr when `cfg.units == "physical"` (header AS scaling); N-body otherwise.
 
 Returns a vector of output file paths.
 """
-function Nbody6Dynamics.animate_cluster(
+@publication function Nbody6Dynamics.animate_cluster(
     snaps::Vector{Snapshot},
     cfg::VisualizationConfig;
     filename::AbstractString = "cluster_evolution",
@@ -199,7 +199,7 @@ Animate Lagrangian radii evolution with a sweeping time cursor.
 
 Returns the output file path.
 """
-function Nbody6Dynamics.animate_lagrangian(
+@publication function Nbody6Dynamics.animate_lagrangian(
     lagr::LagrangianData,
     cfg::VisualizationConfig;
     filename::AbstractString = "lagrangian_anim",
@@ -231,7 +231,7 @@ function Nbody6Dynamics.animate_lagrangian(
 
     # Pre-plot all lines (full data) in light gray as ghost background.
     for idx in frac_indices
-        lines!(ax, ts, _masked_radii(lagr, idx, r_scale); color = :gray82, linewidth = 1.0)
+        lines!(ax, ts, _masked_radii(lagr, idx, r_scale); color = :gray82, linewidth = _STYLE.ghost)
     end
 
     # Animated lines — use Point2f Observables to avoid x/y length mismatch
@@ -250,7 +250,7 @@ function Nbody6Dynamics.animate_lagrangian(
     end
 
     # Vertical cursor line
-    vlines!(ax, @lift(ts[$frame_idx]); color = :gray40, linestyle = :dash, linewidth = 1.0)
+    vlines!(ax, @lift(ts[$frame_idx]); color = :gray40, linestyle = :dash, linewidth = _STYLE.guide)
 
     # Static layout: the top legend row is added before record() starts
     if length(selected_fractions) ≥ 2
