@@ -201,10 +201,17 @@ function _stage_incomplete(stage::Symbol, base_dir::AbstractString, t0::Real)::U
     end
     isempty(candidates) && return "the stage left no run directory under runs/"
     finished = filter(_pipeline_completed, candidates)
-    isempty(finished) || return nothing
-    newest = basename(argmax(mtime, candidates))
-    return "runs/$newest has no [pipeline] completed marker: the pipeline was " *
-           "interrupted after the engine exited (post-processing or plotting)"
+    if isempty(finished)
+        newest = basename(argmax(mtime, candidates))
+        return "runs/$newest has no [pipeline] completed marker: the pipeline was " *
+               "interrupted after the engine exited (post-processing or plotting)"
+    end
+    # A pipeline also completes on partial output: the engine must have
+    # reached END RUN for the stage to count.
+    any(d -> _engine_completed(d) !== false, finished) && return nothing
+    newest = basename(argmax(mtime, finished))
+    return "runs/$newest completed its pipeline on partial output: the engine " *
+           "ended without END RUN (killed, or halted on its energy check)"
 end
 
 """A name with the characters outside `[A-Za-z0-9_-]` replaced by `_`, for a directory name."""

@@ -71,6 +71,7 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROO
     # 4. Clone / reinstall
     # ------------------------------------------------------------------
     if install.reinstall && isdir(src_dir)
+        _is_engine_checkout(src_dir) || _refuse_foreign_directory(src_dir)
         @info "Reinstall requested — removing $src_dir"
         rm(src_dir; recursive = true)
     end
@@ -294,17 +295,23 @@ end
 """
     _ensure_source_tree(src_dir, install)
 
-Leave `src_dir` holding a usable engine checkout: clone it when absent,
-keep it as it is when it carries a `configure` script, and repair it when
-it does not. A directory without `configure` is a truncated checkout — an
-interrupted `git clone` (a killed run, a host reset) leaves exactly that,
-and the build would fail later with a bare `ENOENT` on `./configure`. The
-repair restores the tracked files with `git checkout --force`, which keeps
-untracked work, and falls back to removing the directory and cloning again
-only when there is no usable git state left to restore from.
+Leave `src_dir` holding a usable engine checkout: clone it when absent or
+empty, keep it as it is when it carries a `configure` script, and repair it
+when it does not. A git directory without `configure` is a truncated
+checkout — an interrupted `git clone` (a killed run, a host reset) leaves
+exactly that, and the build would fail later with a bare `ENOENT` on
+`./configure`. The repair restores the tracked files with
+`git checkout --force`, which keeps untracked work; when git cannot restore
+them the directory is set aside under a new name and a fresh clone takes its
+place.
+
+Nothing is ever deleted here. `src_dir` comes from `install.install_dir`,
+and a mistyped value may name a directory that holds something else
+entirely: a non-empty directory that is not a git checkout is refused with
+an `ArgumentError`.
 """
 function _ensure_source_tree(src_dir::AbstractString, install)
-    if !isdir(src_dir)
+    if !isdir(src_dir) || isempty(readdir(src_dir))
         _clone_source(src_dir, install)
         return nothing
     end
@@ -312,22 +319,52 @@ function _ensure_source_tree(src_dir::AbstractString, install)
         @info "Source directory already exists: $src_dir (reference left as is)"
         return nothing
     end
+    _is_engine_checkout(src_dir) || _refuse_foreign_directory(src_dir)
     @warn "Engine source tree at $src_dir has no configure script: the checkout is " *
           "incomplete (an interrupted clone leaves this). Restoring it."
     ref = isempty(install.ref) ? "HEAD" : install.ref
-    if isdir(joinpath(src_dir, ".git"))
-        try
-            _run_quiet(`git -C $src_dir checkout --force $ref`; label = "checkout")
-        catch e
-            e isa Union{ProcessFailedException,Base.IOError} || rethrow()
-            @debug "restoring the checkout failed; cloning again" exception = e
-        end
-        _source_tree_ready(src_dir) && return nothing
+    try
+        _run_quiet(`git -C $src_dir checkout --force $ref`; label = "checkout")
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError} || rethrow()
+        @debug "restoring the checkout failed; cloning again" exception = e
     end
-    @warn "The checkout cannot be restored; removing $src_dir and cloning again."
-    rm(src_dir; recursive = true)
+    _source_tree_ready(src_dir) && return nothing
+    aside = _set_aside(src_dir)
+    @warn "The checkout cannot be restored; kept as $aside and cloning again."
     _clone_source(src_dir, install)
     return nothing
+end
+
+"""`true` when `dir` is recognisably an engine checkout: it holds `configure` or its own `.git`."""
+_is_engine_checkout(dir::AbstractString)::Bool =
+    _source_tree_ready(dir) || ispath(joinpath(dir, ".git"))
+
+function _refuse_foreign_directory(dir::AbstractString)
+    throw(
+        ArgumentError(
+            "install.install_dir resolves to $dir, which exists, is not empty and is not an " *
+            "engine checkout (no configure script, no .git); refusing to replace it. Point " *
+            "install_dir at another location, or move that directory away",
+        ),
+    )
+end
+
+"""
+    _set_aside(dir) -> String
+
+Rename `dir` to `<dir>.incomplete-<yyyymmdd_HHMMSS>` (suffixed `-1`, `-2`, …
+while that name is taken) and return the new path.
+"""
+function _set_aside(dir::AbstractString)::String
+    base = rstrip(abspath(dir), '/') * ".incomplete-" * Dates.format(Dates.now(), "yyyymmdd_HHMMSS")
+    target, n = base, 0
+    while ispath(target)
+        n += 1
+        target = "$base-$n"
+    end
+    mv(dir, target)
+    return target
 end
 
 """`true` when `src_dir` holds the engine's `configure` script, which every complete checkout has (it is tracked upstream)."""

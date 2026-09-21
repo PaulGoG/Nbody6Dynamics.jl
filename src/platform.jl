@@ -668,7 +668,7 @@ end
 
 Platform fingerprint for run metadata, using Julia's own introspection:
 host, OS/kernel, CPU model and logical core count, total memory, Julia
-version, Julia and BLAS thread counts. With `gpu_probe = true` an
+version, Julia and BLAS thread counts, and the `versioninfo()` report. With `gpu_probe = true` an
 `nvidia-smi` query records name, VRAM, driver version, and compute
 capability of every visible GPU, one `;`-separated entry per device
 (`"unavailable"` when the tool or a device is absent). Together with the
@@ -686,6 +686,7 @@ function _hardware_fingerprint(; gpu_probe::Bool = false)::Dict{String,Any}
         "julia_version" => string(VERSION),
         "julia_threads" => Threads.nthreads(),
         "blas_threads" => BLAS.get_num_threads(),
+        "versioninfo" => strip(sprint(InteractiveUtils.versioninfo)),
     )
     if gpu_probe
         gpu = try

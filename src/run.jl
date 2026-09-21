@@ -357,6 +357,7 @@ function _execute_simulation(
             elapsed;
             telemetry = telemetry,
             input_file = basename(input_copy),
+            src_dir = src_dir,
             segment = Dict{String,Any}(
                 "index" => segment,
                 "kind" => is_restart ? "restart" : "initial",
@@ -389,7 +390,12 @@ function _execute_simulation(
             )
         end
 
-        @info "Simulation complete. Run: $run_id  ($(_format_elapsed(elapsed)))"
+        if completed
+            @info "Simulation complete. Run: $run_id  ($(_format_elapsed(elapsed)))"
+        else
+            @warn "Simulation ended without END RUN (exit status $(_exit_status(process))). " *
+                  "Run: $run_id  ($(_format_elapsed(elapsed))); the output is partial"
+        end
     end
     return run_dir
 end
@@ -883,6 +889,7 @@ function _write_run_summary(
     telemetry::Union{Nothing,Dict{String,Any}} = nothing,
     input_file::AbstractString = "",
     segment::Union{Nothing,Dict{String,Any}} = nothing,
+    src_dir::AbstractString = "",
 )
     info_path = joinpath(run_dir, "RUN_INFO.toml")
     previous = isfile(info_path) ? TOML.parsefile(info_path) : Dict{String,Any}()
@@ -918,11 +925,12 @@ function _write_run_summary(
         "run" => run_table,
         "provenance" => Dict{String,Any}(
             "package_commit" => _source_stamp(_PROJECT_ROOT),
-            "backend_commit" =>
-                _git_commit(joinpath(_PROJECT_ROOT, "backend", "Nbody6PPGPU-beijing")),
+            "backend_commit" => isempty(src_dir) ? "unknown" : _git_commit(src_dir),
         ),
         "hardware" => _hardware_fingerprint(; gpu_probe = cfg.build.enable_gpu),
     )
+    manifest = _snapshot_manifest(run_dir)
+    manifest === nothing || (d["provenance"]["environment_manifest"] = manifest)
     telemetry === nothing || (d["telemetry"] = telemetry)
     isempty(segments) || (d["segments"] = segments)
     build_info = joinpath(out_dir, "BUILD_INFO.toml")
@@ -972,6 +980,11 @@ function _stamp_pipeline_completion(
         "phases" => String.(phases),
         "elapsed_seconds" => round(Float64(elapsed); digits = 1),
     )
+    # The pipeline post-processes whatever the engine left, so its own
+    # completion says nothing about the integration; state that separately.
+    segments = get(d, "segments", Any[])
+    isempty(segments) ||
+        (d["pipeline"]["engine_completed"] = get(last(segments), "completed", false) === true)
     open(info_path, "w") do io
         TOML.print(io, d)
     end
@@ -994,4 +1007,24 @@ function _pipeline_completed(run_dir::AbstractString)::Bool
     catch
         false
     end
+end
+
+"""
+    _engine_completed(run_dir) -> Union{Nothing,Bool}
+
+Whether the last engine segment recorded in `run_dir/RUN_INFO.toml` reached
+`END RUN`. `nothing` when the summary is missing or unreadable, or lists no
+segment (a post-processing-only pipeline).
+"""
+function _engine_completed(run_dir::AbstractString)::Union{Nothing,Bool}
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(info_path) || return nothing
+    segments = try
+        get(TOML.parsefile(info_path), "segments", Any[])
+    catch e
+        e isa TOML.ParserError || rethrow()
+        return nothing
+    end
+    isempty(segments) && return nothing
+    return get(last(segments), "completed", false) === true
 end

@@ -11,6 +11,7 @@ using OrdinaryDiffEqTsit5
 using Logging
 using LoggingExtras: FormatLogger, MinLevelLogger, TeeLogger
 using LinearAlgebra: BLAS
+using InteractiveUtils: InteractiveUtils
 using UnicodePlots: UnicodePlots
 using PrecompileTools: @setup_workload, @compile_workload
 

@@ -5,13 +5,20 @@
 """
     _git_commit(dir) -> String
 
-Short commit hash of the git repository at `dir`, with a `-dirty` suffix
-when the working tree has uncommitted changes; `"unknown"` when `dir` is not
-a repository or git is unavailable. Used to stamp run provenance
-(tagsave-equivalent) into RUN_INFO.toml and merger_ic.toml.
+Short commit hash of the git repository rooted at `dir`, with a `-dirty`
+suffix when the working tree has uncommitted changes; `"unknown"` when `dir`
+is not the top level of a repository or git is unavailable. Used to stamp run
+provenance (tagsave-equivalent) into RUN_INFO.toml and merger_ic.toml.
+
+git resolves a directory without its own `.git` against the nearest enclosing
+repository, so a plain subdirectory would report its parent's commit; the
+top-level check rules that out.
 """
 function _git_commit(dir::AbstractString)::String
     try
+        top =
+            strip(read(pipeline(`git -C $dir rev-parse --show-toplevel`; stderr = devnull), String))
+        realpath(top) == realpath(dir) || return "unknown"
         h = strip(read(pipeline(`git -C $dir rev-parse --short HEAD`; stderr = devnull), String))
         dirty =
             !isempty(
@@ -46,6 +53,32 @@ function _source_stamp(dir::AbstractString)::String
         nothing
     end
     return version === nothing ? "unknown" : "v$(version)+nogit"
+end
+
+"""
+    _snapshot_manifest(run_dir) -> Union{Nothing,String}
+
+Copy the resolved manifest of the active environment into `run_dir` as
+`environment_manifest.toml` and return its file name, so a result stays
+attributable to the exact dependency versions that produced it; the
+manifest itself is not under version control. A snapshot that already
+holds the same content is kept; a different one (a restart under another
+environment) is backed up first. `nothing` when the active project has no
+manifest.
+"""
+function _snapshot_manifest(run_dir::AbstractString)::Union{Nothing,String}
+    project = Base.active_project()
+    project === nothing && return nothing
+    manifest = Base.project_file_manifest_path(project)
+    (manifest === nothing || !isfile(manifest)) && return nothing
+    name = "environment_manifest.toml"
+    target = joinpath(run_dir, name)
+    if isfile(target)
+        read(target) == read(manifest) && return name
+        _backup_existing(target)
+    end
+    cp(manifest, target)
+    return name
 end
 
 """

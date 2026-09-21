@@ -6,6 +6,7 @@ authors = ["Paul-Adrian Gogîță <gogitapaul@yahoo.ro>"]
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+InteractiveUtils = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
 LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
@@ -35,6 +36,7 @@ Aqua = "0.8"
 CairoMakie = "0.12, 0.13"
 Dates = "1"
 ExplicitImports = "1"
+InteractiveUtils = "1"
 JET = "0.9, 0.10"
 LaTeXStrings = "1"
 LinearAlgebra = "1"

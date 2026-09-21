@@ -312,15 +312,32 @@ format = "pdf"
         @test Nbody6Dynamics._source_tree_ready(src)
         @test isfile(marker)
 
-        # No usable git state left → removed and cloned again
+        # Git state that cannot restore the files → set aside, never
+        # deleted, and cloned again
         rm(joinpath(src, "configure"))
-        rm(joinpath(src, ".git"); recursive = true)
+        rm(joinpath(src, ".git", "HEAD"))
         @test_logs (:warn, r"cannot be restored") match_mode = :any Nbody6Dynamics._ensure_source_tree(
             src,
             inst,
         )
         @test Nbody6Dynamics._source_tree_ready(src)
-        @test !isfile(marker)
+        aside = filter(startswith("engine.incomplete-"), readdir(dirname(src)))
+        @test length(aside) == 1
+        @test read(joinpath(dirname(src), only(aside), "untracked.txt"), String) == "keep me"
+
+        # A non-empty directory that is no checkout at all (a mistyped
+        # install_dir) is refused and left untouched
+        foreign = joinpath(mktempdir(), "results")
+        mkpath(foreign)
+        write(joinpath(foreign, "data.csv"), "1,2,3")
+        @test_throws ArgumentError Nbody6Dynamics._ensure_source_tree(foreign, inst)
+        @test read(joinpath(foreign, "data.csv"), String) == "1,2,3"
+
+        # An empty directory is simply cloned into
+        empty_dir = joinpath(mktempdir(), "engine")
+        mkpath(empty_dir)
+        Nbody6Dynamics._ensure_source_tree(empty_dir, inst)
+        @test Nbody6Dynamics._source_tree_ready(empty_dir)
     end
 
     @testset "GPU build target" begin
@@ -1261,6 +1278,50 @@ format = "pdf"
             # Validation directories are not run directories.
             mkpath(joinpath(runs, "gpu_validation_workstation-01_20260911_185714"))
             @test Nbody6Dynamics._stage_incomplete(:cpu, base, t0) === nothing
+
+            # The pipeline also completes on partial output: an engine that
+            # ended without END RUN fails the stage despite the marker.
+            info = joinpath(run_dir, "RUN_INFO.toml")
+            write_summary(completed) = open(info, "w") do io
+                Nbody6Dynamics.TOML.print(
+                    io,
+                    Dict(
+                        "run" => Dict("id" => basename(run_dir)),
+                        "segments" => [Dict("index" => 1, "completed" => completed)],
+                    ),
+                )
+            end
+            write_summary(false)
+            @test Nbody6Dynamics._engine_completed(run_dir) === false
+            @test Nbody6Dynamics._stamp_pipeline_completion(run_dir, ["simulation"], 1.0)
+            @test Nbody6Dynamics.TOML.parsefile(info)["pipeline"]["engine_completed"] === false
+            reason = Nbody6Dynamics._stage_incomplete(:cpu, base, t0)
+            @test reason !== nothing
+            @test occursin("END RUN", reason)
+
+            write_summary(true)
+            @test Nbody6Dynamics._engine_completed(run_dir) === true
+            @test Nbody6Dynamics._stamp_pipeline_completion(run_dir, ["simulation"], 1.0)
+            @test Nbody6Dynamics._stage_incomplete(:cpu, base, t0) === nothing
+
+            # No segment (post-processing only): nothing to judge.
+            @test Nbody6Dynamics._engine_completed(mktempdir()) === nothing
+        end
+    end
+
+    # =====================================================================
+    @testset "Commit stamp only at a repository root" begin
+        quiet(cmd) = run(pipeline(cmd; stdout = devnull, stderr = devnull))
+        mktempdir() do repo
+            quiet(`git -C $repo init --quiet`)
+            write(joinpath(repo, "f.txt"), "x")
+            quiet(`git -C $repo add f.txt`)
+            quiet(`git -C $repo -c user.email=t@t -c user.name=t commit --quiet -m init`)
+            @test Nbody6Dynamics._git_commit(repo) != "unknown"
+            # A plain subdirectory must not inherit the enclosing commit.
+            sub = joinpath(repo, "backend")
+            mkpath(sub)
+            @test Nbody6Dynamics._git_commit(sub) == "unknown"
         end
     end
 
@@ -4664,8 +4725,24 @@ rbar = 1.0
             "julia_version",
             "julia_threads",
             "blas_threads",
+            "versioninfo",
         )
             @test haskey(hw, key)
+        end
+        @test occursin("Julia Version", hw["versioninfo"])
+
+        # The resolved manifest travels with the run; an identical snapshot
+        # is kept, a different one backed up rather than overwritten.
+        mktempdir() do run_dir
+            name = Nbody6Dynamics._snapshot_manifest(run_dir)
+            @test name == "environment_manifest.toml"
+            snapshot = joinpath(run_dir, name)
+            @test occursin("julia_version", read(snapshot, String))
+            @test Nbody6Dynamics._snapshot_manifest(run_dir) == name
+            @test !isfile(joinpath(run_dir, "environment_manifest#1.toml"))
+            write(snapshot, "stale = true\n")
+            @test Nbody6Dynamics._snapshot_manifest(run_dir) == name
+            @test read(joinpath(run_dir, "environment_manifest#1.toml"), String) == "stale = true\n"
         end
         @test hw["cpu_threads"] ≥ 1
         @test hw["total_memory_gib"] > 0
