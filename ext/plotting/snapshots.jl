@@ -267,7 +267,7 @@ _has_physical_scaling(h::SnapshotHeader) = rbar(h) > 0 && tscale(h) > 0
 
 """In-axis time annotation: `t = … Myr` (physical) or `t = … [NB]`."""
 function _time_annotation(t_val::Real, physical::Bool)
-    t_str = @sprintf("%.3g", t_val)
+    t_str = _fmt_latex_sig(t_val, 3)
     return physical ? latexstring("t = $(t_str)\\;\\mathrm{Myr}") :
            latexstring("t = $(t_str)\\;[\\mathrm{NB}]")
 end
@@ -278,7 +278,7 @@ It sits under the time annotation and replaces the tick values, which such a
 panel is too narrow to carry; two significant digits keep it inside the panel.
 """
 _extent_annotation(half_width::Real, unit::AbstractString) =
-    latexstring("\\pm $(@sprintf("%.2g", half_width))\\;\\mathrm{$(unit)}")
+    latexstring("\\pm $(_fmt_latex_sig(half_width, 2))\\;\\mathrm{$(unit)}")
 
 """
     _needs_adaptive_zoom(snaps, indices, ix, iy, zoom_frac) -> Bool

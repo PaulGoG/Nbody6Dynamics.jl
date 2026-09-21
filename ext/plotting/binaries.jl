@@ -84,7 +84,7 @@ function Nbody6Dynamics.plot_binary_population(
     n0, n1 = pop.n_pairs[1], pop.n_pairs[end]
     if !single && n0 > 0
         Δ = n1 - n0
-        pct = @sprintf("%.2g", 100 * abs(Δ) / n0)
+        pct = _fmt_latex_sig(100 * abs(Δ) / n0, 2)
         sign = Δ < 0 ? "-" : "+"
         _annotate!(
             ax1,
@@ -184,7 +184,7 @@ function Nbody6Dynamics.plot_binary_orbital_elements(
 )::String
     recs = bev.records
     classified = isfinite(m_mean) && isfinite(sigma_kms) && m_mean > 0 && sigma_kms > 0
-    t_val = @sprintf("%.3g", bev.time_myr)
+    t_val = _fmt_latex_sig(bev.time_myr, 3)
 
     fig = Figure(; size = _figsize_px(cfg))
     a_au = [semi_major_axis_pc(r) / _AU_IN_PC for r in recs]
@@ -222,8 +222,8 @@ function Nbody6Dynamics.plot_binary_orbital_elements(
         hard = x .> 1.0
         n_hard = count(hard)
         n_soft = n - n_hard
-        p_hard = @sprintf("%.3g", 100 * n_hard / n)
-        p_soft = @sprintf("%.3g", 100 * n_soft / n)
+        p_hard = _fmt_latex_sig(100 * n_hard / n, 3)
+        p_soft = _fmt_latex_sig(100 * n_soft / n, 3)
         classes = (
             (hard, c_hard, true, "Hard: $(n_hard) ($(p_hard) %)"),
             (.!hard, c_soft, false, "Soft: $(n_soft) ($(p_soft) %)"),
@@ -304,8 +304,8 @@ function Nbody6Dynamics.plot_binary_period_distribution(
     end
 
     c0 = _SEMANTIC_COLORS[:n_pairs]
-    t0 = @sprintf("%.3g", first_bev.time_myr)
-    t1 = @sprintf("%.3g", last_bev.time_myr)
+    t0 = _fmt_latex_sig(first_bev.time_myr, 3)
+    t1 = _fmt_latex_sig(last_bev.time_myr, 3)
     label0 = latexstring("t = $(t0)\\;\\mathrm{Myr}")
     hist!(
         ax,

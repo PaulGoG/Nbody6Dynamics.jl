@@ -4988,6 +4988,24 @@ rbar = 1.0
               !isempty(MakieExt._nice_ticks(0.0, 10.0))
     end
 
+    @testset "Number formatting never uses computer notation" begin
+        f = MakieExt._fmt_latex_sig
+        @test f(0) == "0"
+        @test f(1200.0, 3) == "1200"       # "%.3g" gives 1.2e+03
+        @test f(100.0, 2) == "100"         # "%.2g" gives 1e+02
+        @test f(150.0, 2) == "150"
+        @test f(99.96, 3) == "100"
+        @test f(12.34, 2) == "12"
+        @test f(0.5, 2) == "0.5"
+        @test f(0.0123, 3) == "0.0123"
+        @test f(12345.0, 3) == "1.23 \\times 10^{4}"
+        @test f(2.5e-4, 2) == "2.5 \\times 10^{-4}"
+        @test f(1.0e5, 3) == "10^{5}"      # 1×10ⁿ collapses to 10ⁿ
+        @test MakieExt._fmt_latex_sig3(47.25) == "47.2" || MakieExt._fmt_latex_sig3(47.25) == "47.3"
+        samples = (3.0e-7, 0.004, 0.07, 1.0, 9.99, 100.0, 999.5, 1.0e4, 6.02e23)
+        @test !any(occursin(r"[0-9]e[+-]?[0-9]", f(x, n)) for x in samples, n in (2, 3))
+    end
+
     @testset "Log-tick generator edge cases" begin
         # >2 in-range decades → decades only
         vals, _ = MakieExt._log_ticks(0.05, 50.0)

@@ -41,6 +41,14 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 - `backend_commit` was read from a fixed path rather than the engine tree in
   use, and a tree without its own `.git` reported the enclosing repository's
   commit.
+- Figure text could carry computer notation: a time of 1200 Myr printed as
+  `1.2e+03`, a panel half-width of 150 pc as `1.5e+02`, a fraction of 100 % as
+  `1e+02`. All annotations go through one formatter, which also writes
+  `10^n` rather than `1 × 10^n`.
+- `input_files/showcase/equal_merger.toml` attributed the relaxed energy
+  tolerance to a hard binary; the run forms no regularised pair and the cause
+  is supernova kicks. The configuration comments now state parameters, choices
+  and bounds only; case descriptions are in the input-file reference.
 
 ### Changed (breaking)
 - The figure routines are a package extension. `CairoMakie` and

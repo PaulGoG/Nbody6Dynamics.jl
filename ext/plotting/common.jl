@@ -445,23 +445,29 @@ function _log_tick_label(v::Real, plain::Bool)::String
 end
 
 """
-    _fmt_latex_sig3(x) -> String
+    _fmt_latex_sig(x, n = 3) -> String
 
-Format a non-negative quantity to 3 significant digits for LaTeX
-annotations, following the power-of-ten typography standard: plain
-decimal within 10⁻²–10⁴, mantissa `\\times 10^{e}` outside — never
-computer notation.
+Format a non-negative quantity to `n` significant digits for labels and
+annotations, following the power-of-ten typography standard: plain decimal
+within 10⁻²–10⁴, mantissa `\\times 10^{e}` outside (`10^{e}` alone when the
+mantissa is 1) — never computer notation, which `@sprintf("%.3g", 1200)`
+and `@sprintf("%.2g", 100)` both produce.
 """
-function _fmt_latex_sig3(x::Real)::String
+function _fmt_latex_sig(x::Real, n::Int = 3)::String
     x == 0 && return "0"
-    m_str, e_str = split(@sprintf("%.2e", x), 'e')
-    e = parse(Int, e_str)
+    v = round(Float64(x); sigdigits = n)
+    e = floor(Int, log10(abs(v)))
     if -2 ≤ e ≤ 3
-        v = round(x; sigdigits = 3)
         return isinteger(v) ? string(Int(v)) : string(v)
     end
+    m = round(v / 10.0^e; sigdigits = n)
+    m == 1 && return "10^{$(e)}"
+    m_str = isinteger(m) ? string(Int(m)) : string(m)
     return "$(m_str) \\times 10^{$(e)}"
 end
+
+"""`_fmt_latex_sig(x, 3)`."""
+_fmt_latex_sig3(x::Real)::String = _fmt_latex_sig(x, 3)
 
 """
     _marker_size(cfg, n) -> Float64

@@ -141,7 +141,7 @@ function Nbody6Dynamics.plot_evolutionary_clock(
 
     n_over = count(>(1.0), frac)
     if n_over > 0
-        pct_str = @sprintf("%.2g", 100 * n_over / n_ms)
+        pct_str = _fmt_latex_sig(100 * n_over / n_ms, 2)
         _annotate!(
             ax,
             latexstring("$(n_over)\\;($(pct_str)\\,\\%)\\;\\mathrm{past}\\;T_\\mathrm{MS}");
