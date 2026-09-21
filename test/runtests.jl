@@ -672,37 +672,61 @@ format = "pdf"
         @test Nbody6Dynamics._tee_run(
             `$julia -e 'print("\e[31mred\e[0m\n"); println(stderr, "err line")'`,
             log,
-        ) == 0
+        ) == (exitcode = 0, signal = 0)
         lines = readlines(log)
         @test "red" in lines && "err line" in lines
-        @test Nbody6Dynamics._tee_run(`$julia -e 'exit(3)'`, log) == 3
+        @test Nbody6Dynamics._tee_run(`$julia -e 'exit(3)'`, log) == (exitcode = 3, signal = 0)
+        # A genuine exit code ≥ 128 is not a signal.
+        @test Nbody6Dynamics._tee_run(`sh -c 'exit 139'`, log) == (exitcode = 139, signal = 0)
         # A process killed by a signal reports exitcode 0 through libuv, so
-        # the runner must report 128 + signal or a crash is recorded as a
-        # success (this silently turned a segfaulted stage into "passed").
-        @test Nbody6Dynamics._tee_run(`sh -c 'kill -s SEGV $$'`, log) == 139
-        # Signal deaths are retried once, keeping the crash output
+        # the runner reports the signal separately or a crash is recorded as
+        # a success.
+        @test Nbody6Dynamics._tee_run(`sh -c 'kill -s SEGV $$'`, log) == (exitcode = 0, signal = 11)
+
+        # A crash signal is retried up to max_retries, keeping every output
         sdir = mktempdir()
         slog = joinpath(sdir, "stage.log")
-        code, attempts =
+        segv = `sh -c 'kill -s SEGV $$'`
+        result, retried =
             @test_logs (:warn, r"killed by signal 11") Nbody6Dynamics._run_stage_with_retry(
-                `sh -c 'kill -s SEGV $$'`,
+                segv,
                 slog,
                 :suite,
             )
-        @test (code, attempts) == (139, 2)
-        @test isfile(joinpath(sdir, "stage.signal11.log"))
-        # A stage that crashes once and then succeeds is reported as passed
-        marker = joinpath(sdir, "once")
-        retried = `sh -c "if [ -e $marker ]; then exit 0; else touch $marker; kill -s SEGV \$\$; fi"`
-        code, attempts =
-            @test_logs (:warn, r"killed by signal 11") Nbody6Dynamics._run_stage_with_retry(
-                retried,
-                joinpath(sdir, "flaky.log"),
-                :cpu,
+        @test result.signal == 11 && retried == [11]
+        @test isfile(joinpath(sdir, "stage.attempt1.signal11.log"))
+        result, retried =
+            @test_logs (:warn, r"retry 1 of 2") (:warn, r"retry 2 of 2") Nbody6Dynamics._run_stage_with_retry(
+                segv,
+                joinpath(sdir, "twice.log"),
+                :suite;
+                max_retries = 2,
             )
-        @test (code, attempts) == (0, 2)
-        # An ordinary failure is not retried
-        @test Nbody6Dynamics._run_stage_with_retry(`$julia -e 'exit(3)'`, slog, :gpu) == (3, 1)
+        @test retried == [11, 11]
+        @test isfile(joinpath(sdir, "twice.attempt2.signal11.log"))
+        # A stage that crashes once and then succeeds is reported as passed,
+        # with the signal it met on record
+        marker = joinpath(sdir, "once")
+        flaky = `sh -c "if [ -e $marker ]; then exit 0; else touch $marker; kill -s SEGV \$\$; fi"`
+        result, retried =
+            @test_logs (:warn, r"killed by signal 11") Nbody6Dynamics._run_stage_with_retry(
+                flaky,
+                joinpath(sdir, "flaky.log"),
+                :suite,
+            )
+        @test result == (exitcode = 0, signal = 0) && retried == [11]
+        # Not retried: a kill from outside, retries switched off, an ordinary failure
+        result, retried =
+            Nbody6Dynamics._run_stage_with_retry(`sh -c 'kill -s KILL $$'`, slog, :suite)
+        @test result.signal == 9 && isempty(retried)
+        result, retried = Nbody6Dynamics._run_stage_with_retry(segv, slog, :gpu; max_retries = 0)
+        @test result.signal == 11 && isempty(retried)
+        result, retried = Nbody6Dynamics._run_stage_with_retry(`$julia -e 'exit(3)'`, slog, :gpu)
+        @test result.exitcode == 3 && isempty(retried)
+        # The policy is validated at the public interface
+        @test_throws ArgumentError run_gpu_validation(; max_retries = -1, dry_run = true)
+        @test_throws ArgumentError run_gpu_validation(; retry_stages = [:plots], dry_run = true)
+        @test_throws ArgumentError run_gpu_validation(; retry_signals = [0], dry_run = true)
         @test Nbody6Dynamics._tool_banner(
             `$julia -e 'println("banner line"); println("second")'`,
         ) == "banner line"

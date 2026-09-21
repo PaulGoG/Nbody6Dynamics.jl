@@ -7,6 +7,8 @@
 #   julia scripts/run_gpu_validation.jl [--stages=suite,gpu,cpu,bench] [--dry-run]
 #                                       [--n=20000,50000,100000] [--threads=4,8]
 #                                       [--gpus="0;0,1"] [--tcrit=0.25]
+#                                       [--max-retries=1] [--retry-stages=suite]
+#                                       [--retry-signals=4,6,7,11]
 #
 # Runs the GPU-gated test suite, the GPU and CPU pipelines of input_files/gpu
 # and the scaling benchmark as logged stages, and collects the host record,
@@ -19,56 +21,59 @@ include(joinpath(@__DIR__, "activate.jl"))
 using Nbody6Dynamics
 using TOML
 
+const USAGE =
+    "usage: run_gpu_validation.jl [--stages=suite,gpu,cpu,bench] [--dry-run] " *
+    "[--n=N1,N2,...] [--threads=T1,T2,...] [--gpus=\"0;0,1\"] [--tcrit=T] " *
+    "[--max-retries=K] [--retry-stages=suite,...] [--retry-signals=4,6,7,11]"
+
 function usage()
-    println(
-        stderr,
-        "usage: run_gpu_validation.jl [--stages=suite,gpu,cpu,bench] [--dry-run] " *
-        "[--n=20000,50000,100000] [--threads=4,8] [--gpus=\"0;0,1\"] [--tcrit=0.25]",
-    )
+    println(stderr, USAGE)
     exit(2)
 end
 
 parse_ints(s) = [parse(Int, x) for x in split(s, ',')]
 
+"""Value of `--name=value` in `arg`, or `nothing` when `arg` is another option."""
+option(arg, name) = startswith(arg, "--$name=") ? arg[(length(name) + 4):end] : nothing
+
+# Only the options given on the command line are forwarded, so the defaults
+# are those of `run_gpu_validation` and stated nowhere else.
 function main()
-    stages = [:suite, :gpu, :cpu, :bench]
-    n = [20000, 50000, 100000]
-    threads = [4, 8]
-    gpus = nothing
-    tcrit = 0.25
-    dry_run = false
+    kwargs = Dict{Symbol,Any}()
     for a in ARGS
         if a == "--dry-run"
-            dry_run = true
-        elseif startswith(a, "--stages=")
-            stages = Symbol.(split(a[(length("--stages=") + 1):end], ','))
-        elseif startswith(a, "--n=")
-            n = parse_ints(a[(length("--n=") + 1):end])
-        elseif startswith(a, "--threads=")
-            threads = parse_ints(a[(length("--threads=") + 1):end])
-        elseif startswith(a, "--gpus=")
-            gpus = [parse_ints(s) for s in split(a[(length("--gpus=") + 1):end], ';')]
-        elseif startswith(a, "--tcrit=")
-            tcrit = parse(Float64, a[(length("--tcrit=") + 1):end])
+            kwargs[:dry_run] = true
+        elseif (v = option(a, "stages")) !== nothing
+            kwargs[:stages] = Symbol.(split(v, ','))
+        elseif (v = option(a, "n")) !== nothing
+            kwargs[:bench_n] = parse_ints(v)
+        elseif (v = option(a, "threads")) !== nothing
+            kwargs[:bench_threads] = parse_ints(v)
+        elseif (v = option(a, "gpus")) !== nothing
+            kwargs[:bench_gpu_lists] = [parse_ints(l) for l in split(v, ';')]
+        elseif (v = option(a, "tcrit")) !== nothing
+            kwargs[:bench_tcrit] = parse(Float64, v)
+        elseif (v = option(a, "max-retries")) !== nothing
+            kwargs[:max_retries] = parse(Int, v)
+        elseif (v = option(a, "retry-stages")) !== nothing
+            kwargs[:retry_stages] = Symbol.(split(v, ','))
+        elseif (v = option(a, "retry-signals")) !== nothing
+            kwargs[:retry_signals] = parse_ints(v)
         else
             usage()
         end
     end
-    dir = run_gpu_validation(;
-        stages = stages,
-        bench_n = n,
-        bench_threads = threads,
-        bench_gpu_lists = gpus,
-        bench_tcrit = tcrit,
-        dry_run = dry_run,
-    )
-    results = TOML.parsefile(joinpath(dir, "VALIDATION.toml"))["results"]
-    for s in stages
-        r = results[String(s)]
+    dir = run_gpu_validation(; kwargs...)
+    summary = TOML.parsefile(joinpath(dir, "VALIDATION.toml"))
+    results = summary["results"]
+    for s in summary["stages"]
+        r = results[s]
         println(
-            rpad(":" * String(s), 8),
+            rpad(":" * s, 8),
             r["status"],
             haskey(r, "seconds") ? "  ($(r["seconds"]) s)" : "",
+            haskey(r, "retried_signals") ?
+            "  (retried after signal $(join(r["retried_signals"], ", ")))" : "",
             haskey(r, "reason") ? "  ($(r["reason"]))" : "",
         )
     end

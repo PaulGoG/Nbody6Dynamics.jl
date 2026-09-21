@@ -30,6 +30,19 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   `plot_hr(sev, vis)` remains for a single snapshot. `plot_core_mass` uses the
   same class colours.
 - The resolved manifests are no longer under version control.
+- Julia 1.13 is the compat floor: it is the version the package is developed
+  and validated on. The auxiliary environments take the package through
+  `[sources]` alone.
+- Validation stages are rerun by policy, not always: `max_retries`,
+  `retry_signals` and `retry_stages` of `run_gpu_validation` (script options
+  `--max-retries=`, `--retry-signals=`, `--retry-stages=`) default to one rerun
+  of the test suite after a crash signal. A pipeline stage is no longer
+  repeated unasked, and a kill from outside (SIGKILL, SIGTERM) is never
+  retried. `VALIDATION.toml` reports exit code and signal separately, lists
+  the signals of retried attempts and records the policy; crash output is
+  kept as `<stage>.attempt<k>.signal<N>.log`.
+- `input_files/N1k_quick.inp` runs with `QE = 1e-2`; at `2e-4` the engine
+  halted on its energy check at t = 3 of 5 N-body units.
 
 ### Fixed
 - The engine source-tree repair could delete the directory named by

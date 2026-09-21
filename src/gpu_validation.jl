@@ -45,6 +45,15 @@ or `:cpu` stage that exits zero without leaving a run directory marked
 because the run summary is written when the
 engine exits and a process killed during post-processing or plotting would
 otherwise pass.
+A stage killed by one of `retry_signals` is run again, up to `max_retries`
+times, when it is listed in `retry_stages`. The defaults retry the test
+suite once after a crash signal (SIGILL, SIGABRT, SIGBUS, SIGSEGV — a
+compiler crash during JIT is an upstream fault, not a verdict on the
+package) and nothing else: a pipeline stage is hours of work that is not
+repeated unasked, and SIGKILL or SIGTERM come from an operator, the
+out-of-memory killer or a session teardown, which a rerun would only meet
+again. Every retried signal is recorded with the stage.
+
 With `dry_run = true` the host record and the planned commands are written
 and nothing is executed. Returns the validation directory.
 
@@ -61,6 +70,9 @@ function run_gpu_validation(;
     bench_threads::AbstractVector{<:Integer} = [4, 8],
     bench_gpu_lists::Union{Nothing,AbstractVector{<:AbstractVector{<:Integer}}} = nothing,
     bench_tcrit::Real = 0.25,
+    max_retries::Integer = 1,
+    retry_signals::AbstractVector{<:Integer} = collect(_CRASH_SIGNALS),
+    retry_stages::AbstractVector{Symbol} = [:suite],
     dry_run::Bool = false,
 )::String
     base_dir = abspath(base_dir)
@@ -76,6 +88,12 @@ function run_gpu_validation(;
     isempty(bench_n) && throw(ArgumentError("bench_n must not be empty"))
     isempty(bench_threads) && throw(ArgumentError("bench_threads must not be empty"))
     bench_tcrit > 0 || throw(ArgumentError("bench_tcrit must be > 0; got $bench_tcrit"))
+    max_retries ≥ 0 || throw(ArgumentError("max_retries must be ≥ 0; got $max_retries"))
+    all(>(0), retry_signals) ||
+        throw(ArgumentError("retry_signals must be positive signal numbers; got $retry_signals"))
+    for s in retry_stages
+        s in _VALIDATION_STAGES || throw(ArgumentError("unknown stage :$s in retry_stages"))
+    end
 
     t_start = time()
     stamp = Dates.format(Dates.now(), "yyyymmdd_HHMMSS")
@@ -103,6 +121,11 @@ function run_gpu_validation(;
     summary = Dict{String,Any}(
         "started" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
         "stages" => String.(stages),
+        "retry" => Dict{String,Any}(
+            "max_retries" => Int(max_retries),
+            "signals" => Int.(retry_signals),
+            "stages" => String.(retry_stages),
+        ),
         "dry_run" => dry_run,
         "results" => Dict{String,Any}(),
     )
@@ -122,20 +145,33 @@ function run_gpu_validation(;
             log = joinpath(out_dir, "$s.log")
             @info "Stage :$s → $(basename(log))"
             t0 = time()
-            code, attempts = _run_stage_with_retry(cmd, log, s)
+            result, retried = _run_stage_with_retry(
+                cmd,
+                log,
+                s;
+                max_retries = s in retry_stages ? Int(max_retries) : 0,
+                retry_signals = retry_signals,
+            )
+            code = result.exitcode
+            died = result.signal != 0
             entry["exit_code"] = code
-            attempts > 1 && (entry["attempts"] = attempts)
-            code ≥ 128 && (entry["signal"] = code - 128)
+            died && (entry["signal"] = result.signal)
+            if !isempty(retried)
+                entry["attempts"] = length(retried) + 1
+                entry["retried_signals"] = retried
+            end
             entry["seconds"] = round(time() - t0; digits = 1)
             entry["log"] = basename(log)
             # A zero exit code is necessary but not sufficient: a pipeline
             # stage killed after its engine finished leaves a run directory
             # that looks complete. Demand the completion marker as well.
-            incomplete = code == 0 ? _stage_incomplete(s, base_dir, t0) : nothing
-            entry["status"] =
-                code != 0 ? "failed" : incomplete === nothing ? "passed" : "incomplete"
+            failed = died || code != 0
+            incomplete = failed ? nothing : _stage_incomplete(s, base_dir, t0)
+            entry["status"] = failed ? "failed" : incomplete === nothing ? "passed" : "incomplete"
             incomplete === nothing || (entry["reason"] = incomplete)
-            if code != 0
+            if died
+                @warn "Stage :$s was killed by signal $(result.signal); see $(basename(log))"
+            elseif code != 0
                 @warn "Stage :$s failed with exit code $code; see $(basename(log))"
             elseif incomplete !== nothing
                 @warn "Stage :$s exited 0 but did not finish: $incomplete; see $(basename(log))"
@@ -332,16 +368,27 @@ end
 const _ANSI_ESCAPE = r"\e\[[0-9;?]*[A-Za-z]|\r"
 
 """
-    _tee_run(cmd, logfile) -> Int
+Signals that mark a crash of the process itself (Linux numbering: SIGILL,
+SIGABRT, SIGBUS, SIGSEGV), as opposed to a kill from outside.
+"""
+const _CRASH_SIGNALS = (4, 6, 7, 11)
+
+"""
+    _tee_run(cmd, logfile) -> (exitcode = Int, signal = Int)
 
 Run `cmd` with stdout and stderr merged, echoing every line to this
 process's stdout and writing it to `logfile` with terminal escape
-sequences and carriage returns removed. Returns the exit code, and
-`128 + signal` for a process killed by a signal — a signal-killed process
-reports `exitcode == 0` through libuv, so returning that alone would record
-a crash as a success. A command that cannot be spawned throws.
+sequences and carriage returns removed. Returns the exit code and the
+terminating signal, 0 for a process that exited by itself. The two are
+kept apart because a signal-killed process reports `exitcode == 0` through
+libuv — the code alone would record a crash as a success — while folding
+the signal into the code would confuse it with a genuine exit code ≥ 128.
+A command that cannot be spawned throws.
 """
-function _tee_run(cmd::Base.AbstractCmd, logfile::AbstractString)::Int
+function _tee_run(
+    cmd::Base.AbstractCmd,
+    logfile::AbstractString,
+)::@NamedTuple{exitcode::Int, signal::Int}
     out = Pipe()
     proc = run(pipeline(cmd; stdout = out, stderr = out); wait = false)
     close(out.in)
@@ -353,32 +400,39 @@ function _tee_run(cmd::Base.AbstractCmd, logfile::AbstractString)::Int
         end
     end
     wait(proc)
-    return proc.termsignal == 0 ? Int(proc.exitcode) : 128 + Int(proc.termsignal)
+    return (exitcode = Int(proc.exitcode), signal = Int(proc.termsignal))
 end
 
 """
-    _run_stage_with_retry(cmd, log, stage) -> (code, attempts)
+    _run_stage_with_retry(cmd, log, stage; max_retries = 1,
+                          retry_signals = _CRASH_SIGNALS) -> (result, retried)
 
-Run `cmd` through [`_tee_run`](@ref), writing to `log`. A stage killed by a
-signal is an upstream crash rather than a verdict on the package — Julia
-1.13's optimiser segfaults intermittently during JIT compilation, and it has
-cost whole validation runs — so that output is kept as
-`<stage>.signal<N>.log` and the command is run once more. Returns the final
-exit code and the number of attempts.
+Run `cmd` through [`_tee_run`](@ref), writing to `log`. While the process
+is killed by one of `retry_signals` and fewer than `max_retries` reruns
+have been made, its output is kept as `<stage>.attempt<k>.signal<N>.log`
+and the command is run again. Returns the final result and the signals of
+the attempts that were retried, in order.
 """
 function _run_stage_with_retry(
     cmd::Base.AbstractCmd,
     log::AbstractString,
-    stage::Symbol,
-)::Tuple{Int,Int}
-    code = _tee_run(cmd, log)
-    code < 128 && return (code, 1)
-    signal = code - 128
-    crash_log = string(splitext(log)[1], ".signal", signal, ".log")
-    mv(log, crash_log; force = true)
-    @warn "Stage :$stage was killed by signal $signal; its output is kept in " *
-          "$(basename(crash_log)) and the stage is being run once more."
-    return (_tee_run(cmd, log), 2)
+    stage::Symbol;
+    max_retries::Integer = 1,
+    retry_signals = _CRASH_SIGNALS,
+)
+    retried = Int[]
+    result = _tee_run(cmd, log)
+    while result.signal in retry_signals && length(retried) < max_retries
+        push!(retried, result.signal)
+        crash_log =
+            string(splitext(log)[1], ".attempt", length(retried), ".signal", result.signal, ".log")
+        mv(log, crash_log; force = true)
+        @warn "Stage :$stage was killed by signal $(result.signal); its output is kept in " *
+              "$(basename(crash_log)) and the stage is run again " *
+              "(retry $(length(retried)) of $max_retries)."
+        result = _tee_run(cmd, log)
+    end
+    return result, retried
 end
 
 function _write_validation_summary(out_dir::AbstractString, summary::Dict{String,Any})
