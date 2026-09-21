@@ -1,11 +1,8 @@
-# Pipeline configuration for a CUDA host (paths relative to this file): clones
-# and builds the engine with CUDA into its own tree, then runs the merger below
-# on the first device. Requires nvcc (CUDA >= 12.8 for RTX 50 series, >= 11.8
-# for H100/H200), nvidia-smi, gfortran, gcc/g++, make and git.
+# Pipeline configuration of the CUDA build (paths relative to this file)
 
 [install]
 enabled = true
-install_dir = "../../backend/Nbody6PPGPU-beijing-gpu"   # separate tree: CPU and GPU objects differ
+install_dir = "../../backend/Nbody6PPGPU-beijing-gpu"   # CUDA build tree, separate from the CPU one
 ref = "618d7a4"
 reinstall = false
 clean_build = true
@@ -26,7 +23,7 @@ input_file = "../../input_files/N1k_quick.inp"   # unused: merger.inp is generat
 runs_dir = "../../runs"
 binary_name = "nbody6++"
 mpi_ranks = 1
-omp_threads = 8           # host threads for the irregular force; <= 32 per the engine's advice
+omp_threads = 8           # host threads for the irregular force; >= 1, <= 32
 gpu_list = [0]            # device indices for the engine (<= 4 per process); [] = every visible device
 run_id_prefix = "gpu"
 monitor = true

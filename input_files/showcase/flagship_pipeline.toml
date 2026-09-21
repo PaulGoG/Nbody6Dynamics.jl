@@ -1,5 +1,4 @@
-# Pipeline configuration of the showcase case "flagship" (paths relative to this file).
-# Eight threads: the run is long enough that the extra cores pay for themselves.
+# Pipeline configuration of the showcase case "flagship" (paths relative to this file)
 
 [install]
 enabled = false

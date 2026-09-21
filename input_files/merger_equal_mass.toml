@@ -1,7 +1,4 @@
-# =============================================================================
-# Equal-mass King model merger (q = 1)
-# =============================================================================
-# Two identical globular clusters on an eccentric bound orbit.
+# Two identical King clusters of 50 000 stars, q = 1, on an eccentric bound orbit
 
 [merger]
 n_clusters = 2
@@ -10,7 +7,7 @@ orbit_mode = "kepler"            # auto-compute positions from Kepler orbit
 [merger.cluster1]
 model = "king"
 N = 50000
-W0 = 6.0                        # King concentration (moderate)
+W0 = 6.0                        # King central potential
 rbar = 2.0                      # Half-mass radius [pc]
 imf = "kroupa"
 body1 = 100.0                   # Upper mass limit [M☉]
@@ -26,8 +23,8 @@ body1 = 100.0
 bodyn = 0.08
 
 [merger.orbit]
-apocentre = 15.0                 # pc — ~7.5 half-mass radii separation
-eccentricity = 0.7               # Moderately eccentric
+apocentre = 15.0                 # apocentre separation [pc]
+eccentricity = 0.7               # 0 ≤ e < 1
 
 [merger.output]
 format = "nbody"                 # N-body units (KZ(22)=2)

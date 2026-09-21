@@ -1,7 +1,4 @@
-# Equal-mass King clusters on an eccentric orbit that coalesces within the run.
-# Intervals in Myr; the generator converts them with the realised time unit.
-# A hard binary forms in the remnant without primordial binaries and carries a
-# large share of the binding energy, so the relaxed tolerance is needed here too.
+# Two equal-mass King clusters, 4000 stars each, on an eccentric Kepler orbit
 
 [merger]
 seed = 21

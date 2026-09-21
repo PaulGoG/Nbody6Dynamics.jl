@@ -1,8 +1,4 @@
-# =============================================================================
-# Triple cluster merger (explicit positions)
-# =============================================================================
-# Three converging clusters on an equilateral 20 pc triangle
-# (explicit orbit mode for N > 2 clusters).
+# Three converging clusters on an equilateral triangle of side 20 pc, explicit placement
 
 [merger]
 n_clusters = 3

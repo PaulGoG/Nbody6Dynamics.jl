@@ -1,9 +1,4 @@
-# =============================================================================
-# Verification run — 5 clusters distributed in 3D
-# =============================================================================
-# Exercises xz- and yz-projection panels + 3D COM tracking by placing clusters
-# well out of the z = 0 plane. Clusters have mild inward radial velocities so
-# some interaction occurs over TCRIT without full infall.
+# Verification: five clusters placed out of the z = 0 plane with mild inward radial velocities
 
 [merger]
 n_clusters = 5

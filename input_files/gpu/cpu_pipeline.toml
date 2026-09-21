@@ -1,7 +1,4 @@
-# Pipeline configuration for the CPU reference build on the same host (paths
-# relative to this file): clones and builds the AVX engine without CUDA into the
-# default tree and runs the same merger as gpu_pipeline.toml, so the two runs
-# and bench/gpu_scaling.jl can be compared binary against binary.
+# Pipeline configuration of the CPU reference build (paths relative to this file)
 
 [install]
 enabled = true

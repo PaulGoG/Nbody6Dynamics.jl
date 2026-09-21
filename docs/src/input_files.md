@@ -130,6 +130,8 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 | `nrun` | Int | `1` | Run identification index; must be ≥ 1 |
 | `ncomm` | Int | `10` | Multiplier of `deltat` for the restart (`COMMON`) dump interval; must be ≥ 1 |
 
+Runs with stellar evolution need the relaxed tolerance `qe ≈ 1e-2`: supernova kicks change the energy budget between adjustments, and the default tolerance halts the run.
+
 `[merger.nbody6.kz]` holds explicit `KZ(i) = v` overrides with string keys `"1"`–`"50"` and integer values, applied after every named option (an override of an index that also has a named key, 14, 16, or 19, warns):
 
 ```toml
@@ -300,6 +302,40 @@ For three equal masses `m` on an equilateral triangle of circumradius `r`, the n
 With `G = 4.30091×10⁻³ pc (km s⁻¹)² M☉⁻¹`, `m = 900 M☉`, `r = 6 pc`: `ω ≈ 0.1017 km s⁻¹ pc⁻¹` and `|v| = ω r ≈ 0.6103 km s⁻¹` per cluster — exactly the `velocity` entries in the file.
 
 Expected behaviour: the three cluster COMs trace a slowly rotating triangle while each cluster relaxes internally. This verifies the COM-trajectory tracking and the per-cluster virial diagnostic (`per_cluster_virial`) for *separated, stable* clusters; the config's equilibrium condition is also asserted in the test suite.
+
+With stellar evolution active (the Level C defaults), BSE mass loss drives a slow symmetric adiabatic expansion of the triangle: all three separations grow together, by about a factor two over 20 NB. The pairwise distances must stay equal — asymmetric growth, or a shrinking triangle, indicates broken equilibrium velocities.
+
+---
+
+## Example cases
+
+### `verif_3d5cluster.toml`
+
+Five clusters of 800 bodies placed well out of the z = 0 plane, which exercises the xz- and yz-projection panels and the three-dimensional COM tracking. The inward radial velocities are mild, so the clusters interact over `tcrit` without falling together completely.
+
+### `gpu/merger_50k.toml`
+
+Two equal King clusters of 25 000 stars on an eccentric orbit, the case of the hardware validation runs. The CUDA build is faster than the AVX build at every N measured, from N ≈ 2×10⁴ upwards, and the gain grows with N as the regular force scales as N²; the figures are in the manual, section Validated hardware.
+
+### `gpu/gpu_pipeline.toml`
+
+Clones and builds the engine with CUDA into its own tree — CPU and GPU objects differ — and runs `merger_50k.toml` on the first device. The host needs `nvcc` (CUDA ≥ 12.8 for the RTX 50 series, ≥ 11.8 for H100/H200), `nvidia-smi`, `gfortran`, `gcc`/`g++`, `make` and `git`.
+
+### `gpu/cpu_pipeline.toml`
+
+Clones and builds the AVX engine without CUDA into the default tree on the same host and runs the same merger as `gpu_pipeline.toml`, so the two runs and `bench/gpu_scaling.jl` are comparable binary against binary.
+
+### `showcase/tidal_merger.toml`
+
+An equal-mass merger inside a point-mass galactic potential (`KZ(14) = 2`). The engine evaluates no tidal energy, hence the relaxed tolerance, and the run is judged against the isolated case.
+
+### `showcase/flagship_merger.toml`
+
+Two equal King clusters of 25 000 stars on a wide eccentric orbit, followed for 50 Myr: the scale at which the package's GPU path was validated, run here on the AVX build.
+
+### `showcase/sweep_merger.toml`
+
+Base configuration of the showcase sweep: two equal King clusters of 1 pc half-mass radius on a 5 pc orbit. The infall time from apocentre is half the Kepler period, 12 Myr at `e = 0.5` against 8 Myr at `e = 0.9`, so both grid points coalesce within the run and the eccentricity axis separates them.
 
 ---
 

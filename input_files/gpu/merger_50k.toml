@@ -1,6 +1,4 @@
-# Two equal King clusters of 25 000 stars on an eccentric orbit: the smallest
-# configuration on which the GPU build pays for itself (regular force ~ N^2).
-# Intervals in Myr are converted with the realised time unit at generation.
+# Two equal King clusters of 25 000 stars on an eccentric orbit
 
 [merger]
 seed = 31
@@ -40,4 +38,4 @@ deltat_myr = 2.0
 dtplot_myr = 4.0
 
 [merger.nbody6]
-qe = 0.01           # energy-error halt threshold; a hard binary drives DE past the default 2e-4
+qe = 0.01           # energy-error tolerance of the ADJUST check

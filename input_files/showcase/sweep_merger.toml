@@ -1,7 +1,4 @@
-# Base configuration of the showcase sweep: two equal King clusters of 1 pc
-# half-mass radius on a 5 pc orbit. The infall time from apocentre is half the
-# Kepler period, 12 Myr at e = 0.5 against 8 Myr at e = 0.9, so both grid points
-# coalesce within the run and the eccentricity axis separates them.
+# Base configuration of the showcase sweep: two equal King clusters of 1 pc half-mass radius on a 5 pc orbit
 
 [merger]
 seed = 1

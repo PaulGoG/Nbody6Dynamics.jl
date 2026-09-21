@@ -1,8 +1,4 @@
-# =============================================================================
-# Small equal-mass King merger for quick demo runs
-# =============================================================================
-# N=1000 per cluster — runs in seconds on a single core.
-# Good for testing the full merger→simulation→postprocess→plot pipeline.
+# Two equal-mass King clusters of 1000 stars on a Kepler orbit, small demo case
 
 [merger]
 n_clusters = 2
@@ -34,6 +30,6 @@ eccentricity = 0.6
 format = "nbody"
 truncate_jacobi = true
 output_dir = "."
-tcrit = 5.0                      # Short run: 5 NB time units
-dtadj = 0.5                      # ADJUST output every 0.5 NB
-deltat = 1.0                     # Snapshot output every 1.0 NB
+tcrit = 5.0                      # end time [NB]
+dtadj = 0.5                      # ADJUST diagnostic interval [NB]
+deltat = 1.0                     # snapshot interval [NB]

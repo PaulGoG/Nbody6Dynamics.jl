@@ -1,6 +1,4 @@
-# Equal-mass merger inside a point-mass galactic potential (KZ(14) = 2).
-# The engine evaluates no tidal energy, so the tolerance is relaxed and the
-# run is judged against the isolated case.
+# Equal-mass merger inside a point-mass galactic potential, KZ(14) = 2
 
 [merger]
 seed = 23

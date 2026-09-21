@@ -1,7 +1,4 @@
-# Two equal King clusters of 25 000 stars on a wide eccentric orbit, followed
-# for 50 Myr: the scale at which the package's GPU path was validated, run here
-# on the AVX build. Intervals in Myr; the generator converts them with the
-# realised time unit.
+# Two equal King clusters of 25 000 stars on a wide eccentric orbit, followed for 50 Myr
 
 [merger]
 seed = 31

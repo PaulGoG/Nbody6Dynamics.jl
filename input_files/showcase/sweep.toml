@@ -1,5 +1,4 @@
-# Showcase sweep: orbital eccentricity × two seeds, each point with its
-# isolated single-cluster control.
+# Showcase sweep over orbital eccentricity and seed, each grid point with its isolated single-cluster control
 
 [sweep]
 name = "showcase"

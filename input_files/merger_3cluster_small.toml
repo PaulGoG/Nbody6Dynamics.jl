@@ -1,8 +1,4 @@
-# =============================================================================
-# 3-cluster merger — small demo (explicit positions)
-# =============================================================================
-# Equilateral triangle: side ~16 pc, centred at origin.
-# Mixed models: 2 King + 1 Plummer. Inward radial velocities.
+# Three small clusters (2 King + 1 Plummer) on an equilateral triangle of side 16 pc, inward velocities
 
 [merger]
 n_clusters = 3

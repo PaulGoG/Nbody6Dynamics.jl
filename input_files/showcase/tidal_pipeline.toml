@@ -1,4 +1,4 @@
-# Pipeline configuration of the showcase case "tidal" (paths relative to this file).
+# Pipeline configuration of the showcase case "tidal" (paths relative to this file)
 
 [install]
 enabled = false

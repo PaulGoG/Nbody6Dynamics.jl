@@ -1,10 +1,7 @@
-# =============================================================================
-# Nbody6Dynamics Configuration
-# =============================================================================
-# Full-pipeline configuration for the 27-cluster cubic-grid merger scenario.
+# Full-pipeline configuration for the 27-cluster cubic-grid merger scenario
 
 [install]
-enabled        = false           # binary already built
+enabled        = false           # clone and build the engine before running
 source_url     = "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
 ref            = "618d7a4"       # backend commit, tag, or branch checked out after cloning; "" = default branch
 install_dir    = "backend/Nbody6PPGPU-beijing"   # nonempty

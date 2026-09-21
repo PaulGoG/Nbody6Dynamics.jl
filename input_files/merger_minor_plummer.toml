@@ -1,7 +1,4 @@
-# =============================================================================
-# Minor merger with Plummer profiles (q = 0.1)
-# =============================================================================
-# A massive cluster accreting a smaller satellite on an inspiral orbit.
+# Minor merger of Plummer clusters, q = 0.1: a massive cluster accreting a satellite on an inspiral orbit
 
 [merger]
 n_clusters = 2
@@ -18,14 +15,14 @@ bodyn = 0.08
 [merger.cluster2]
 model = "plummer"
 N = 10000
-rbar = 1.5                      # Compact satellite
+rbar = 1.5                      # Half-mass radius [pc]
 imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
 
 [merger.orbit]
-apocentre = 20.0                 # pc — well separated
-eccentricity = 0.5               # Moderate eccentricity
+apocentre = 20.0                 # apocentre separation [pc]
+eccentricity = 0.5               # 0 ≤ e < 1
 
 [merger.output]
 format = "nbody"

@@ -1,5 +1,4 @@
-# Unequal-mass merger (q ≈ 0.25) with 20 % primordial binaries in both clusters.
-# Binary-rich runs need a relaxed energy tolerance (regularised-pair bookkeeping).
+# Unequal-mass merger, q ≈ 0.25, with 20 % primordial binaries in both clusters
 
 [merger]
 seed = 22

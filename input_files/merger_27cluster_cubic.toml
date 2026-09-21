@@ -1,9 +1,4 @@
-# =============================================================================
-# 27-cluster merger — 3×3×3 cubic grid
-# =============================================================================
-# Clusters on a regular 3×3×3 grid, spacing 8.0 pc.
-# Inward velocities toward centre of mass.
-# Mixed King and Plummer models. Total N ≈ 27000, TCRIT=15 NB units.
+# 27 King and Plummer clusters on a 3×3×3 cubic grid of 8 pc spacing, velocities toward the centre of mass
 
 [merger]
 n_clusters = 27
