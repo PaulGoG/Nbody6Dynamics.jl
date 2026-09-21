@@ -183,14 +183,14 @@ end
 `nothing` when a stage that exited zero also left the artefacts it is
 supposed to produce, otherwise the reason it did not. The `:gpu` and `:cpu`
 stages must each leave one run directory under `base_dir/runs` started at or
-after `t0` and carrying the `[pipeline] completed` marker; `:suite` and
-`:bench` are judged by their exit code alone, the benchmark because
-[`_collect_bench_artefacts`](@ref) reports what it gathered.
+after `t0`, carrying the `[pipeline] completed` marker and an engine segment
+that reached END RUN; `:suite` and `:bench` are judged by their exit code
+alone, the benchmark because [`_collect_bench_artefacts`](@ref) reports what
+it gathered.
 
-An exit code is not enough on its own. In the fleet campaign of 2026-09-11
-three pipeline stages were killed after the engine had finished — one
-mid-integration, two while plotting — and every one of them was recorded as
-a success because the run summary had already been written.
+An exit code is not enough on its own: the run summary is written when the
+engine exits, so a stage killed during integration, post-processing or
+plotting leaves a summary and, under libuv, may still report exit code 0.
 """
 function _stage_incomplete(stage::Symbol, base_dir::AbstractString, t0::Real)::Union{Nothing,String}
     stage in (:gpu, :cpu) || return nothing

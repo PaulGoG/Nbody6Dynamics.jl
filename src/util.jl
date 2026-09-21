@@ -38,9 +38,8 @@ Provenance identity of the source tree at `dir`: the git commit
 `Project.toml` there suffixed with `+nogit`, otherwise `"unknown"`.
 
 A tree deployed to a compute host by file copy carries no `.git`, so the
-commit is unobtainable exactly where provenance matters most — every run of
-the 2026-09-11 fleet campaign recorded `package_commit = "unknown"`. The
-version fallback ties such a run to a release at least.
+commit is unobtainable exactly where provenance matters most. The version
+fallback ties such a run to a release at least.
 """
 function _source_stamp(dir::AbstractString)::String
     commit = _git_commit(dir)

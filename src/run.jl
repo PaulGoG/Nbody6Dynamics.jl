@@ -960,10 +960,10 @@ or no summary to amend.
 A run summary is written as soon as the engine exits, so its presence says
 only that the simulation finished — post-processing and plotting come
 afterwards and a run killed in between leaves a summary that looks
-complete. Three stages of the 2026-09-11 fleet campaign died exactly there
-and were recorded as successes. This marker is what distinguishes a
-finished pipeline from an interrupted one, and
-[`_pipeline_completed`](@ref) is what reads it back.
+complete. This marker is what distinguishes a finished pipeline from an
+interrupted one, and [`_pipeline_completed`](@ref) is what reads it back.
+`engine_completed` states separately whether the last engine segment reached
+END RUN, since the pipeline also completes on partial output.
 """
 function _stamp_pipeline_completion(
     run_dir::AbstractString,

@@ -701,7 +701,7 @@ function _hardware_fingerprint(; gpu_probe::Bool = false)::Dict{String,Any}
         end
         d["gpu"] = isempty(gpu) ? "unavailable" : join(strip.(split(String(gpu), '\n')), "; ")
     end
-    # Hostnames are not unique across this fleet; `machine` is.
+    # Hostnames need not be unique across the machines of a site; `machine` is.
     d["machine"] = _machine_id(d)
     return d
 end
