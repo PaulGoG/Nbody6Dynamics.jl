@@ -343,6 +343,9 @@ function _save_fig(cfg::VisualizationConfig, basename::AbstractString, fig)::Str
     return path
 end
 
+"""Legend entry types accepted by the grouped legends; Makie needs the entry vectors concretely typed."""
+const _LegendElement = Union{LineElement,MarkerElement,PolyElement}
+
 """
     _top_legend!(fig, ax; title = nothing, nbanks = 1, kwargs...)
     _top_legend!(fig, elements, labels; title = nothing, nbanks = 1, kwargs...)

@@ -160,7 +160,7 @@ end
 
 Core mass MC [M☉] against total stellar mass [M☉] for the evolved stars
 (K* ≥ 2) of the last snapshot, log–log, colour/marker-coded by stellar
-type with the epoch annotated and the MC = M identity guide marked.
+class as in the HR figures, with the epoch annotated and the MC = M identity guide marked.
 Records with non-finite or non-positive core or total mass are skipped
 (SSE fields are NaN in pre-v2026.07 data).
 
@@ -211,21 +211,25 @@ function Nbody6Dynamics.plot_core_mass(
     lines!(ax, [g_lo, g_hi], [g_lo, g_hi]; color = :gray50, linestyle = :dash, linewidth = 1.0)
     _annotate!(ax, L"M_\mathrm{c} = M"; corner = :br, fontsize = 14, color = :gray30)
 
-    types_present = sort(unique(Int(r.stellar_type) for r in evolved))
+    # Classes, colours and markers of the HR figures
+    classes_present = sort(unique(stellar_class_index(r.stellar_type) for r in evolved))
     ms = _marker_size(cfg, length(evolved))
-    for kt in types_present
-        sub = [r for r in evolved if r.stellar_type == kt]
+    for k in classes_present
+        sub = [r for r in evolved if stellar_class_index(r.stellar_type) == k]
+        style = _hr_style(k)
         scatter!(
             ax,
             [r.mass_solar for r in sub],
             [r.mass_core for r in sub];
-            color = _hr_color(kt),
-            marker = _hr_marker(kt),
+            color = style.color,
+            marker = style.marker,
             markersize = ms,
-            label = get(STELLAR_TYPE_LABELS, kt, "K*=$kt"),
+            strokecolor = _band_edge(style.color),
+            strokewidth = 1,
+            label = STELLAR_CLASSES[k].label,
         )
     end
-    2 ≤ length(types_present) ≤ 12 && _top_legend!(fig, ax; nbanks = 2)
+    length(classes_present) ≥ 2 && _top_legend!(fig, ax; nbanks = cld(length(classes_present), 4))
 
     # Points accumulate along/below the identity diagonal — the upper-left
     # triangle (MC > M) is empty by construction, so the epoch goes there.

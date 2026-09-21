@@ -69,6 +69,7 @@ include("io/io.jl")
 # ---------------------------------------------------------------------------
 include("cluster_structure.jl")
 include("binary_population.jl")
+include("stellar_population.jl")
 include("remnant.jl")
 
 # ---------------------------------------------------------------------------
@@ -184,6 +185,14 @@ function postprocess(
     if pp.read_binary_evo
         bevs = read_all_binary_evolution(sim_dir, pp.binary_evo_pattern)
         isempty(bevs) || (results[:binary_evo] = bevs)
+    end
+
+    # Class census over single stars and binary members
+    if haskey(results, :stellar_evo)
+        results[:stellar_census] = stellar_census(
+            results[:stellar_evo],
+            get(results, :binary_evo, BinaryEvolutionSnapshot[]),
+        )
     end
 
     return results
@@ -329,18 +338,24 @@ function run_pipeline(
         results[:merger_ic] = merger_result
     end
 
+    # Directory that receives the derived products of this data set
+    products_dir = if !isempty(cfg.postprocess.data_dir)
+        # normpath strips any trailing slash so dirname yields the parent
+        dirname(abspath(normpath(cfg.postprocess.data_dir)))
+    else
+        run_dir
+    end
+
+    # Data products are written here, not by the figure layer: a host
+    # without a plotting backend must get them too.
+    if haskey(results, :stellar_census) && !isempty(products_dir)
+        write_stellar_census(joinpath(products_dir, "stellar_census.csv"), results[:stellar_census])
+    end
+
     # ── Phase 4: Plots ──
     if cfg.visualization.enabled && !isempty(results)
         @info "Phase 4: Generating plots..."
-        plot_run_dir = if !isempty(cfg.postprocess.data_dir)
-            # normpath strips any trailing slash so dirname yields the parent
-            dirname(abspath(normpath(cfg.postprocess.data_dir)))
-        elseif !isempty(run_dir)
-            run_dir
-        else
-            ""
-        end
-        generate_plots(results, cfg; run_dir = plot_run_dir)
+        generate_plots(results, cfg; run_dir = products_dir)
         push!(phases, "plots")
     end
 
@@ -423,6 +438,9 @@ export read_escapers
 export read_stellar_evolution, read_all_stellar_evolution
 export BinaryRecord, BinaryEvolutionSnapshot, read_binary_evolution, read_all_binary_evolution
 export BinaryPopulation, binary_population, binary_hardness, hardness_scale, binary_scales
+export StellarClass, STELLAR_CLASSES, stellar_class, stellar_class_index
+export HRPopulation, hr_population, hr_populations
+export StellarCensus, stellar_census, class_counts, classes_present, write_stellar_census
 export semi_major_axis_pc, binding_energy
 export plot_binary_population, plot_binary_orbital_elements, plot_binary_period_distribution
 export TelemetrySample, read_telemetry, read_run_telemetry, plot_telemetry

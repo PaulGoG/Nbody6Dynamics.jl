@@ -5,6 +5,43 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 
 ## [Unreleased]
 
+### Added
+- Stellar classes and a class census. `STELLAR_CLASSES` groups the SSE/BSE
+  types as the engine does for its per-type Lagrangian radii;
+  `hr_population` joins the single stars of `sev.83` with the members of the
+  KS pairs of `bev.82`; `stellar_census` counts every class at every epoch,
+  singles and binary members separately, and `run_pipeline` writes it as
+  `stellar_census.csv`.
+- Every run directory keeps the resolved manifest of its environment as
+  `environment_manifest.toml`, and `RUN_INFO.toml [hardware]` carries the
+  `versioninfo()` report. `[pipeline] engine_completed` states whether the
+  engine reached END RUN.
+
+### Changed (breaking)
+- HR figures. `plot_hr`, `plot_hr_evolution` and `animate_hr` share one
+  layout: a legend on top, the HR panels, and a census strip of the stars per
+  class against time. Legend, axes, colours and markers are fixed by the run,
+  not by the epochs drawn, so the figures of one run are comparable. Members
+  of KS pairs are part of the population (open markers); they were missing
+  before, a fifth of the stars in a run with primordial binaries. Neutron
+  stars and black holes are followed in the strip and no longer drawn on the
+  plane, where one neutron star at log T_eff ≈ 6.3 used to set the axis of
+  every panel. `plot_hr(sevs, vis; epoch, bevs)` is the run-level method;
+  `plot_hr(sev, vis)` remains for a single snapshot. `plot_core_mass` uses the
+  same class colours.
+- The resolved manifests are no longer under version control.
+
+### Fixed
+- The engine source-tree repair could delete the directory named by
+  `install.install_dir`. It never deletes now: an unrestorable checkout is
+  renamed, and a non-empty directory that is not a checkout is refused.
+- A validation stage passed when the pipeline had completed on the partial
+  output of an engine that was killed or halted; the verdict now requires
+  END RUN.
+- `backend_commit` was read from a fixed path rather than the engine tree in
+  use, and a tree without its own `.git` reported the enclosing repository's
+  commit.
+
 ### Changed (breaking)
 - The figure routines are a package extension. `CairoMakie` and
   `MathTeXEngine` moved from `[deps]` to `[weakdeps]`, and every `plot_*`,

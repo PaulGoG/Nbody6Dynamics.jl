@@ -559,8 +559,8 @@ Static plots take the extension from `visualization.format`; animations are alwa
 | `plot_cluster_structure(snaps, ranges, vis)` | Two panels: bound half-mass radius per cluster with the engine's global `r₅₀` overlaid, and bound mass fraction | `merger_cluster_structure` |
 | `plot_density_profiles(snap, ranges, vis; specs)` | Density profiles of each cluster about its own centre (log–log) with the generating King/Plummer model dashed and a `ρ/ρ_model` ratio strip with unity guide | `merger_density_profiles_{initial,final}` |
 | `plot_velocity_dispersion(snap, ranges, vis)` | Radial (solid) and tangential (dashed) velocity dispersion profiles per cluster, and the anisotropy `β(r)` with the isotropic guide | `merger_velocity_dispersion` |
-| `plot_hr(sev, vis)` | HR diagram coloured by stellar type K*, reversed Teff axis | `hr_diagram_{early,mid,final}` |
-| `plot_hr_evolution(sevs, vis)` | HR panel grid across up to 6 epochs | `hr_evolution` |
+| `plot_hr(sevs, vis; epoch, bevs)` | HR diagram of one epoch coloured by stellar class, single stars and members of KS pairs (open markers) together, above a census strip of the stars per class against time with the epoch marked. Legend and axes are those of the whole run, so the figures of different epochs match; neutron stars and black holes are counted in the strip and never drawn on the plane | `hr_diagram_{early,mid,final}` |
+| `plot_hr_evolution(sevs, vis; bevs)` | The same layout with up to 6 evenly spaced epochs on shared axes under one legend; the strip marks the panel epochs and shows the classes that fall between them | `hr_evolution` |
 | `plot_escapers(escs, vis)` | Two panels: cumulative escaped mass step curve with totals annotation, and escape velocity vs time (log y) split into luminous / compact-remnant classes | `escapers` |
 | `plot_escape_anisotropy(escs, vis)` | Sky projection of escape directions φ ∈ [0°, 360°], θ ∈ [-90°, 90°] by stellar class | `escape_anisotropy` |
 | `plot_mass_segregation(sev, vis)` | Distance from density centre RI vs stellar mass, log–log, epoch annotated | `mass_segregation` |
@@ -571,7 +571,7 @@ Static plots take the extension from `visualization.format`; animations are alwa
 | `plot_merger_ic(result, vis)` | IC diagnostics: projections, 3-panel overview, velocity quiver by cluster, IMF histogram with Kroupa reference slopes, per-cluster radial density | `merger_ic_{xy,xz,yz}`, `merger_ic_overview`, `merger_ic_velocity`, `merger_ic_imf`, `merger_ic_density` |
 | `animate_cluster(snaps, vis)` | Animated scatter per projection, global or adaptive limits | `cluster_evolution_{xy,xz,yz}.gif` |
 | `animate_lagrangian(lagr, vis)` | Progressive line draw with ghost background and time cursor | `lagrangian_anim.gif` |
-| `animate_hr(sevs, vis)` | Animated HR diagram | `hr_evolution_anim.gif` |
+| `animate_hr(sevs, vis; bevs)` | Animated HR diagram in the layout of `plot_hr`: fixed legend and axes, the epoch guide moving along the census strip | `hr_evolution_anim.gif` |
 | `plot_telemetry(samples, vis)` | Run telemetry against wall-clock time: cores busy with the host load average on a twin axis, resident memory (RSS, high-water mark), GPU utilisation when sampled; the means and the peak RSS are legend entries. Drawn for every run directory that holds the sampler's `telemetry*.csv` (`read_run_telemetry` concatenates the segments of restarted runs) | `telemetry` |
 
 The merger plots (`plot_cluster_separation`, `plot_cluster_virial`) are generated automatically by `generate_plots`/`postprocess_external` when a `merger_summary.txt` is found next to the snapshots; the cluster index ranges come from `parse_merger_summary`. `plot_merger_ic` runs whenever a merger IC was generated in the same pipeline invocation (or can be re-run later via `load_merger_ic_result`).
@@ -662,6 +662,26 @@ Files produced by the Nbody6++ simulation and read by this package:
 | 5 | EAGB (Early AGB) | 13 | NS (Neutron Star) |
 | 6 | TPAGB (Thermally Pulsing AGB) | 14 | BH (Black Hole) |
 | 7 | HeMS (Naked He MS) | 15 | SNR (Massless Remnant) |
+
+The engine also uses K* = −1 for pre-main-sequence stars.
+
+### Stellar classes
+
+Figures and the census group the types as the engine does for its per-type
+Lagrangian radii (`STELLAR_CLASSES`): pre-main sequence (−1), main sequence
+(0–1), Hertzsprung gap (2), red giant (3), core He burning (4), AGB (5–6),
+He star (7–9), white dwarf (10–12), neutron star (13), black hole (14),
+massless remnant (15). The last three have no photosphere that places them on
+the optical HR plane; they are counted, not drawn.
+
+`stellar_census(sevs, bevs)` counts the stars of every class at every epoch,
+single stars (`sev.83`) and members of KS-regularised pairs (`bev.82`)
+separately. A star moves between the two files whenever its pair enters or
+leaves regularisation, so either file alone gives a population that changes
+for reasons unrelated to stellar evolution; in a run with primordial binaries
+a fifth of the stars can be in `bev.82` at any time. `run_pipeline` writes the
+census to `stellar_census.csv` in the run directory, with or without a
+plotting backend.
 
 ---
 

@@ -2572,6 +2572,101 @@ $(extra)
     end
 
     # =====================================================================
+    @testset "Stellar classes, HR population and census" begin
+        # Every K* of the SSE/BSE range belongs to exactly one class.
+        @test all(k -> count(c -> k in c.kstar, STELLAR_CLASSES) == 1, -1:15)
+        @test [stellar_class(k).key for k in (-1, 0, 1, 2, 3, 4, 6, 8, 11, 13, 14, 15)] == [
+            :pre_main_sequence,
+            :main_sequence,
+            :main_sequence,
+            :hertzsprung_gap,
+            :red_giant,
+            :core_helium_burning,
+            :asymptotic_giant,
+            :helium_star,
+            :white_dwarf,
+            :neutron_star,
+            :black_hole,
+            :massless_remnant,
+        ]
+        @test [c.key for c in STELLAR_CLASSES if !c.luminous] == [:neutron_star, :black_hole, :massless_remnant]
+        @test_throws ArgumentError stellar_class_index(16)
+        @test_throws ArgumentError stellar_class_index(-2)
+
+        star(k, log_l, log_t) =
+            StellarRecord(0.0, Int32(1), Int32(1), Int32(k), 1.0, 1.0, log_l, 0.0, log_t)
+        pair(k1, k2, l1, l2, t1, t2) = BinaryRecord(
+            0.0,
+            Int32(1),
+            Int32(2),
+            Int32(1),
+            Int32(2),
+            Int32(k1),
+            Int32(k2),
+            Int32(0),
+            0.0,
+            0.1,
+            0.0,
+            3.0,
+            1.0,
+            1.0,
+            l1,
+            l2,
+            0.0,
+            0.0,
+            t1,
+            t2,
+            zeros(12)...,
+        )
+        # t = 0: two MS stars, a black hole at the SSE placeholder, a neutron
+        # star hot enough to pass any numeric cut; one KS pair, MS + CHeB.
+        sev1 = StellarEvolutionSnapshot(
+            0.0,
+            4,
+            [star(1, 2.0, 4.2), star(0, -1.0, 3.6), star(14, -10.0, 3.3), star(13, 0.4, 6.3)],
+        )
+        bev1 = BinaryEvolutionSnapshot(0.0, 1, [pair(1, 4, 1.0, 5.0, 4.0, 3.9)])
+        # t = 2: an MS star, a Hertzsprung-gap star, an MS placeholder record;
+        # no binary snapshot for this epoch.
+        sev2 = StellarEvolutionSnapshot(
+            2.0,
+            3,
+            [star(1, 2.0, 4.2), star(2, 4.0, 4.0), star(1, -10.0, 3.5)],
+        )
+        ms, hg, cheb, ns, bh = stellar_class_index.((1, 2, 4, 13, 14))
+
+        pop = hr_population(sev1, bev1)
+        @test length(pop) == 4                       # BH and NS are not on the plane
+        @test pop.class == [ms, ms, ms, cheb]
+        @test pop.binary_member == [false, false, true, true]
+        @test pop.log_teff == [4.2, 3.6, 4.0, 3.9]
+        @test length(hr_population(sev1)) == 2       # without the pair
+
+        pops = hr_populations([sev1, sev2], [bev1])  # pairs by time, not position
+        @test length(pops[1]) == 4
+        @test pops[2].class == [ms, hg]              # placeholder record dropped
+
+        census = stellar_census([sev1, sev2], [bev1])
+        @test census.time_myr == [0.0, 2.0]
+        @test census.single[1, [ms, ns, bh]] == [2, 1, 1]
+        @test census.binary_member[1, [ms, cheb]] == [1, 1]
+        @test census.single[2, [ms, hg]] == [2, 1]   # the census counts every record
+        @test sum(census.binary_member[2, :]) == 0
+        @test sum(class_counts(census)) == 6 + 3
+        @test classes_present(census) == [ms, hg, cheb, ns, bh]
+
+        mktempdir() do dir
+            path = write_stellar_census(joinpath(dir, "stellar_census.csv"), census)
+            rows = readlines(path)
+            @test length(rows) == 3
+            @test startswith(rows[1], "time_myr,pre_main_sequence_single,pre_main_sequence_binary,")
+            @test length(split(rows[1], ',')) == 1 + 2 * length(STELLAR_CLASSES)
+            @test startswith(rows[2], "0.0,0,0,2,1,")
+            write_stellar_census(path, census)
+            @test isfile(joinpath(dir, "stellar_census#1.csv"))
+        end
+    end
+
     @testset "Stellar type labels" begin
         # Standard Hurley et al. (2000) SSE/BSE table used by this fork
         @test startswith(STELLAR_TYPE_LABELS[0], "MS")
@@ -2833,6 +2928,29 @@ $(extra)
         )
         plot_hr_evolution([sev, sev2], vis; filename = "test_hr_evo")
         @test isfile(joinpath(TESTDIR, "test_plots", "test_hr_evo.png"))
+
+        # --- HR figure of one epoch of a run ---
+        plot_hr([sev, sev2], vis; epoch = 1, filename = "test_hr_epoch")
+        @test isfile(joinpath(TESTDIR, "test_plots", "test_hr_epoch.png"))
+        @test_throws ArgumentError plot_hr([sev, sev2], vis; epoch = 3)
+        @test_throws ArgumentError plot_hr_evolution(StellarEvolutionSnapshot[], vis)
+        @test_throws ArgumentError plot_hr_evolution([sev, sev2], vis; epochs = [0])
+
+        # The neutron star (log Teff = 4.5) is counted, not drawn: it must
+        # not set the axis shared by every HR figure of the run.
+        hr_run = MakieExt._hr_run([sev, sev2], BinaryEvolutionSnapshot[])
+        @test hr_run.tlims[2] < 4.5
+        @test stellar_class_index(13) in hr_run.classes
+        @test MakieExt._hr_has_strip(hr_run)
+        @test !MakieExt._hr_has_strip(MakieExt._hr_run([sev], BinaryEvolutionSnapshot[]))
+        @test MakieExt._hr_dark_note(hr_run, 1) == "Not on the plane: 1 neutron star"
+        @test MakieExt._hr_dark_note(hr_run, 2) == ""
+        @test MakieExt._census_axis_top.((1, 3, 7, 10, 11, 120)) ==
+              (1.0, 5.0, 10.0, 10.0, 20.0, 200.0)
+        # One style per class, and no two drawn classes share colour and marker.
+        @test Set(keys(MakieExt._HR_CLASS_STYLE)) == Set(c.key for c in STELLAR_CLASSES)
+        styles = [(st.color, st.marker) for st in values(MakieExt._HR_CLASS_STYLE)]
+        @test allunique(styles)
     end
 
     # =====================================================================

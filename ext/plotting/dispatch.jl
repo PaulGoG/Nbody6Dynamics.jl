@@ -182,6 +182,7 @@ function Nbody6Dynamics.generate_plots(
     if haskey(results, :stellar_evo)
         sevs = results[:stellar_evo]::Vector{StellarEvolutionSnapshot}
         if !isempty(sevs)
+            hr_bevs = get(results, :binary_evo, BinaryEvolutionSnapshot[])
             # Three HR diagrams: beginning, middle, end
             mid = max(1, length(sevs) ÷ 2)
             hr_epochs = [
@@ -191,11 +192,11 @@ function Nbody6Dynamics.generate_plots(
             ]
             for (idx, fname) in hr_epochs
                 @info "Plotting HR diagram (epoch $idx/$(length(sevs)))..."
-                plot_hr(sevs[idx], vis; filename = fname)
+                plot_hr(sevs, vis; epoch = idx, bevs = hr_bevs, filename = fname)
             end
             if length(sevs) > 1
                 @info "Plotting HR evolution..."
-                plot_hr_evolution(sevs, vis; filename = "hr_evolution")
+                plot_hr_evolution(sevs, vis; bevs = hr_bevs, filename = "hr_evolution")
             end
             @info "Plotting SSE quantities..."
             plot_mass_segregation(sevs[end], vis; filename = "mass_segregation")
@@ -244,7 +245,12 @@ function Nbody6Dynamics.generate_plots(
             sevs = results[:stellar_evo]::Vector{StellarEvolutionSnapshot}
             if length(sevs) > 1
                 @info "Animating HR diagram evolution..."
-                animate_hr(sevs, vis; filename = "hr_evolution_anim")
+                animate_hr(
+                    sevs,
+                    vis;
+                    bevs = get(results, :binary_evo, BinaryEvolutionSnapshot[]),
+                    filename = "hr_evolution_anim",
+                )
             end
         end
     end

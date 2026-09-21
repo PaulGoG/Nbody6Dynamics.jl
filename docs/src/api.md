@@ -147,6 +147,27 @@ binding_energy
 semi_major_axis_pc
 ```
 
+## Stellar Population
+
+Stellar classes, the population of an epoch on the HR plane (single stars
+and members of KS-regularised pairs together), and the class census of a
+run. `run_pipeline` writes the census as `stellar_census.csv`.
+
+```@docs
+StellarClass
+STELLAR_CLASSES
+stellar_class
+stellar_class_index
+HRPopulation
+hr_population
+hr_populations
+StellarCensus
+stellar_census
+class_counts
+classes_present
+write_stellar_census
+```
+
 ## Plotting
 
 The figure routines below are implemented by the package extension
