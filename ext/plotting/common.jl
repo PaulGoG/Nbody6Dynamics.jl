@@ -734,5 +734,11 @@ const _SEMANTIC_COLORS = Dict{Symbol,Makie.RGBAf}(
     :segregation => _OKABE_ITO[2],  # orange        Λ_MSR, r_h ratio
 )
 
-"""Darkened same-hue edge colour for `band!` fills (edge at full opacity)."""
-_band_edge(c::Makie.RGBAf) = Makie.RGBAf(0.7 * c.r, 0.7 * c.g, 0.7 * c.b, 1.0)
+"""
+Darkened same-hue edge colour, at full opacity, for area fills and marker
+edges. Accepts any colour Makie does (`:black`, `(colour, alpha)`, `RGBAf`).
+"""
+function _band_edge(colour)::Makie.RGBAf
+    c = Makie.to_color(colour)
+    return Makie.RGBAf(0.7 * c.r, 0.7 * c.g, 0.7 * c.b, 1.0)
+end
