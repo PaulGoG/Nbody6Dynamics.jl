@@ -1,12 +1,10 @@
 name: Backend
 # Builds Nbody6++GPU-beijing from source and runs the engine-dependent test
 # suite (install, launch, restart, tidal field, telemetry on a live process).
+# Dormant until the public launch: manual dispatch only. Triggers to restore
+# then: weekly schedule (cron '0 4 * * 1') and push of tags 'v*'.
 on:
-  schedule:
-    - cron: '0 4 * * 1'   # weekly, Monday 04:00 UTC
   workflow_dispatch:
-  push:
-    tags: ['v*']
 jobs:
   build-and-run:
     runs-on: ubuntu-latest
@@ -17,8 +15,6 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq gfortran build-essential libglib2.0-0 libcairo2 libpango-1.0-0 libpangocairo-1.0-0
-      - name: Resolve fresh on CI
-        run: rm -f Manifest.toml
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1'

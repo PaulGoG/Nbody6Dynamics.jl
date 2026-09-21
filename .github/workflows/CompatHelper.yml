@@ -1,7 +1,7 @@
 name: CompatHelper
+# Dormant until the public launch: manual dispatch only. Dependabot (julia and
+# github-actions ecosystems) replaces this workflow at launch.
 on:
-  schedule:
-    - cron: '0 3 * * 1'   # weekly, Monday 03:00 UTC
   workflow_dispatch:
 jobs:
   CompatHelper:
