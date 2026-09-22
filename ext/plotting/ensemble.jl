@@ -120,7 +120,7 @@ axes. A sweep without grid axes yields one ensemble in a single colour.
         isempty(held) ? "" :
         "\n" * join(
             [
-                "$(_axis_short(a)) = $(_format_axis_value(v))" for
+                "$(_axis_short(a)) = $(_legend_value(v))" for
                 (a, v) in sort(collect(held); by = first)
             ],
             ", ",
@@ -143,7 +143,7 @@ axes. A sweep without grid axes yields one ensemble in a single colour.
                 LineElement(; color = colors[v], linewidth = _STYLE.data) for v in values
             ],
         )
-        push!(labels, AbstractString[_format_axis_value(v) for v in values])
+        push!(labels, AbstractString[_legend_value(v) for v in values])
         push!(titles, _axis_short(axis) * ":")
     end
     grey = _OKABE_ITO[8]

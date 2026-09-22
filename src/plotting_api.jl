@@ -64,8 +64,9 @@ end
 
 """
 The public figure routines. Each is declared here without methods and
-implemented by the Makie extension; the fallback below answers a call made
-without a backend.
+implemented by the Makie extension; a call without a backend is a
+`MethodError` whose message carries the remedy, through the error hint
+registered in `__init__`.
 """
 const _PLOTTING_ENTRY_POINTS = (
     # theme
@@ -119,20 +120,29 @@ const _PLOTTING_ENTRY_POINTS = (
 )
 
 """
-    _no_plotting_backend(entry_point, args)
+    _plotting_error_hint(io, exc, argtypes, kwargs)
 
-Answer a call to a figure routine that found no method: a `MethodError` when
-the extension is loaded (the arguments are simply wrong) and a
-[`PlottingUnavailable`](@ref) when it is not.
+Error hint for a `MethodError` on a figure routine raised while no Makie
+backend is loaded: names the routine and the remedy. Registered with
+`Base.Experimental.register_error_hint` at package initialisation.
 """
-function _no_plotting_backend(entry_point::Symbol, args::Tuple)
-    plotting_available() && throw(MethodError(getfield(@__MODULE__, entry_point), args))
-    throw(PlottingUnavailable(entry_point))
+function _plotting_error_hint(io::IO, exc::MethodError, argtypes, kwargs)
+    f = exc.f
+    f isa Function || return nothing
+    parentmodule(f) === @__MODULE__() || return nothing
+    nameof(f) in _PLOTTING_ENTRY_POINTS || return nothing
+    plotting_available() && return nothing
+    print(
+        io,
+        "\n`",
+        nameof(f),
+        "` is a figure routine of Nbody6Dynamics and has no methods ",
+        "because no Makie backend is loaded. Load one first:\n    using CairoMakie\n",
+        "which triggers the package extension Nbody6DynamicsMakieExt carrying every figure routine.",
+    )
+    return nothing
 end
 
 for entry_point in _PLOTTING_ENTRY_POINTS
-    @eval begin
-        function $entry_point end
-        $entry_point(args...; kwargs...) = _no_plotting_backend($(QuoteNode(entry_point)), args)
-    end
+    @eval function $entry_point end
 end

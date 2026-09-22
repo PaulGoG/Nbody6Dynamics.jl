@@ -3,10 +3,13 @@
 # =============================================================================
 #
 # Each sev.83_<t> file is an ASCII snapshot of stellar properties at one
-# epoch, written by `hrplot.F` (upstream v2026.07+, 15 tokens per line):
+# epoch, written by `hrplot.F`. Two layouts are read:
 #   Header line:  "NS  TPHYS"        — star count and physical time [Myr]
-#   Data lines:   TTOT  I  NAME  K*  RI[pc]  M[M☉]  LOG10(L)  LOG10(R)
+#   Data lines (15 tokens, `hrplot.F` of upstream v2026.07+):
+#                 TTOT  I  NAME  K*  RI[pc]  M[M☉]  LOG10(L)  LOG10(R)
 #                 LOG10(Teff)  AGE  EPOCH  TM[Myr]  MC[M☉]  RCC[R☉]  RE[R☉]
+#   Data lines (11 tokens, the layout of the engine manual): the same through
+#                 AGE  EPOCH, with no SSE tail; TM, MC, RCC, RE become NaN.
 #
 # Header time is TPHYS in **Myr**, while token 1 of every data line is TTOT
 # in **NB units** — both clocks are kept.
@@ -17,6 +20,13 @@
 Parse a single sev.83_* file into a `StellarEvolutionSnapshot`. The snapshot
 time is the header TPHYS [Myr]; each record additionally stores its own
 per-line NB time (TTOT).
+
+Both `hrplot.F` layouts are accepted: 15 tokens per data line (upstream
+v2026.07+, ending at TM MC RCC RE) and the 11 tokens documented by the engine
+manual (ending at AGE EPOCH), for which `ms_lifetime_myr`, `mass_core`,
+`radius_core` and `radius_envelope` are filled with `NaN`. Lines with any
+other token count, or with unparseable fields (Fortran field overflow), are
+skipped and reported once per file as a warning.
 """
 function read_stellar_evolution(path::AbstractString)::StellarEvolutionSnapshot
     isfile(path) || error("Stellar evolution file not found: $path")
@@ -32,12 +42,20 @@ function read_stellar_evolution(path::AbstractString)::StellarEvolutionSnapshot
     records = StellarRecord[]
     sizehint!(records, n_stars)
 
+    n_data = 0
+    n_skipped = 0
     for i in 2:length(lines)
         stripped = strip(lines[i])
         isempty(stripped) && continue
+        n_data += 1
 
         tokens = split(stripped)
-        length(tokens) < 15 && continue
+        if length(tokens) != 15 && length(tokens) != 11
+            n_skipped += 1
+            @debug "Skipping stellar line of unexpected layout" line = stripped n_tokens =
+                length(tokens)
+            continue
+        end
 
         try
             t_nb = parse(Float64, tokens[1])
@@ -49,18 +67,29 @@ function read_stellar_evolution(path::AbstractString)::StellarEvolutionSnapshot
             logl = parse(Float64, tokens[7])
             logr = parse(Float64, tokens[8])
             logt = parse(Float64, tokens[9])
-            tm = parse(Float64, tokens[12])
-            mc = parse(Float64, tokens[13])
-            rcc = parse(Float64, tokens[14])
-            re = parse(Float64, tokens[15])
+            # The 11-token layout stops at AGE EPOCH: no SSE tail to read.
+            tm, mc, rcc, re = if length(tokens) == 15
+                (
+                    parse(Float64, tokens[12]),
+                    parse(Float64, tokens[13]),
+                    parse(Float64, tokens[14]),
+                    parse(Float64, tokens[15]),
+                )
+            else
+                (NaN, NaN, NaN, NaN)
+            end
             push!(
                 records,
                 StellarRecord(t_nb, idx, name, kstar, ri, mass, logl, logr, logt, tm, mc, rcc, re),
             )
         catch e
+            n_skipped += 1
             @debug "Skipping unparseable stellar line" line = stripped exception = e
         end
     end
+
+    n_skipped > 0 &&
+        @warn "sev file: $n_skipped of $n_data data lines skipped (unexpected layout or unparseable)" path
 
     return StellarEvolutionSnapshot(time_myr, n_stars, records)
 end

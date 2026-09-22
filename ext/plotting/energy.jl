@@ -49,10 +49,9 @@ records), N-body units otherwise.
         de_lo, de_hi = extrema(de_abs)
         ylims!(ax1, de_lo * 0.8, de_hi * 1.5)
         # Annotate the maximum error (2 significant digits)
-        m_str, e_str = split(@sprintf("%.1e", de_hi), 'e')
         _annotate!(
             ax1,
-            latexstring("\\max|\\Delta E/E| = $(m_str) \\times 10^{$(parse(Int, e_str))}");
+            latexstring("\\max|\\Delta E/E| = " * _fmt_latex_sig(de_hi, 2));
             corner = :tr,
             color = _SEMANTIC_COLORS[:energy_error],
         )

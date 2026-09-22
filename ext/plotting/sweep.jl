@@ -58,7 +58,7 @@ function _sweep_overlay!(ax, pts, axis::AbstractString, series)
                 y;
                 color = (colors[v], 0.85),
                 linewidth = _STYLE.data,
-                label = _format_axis_value(v),
+                label = _legend_value(v),
             )
             push!(labelled, v)
         end

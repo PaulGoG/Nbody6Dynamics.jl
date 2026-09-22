@@ -73,7 +73,7 @@ line roles.
                 LineElement(; color = colors[v], linewidth = _STYLE.data) for v in values
             ],
         )
-        push!(labels, AbstractString[_format_axis_value(v) for v in values])
+        push!(labels, AbstractString[_legend_value(v) for v in values])
         push!(titles, _axis_short(axis) * ":")
     end
     grey = _OKABE_ITO[8]

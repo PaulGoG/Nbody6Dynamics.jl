@@ -33,10 +33,24 @@ end
     # internals (e.g. @sync's sync_end, tuple broadcasting) produce
     # known false positives outside our control.
     JET.test_package(Nbody6Dynamics; target_modules = (Nbody6Dynamics,))
-    # The figure layer is not covered here: `report_package` takes a
-    # package and an extension is not one, and `report_file` on the
-    # extension analyses it against the package's own project, where the
-    # Makie trigger packages are weak dependencies and cannot be
-    # resolved. Aqua's ambiguity check above and the figure smoke tests
-    # are what the extension has instead.
+    # `report_package` takes a package and an extension is not one, so the
+    # figure layer is analysed per entry point, on the argument types the
+    # real-output fixtures give, with the reports scoped to the extension.
+    fix = joinpath(@__DIR__, "fixtures")
+    diag = read_diagnostics(joinpath(fix, "out1000"))
+    lagr = read_lagr(joinpath(fix, "lagr.7"))
+    escs = read_escapers(joinpath(fix, "esc.11"))
+    sev = read_stellar_evolution(joinpath(fix, "sev.83_0"))
+    bevs = [read_binary_evolution(joinpath(fix, "bev.82_0"))]
+    vis = VisualizationConfig(; output_dir = mktempdir(), format = "png")
+    for (f, args) in (
+        (publication_theme, ()),
+        (plot_energy, (diag, vis)),
+        (plot_lagrangian, (lagr, vis)),
+        (plot_escapers, (escs, vis)),
+        (plot_hr, (sev, vis)),
+        (plot_binary_period_distribution, (bevs, vis)),
+    )
+        JET.test_call(f, typeof.(args); target_modules = (MakieExt,))
+    end
 end

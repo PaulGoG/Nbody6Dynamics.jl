@@ -7,7 +7,7 @@
     @test plotting_available()
     @test Base.get_extension(Nbody6Dynamics, :Nbody6DynamicsMakieExt) !== nothing
     for entry_point in Nbody6Dynamics._PLOTTING_ENTRY_POINTS
-        @test length(methods(getfield(Nbody6Dynamics, entry_point))) > 1
+        @test !isempty(methods(getfield(Nbody6Dynamics, entry_point)))
     end
     # With a backend loaded, wrong arguments stay a MethodError instead
     # of being reported as a missing backend.
@@ -29,7 +29,7 @@
     try
         plot_energy("a", "b")
     catch e
-        println("entry=", nameof(typeof(e)), ":", e.entry_point)
+        println("entry=", nameof(typeof(e)), ":", occursin("using CairoMakie", sprint(showerror, e)))
     end
     cfg_path = tempname() * ".toml"
     write(cfg_path, join([
@@ -51,7 +51,7 @@
         `$(Base.julia_cmd()) --project=$(Nbody6Dynamics._PACKAGE_ROOT) --startup-file=no -e $headless`,
     )
     @test occursin("available=false", out)
-    @test occursin("entry=PlottingUnavailable:plot_energy", out)
+    @test occursin("entry=MethodError:true", out)
     @test occursin("pipeline=PlottingUnavailable:run_pipeline", out)
     @test occursin("hint=true", out)
     @test occursin("makie_loaded=false", out)
@@ -694,6 +694,14 @@ end
     @test MakieExt._fmt_latex_sig3(47.25) == "47.2" || MakieExt._fmt_latex_sig3(47.25) == "47.3"
     samples = (3.0e-7, 0.004, 0.07, 1.0, 9.99, 100.0, 999.5, 1.0e4, 6.02e23)
     @test !any(occursin(r"[0-9]e[+-]?[0-9]", f(x, n)) for x in samples, n in (2, 3))
+    @test MakieExt._fmt_plain_sig(1e-5) == "10⁻⁵"
+    @test MakieExt._fmt_plain_sig(2.5e-5) == "2.5×10⁻⁵"
+    @test MakieExt._fmt_plain_sig(1200.0) == "1200"
+    @test MakieExt._fmt_plain_sig(0.6) == "0.6"
+    @test MakieExt._fmt_plain_sig(-3.0e4) == "-3×10⁴"
+    @test MakieExt._legend_value(0.6) == "0.6" && MakieExt._legend_value(1000) == "1000"
+    @test MakieExt._legend_value(1e-5) == "10⁻⁵" && MakieExt._legend_value("king") == "king"
+    @test !occursin("e-0", MakieExt._legend_value(1e-5))
 end
 
 @testset "Log-tick generator edge cases" begin

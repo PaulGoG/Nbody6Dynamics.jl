@@ -64,7 +64,7 @@ julia -e 'include("activate.jl"); Pkg.test()'
 
 ## 4. Configuration Reference
 
-Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall back to the defaults shown. All constraints listed below are enforced fail-fast at load time: `load_config` raises an error naming the offending `section.key` and the actual value, so a pipeline cannot start from a configuration it cannot honor. `save_config` writes a frozen snapshot of the full configuration into each run directory.
+Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall back to the defaults shown, which are those of the configuration structs. All constraints listed below are enforced fail-fast at load time: `load_config` raises an `ArgumentError` naming the offending `section.key` and the actual value — a key the schema does not define, a value of the wrong type, a choice outside the enumerated ones, a number outside its bounds — so a pipeline cannot start from a configuration it cannot honor, and a misspelt key cannot run silently at its default. `save_config` writes a frozen snapshot of the full configuration into each run directory, with its paths made absolute.
 
 ### `[install]`
 
@@ -529,7 +529,7 @@ The package itself declares no plotting dependency. A headless host therefore ne
 
 Consequences to know:
 
-- Without a backend, a figure routine throws `PlottingUnavailable` naming the remedy; it never fails with an `UndefVarError`.
+- Without a backend a figure routine has no methods: the call is a `MethodError` whose message names the routine and the remedy (`using CairoMakie`). The orchestration entry points below throw `PlottingUnavailable` before doing any work.
 - `run_pipeline` with `[visualization] enabled = true`, `run_merger_pipeline(...; make_plots = true)` and `postprocess_external(...; make_plots = true)` check for the backend **before** doing any work, so a missing backend costs nothing instead of costing an integration. Set the flag to `false` for a numerics-only run.
 - `plotting_available()` reports whether the extension is loaded.
 - The entry scripts under `scripts/` run in their own environment (`scripts/Project.toml`) which carries the backend, so `julia scripts/run_setup.jl config.toml` plots as before. `bench/` has no backend, by design.

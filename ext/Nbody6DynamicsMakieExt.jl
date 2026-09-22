@@ -34,11 +34,27 @@ using Nbody6Dynamics:
     _backup_existing,
     _cluster_com_trajectories,
     _count_spatial_clusters,
-    _format_axis_value,
     _mean,
     _run_series,
     _series_label,
     _sweep_done_points
+# Public (unexported) names of the package the figure layer calls unqualified.
+using Nbody6Dynamics:
+    binary_hardness,
+    binary_scales,
+    class_counts,
+    classes_present,
+    nparticles,
+    profile_name,
+    rbar,
+    read_sweep_index,
+    semi_major_axis_pc,
+    stellar_class_index,
+    time_myr,
+    time_nb,
+    tscale,
+    vstar,
+    zmbar
 
 # Shared theme, figure sizing, axis and annotation helpers
 include("plotting/common.jl")

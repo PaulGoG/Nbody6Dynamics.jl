@@ -1,8 +1,15 @@
 # API Reference
 
+```@meta
+CurrentModule = Nbody6Dynamics
+```
+
+Names listed here without a `Nbody6Dynamics.` prefix are either exported or `public`; the export list in `src/Nbody6Dynamics.jl` says which. A `public` name is documented and stable but is called as `Nbody6Dynamics.name`.
+
 ## Pipeline
 
 ```@docs
+example_input
 run_pipeline
 run_gpu_validation
 postprocess

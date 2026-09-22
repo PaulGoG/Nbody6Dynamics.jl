@@ -27,6 +27,13 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
   `run_pipeline` writes `remnant_diagnostics.csv` next to
   `stellar_census.csv`; the figure layer no longer writes it, so a headless
   host gets it too.
+- The figure routines are declared without any method: a call made without a
+  Makie backend is a `MethodError` whose message names the remedy, through an
+  error hint. The former catch-all fallback made `hasmethod` and `applicable`
+  answer `true` for any arguments and hid a wrong call behind a
+  missing-backend report. `PlottingUnavailable` remains the error of
+  `run_pipeline`, `run_merger_pipeline` and `postprocess_external` when they
+  are asked for figures without a backend.
 
 ### Added
 - Stellar classes and a class census. `STELLAR_CLASSES` groups the SSE/BSE

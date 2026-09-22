@@ -466,61 +466,52 @@ function _find_latest_run(cfg::Nbody6Config, base_dir::AbstractString)::String
     return sort(dirs; by = timestamp_key)[end]
 end
 
+function __init__()
+    Base.Experimental.register_error_hint(_plotting_error_hint, MethodError)
+    return nothing
+end
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+# The exported surface is the workflow: configuration, orchestration, the
+# readers and their record types, the diagnostics, the merger generator's
+# specification types and entry points, and the figure routines. Lower-level
+# helpers that a session would rarely call unqualified — accessors with short
+# names (`rbar`, `rc`), build internals, IC samplers, sweep-index plumbing —
+# are `public`: documented and reachable as `Nbody6Dynamics.name`, not
+# brought into scope by `using`.
 export Nbody6Config,
     InstallConfig,
     BuildConfig,
     SimulationConfig,
     PostprocessConfig,
     VisualizationConfig,
-    MergerPipelineConfig
+    MergerPipelineConfig,
+    PlotStyle
+export load_config, save_config, example_input
+export setup_nbody6, run_simulation, restart_simulation, postprocess, run_pipeline
+export generate_plots, generate_run_id, export_for_paper, run_gpu_validation
+export scan_output, postprocess_external, OutputScan
 export Snapshot, SnapshotHeader, DiagnosticsData, AdjustRecord, LagrangianData, UnitScaling
 export EscaperRecord, StellarRecord, StellarEvolutionSnapshot, STELLAR_TYPE_LABELS
-export load_config,
-    save_config, setup_nbody6, run_simulation, postprocess, generate_plots, run_pipeline
-export scan_output, postprocess_external, OutputScan
-export read_conf3, read_all_conf3
-export read_diagnostics, extract_scaling
-export read_lagr
-export read_escapers
+export BinaryRecord, BinaryEvolutionSnapshot, TelemetrySample
+export read_conf3, read_all_conf3, read_diagnostics, extract_scaling, read_lagr, read_escapers
 export read_stellar_evolution, read_all_stellar_evolution
-export BinaryRecord, BinaryEvolutionSnapshot, read_binary_evolution, read_all_binary_evolution
-export BinaryPopulation, binary_population, binary_hardness, hardness_scale, binary_scales
-export StellarClass, STELLAR_CLASSES, stellar_class, stellar_class_index
+export read_binary_evolution, read_all_binary_evolution
+export read_telemetry, read_run_telemetry
+export BinaryPopulation, binary_population
+export StellarClass, STELLAR_CLASSES, stellar_class
 export HRPopulation, hr_population, hr_populations
-export StellarCensus, stellar_census, class_counts, classes_present, write_stellar_census
-export semi_major_axis_pc, binding_energy
-export plot_binary_population, plot_binary_orbital_elements, plot_binary_period_distribution
-export TelemetrySample, read_telemetry, read_run_telemetry, plot_telemetry
-export run_gpu_validation
-export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
-export run_sweep_point, read_sweep_index, write_sweep_index, sweep_summary, write_sweep_summary
-export sweep_visualization, plot_sweep_lagrangian, plot_sweep_energy, sweep_figures
-export EnsembleStatistics, ensemble_statistics, sweep_ensembles, plot_sweep_ensemble
+export StellarCensus, stellar_census, write_stellar_census
+export ClusterStructure, cluster_structure, bound_fraction, per_cluster_virial, parse_merger_summary
+export RadialProfile, radial_profile, cluster_profiles, system_profile, model_density
 export RemnantDiagnostics, RotationProfile, remnant_diagnostics, write_remnant_diagnostics
 export coalescence_time, core_radius, rotation_analysis, mass_segregation
-export plot_remnant_rotation, plot_rotation_profile, plot_remnant_structure
-export plot_mass_segregation_evolution, remnant_figures
-export control_merger_dict, write_control_merger_config, plot_control_comparison
-export plot_snapshot, plot_snapshot_evolution
-export plot_lagrangian, plot_energy, plot_particle_count
-export plot_hr, plot_hr_evolution
-export plot_escapers, plot_escape_anisotropy
-export plot_mass_segregation, plot_evolutionary_clock, plot_core_mass
-export plot_cluster_separation, plot_cluster_virial, per_cluster_virial, parse_merger_summary
-export ClusterStructure, cluster_structure, plot_cluster_structure, bound_fraction
-export RadialProfile, radial_profile, cluster_profiles, system_profile, model_density
-export plot_density_profiles, plot_velocity_dispersion
-export animate_cluster, animate_hr, animate_lagrangian
-export set_publication_theme!, publication_theme, plotting_available
-export generate_run_id, restart_simulation, export_for_paper, example_input
-export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
-export detect_platform, check_dependencies, detect_cuda_path
-export engine_interval
-export detect_compute_capabilities, cuda_arch_from_compute_cap, cuda_gencode_flags
-export resolve_cuda_arch, nvcc_release, nvcc_supported_archs
+export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
+export sweep_summary, write_sweep_summary, sweep_visualization
+export EnsembleStatistics, ensemble_statistics, sweep_ensembles
+export control_merger_dict, write_control_merger_config
 export ClusterSpec,
     BinarySpec,
     OrbitSpec,
@@ -531,23 +522,37 @@ export ClusterSpec,
     MergerConfig,
     MergerICResult
 export DensityProfile,
-    KingProfile,
-    PlummerProfile,
-    IMFSpec,
-    KroupaIMF,
-    RescaledKroupaIMF,
-    EqualMassIMF,
-    profile_name,
-    imf_name,
-    expected_mass,
-    sample_masses,
-    kroupa_mean_mass
+    KingProfile, PlummerProfile, IMFSpec, KroupaIMF, RescaledKroupaIMF, EqualMassIMF
 export load_merger_config, generate_merger_ic, run_merger_pipeline, load_merger_ic_result
-export plot_merger_ic
-export sample_plummer, sample_king, sample_kroupa
-export virialise!, kepler_velocity, jacobi_radius
-export write_dat10, generate_merger_inp, resolve_nbody6_parameters, crossing_time, to_nbody_units!
-export sample_binaries, expand_binaries
+export engine_interval
+export publication_theme, plotting_available, PlottingUnavailable
+export plot_snapshot, plot_snapshot_evolution
+export plot_lagrangian, plot_energy, plot_particle_count
+export plot_hr, plot_hr_evolution
+export plot_escapers, plot_escape_anisotropy
+export plot_mass_segregation, plot_evolutionary_clock, plot_core_mass
+export plot_binary_population, plot_binary_orbital_elements, plot_binary_period_distribution
+export plot_cluster_separation, plot_cluster_virial, plot_cluster_structure
+export plot_density_profiles, plot_velocity_dispersion
+export plot_remnant_rotation, plot_rotation_profile, plot_remnant_structure
+export plot_mass_segregation_evolution, remnant_figures
+export plot_sweep_lagrangian, plot_sweep_energy, plot_sweep_ensemble, plot_control_comparison
+export sweep_figures, plot_merger_ic, plot_telemetry
+export animate_cluster, animate_hr, animate_lagrangian
+
+public nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
+public to_pc, to_msun, to_myr, to_kms
+public detect_platform, check_dependencies, detect_cuda_path
+public detect_compute_capabilities, cuda_arch_from_compute_cap, cuda_gencode_flags
+public resolve_cuda_arch, nvcc_release, nvcc_supported_archs
+public binary_hardness, hardness_scale, binary_scales, semi_major_axis_pc, binding_energy
+public stellar_class_index, class_counts, classes_present
+public run_sweep_point, read_sweep_index, write_sweep_index
+public profile_name, imf_name, expected_mass, sample_masses, kroupa_mean_mass
+public sample_plummer, sample_king, sample_kroupa, sample_binaries, expand_binaries
+public virialise!, kepler_velocity, jacobi_radius, crossing_time, to_nbody_units!
+public write_dat10, generate_merger_inp, resolve_nbody6_parameters
+public set_publication_theme!
 
 # ---------------------------------------------------------------------------
 # Precompile workload: the configuration and I/O paths every session

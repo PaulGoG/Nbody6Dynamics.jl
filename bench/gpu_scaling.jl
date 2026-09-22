@@ -23,6 +23,7 @@
 include(joinpath(@__DIR__, "activate.jl"))
 
 using Nbody6Dynamics, TOML, Dates, Printf
+using Nbody6Dynamics: detect_compute_capabilities
 
 include("merger_case.jl")
 

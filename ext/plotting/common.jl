@@ -550,6 +550,46 @@ end
 _fmt_latex_sig3(x::Real)::String = _fmt_latex_sig(x, 3)
 
 """
+    _superscript(e) -> String
+
+The integer `e` in Unicode superscript digits, with U+207B for a negative
+sign (`-5` → `⁻⁵`).
+"""
+function _superscript(e::Integer)::String
+    digits_sup = ('⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹')
+    s = string(abs(e))
+    body = join(digits_sup[Int(c - '0') + 1] for c in s)
+    return e < 0 ? "⁻" * body : body
+end
+
+"""
+    _fmt_plain_sig(x, n = 3) -> String
+
+`_fmt_latex_sig` for plain-text contexts (legend entries, multi-line
+annotations): the same rules, with the power of ten written in Unicode
+superscripts (`2.5×10⁻⁵`, `10⁴`) instead of TeX.
+"""
+function _fmt_plain_sig(x::Real, n::Int = 3)::String
+    x == 0 && return "0"
+    sign = x < 0 ? "-" : ""
+    v = round(abs(Float64(x)); sigdigits = n)
+    e = floor(Int, log10(v))
+    if -2 ≤ e ≤ 3
+        return sign * (isinteger(v) ? string(Int(v)) : string(v))
+    end
+    m = round(v / 10.0^e; sigdigits = n)
+    m == 1 && return sign * "10" * _superscript(e)
+    m_str = isinteger(m) ? string(Int(m)) : string(m)
+    return sign * m_str * "×10" * _superscript(e)
+end
+
+"""Legend or annotation text of a grid-axis value: booleans and integers verbatim, reals to three significant digits (`_fmt_plain_sig`), strings as they are."""
+_legend_value(v::Bool) = string(v)
+_legend_value(v::Integer) = string(v)
+_legend_value(v::Real) = _fmt_plain_sig(v, 3)
+_legend_value(v) = String(string(v))
+
+"""
     _marker_size(cfg, n) -> Float64
 
 Scatter marker size for `n` particles: `marker_budget / n` clamped to

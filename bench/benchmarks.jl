@@ -13,6 +13,7 @@ include(joinpath(@__DIR__, "activate.jl"))
 
 using BenchmarkTools
 using Nbody6Dynamics
+using Nbody6Dynamics: virialise!
 using Printf
 
 const BENCHDIR = mktempdir()

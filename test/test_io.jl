@@ -283,6 +283,42 @@ end
     sevs = read_all_stellar_evolution(TESTDIR, "sev.83_*")
     @test length(sevs) == 2
     @test sevs[1].time_myr < sevs[2].time_myr
+
+    # Older 11-token layout (the one the engine manual documents): the line
+    # ends at AGE EPOCH and the SSE tail is unknown, not absent data.
+    # Outside TESTDIR: the sev.83_ count above must stay at two.
+    alt_dir = mktempdir()
+    short_path = joinpath(alt_dir, "sev.83_short")
+    write(
+        short_path,
+        """
+  2  0.5000
+   0.4315   1   101  0  1.20  0.800   0.123  -0.456  3.750  0.0  0.0
+   0.4315   2   202  1  0.80  1.200   1.500   0.200  4.100  0.0  0.0
+""",
+    )
+    short = @test_logs read_stellar_evolution(short_path)   # a known layout: no warning
+    @test length(short.records) == 2
+    @test all(r -> isnan(r.ms_lifetime_myr), short.records)
+    @test all(
+        r -> isnan(r.mass_core) && isnan(r.radius_core) && isnan(r.radius_envelope),
+        short.records,
+    )
+    @test short.records[1].log_teff ≈ 3.750
+
+    # A line of neither layout is skipped, and the file reports its tally once.
+    mixed_path = joinpath(alt_dir, "sev.83_mixed")
+    write(
+        mixed_path,
+        """
+  2  0.5000
+   0.4315   1   101  0  1.20  0.800   0.123  -0.456  3.750  0.0  0.0  90.0  0.0  0.0  1.0e-10
+   0.4315   2   202  1  0.80  1.200   1.500   0.200  4.100  0.0  0.0  5.20  0.0
+""",
+    )
+    mixed = @test_logs (:warn, r"1 of 2 data lines skipped") read_stellar_evolution(mixed_path)
+    @test length(mixed.records) == 1
+    @test mixed.records[1].ms_lifetime_myr ≈ 90.0
 end
 
 # =====================================================================
@@ -346,6 +382,51 @@ end
     @test bevs[2].n_pairs == 0 && isempty(bevs[2].records)
     @test isempty(read_all_binary_evolution(joinpath(TESTDIR, "absent"), "bev.82_*"))
     @test_throws ErrorException read_binary_evolution(joinpath(TESTDIR, "missing.82"))
+
+    # Older 24-token layout (the engine manual): the line ends at
+    # EPOCH(I1) EPOCH(I2), so the eight SSE fields are unknown.
+    alt_dir = mktempdir()
+    short_path = joinpath(alt_dir, "bev.82_short")
+    write(
+        short_path,
+        """
+   1      0.0
+   0.00000E+00       3       4       3       4  1  0   0  5.14787E-01  6.97120E-01  5.58338E+00  4.42220E+00  1.11885E+00  5.68179E-01  3.81907E-01 -9.85920E-01 -1.23430E-02 -2.97930E-01  3.86343E+00  3.70000E+00  1.0  2.0  3.0  4.0
+""",
+    )
+    short = @test_logs read_binary_evolution(short_path)   # a known layout: no warning
+    @test length(short.records) == 1
+    s1 = short.records[1]
+    @test (s1.index1, s1.index2) == (3, 4)
+    @test s1.eccentricity ≈ 0.69712
+    @test (s1.age1_myr, s1.age2_myr) == (1.0, 2.0)
+    @test (s1.epoch1_myr, s1.epoch2_myr) == (3.0, 4.0)
+    @test all(
+        isnan,
+        (
+            s1.ms_lifetime1_myr,
+            s1.ms_lifetime2_myr,
+            s1.mass_core1,
+            s1.mass_core2,
+            s1.radius_core1,
+            s1.radius_core2,
+            s1.radius_envelope1,
+            s1.radius_envelope2,
+        ),
+    )
+
+    # A line of neither layout is skipped, and the file reports its tally once.
+    mixed_path = joinpath(alt_dir, "bev.82_mixed")
+    write(
+        mixed_path,
+        """
+   1      0.0
+   0.00000E+00       3       4       3       4  1  0   0  5.14787E-01  6.97120E-01  5.58338E+00  4.42220E+00  1.11885E+00  5.68179E-01  3.81907E-01 -9.85920E-01 -1.23430E-02 -2.97930E-01  3.86343E+00  3.70000E+00  1.0  2.0  3.0  4.0
+   0.00000E+00       5       6
+""",
+    )
+    mixed = @test_logs (:warn, r"data lines skipped") read_binary_evolution(mixed_path)
+    @test length(mixed.records) == 1
 end
 
 # =====================================================================
