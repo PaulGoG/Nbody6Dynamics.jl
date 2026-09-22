@@ -1,0 +1,391 @@
+# Included by runtests.jl inside its top-level test set; the helpers and
+# constants of that file are in scope.
+
+@testset "GPU validation driver" begin
+    # The dependency check accepts an nvcc that sits under the toolkit rather
+    # than on PATH (the build exports <cuda_path>/bin itself).
+    cuda_dir = mktempdir()
+    mkpath(joinpath(cuda_dir, "bin"))
+    touch(joinpath(cuda_dir, "bin", "nvcc"))
+    dep_cfg(body) = (p = joinpath(cuda_dir, "cfg.toml"); write(p, body); load_config(p))
+    @test !(
+        "nvcc" in
+        check_dependencies(dep_cfg("[build]\nenable_gpu = true\ncuda_path = \"$cuda_dir\"\n"))
+    )
+    @test !("nvcc" in check_dependencies(dep_cfg("[build]\nenable_gpu = false\n")))
+    if !Nbody6Dynamics.check_command("nvcc")
+        absent = joinpath(cuda_dir, "absent")
+        @test "nvcc" in
+              check_dependencies(dep_cfg("[build]\nenable_gpu = true\ncuda_path = \"$absent\"\n"))
+    end
+
+    # nvcc host-compiler probe: classification of the compiler message
+    @test Nbody6Dynamics._unsupported_host_compiler(
+        "#error -- unsupported GNU version! gcc versions later than 14 are not supported!",
+    )
+    @test Nbody6Dynamics._unsupported_host_compiler("unsupported clang version")
+    @test !Nbody6Dynamics._unsupported_host_compiler("probe.cu(1): error: expected a \";\"")
+    # No nvcc under the path: the probe stands aside and the build reports it
+    @test Nbody6Dynamics._nvcc_host_compiler_flags("/nonexistent/cuda") == String[]
+
+    # Logged stage runner: merged output, exit code, escape sequences stripped
+    vdir = mktempdir()
+    log = joinpath(vdir, "stage.log")
+    julia = Base.julia_cmd()
+    @test Nbody6Dynamics._tee_run(
+        `$julia -e 'print("\e[31mred\e[0m\n"); println(stderr, "err line")'`,
+        log,
+    ) == (exitcode = 0, signal = 0)
+    lines = readlines(log)
+    @test "red" in lines && "err line" in lines
+    @test Nbody6Dynamics._tee_run(`$julia -e 'exit(3)'`, log) == (exitcode = 3, signal = 0)
+    # A genuine exit code ≥ 128 is not a signal.
+    @test Nbody6Dynamics._tee_run(`sh -c 'exit 139'`, log) == (exitcode = 139, signal = 0)
+    # A process killed by a signal reports exitcode 0 through libuv, so
+    # the runner reports the signal separately or a crash is recorded as
+    # a success.
+    @test Nbody6Dynamics._tee_run(`sh -c 'kill -s SEGV $$'`, log) == (exitcode = 0, signal = 11)
+
+    # A crash signal is retried up to max_retries, keeping every output
+    sdir = mktempdir()
+    slog = joinpath(sdir, "stage.log")
+    segv = `sh -c 'kill -s SEGV $$'`
+    result, retried =
+        @test_logs (:warn, r"killed by signal 11") Nbody6Dynamics._run_stage_with_retry(
+            segv,
+            slog,
+            :suite,
+        )
+    @test result.signal == 11 && retried == [11]
+    @test isfile(joinpath(sdir, "stage.attempt1.signal11.log"))
+    result, retried =
+        @test_logs (:warn, r"retry 1 of 2") (:warn, r"retry 2 of 2") Nbody6Dynamics._run_stage_with_retry(
+            segv,
+            joinpath(sdir, "twice.log"),
+            :suite;
+            max_retries = 2,
+        )
+    @test retried == [11, 11]
+    @test isfile(joinpath(sdir, "twice.attempt2.signal11.log"))
+    # A stage that crashes once and then succeeds is reported as passed,
+    # with the signal it met on record
+    marker = joinpath(sdir, "once")
+    flaky = `sh -c "if [ -e $marker ]; then exit 0; else touch $marker; kill -s SEGV \$\$; fi"`
+    result, retried =
+        @test_logs (:warn, r"killed by signal 11") Nbody6Dynamics._run_stage_with_retry(
+            flaky,
+            joinpath(sdir, "flaky.log"),
+            :suite,
+        )
+    @test result == (exitcode = 0, signal = 0) && retried == [11]
+    # Not retried: a kill from outside, retries switched off, an ordinary failure
+    result, retried = Nbody6Dynamics._run_stage_with_retry(`sh -c 'kill -s KILL $$'`, slog, :suite)
+    @test result.signal == 9 && isempty(retried)
+    result, retried = Nbody6Dynamics._run_stage_with_retry(segv, slog, :gpu; max_retries = 0)
+    @test result.signal == 11 && isempty(retried)
+    result, retried = Nbody6Dynamics._run_stage_with_retry(`$julia -e 'exit(3)'`, slog, :gpu)
+    @test result.exitcode == 3 && isempty(retried)
+    # The policy is validated at the public interface
+    @test_throws ArgumentError run_gpu_validation(; max_retries = -1, dry_run = true)
+    @test_throws ArgumentError run_gpu_validation(; retry_stages = [:plots], dry_run = true)
+    @test_throws ArgumentError run_gpu_validation(; retry_signals = [0], dry_run = true)
+    @test Nbody6Dynamics._tool_banner(`$julia -e 'println("banner line"); println("second")'`) ==
+          "banner line"
+    @test Nbody6Dynamics._tool_banner(`/nonexistent/tool --version`) == "unavailable"
+
+    # Probe against a stand-in nvcc: a script that mimics the toolkit's
+    # verdicts (rejects the default compiler, accepts an override or a
+    # -ccbin), so the search logic runs without a CUDA toolkit.
+    function fake_nvcc(dir, body)
+        mkpath(joinpath(dir, "bin"))
+        path = joinpath(dir, "bin", "nvcc")
+        write(path, "#!/bin/sh\n" * body)
+        chmod(path, 0o755)
+        return dir
+    end
+    accepts_override = fake_nvcc(
+        mktempdir(),
+        "case \" \$* \" in *' -allow-unsupported-compiler '*) exit 0;; esac\n" *
+        "echo '#error -- unsupported GNU version! gcc versions later than 15 are not supported!' >&2\nexit 1\n",
+    )
+    flags =
+        @test_logs (:warn, r"building with -allow-unsupported-compiler") Nbody6Dynamics._nvcc_host_compiler_flags(
+            accepts_override;
+            candidates = String[],
+        )
+    @test flags == ["-allow-unsupported-compiler"]
+    needs_ccbin = fake_nvcc(
+        mktempdir(),
+        "case \" \$* \" in *' -ccbin /usr/bin/true '*) exit 0;; esac\n" *
+        "echo 'unsupported GNU version! gcc versions later than 15 are not supported!' >&2\n" *
+        "for i in \$(seq 1 60); do echo \"type_traits(\$i): error: identifier char8_t is undefined\" >&2; done\nexit 1\n",
+    )
+    flags =
+        @test_logs (:warn, r"building with -ccbin /usr/bin/true") Nbody6Dynamics._nvcc_host_compiler_flags(
+            needs_ccbin;
+            candidates = ["/nonexistent/g++-99", "/usr/bin/true"],
+        )
+    @test flags == ["-ccbin", "/usr/bin/true"]
+    hopeless = try
+        Nbody6Dynamics._nvcc_host_compiler_flags(needs_ccbin; candidates = String[])
+    catch err
+        err
+    end
+    @test hopeless isa ErrorException
+    @test occursin("default host compiler; -allow-unsupported-compiler", hopeless.msg)
+    @test occursin("gcc15-c++", hopeless.msg) && occursin("lines omitted", hopeless.msg)
+    @test occursin("--- default host compiler ---", hopeless.msg) &&
+          occursin("--- -allow-unsupported-compiler ---", hopeless.msg)
+    # Every attempt's own output is reported, so a rejected -ccbin candidate
+    # can be diagnosed from the message alone.
+    echoing = fake_nvcc(
+        mktempdir(),
+        "echo \"nvcc args: \$*\" >&2\n" *
+        "echo 'unsupported GNU version! gcc versions later than 15 are not supported!' >&2\nexit 1\n",
+    )
+    per_attempt = try
+        Nbody6Dynamics._nvcc_host_compiler_flags(echoing; candidates = ["/nonexistent/g++-99"])
+    catch err
+        err
+    end
+    @test per_attempt isa ErrorException
+    @test occursin(
+        r"--- -ccbin /nonexistent/g\+\+-99 ---\nnvcc args: [^\n]* -ccbin /nonexistent/g\+\+-99\n",
+        per_attempt.msg,
+    )
+    @test occursin(
+        r"--- -allow-unsupported-compiler ---\nnvcc args: [^\n]* -allow-unsupported-compiler\n",
+        per_attempt.msg,
+    )
+    # glibc ≥ 2.42 declares rsqrt/rsqrtf with an exception specification
+    # the CUDA headers lack: the probe retries with the feature-macro
+    # override, alone or on top of the host-compiler choice.
+    glibc_line =
+        "/usr/include/bits/mathcalls.h(206): error: exception specification is incompatible " *
+        "with that of previous function \"rsqrt\" (declared at line 629 of crt/math_functions.h)"
+    @test Nbody6Dynamics._glibc_c2y_conflict(glibc_line)
+    @test !Nbody6Dynamics._glibc_c2y_conflict("unsupported GNU version! gcc versions later than 15")
+    glibc_msg = "echo '$glibc_line' >&2\nexit 1\n"
+    glibc_only = fake_nvcc(
+        mktempdir(),
+        "case \" \$* \" in *' -U_GNU_SOURCE -D_DEFAULT_SOURCE '*) exit 0;; esac\n" * glibc_msg,
+    )
+    flags =
+        @test_logs (:warn, r"glibc declares rsqrt and rsqrtf") Nbody6Dynamics._nvcc_host_compiler_flags(
+            glibc_only;
+            candidates = String[],
+        )
+    @test flags == ["-U_GNU_SOURCE", "-D_DEFAULT_SOURCE"]
+    # A configured -ccbin stays in nvcc_flags; only the override is added
+    flags =
+        @test_logs (:warn, r"glibc declares rsqrt and rsqrtf") Nbody6Dynamics._nvcc_host_compiler_flags(
+            glibc_only;
+            nvcc_flags = ["-ccbin", "/usr/bin/true"],
+            candidates = String[],
+        )
+    @test flags == ["-U_GNU_SOURCE", "-D_DEFAULT_SOURCE"]
+    # Host compiler rejected AND the glibc conflict (Fedora 44 with CUDA
+    # 13.1): the first accepted -ccbin candidate, with the override
+    both = fake_nvcc(
+        mktempdir(),
+        "case \" \$* \" in\n" *
+        "  *' -ccbin /usr/bin/true -U_GNU_SOURCE -D_DEFAULT_SOURCE '*) exit 0;;\n" *
+        "  *' -ccbin /usr/bin/true '*) " *
+        glibc_msg *
+        ";;\n" *
+        "esac\n" *
+        "echo 'unsupported GNU version! gcc versions later than 15 are not supported!' >&2\nexit 1\n",
+    )
+    flags = @test_logs (:warn, r"building with -ccbin /usr/bin/true") (
+        :warn,
+        r"glibc declares rsqrt and rsqrtf",
+    ) Nbody6Dynamics._nvcc_host_compiler_flags(
+        both;
+        candidates = ["/nonexistent/g++-99", "/usr/bin/true"],
+    )
+    @test flags == ["-ccbin", "/usr/bin/true", "-U_GNU_SOURCE", "-D_DEFAULT_SOURCE"]
+    # The override does not help: every attempt is reported, with the
+    # header-patch advice
+    glibc_stuck = fake_nvcc(mktempdir(), glibc_msg)
+    stuck = try
+        Nbody6Dynamics._nvcc_host_compiler_flags(glibc_stuck; candidates = String[])
+    catch err
+        err
+    end
+    @test stuck isa ErrorException
+    @test occursin("default host compiler with -U_GNU_SOURCE -D_DEFAULT_SOURCE", stuck.msg)
+    @test occursin("math_functions.h", stuck.msg) && occursin("noexcept(true)", stuck.msg)
+    stuck_pinned = try
+        Nbody6Dynamics._nvcc_host_compiler_flags(
+            glibc_stuck;
+            nvcc_flags = ["-ccbin", "/usr/bin/false"],
+            candidates = String[],
+        )
+    catch err
+        err
+    end
+    @test stuck_pinned isa ErrorException && occursin("configured host compiler", stuck_pinned.msg)
+    @test occursin("math_functions.h", stuck_pinned.msg)
+    # Host-record verdict of the probe
+    @test Nbody6Dynamics._nvcc_probe_record("/nonexistent/cuda", "") ==
+          (String[], "skipped: nvcc unavailable")
+    flags, verdict = Nbody6Dynamics._nvcc_probe_record(echoing, "13.1")
+    @test flags == String[] && occursin("--- default host compiler ---", verdict)
+    flags, verdict =
+        @test_logs (:warn, r"building with -allow-unsupported-compiler") Nbody6Dynamics._nvcc_probe_record(
+            accepts_override,
+            "13.1",
+        )
+    @test flags == ["-allow-unsupported-compiler"] && verdict == "passed"
+    # A configured -ccbin is final: no search, the failure is reported as is
+    pinned_fail = try
+        Nbody6Dynamics._nvcc_host_compiler_flags(
+            needs_ccbin;
+            nvcc_flags = ["-ccbin", "/usr/bin/false"],
+            candidates = ["/usr/bin/true"],
+        )
+    catch err
+        err
+    end
+    @test pinned_fail isa ErrorException && occursin("configured host compiler", pinned_fail.msg)
+    @test Nbody6Dynamics._host_compiler_candidates() isa Vector{String}
+    @test Nbody6Dynamics._output_excerpt("a\nb\nc", 1, 1) == "a\n… (1 lines omitted)\nc"
+    @test Nbody6Dynamics._output_excerpt("a\nb", 5, 5) == "a\nb"
+    @test Nbody6Dynamics._run_capture(
+        `$(Base.julia_cmd()) -e 'println(stderr, "e"); print("o")'`,
+        joinpath(vdir, "cap.log"),
+    ) == (true, "e\no")
+
+    # Dry run: host record and planned commands, nothing executed
+    @test_throws ArgumentError run_gpu_validation(;
+        base_dir = vdir,
+        stages = [:nope],
+        dry_run = true,
+    )
+    @test_throws ArgumentError run_gpu_validation(;
+        base_dir = vdir,
+        stages = Symbol[],
+        dry_run = true,
+    )
+    @test_throws ArgumentError run_gpu_validation(;
+        base_dir = vdir,
+        bench_tcrit = 0.0,
+        dry_run = true,
+    )
+    out = run_gpu_validation(;
+        base_dir = vdir,
+        stages = [:suite, :bench],
+        bench_n = [1000],
+        bench_threads = [2],
+        bench_gpu_lists = [[0], [0, 1]],
+        bench_tcrit = 0.5,
+        dry_run = true,
+    )
+    @test startswith(basename(out), "gpu_validation_") && dirname(out) == joinpath(vdir, "runs")
+    host = Nbody6Dynamics.TOML.parsefile(joinpath(out, "HOST_INFO.toml"))
+    for key in (
+        "host",
+        "gpu",
+        "compute_capabilities",
+        "nvcc_release",
+        "gcc",
+        "gfortran",
+        "package_commit",
+        "glibc",
+        "host_compilers",
+        "nvcc_host_flags",
+        "nvcc_probe",
+    )
+        @test haskey(host, key)
+    end
+    @test host["nvcc_probe"] isa String && host["nvcc_host_flags"] isa Vector
+    summary = Nbody6Dynamics.TOML.parsefile(joinpath(out, "VALIDATION.toml"))
+    @test summary["dry_run"] && summary["stages"] == ["suite", "bench"]
+    @test summary["results"]["suite"]["status"] == "planned"
+    @test occursin("NBODY6_GPU_TESTS=1", summary["results"]["suite"]["command"])
+    bench_cmd = summary["results"]["bench"]["command"]
+    @test occursin("gpu_scaling.jl 1000 2 0;0,1 0.5", bench_cmd)
+    @test occursin("NBODY6_GPU_BACKEND=", bench_cmd) &&
+          occursin("Nbody6PPGPU-beijing-gpu", bench_cmd)
+    @test !haskey(summary["results"], "gpu") && isempty(filter(endswith(".log"), readdir(out)))
+    # A stage whose prerequisites are missing is skipped with the reason, no process spawned
+    bare = mktempdir()
+    skipped = run_gpu_validation(; base_dir = bare, stages = [:bench])
+    skipped_summary = Nbody6Dynamics.TOML.parsefile(joinpath(skipped, "VALIDATION.toml"))
+    @test skipped_summary["results"]["bench"]["status"] == "skipped"
+    @test occursin("Nbody6PPGPU-beijing-gpu", skipped_summary["results"]["bench"]["reason"])
+    @test !isfile(joinpath(skipped, "bench.log")) && haskey(skipped_summary, "finished")
+    @test Nbody6Dynamics._stage_prerequisite(:suite, bare) === nothing
+    # Benchmark artefact collection on an empty bench tree is a no-op
+    @test Nbody6Dynamics._collect_bench_artefacts(joinpath(vdir, "bench"), out, 0.0) == String[]
+end
+
+# =====================================================================
+
+@testset "Validation stage completeness check" begin
+    mktempdir() do base
+        runs = joinpath(base, "runs")
+        mkpath(runs)
+        t0 = time()
+
+        # The suite and benchmark stages are judged by exit code alone.
+        @test Nbody6Dynamics._stage_incomplete(:suite, base, t0) === nothing
+        @test Nbody6Dynamics._stage_incomplete(:bench, base, t0) === nothing
+
+        # A pipeline stage that produced nothing at all.
+        reason = Nbody6Dynamics._stage_incomplete(:cpu, base, t0)
+        @test reason !== nothing
+        @test occursin("no run directory", reason)
+
+        # A run directory whose summary stops at the engine phase.
+        run_dir = joinpath(runs, "merger_cpu_20260911_194002_b4b0")
+        mkpath(run_dir)
+        open(joinpath(run_dir, "RUN_INFO.toml"), "w") do io
+            Nbody6Dynamics.TOML.print(
+                io,
+                Dict("run" => Dict("id" => "merger_cpu_20260911_194002_b4b0")),
+            )
+        end
+        reason = Nbody6Dynamics._stage_incomplete(:cpu, base, t0)
+        @test reason !== nothing
+        @test occursin("completed", reason)
+
+        # Once the pipeline stamps completion the stage is accepted.
+        @test Nbody6Dynamics._stamp_pipeline_completion(run_dir, ["simulation"], 1.0)
+        @test Nbody6Dynamics._stage_incomplete(:cpu, base, t0) === nothing
+
+        # Validation directories are not run directories.
+        mkpath(joinpath(runs, "gpu_validation_workstation-01_20260911_185714"))
+        @test Nbody6Dynamics._stage_incomplete(:cpu, base, t0) === nothing
+
+        # The pipeline also completes on partial output: an engine that
+        # ended without END RUN fails the stage despite the marker.
+        info = joinpath(run_dir, "RUN_INFO.toml")
+        write_summary(completed) = open(info, "w") do io
+            Nbody6Dynamics.TOML.print(
+                io,
+                Dict(
+                    "run" => Dict("id" => basename(run_dir)),
+                    "segments" => [Dict("index" => 1, "completed" => completed)],
+                ),
+            )
+        end
+        write_summary(false)
+        @test Nbody6Dynamics._engine_completed(run_dir) === false
+        @test Nbody6Dynamics._stamp_pipeline_completion(run_dir, ["simulation"], 1.0)
+        @test Nbody6Dynamics.TOML.parsefile(info)["pipeline"]["engine_completed"] === false
+        reason = Nbody6Dynamics._stage_incomplete(:cpu, base, t0)
+        @test reason !== nothing
+        @test occursin("END RUN", reason)
+
+        write_summary(true)
+        @test Nbody6Dynamics._engine_completed(run_dir) === true
+        @test Nbody6Dynamics._stamp_pipeline_completion(run_dir, ["simulation"], 1.0)
+        @test Nbody6Dynamics._stage_incomplete(:cpu, base, t0) === nothing
+
+        # No segment (post-processing only): nothing to judge.
+        @test Nbody6Dynamics._engine_completed(mktempdir()) === nothing
+    end
+end
+
+# =====================================================================

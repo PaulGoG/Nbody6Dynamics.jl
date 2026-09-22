@@ -276,8 +276,20 @@ Nbody6Dynamics/
 │   ├── activate.jl                  # Activates the script environment (package + CairoMakie)
 │   └── Project.toml                 # Script environment: the package and its figure backend
 ├── test/
-│   ├── runtests.jl                  # Full unit + physics-validation suite
-│   ├── test_external_adversarial_inner.jl  # Adversarial external post-processing tests
+│   ├── runtests.jl                  # Suite entry: shared helpers, includes the component files below
+│   ├── test_config.jl               # Configuration loading, round trip, validation
+│   ├── test_platform_build.jl       # Platform and CUDA detection, engine source tree, GPU build target
+│   ├── test_validation.jl           # GPU validation driver and stage verdicts
+│   ├── test_run.jl                  # Run IDs, machine identity, watchdogs, restarts, provenance
+│   ├── test_io.jl                   # Readers: conf.3, out1000, lagr.7, esc.11, sev.83, bev.82, fixtures
+│   ├── test_diagnostics.jl          # Binary population, remnant, stellar classes, cluster structure
+│   ├── test_sweep_ensemble.jl       # Sweeps, seeded ensembles, control configurations
+│   ├── test_plotting.jl             # Figure extension, smoke tests, canvases, formatting
+│   ├── test_external.jl             # External post-processing (+ test_external_adversarial_inner.jl)
+│   ├── test_ic.jl                   # Merger initial-condition generator and its physics checks
+│   ├── test_telemetry.jl            # Hardware telemetry sampler, readers and figure
+│   ├── test_engine_gated.jl         # Shipped GPU-host configurations; engine- and GPU-gated runs
+│   ├── test_qa.jl                   # Static QA: Aqua, ExplicitImports, JET
 │   └── fixtures/                    # Real Nbody6++ output excerpts (esc.11, lagr.7, out1000, sev.83_0, bev.82_0)
 ├── bench/
 │   ├── thread_scaling.jl            # Thread- and N-scaling of the backend from run telemetry (cost model)
