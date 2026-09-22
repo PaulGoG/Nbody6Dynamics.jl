@@ -1,9 +1,12 @@
 # Nbody6Dynamics.jl
 
+[![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)
+[![Documentation](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Documentation.yml/badge.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/)
+[![Coverage](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![Julia](https://img.shields.io/badge/Julia-1.13%2B-9558B2.svg?logo=julia&logoColor=white)](https://julialang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Project Status: WIP](https://www.repostatus.org/badges/latest/wip.svg)](https://www.repostatus.org/#wip)
+[![Project Status: Active](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
 
 A Julia package that automates the full lifecycle of [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations: install/build of the Fortran code, multi-cluster merger initial-condition generation, simulation execution, post-processing of all standard output files, and figures. Every phase is driven by a single TOML configuration and orchestrated through one entry point, `run_pipeline`.
 
@@ -182,6 +185,10 @@ Documenter.jl docs live under `docs/` (Manual, Input Files, Cluster Mergers, API
 julia docs/make.jl   # builds to docs/build/
 ```
 
+## Licence
+
+The package is released under the MIT licence (`LICENSE`). Two other parties' material is involved. The CUDA helper headers under `deps/cuda/` come from NVIDIA's cuda-samples and carry their BSD-3-Clause licence (`deps/cuda/LICENSE`). The engine, [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing), is not part of this package: the install phase clones it from its own repository at build time and it remains under the terms its maintainers set; nothing of it is redistributed here.
+
 ## How to cite
 
 If this package contributes to published work, please cite it through the metadata in `CITATION.cff`:
@@ -190,7 +197,7 @@ If this package contributes to published work, please cite it through the metada
 @software{Nbody6Dynamics_jl,
   author  = {Gogîță, Paul-Adrian},
   title   = {Nbody6Dynamics.jl},
-  version = {0.2.0},
+  version = {0.3.0},
   year    = {2026},
   url     = {https://github.com/PaulGoG/Nbody6Dynamics.jl},
   license = {MIT}
@@ -203,7 +210,7 @@ If this package contributes to published work, please cite it through the metada
 
 ```
 Nbody6Dynamics/
-├── .github/workflows/               # CI, Format, Docs, Backend workflows (manual dispatch only until the repository is public)
+├── .github/                         # CI, Format, Documentation and Backend workflows; Dependabot configuration
 ├── .JuliaFormatter.toml             # Formatter configuration
 ├── .mailmap                         # Author identities folded into one
 ├── README.md

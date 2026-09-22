@@ -1,9 +1,11 @@
 name: Backend
 # Builds Nbody6++GPU-beijing from source and runs the engine-dependent test
 # suite (install, launch, restart, tidal field, telemetry on a live process).
-# Dormant until the public launch: manual dispatch only. Triggers to restore
-# then: weekly schedule (cron '0 4 * * 1') and push of tags 'v*'.
 on:
+  schedule:
+    - cron: '0 4 * * 1'
+  push:
+    tags: ['v*']
   workflow_dispatch:
 jobs:
   build-and-run:
@@ -27,7 +29,7 @@ jobs:
           NBODY6_BINARY_TESTS: '1'
           NBODY6_BINARY_TEST_ARTIFACTS: ${{ github.workspace }}/binary-test-artifacts
           OMP_NUM_THREADS: '2'
-        run: julia --project=. -e 'using Pkg; Pkg.test()'
+        run: julia -e 'include("activate.jl"); Pkg.test()'
       - uses: actions/upload-artifact@v4
         if: always()
         with:

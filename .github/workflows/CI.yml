@@ -1,16 +1,22 @@
 name: CI
-# Dormant until the public launch: manual dispatch only. Triggers to restore
-# then: push to main and to tags, and pull_request.
 on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        version: ['1.13', '1']   # compat floor + current stable; add the LTS once the suite has passed on it
+        version: ['1.13', '1']   # compat floor and current stable
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
@@ -22,10 +28,6 @@ jobs:
         with:
           version: ${{ matrix.version }}
       - uses: julia-actions/cache@v2
-        with:
-          # cache-name busts the depot poisoned by the first (pre-fix) runs:
-          # a broken artifact extraction persisted across restores.
-          cache-name: julia-cache-v2
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
       - uses: julia-actions/julia-processcoverage@v1

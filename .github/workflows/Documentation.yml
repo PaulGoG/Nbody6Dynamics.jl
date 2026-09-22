@@ -1,0 +1,29 @@
+name: Documentation
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: read
+  statuses: write
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system libraries for the Cairo/Makie stack (the walkthrough renders figures)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libglib2.0-0 libcairo2 libpango-1.0-0 libpangocairo-1.0-0
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - name: Build and deploy the documentation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: julia docs/make.jl   # self-activating; deploydocs pushes to gh-pages
