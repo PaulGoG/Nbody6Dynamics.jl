@@ -29,6 +29,8 @@ The input files ship under `input_files/` in the package tree (`example_input(na
 | `verif_triorbit.toml` | Verification: 3 equal clusters on a rotating Lagrange-equilibrium triangle (seed 7; see below) |
 | `verif_3d5cluster.toml` | Verification: 5 clusters distributed out of the z=0 plane; exercises xz/yz projections and 3D COM tracking (seed 13) |
 
+Every shipped `.inp` sets `QE = 1.0E-02`: with `KZ(2) = 1` the engine halts when the relative energy change over one adjustment interval exceeds `5 QE`, and these runs evolve stars (`KZ(19) = 3`), carry binaries, and mostly sit in a point-mass tidal field whose work the engine's energy check charges to the error, so a tolerance of the order of `1e-4` stops them on ordinary events (a KS termination halted the 1k smoke run at t = 3 of 5) while `1.0` would disable the check. At `1e-2` the check still catches an integration that goes wrong by 5 % per interval, which is what it is for.
+
 To use an `.inp` file, set in `config.toml`:
 
 ```toml
@@ -72,7 +74,7 @@ For the full option catalogue see the Nbody6++ manual (Khalisi & Spurzem, Heidel
 
 ## Merger TOML schema
 
-`load_merger_config` accepts **two interchangeable schemas** for each `[merger.clusterN]` table: the flat legacy form and the structured form. Both may appear in the same file (but not mixed within one cluster table).
+`load_merger_config` accepts **two interchangeable schemas** for each `[merger.clusterN]` table: the flat form and the structured form. Both may appear in the same file (but not mixed within one cluster table).
 
 ### Top-level `[merger]` keys
 
@@ -167,7 +169,7 @@ Options `3` (point mass + Miyamoto–Nagai disk + logarithmic halo + bulge) and 
 
 The `&INDATA` mass bounds `BODY1`/`BODYN` are written from the clusters' IMF specifications (inert under `KZ(22) = 2`, where masses come from `dat.10`); `ALPHAS` is inert for the same reason. `NBIN0` is the number of primordial pairs (see `[merger.clusterN.binaries]`); `NHI0 = 0`, no hierarchies are generated.
 
-### Flat legacy cluster form
+### Flat cluster form
 
 Fully annotated example (Kepler mode):
 
@@ -280,7 +282,7 @@ The density sampler places *systems* (a pair by its centre of mass), which are v
 
 ### Seed semantics
 
-- `seed` **omitted** (or the legacy sentinel `0`) → a random seed is drawn at generation time. The IC is still reproducible after the fact: the effective seed is recorded in `merger_ic.toml` (`meta.seed`)
+- `seed` **omitted** → a random seed is drawn at generation time (`0` is an ordinary seed). The IC is still reproducible after the fact: the effective seed is recorded in `merger_ic.toml` (`meta.seed`)
 - `seed = n` (nonzero) → deterministic sampling with `MersenneTwister(n)`
 - The effective seed also feeds the `NRAND` parameter of the generated `merger.inp`, so the Nbody6++ run inherits it
 - If a caller passes an explicit `rng` to `generate_merger_ic`, sampling is **not** reproducible from the recorded seed; the metadata records this honestly via `meta.external_rng = true` (the seed still feeds `NRAND`)
