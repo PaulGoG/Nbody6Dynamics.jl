@@ -44,7 +44,10 @@ or `:cpu` stage that exits zero without leaving a run directory marked
 `[pipeline] completed` is recorded `incomplete` with the reason,
 because the run summary is written when the
 engine exits and a process killed during post-processing or plotting would
-otherwise pass.
+otherwise pass. Both pipeline stages are launched with a run ID the driver
+assigns (`--run-id`, recorded as `run_ids` in `VALIDATION.toml`), so the
+directory that carries the verdict is identified by name and a concurrent
+run elsewhere under `runs/` cannot be mistaken for it.
 A stage killed by one of `retry_signals` is run again, up to `max_retries`
 times, when it is listed in `retry_stages`. The defaults retry the test
 suite once after a crash signal (SIGILL, SIGABRT, SIGBUS, SIGSEGV — a
@@ -97,15 +100,16 @@ function run_gpu_validation(;
 
     t_start = time()
     stamp = Dates.format(Dates.now(), "yyyymmdd_HHMMSS")
+    # The pipeline stages are told which run ID to use, so their artefacts are
+    # matched by name rather than by modification time.
+    run_ids = Dict(:gpu => "gpu_validation_$(stamp)_gpu", :cpu => "gpu_validation_$(stamp)_cpu")
     # The host record is taken first: its machine identity names the directory,
     # because the hostname alone does not distinguish the machines of a fleet.
     host = _validation_host_record(base_dir)
     out_dir = joinpath(base_dir, "runs", "gpu_validation_$(_safe_name(host["machine"]))_$stamp")
     mkpath(out_dir)
 
-    open(joinpath(out_dir, "HOST_INFO.toml"), "w") do io
-        TOML.print(io, host)
-    end
+    _atomic_write_toml(joinpath(out_dir, "HOST_INFO.toml"), host)
     @info "GPU validation directory: $out_dir"
     @info "Machine: $(host["machine"])"
     @info "Host: $(host["host"]); GPU: $(host["gpu"]); nvcc: $(host["nvcc_release"])"
@@ -116,11 +120,13 @@ function run_gpu_validation(;
     gpu_lists =
         bench_gpu_lists === nothing ? (n_devices ≥ 2 ? [[0], [0, 1]] : [[0]]) :
         [Int.(l) for l in bench_gpu_lists]
-    commands = _validation_commands(base_dir, bench_n, bench_threads, gpu_lists, bench_tcrit)
+    commands =
+        _validation_commands(base_dir, bench_n, bench_threads, gpu_lists, bench_tcrit, run_ids)
 
     summary = Dict{String,Any}(
         "started" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
         "stages" => String.(stages),
+        "run_ids" => Dict(String(k) => v for (k, v) in run_ids),
         "retry" => Dict{String,Any}(
             "max_retries" => Int(max_retries),
             "signals" => Int.(retry_signals),
@@ -166,7 +172,7 @@ function run_gpu_validation(;
             # stage killed after its engine finished leaves a run directory
             # that looks complete. Demand the completion marker as well.
             failed = died || code != 0
-            incomplete = failed ? nothing : _stage_incomplete(s, base_dir, t0)
+            incomplete = failed ? nothing : _stage_incomplete(s, base_dir, get(run_ids, s, ""))
             entry["status"] = failed ? "failed" : incomplete === nothing ? "passed" : "incomplete"
             incomplete === nothing || (entry["reason"] = incomplete)
             if died
@@ -214,39 +220,36 @@ function _stage_prerequisite(stage::Symbol, base_dir::AbstractString)::Union{Not
 end
 
 """
-    _stage_incomplete(stage, base_dir, t0) -> Union{Nothing,String}
+    _stage_incomplete(stage, base_dir, run_id) -> Union{Nothing,String}
 
 `nothing` when a stage that exited zero also left the artefacts it is
 supposed to produce, otherwise the reason it did not. The `:gpu` and `:cpu`
-stages must each leave one run directory under `base_dir/runs` started at or
-after `t0`, carrying the `[pipeline] completed` marker and an engine segment
-that reached END RUN; `:suite` and `:bench` are judged by their exit code
-alone, the benchmark because [`_collect_bench_artefacts`](@ref) reports what
-it gathered.
+stages each run under the run ID the driver assigned them, so the directory
+to judge is exactly `base_dir/runs/<run_id>`: it must exist, carry the
+`[pipeline] completed` marker and hold an engine segment that reached END
+RUN. `:suite` and `:bench` are judged by their exit code alone, the
+benchmark because [`_collect_bench_artefacts`](@ref) reports what it
+gathered.
 
 An exit code is not enough on its own: the run summary is written when the
 engine exits, so a stage killed during integration, post-processing or
 plotting leaves a summary and, under libuv, may still report exit code 0.
 """
-function _stage_incomplete(stage::Symbol, base_dir::AbstractString, t0::Real)::Union{Nothing,String}
+function _stage_incomplete(
+    stage::Symbol,
+    base_dir::AbstractString,
+    run_id::AbstractString,
+)::Union{Nothing,String}
     stage in (:gpu, :cpu) || return nothing
-    runs_dir = joinpath(base_dir, "runs")
-    isdir(runs_dir) || return "no runs directory under $(basename(base_dir))/runs"
-    candidates = filter(readdir(runs_dir; join = true)) do d
-        isdir(d) && !startswith(basename(d), "gpu_validation_") && mtime(d) ≥ t0 - 1
-    end
-    isempty(candidates) && return "the stage left no run directory under runs/"
-    finished = filter(_pipeline_completed, candidates)
-    if isempty(finished)
-        newest = basename(argmax(mtime, candidates))
-        return "runs/$newest has no [pipeline] completed marker: the pipeline was " *
+    run_dir = joinpath(base_dir, "runs", run_id)
+    isdir(run_dir) || return "the stage left no run directory runs/$run_id"
+    _pipeline_completed(run_dir) ||
+        return "runs/$run_id has no [pipeline] completed marker: the pipeline was " *
                "interrupted after the engine exited (post-processing or plotting)"
-    end
     # A pipeline also completes on partial output: the engine must have
     # reached END RUN for the stage to count.
-    any(d -> _engine_completed(d) !== false, finished) && return nothing
-    newest = basename(argmax(mtime, finished))
-    return "runs/$newest completed its pipeline on partial output: the engine " *
+    _engine_completed(run_dir) === false || return nothing
+    return "runs/$run_id completed its pipeline on partial output: the engine " *
            "ended without END RUN (killed, or halted on its energy check)"
 end
 
@@ -263,7 +266,7 @@ banner of every host compiler the build could offer `nvcc` through `-ccbin`
 probe ([`_nvcc_probe_record`](@ref)), and the package commit of `base_dir`.
 """
 function _validation_host_record(base_dir::AbstractString)::Dict{String,Any}
-    d = _hardware_fingerprint(; gpu_probe = true)
+    d = _hardware_fingerprint()
     cuda_path = detect_cuda_path()
     d["date"] = Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")
     d["package_commit"] = _source_stamp(base_dir)
@@ -317,11 +320,14 @@ function _tool_banner(cmd::Cmd)::String
 end
 
 """
-    _validation_commands(base_dir, bench_n, bench_threads, gpu_lists, tcrit) -> Dict{Symbol,Cmd}
+    _validation_commands(base_dir, bench_n, bench_threads, gpu_lists, tcrit, run_ids) -> Dict{Symbol,Cmd}
 
 The four stage commands, each a Julia child process running in `base_dir`
 with the environment it needs (`NBODY6_GPU_TESTS` for the suite, the CPU
-and GPU backend trees for the benchmark).
+and GPU backend trees for the benchmark). The `:gpu` and `:cpu` pipelines
+are given the run ID `run_ids[:gpu]` and `run_ids[:cpu]` through
+`--run-id`, so [`_stage_incomplete`](@ref) finds their run directory by
+name instead of guessing it from modification times.
 """
 function _validation_commands(
     base_dir::AbstractString,
@@ -329,6 +335,7 @@ function _validation_commands(
     bench_threads::AbstractVector{<:Integer},
     gpu_lists::AbstractVector{<:AbstractVector{<:Integer}},
     tcrit::Real,
+    run_ids::AbstractDict{Symbol,String},
 )::Dict{Symbol,Cmd}
     julia = Base.julia_cmd()
     setup = joinpath(base_dir, "scripts", "run_setup.jl")
@@ -346,8 +353,8 @@ function _validation_commands(
                 "NBODY6_GPU_TESTS" => "1",
             ),
         ),
-        :gpu => in_base(`$julia $setup $gpu_cfg`),
-        :cpu => in_base(`$julia $setup $cpu_cfg`),
+        :gpu => in_base(`$julia $setup $gpu_cfg --run-id=$(run_ids[:gpu])`),
+        :cpu => in_base(`$julia $setup $cpu_cfg --run-id=$(run_ids[:cpu])`),
         :bench => in_base(
             addenv(
                 `$julia $bench $(join(string.(bench_n), ",")) $(join(string.(bench_threads), ",")) $gpu_arg $(string(tcrit))`,
@@ -436,9 +443,7 @@ function _run_stage_with_retry(
 end
 
 function _write_validation_summary(out_dir::AbstractString, summary::Dict{String,Any})
-    open(joinpath(out_dir, "VALIDATION.toml"), "w") do io
-        TOML.print(io, summary)
-    end
+    _atomic_write_toml(joinpath(out_dir, "VALIDATION.toml"), summary)
     return nothing
 end
 

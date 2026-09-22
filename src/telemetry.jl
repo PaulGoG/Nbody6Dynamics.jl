@@ -311,7 +311,8 @@ end
 
 Start the asynchronous sampler for the process tree rooted at `pid`,
 appending one row per `interval` seconds to `<run_dir>/telemetry.csv`
-(header = the [`TelemetrySample`](@ref) field names). The task shares the
+(header = the [`TelemetrySample`](@ref) field names). An existing CSV is
+backed up, never overwritten. The task shares the
 main thread and yields between samples, so it interleaves with the process
 wait and the live monitor without extra threads.
 """
@@ -336,6 +337,7 @@ function _start_telemetry(
         false,
         nothing,
     )
+    _backup_existing(csv_path)
     io = open(csv_path, "w")
     println(io, join(string.(fieldnames(TelemetrySample)), ","))
     flush(io)

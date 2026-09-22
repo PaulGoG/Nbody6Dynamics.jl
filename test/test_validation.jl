@@ -274,7 +274,7 @@
     )
     out = run_gpu_validation(;
         base_dir = vdir,
-        stages = [:suite, :bench],
+        stages = [:suite, :gpu, :bench],
         bench_n = [1000],
         bench_threads = [2],
         bench_gpu_lists = [[0], [0, 1]],
@@ -300,14 +300,17 @@
     end
     @test host["nvcc_probe"] isa String && host["nvcc_host_flags"] isa Vector
     summary = Nbody6Dynamics.TOML.parsefile(joinpath(out, "VALIDATION.toml"))
-    @test summary["dry_run"] && summary["stages"] == ["suite", "bench"]
+    @test summary["dry_run"] && summary["stages"] == ["suite", "gpu", "bench"]
     @test summary["results"]["suite"]["status"] == "planned"
     @test occursin("NBODY6_GPU_TESTS=1", summary["results"]["suite"]["command"])
     bench_cmd = summary["results"]["bench"]["command"]
     @test occursin("gpu_scaling.jl 1000 2 0;0,1 0.5", bench_cmd)
     @test occursin("NBODY6_GPU_BACKEND=", bench_cmd) &&
           occursin("Nbody6PPGPU-beijing-gpu", bench_cmd)
-    @test !haskey(summary["results"], "gpu") && isempty(filter(endswith(".log"), readdir(out)))
+    @test !haskey(summary["results"], "cpu") && isempty(filter(endswith(".log"), readdir(out)))
+    # The pipeline stages are told the run ID whose artefacts decide their verdict.
+    @test haskey(summary, "run_ids") &&
+          occursin("--run-id=gpu_validation_", summary["results"]["gpu"]["command"])
     # A stage whose prerequisites are missing is skipped with the reason, no process spawned
     bare = mktempdir()
     skipped = run_gpu_validation(; base_dir = bare, stages = [:bench])
@@ -326,37 +329,33 @@ end
     mktempdir() do base
         runs = joinpath(base, "runs")
         mkpath(runs)
-        t0 = time()
+        run_id = "merger_cpu_20260911_194002_b4b0"
 
         # The suite and benchmark stages are judged by exit code alone.
-        @test Nbody6Dynamics._stage_incomplete(:suite, base, t0) === nothing
-        @test Nbody6Dynamics._stage_incomplete(:bench, base, t0) === nothing
+        @test Nbody6Dynamics._stage_incomplete(:suite, base, run_id) === nothing
+        @test Nbody6Dynamics._stage_incomplete(:bench, base, run_id) === nothing
 
         # A pipeline stage that produced nothing at all.
-        reason = Nbody6Dynamics._stage_incomplete(:cpu, base, t0)
+        reason = Nbody6Dynamics._stage_incomplete(:cpu, base, run_id)
         @test reason !== nothing
         @test occursin("no run directory", reason)
 
         # A run directory whose summary stops at the engine phase.
-        run_dir = joinpath(runs, "merger_cpu_20260911_194002_b4b0")
+        run_dir = joinpath(runs, run_id)
         mkpath(run_dir)
         open(joinpath(run_dir, "RUN_INFO.toml"), "w") do io
-            Nbody6Dynamics.TOML.print(
-                io,
-                Dict("run" => Dict("id" => "merger_cpu_20260911_194002_b4b0")),
-            )
+            Nbody6Dynamics.TOML.print(io, Dict("run" => Dict("id" => run_id)))
         end
-        reason = Nbody6Dynamics._stage_incomplete(:cpu, base, t0)
+        reason = Nbody6Dynamics._stage_incomplete(:cpu, base, run_id)
         @test reason !== nothing
         @test occursin("completed", reason)
 
         # Once the pipeline stamps completion the stage is accepted.
         @test Nbody6Dynamics._stamp_pipeline_completion(run_dir, ["simulation"], 1.0)
-        @test Nbody6Dynamics._stage_incomplete(:cpu, base, t0) === nothing
+        @test Nbody6Dynamics._stage_incomplete(:cpu, base, run_id) === nothing
 
-        # Validation directories are not run directories.
-        mkpath(joinpath(runs, "gpu_validation_workstation-01_20260911_185714"))
-        @test Nbody6Dynamics._stage_incomplete(:cpu, base, t0) === nothing
+        # Only the run directory the stage was assigned counts.
+        @test Nbody6Dynamics._stage_incomplete(:cpu, base, "absent_id") !== nothing
 
         # The pipeline also completes on partial output: an engine that
         # ended without END RUN fails the stage despite the marker.
@@ -374,14 +373,14 @@ end
         @test Nbody6Dynamics._engine_completed(run_dir) === false
         @test Nbody6Dynamics._stamp_pipeline_completion(run_dir, ["simulation"], 1.0)
         @test Nbody6Dynamics.TOML.parsefile(info)["pipeline"]["engine_completed"] === false
-        reason = Nbody6Dynamics._stage_incomplete(:cpu, base, t0)
+        reason = Nbody6Dynamics._stage_incomplete(:cpu, base, run_id)
         @test reason !== nothing
         @test occursin("END RUN", reason)
 
         write_summary(true)
         @test Nbody6Dynamics._engine_completed(run_dir) === true
         @test Nbody6Dynamics._stamp_pipeline_completion(run_dir, ["simulation"], 1.0)
-        @test Nbody6Dynamics._stage_incomplete(:cpu, base, t0) === nothing
+        @test Nbody6Dynamics._stage_incomplete(:cpu, base, run_id) === nothing
 
         # No segment (post-processing only): nothing to judge.
         @test Nbody6Dynamics._engine_completed(mktempdir()) === nothing

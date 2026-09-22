@@ -25,7 +25,8 @@ function _git_commit(dir::AbstractString)::String
                 strip(read(pipeline(`git -C $dir status --porcelain`; stderr = devnull), String)),
             )
         return dirty ? h * "-dirty" : h
-    catch
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError} || rethrow()
         return "unknown"
     end
 end
@@ -48,7 +49,8 @@ function _source_stamp(dir::AbstractString)::String
     isfile(project) || return "unknown"
     version = try
         get(TOML.parsefile(project), "version", nothing)
-    catch
+    catch e
+        e isa TOML.ParserError || rethrow()
         nothing
     end
     return version === nothing ? "unknown" : "v$(version)+nogit"
@@ -181,4 +183,21 @@ function _backup_existing(path::AbstractString)::Union{Nothing,String}
     mv(path, backup)
     @info "Backed up existing $(basename(path)) → $(basename(backup))"
     return backup
+end
+
+"""
+    _atomic_write_toml(path, table)
+
+Write `table` as TOML to `path` through a sibling temporary file and an
+atomic rename, so a process killed mid-write leaves the previous record
+intact rather than a truncated one. Directories are created as needed.
+"""
+function _atomic_write_toml(path::AbstractString, table::AbstractDict)
+    mkpath(dirname(abspath(path)))
+    tmp = path * ".tmp"
+    open(tmp, "w") do io
+        TOML.print(io, table)
+    end
+    mv(tmp, path; force = true)
+    return String(path)
 end

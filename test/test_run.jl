@@ -156,7 +156,7 @@ end
     write(cfg_path, "[simulation]\nexit_grace = 0\n")
     @test load_config(cfg_path).simulation.exit_grace == 0.0
     write(cfg_path, "[simulation]\nexit_grace = -1\n")
-    @test_throws ErrorException load_config(cfg_path)
+    @test_throws ArgumentError load_config(cfg_path)
 
     # Sweep outcome: a completed-then-terminated segment counts as completed
     run_dir = joinpath(dir, "run")
@@ -261,6 +261,30 @@ end
     fp = Nbody6Dynamics._hardware_fingerprint()
     @test haskey(fp, "machine")
     @test startswith(fp["machine"], fp["host"])
+
+    # Identical machines of one batch are separated by the GPU UUID.
+    with_uuid = Nbody6Dynamics._machine_id(
+        Dict(
+            "host" => "ws",
+            "cpu_model" => "AMD Ryzen 9 9950X 16-Core Processor",
+            "gpu" => "NVIDIA GeForce RTX 5090, 32607 MiB",
+            "gpu_uuid" => "GPU-0123",
+        ),
+    )
+    @test startswith(with_uuid, "ws-Ryzen-9-9950X-RTX-5090-") &&
+          length(with_uuid) == length("ws-Ryzen-9-9950X-RTX-5090-") + 6
+    @test with_uuid != Nbody6Dynamics._machine_id(
+        Dict(
+            "host" => "ws",
+            "cpu_model" => "AMD Ryzen 9 9950X 16-Core Processor",
+            "gpu" => "NVIDIA GeForce RTX 5090, 32607 MiB",
+            "gpu_uuid" => "GPU-4567",
+        ),
+    )
+    # Two CPU-only clones of one image differ by their machine-id file.
+    @test Nbody6Dynamics._machine_id(Dict("host" => "h", "machine_id_file" => "aaaa")) !=
+          Nbody6Dynamics._machine_id(Dict("host" => "h", "machine_id_file" => "bbbb"))
+    @test haskey(fp, "gpu") && haskey(fp, "gpu_uuid")
 end
 
 # =====================================================================
@@ -403,9 +427,7 @@ end
     @test hw["cpu_threads"] ≥ 1
     @test hw["total_memory_gib"] > 0
     @test hw["blas_threads"] ≥ 1
-    @test !haskey(hw, "gpu")   # probed only on request
-    hw_gpu = Nbody6Dynamics._hardware_fingerprint(; gpu_probe = true)
-    @test haskey(hw_gpu, "gpu") && !isempty(hw_gpu["gpu"])
+    @test haskey(hw, "gpu") && !isempty(hw["gpu"])
 
     # RUN_INFO.toml writer: structure and round-trip
     run_dir = mktempdir()
@@ -504,6 +526,11 @@ end
     script4 = read(Nbody6Dynamics._write_launch_script(launch_dir, args..., make_cfg(4)), String)
     @test occursin("export OMP_NUM_THREADS=4\n", script4)
 
+    # Paths with a quote and a space survive: the script stays valid shell.
+    odd_args = (joinpath(launch_dir, "it's here", "nbody6++"), "in.inp", "out1000", "err1000")
+    odd_script = Nbody6Dynamics._write_launch_script(launch_dir, odd_args..., make_cfg(0))
+    @test success(`sh -n $odd_script`)
+
     # Reported thread count from the backend's start-up banner
     out_path = joinpath(launch_dir, "out1000")
     write(out_path, "header\n RANK:  0  OpenMP Number of Threads:  12\n ADJUST: ...\n")
@@ -597,9 +624,9 @@ end
     args = (joinpath(run_dir, "nbody6++"), "in.inp", "out1000", "err1000")
     s_app =
         read(Nbody6Dynamics._write_launch_script(run_dir, args..., cfg_r; append = true), String)
-    @test occursin(">> \"out1000\" 2>> \"err1000\"", s_app)
+    @test occursin(">> 'out1000' 2>> 'err1000'", s_app)
     s_new = read(Nbody6Dynamics._write_launch_script(run_dir, args..., cfg_r), String)
-    @test occursin("> \"out1000\" 2> \"err1000\"", s_new) && !occursin(">>", s_new)
+    @test occursin("> 'out1000' 2> 'err1000'", s_new) && !occursin(">>", s_new)
 
     # Signal terminations are recorded as negative signal numbers
     p_sig = run(`sleep 5`; wait = false)
@@ -656,7 +683,7 @@ end
     c = load_config(cfg_path)
     @test c.simulation.live_diagnostics && c.simulation.live_interval == 5.0
     write(cfg_path, "[simulation]\nlive_interval = 0.5\n")
-    @test_throws ErrorException load_config(cfg_path)
+    @test_throws ArgumentError load_config(cfg_path)
 end
 
 # =====================================================================

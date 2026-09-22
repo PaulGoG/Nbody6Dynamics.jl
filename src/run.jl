@@ -409,6 +409,9 @@ end
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+"""`s` as one POSIX-shell word: single-quoted, embedded single quotes escaped."""
+_sh_quote(s::AbstractString) = "'" * replace(String(s), "'" => "'\\''") * "'"
+
 """
 Write a self-contained bash launch script that sets `ulimit`, environment
 variables, and runs the simulation with proper I/O redirection.
@@ -443,15 +446,19 @@ function _write_launch_script(
         # OMP_NUM_THREADS or every logical CPU).
         sim.omp_threads > 0 && println(io, "export OMP_NUM_THREADS=$(sim.omp_threads)")
         # CUDA devices the engine may use (its own GPU_LIST variable; unset = all).
-        isempty(sim.gpu_list) || println(io, "export GPU_LIST=\"$(join(sim.gpu_list, ' '))\"")
+        isempty(sim.gpu_list) ||
+            println(io, "export GPU_LIST=$(_sh_quote(join(sim.gpu_list, ' ')))")
 
         # CUDA environment
         if build.enable_gpu
             cuda = isempty(build.cuda_path) ? detect_cuda_path() : build.cuda_path
             if !isempty(cuda)
-                println(io, "export CUDA_HOME=\"$cuda\"")
-                println(io, "export PATH=\"$cuda/bin:\$PATH\"")
-                println(io, "export LD_LIBRARY_PATH=\"$cuda/lib64:\$LD_LIBRARY_PATH\"")
+                println(io, "export CUDA_HOME=$(_sh_quote(cuda))")
+                println(io, "export PATH=$(_sh_quote(joinpath(cuda, "bin"))):\"\$PATH\"")
+                println(
+                    io,
+                    "export LD_LIBRARY_PATH=$(_sh_quote(joinpath(cuda, "lib64"))):\"\$LD_LIBRARY_PATH\"",
+                )
             end
         end
 
@@ -459,17 +466,13 @@ function _write_launch_script(
         stdbuf_prefix = "command -v stdbuf >/dev/null 2>&1 && STDBUF='stdbuf -oL' || STDBUF=''"
         println(io, stdbuf_prefix)
 
+        engine_call =
+            "$(_sh_quote(binary)) < $(_sh_quote(input)) " *
+            "$redir_out $(_sh_quote(stdout_file)) $redir_err $(_sh_quote(stderr_file))"
         if build.enable_mpi && sim.mpi_ranks > 1
-            println(
-                io,
-                "exec mpirun --bind-to none -np $(sim.mpi_ranks) " *
-                "\$STDBUF \"$binary\" < \"$input\" $redir_out \"$stdout_file\" $redir_err \"$stderr_file\"",
-            )
+            println(io, "exec mpirun --bind-to none -np $(sim.mpi_ranks) \$STDBUF " * engine_call)
         else
-            println(
-                io,
-                "exec \$STDBUF \"$binary\" < \"$input\" $redir_out \"$stdout_file\" $redir_err \"$stderr_file\"",
-            )
+            println(io, "exec \$STDBUF " * engine_call)
         end
     end
     chmod(path, 0o755)
@@ -493,29 +496,54 @@ function _adjust_advanced(stdout_path::AbstractString)::Bool
     return false
 end
 
+"""Seconds a terminated engine gets to exit after SIGTERM before SIGKILL."""
+const _KILL_GRACE_SECONDS = 15.0
+
+"""
+    _terminate(process; grace = _KILL_GRACE_SECONDS)
+
+Send SIGTERM to `process`, wait up to `grace` seconds for it to exit, and
+send SIGKILL if it is still running.
+"""
+function _terminate(process::Base.Process; grace::Real = _KILL_GRACE_SECONDS)
+    kill(process)
+    deadline = time() + grace
+    while process_running(process) && time() < deadline
+        sleep(0.2)
+    end
+    if process_running(process)
+        @warn "Engine still running $(grace) s after SIGTERM; sending SIGKILL"
+        kill(process, Base.SIGKILL)
+    end
+    return nothing
+end
+
 """
     _start_startup_watchdog(stdout_path, process, timeout) -> (; stop, fired, task)
 
 Asynchronous watchdog: unless the stdout shows an adjustment beyond t = 0
-within `timeout` seconds, the process is terminated (SIGTERM) and `fired`
-is set. Setting `stop` ends the watchdog quietly.
+within `timeout` seconds, the process is terminated (SIGTERM, then SIGKILL
+after `_KILL_GRACE_SECONDS`) and `fired` is set. Setting `stop` ends the
+watchdog quietly.
 """
 function _start_startup_watchdog(stdout_path::AbstractString, process::Base.Process, timeout::Real)
     stop = Ref(false)
     fired = Ref(false)
-    task = @async begin
-        deadline = time() + timeout
-        while !stop[] && process_running(process)
-            _adjust_advanced(stdout_path) && return nothing
-            if time() > deadline
-                fired[] = true
-                @warn "Start-up watchdog: no adjustment beyond t = 0 after $(timeout) s; terminating the engine"
-                kill(process)
-                return nothing
+    task = errormonitor(
+        @async begin
+            deadline = time() + timeout
+            while !stop[] && process_running(process)
+                _adjust_advanced(stdout_path) && return nothing
+                if time() > deadline
+                    fired[] = true
+                    @warn "Start-up watchdog: no adjustment beyond t = 0 after $(timeout) s; terminating the engine"
+                    _terminate(process)
+                    return nothing
+                end
+                sleep(min(2.0, timeout))
             end
-            sleep(min(2.0, timeout))
         end
-    end
+    )
     return (stop = stop, fired = fired, task = task)
 end
 
@@ -555,7 +583,8 @@ end
     _start_completion_monitor(stdout_path, process, grace) -> (; stop, fired, task)
 
 Asynchronous monitor: once the stdout shows `END RUN`, the process is
-terminated (SIGTERM) and `fired` is set as soon as no file in the output
+terminated (SIGTERM, then SIGKILL after `_KILL_GRACE_SECONDS`) and `fired`
+is set as soon as no file in the output
 directory (the one holding `stdout_path`) has been modified for `grace`
 seconds while the process is still alive. The engine writes its final
 COMMON dump after `END RUN` when `KZ(1) > 0`; that write keeps a file
@@ -568,20 +597,22 @@ function _start_completion_monitor(stdout_path::AbstractString, process::Base.Pr
     out_dir = dirname(abspath(stdout_path))
     stop = Ref(false)
     fired = Ref(false)
-    task = @async begin
-        completed = false
-        while !stop[] && process_running(process)
-            completed || (completed = _run_completed(stdout_path))
-            if completed && time() - _latest_mtime(out_dir) ≥ grace
-                fired[] = true
-                @warn "Completion monitor: END RUN printed and the output directory idle for $(grace) s, " *
-                      "but the engine has not exited; terminating it"
-                kill(process)
-                return nothing
+    task = errormonitor(
+        @async begin
+            completed = false
+            while !stop[] && process_running(process)
+                completed || (completed = _run_completed(stdout_path))
+                if completed && time() - _latest_mtime(out_dir) ≥ grace
+                    fired[] = true
+                    @warn "Completion monitor: END RUN printed and the output directory idle for $(grace) s, " *
+                          "but the engine has not exited; terminating it"
+                    _terminate(process)
+                    return nothing
+                end
+                sleep(min(5.0, max(grace, 1.0)))
             end
-            sleep(min(5.0, max(grace, 1.0)))
         end
-    end
+    )
     return (stop = stop, fired = fired, task = task)
 end
 
@@ -683,7 +714,8 @@ function _live_diagnostics_panel(
     isfile(stdout_path) || return nothing
     diag = try
         read_diagnostics(stdout_path)
-    catch
+    catch e
+        e isa Union{ArgumentError,ErrorException,Base.IOError,BoundsError} || rethrow()
         return nothing
     end
     adj = diag.adjust
@@ -877,7 +909,7 @@ run identity, wall-clock time, and the backend thread layout (effective
 OpenMP threads, MPI ranks, the configured `gpu_list` and the devices the
 engine reported); provenance (package and backend commits); the
 `[build]` table copied from the binary's `BUILD_INFO.toml` when present;
-the hardware fingerprint (GPU probed when `build.enable_gpu`); the
+the hardware fingerprint ([`_hardware_fingerprint`](@ref)); the
 `[telemetry]` table from [`_finish_telemetry`](@ref) when given; the
 output file inventory; and the `segments` list, one entry per launch
 (initial run and restarts). On a restart the previous segments are kept,
@@ -932,7 +964,7 @@ function _write_run_summary(
             "package_commit" => _source_stamp(_PACKAGE_ROOT),
             "backend_commit" => isempty(src_dir) ? "unknown" : _git_commit(src_dir),
         ),
-        "hardware" => _hardware_fingerprint(; gpu_probe = cfg.build.enable_gpu),
+        "hardware" => _hardware_fingerprint(),
     )
     manifest = _snapshot_manifest(run_dir)
     manifest === nothing || (d["provenance"]["environment_manifest"] = manifest)
@@ -948,9 +980,7 @@ function _write_run_summary(
         )
     end
 
-    open(info_path, "w") do io
-        TOML.print(io, d)
-    end
+    _atomic_write_toml(info_path, d)
     return nothing
 end
 
@@ -990,9 +1020,7 @@ function _stamp_pipeline_completion(
     segments = get(d, "segments", Any[])
     isempty(segments) ||
         (d["pipeline"]["engine_completed"] = get(last(segments), "completed", false) === true)
-    open(info_path, "w") do io
-        TOML.print(io, d)
-    end
+    _atomic_write_toml(info_path, d)
     return true
 end
 
@@ -1009,7 +1037,8 @@ function _pipeline_completed(run_dir::AbstractString)::Bool
     return try
         pipeline_table = get(TOML.parsefile(info_path), "pipeline", Dict{String,Any}())
         get(pipeline_table, "completed", false) === true
-    catch
+    catch e
+        e isa TOML.ParserError || rethrow()
         false
     end
 end

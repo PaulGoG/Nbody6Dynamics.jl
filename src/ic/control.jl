@@ -112,13 +112,14 @@ end
     write_control_merger_config(src::AbstractString, dst::AbstractString) -> String
 
 Read the merger TOML `src`, derive its control ([`control_merger_dict`](@ref)),
-write it to `dst`, validate the result through [`load_merger_config`](@ref)
-and return `dst`.
+write it to `dst` (an existing file is backed up, never overwritten),
+validate the result through [`load_merger_config`](@ref) and return `dst`.
 """
 function write_control_merger_config(src::AbstractString, dst::AbstractString)
     isfile(src) || error("Merger configuration not found: $src")
     d = control_merger_dict(TOML.parsefile(src))
-    open(io -> TOML.print(io, d), dst, "w")
+    _backup_existing(dst)
+    _atomic_write_toml(dst, d)
     load_merger_config(dst)
     return String(dst)
 end

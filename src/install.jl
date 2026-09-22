@@ -118,8 +118,9 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = cfg.config_d
             @info "Running make clean..."
             try
                 _run_quiet(`make clean`; label = "clean")
-            catch
-                @info "make clean skipped (no prior build artifacts)"
+            catch e
+                e isa ProcessFailedException || rethrow()
+                @warn "make clean failed; building on top of the existing objects" exception = e
             end
         end
         make_args = ["-j$np"]
@@ -237,9 +238,7 @@ function _write_build_info(
         d["cuda_helper_dir"] = _CUDA_HELPER_DIR
     end
     path = joinpath(dirname(binary), "BUILD_INFO.toml")
-    open(path, "w") do io
-        TOML.print(io, d)
-    end
+    _atomic_write_toml(path, d)
     return path
 end
 

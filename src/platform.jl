@@ -2,6 +2,8 @@
 # Platform detection, dependency checking, and CUDA/HDF5 tooling
 # =============================================================================
 
+using SHA: sha1
+
 """
     detect_platform() -> Symbol
 
@@ -25,7 +27,8 @@ Return `true` if `cmd` is found on PATH.
 function check_command(cmd::String)::Bool
     try
         success(pipeline(`which $cmd`; stdout = devnull, stderr = devnull))
-    catch
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError} || rethrow()
         false
     end
 end
@@ -176,7 +179,8 @@ Distinct compute capabilities of the visible NVIDIA devices (`"9.0"`,
 function detect_compute_capabilities()::Vector{String}
     output = try
         read(`nvidia-smi --query-gpu=compute_cap --format=csv,noheader`, String)
-    catch
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError} || rethrow()
         return String[]
     end
     return _parse_compute_caps(output)
@@ -238,7 +242,8 @@ function nvcc_release(cuda_path::AbstractString = "")::String
     nvcc = isempty(cuda_path) ? "nvcc" : joinpath(cuda_path, "bin", "nvcc")
     output = try
         read(`$nvcc --version`, String)
-    catch
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError} || rethrow()
         return ""
     end
     return _parse_nvcc_release(output)
@@ -264,7 +269,8 @@ function nvcc_supported_archs(cuda_path::AbstractString = "")::Vector{String}
     nvcc = isempty(cuda_path) ? "nvcc" : joinpath(cuda_path, "bin", "nvcc")
     output = try
         read(`$nvcc --list-gpu-arch`, String)
-    catch
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError} || rethrow()
         return String[]
     end
     return _parse_nvcc_arch_list(output)
@@ -636,13 +642,34 @@ function _hardware_tag(text::AbstractString; limit::Int = 16)::String
 end
 
 """
+    _machine_discriminator(fingerprint) -> String
+
+Six hexadecimal characters that separate machines whose hostname, CPU and
+GPU models all coincide: the SHA-1 prefix of the first GPU UUID
+(`fingerprint["gpu_uuid"]`), or of the `/etc/machine-id` content
+(`fingerprint["machine_id_file"]`) on a host without a GPU. `""` when
+neither is recorded — two CPU-only clones of one system image are then
+indistinguishable, which is what the machine-id file exists to prevent.
+"""
+function _machine_discriminator(fingerprint::AbstractDict)::String
+    uuid = String(get(fingerprint, "gpu_uuid", ""))
+    seed = (isempty(uuid) || uuid == "unavailable") ? "" : String(strip(first(split(uuid, ';'))))
+    isempty(seed) && (seed = String(strip(String(get(fingerprint, "machine_id_file", "")))))
+    isempty(seed) && return ""
+    return first(bytes2hex(sha1(codeunits(seed))), 6)
+end
+
+"""
     _machine_id(fingerprint) -> String
 
-Machine identity for a fleet in which the hostname is not unique: the
-hostname followed by compact CPU and GPU tags. Several machines of a
-cloned workstation deployment can answer to one hostname while differing in
-CPU and GPU, which leaves the results they return indistinguishable. Falls
-back to the bare hostname when neither model is known.
+Machine identity for a fleet in which the hostname is not unique:
+`"<host>-<cpu tag>-<gpu tag>-<6 hex>"`, empty tags skipped. Several
+machines of a cloned workstation deployment can answer to one hostname
+while differing in CPU and GPU, which leaves the results they return
+indistinguishable; identical machines of one batch differ only in their GPU
+UUID or their `/etc/machine-id`, which
+[`_machine_discriminator`](@ref) folds into the six-character suffix. Falls
+back to the bare hostname when nothing is known.
 
 # Example
 ```julia-repl
@@ -658,24 +685,26 @@ function _machine_id(fingerprint::AbstractDict)::String
         [
             _hardware_tag(String(get(fingerprint, "cpu_model", ""))),
             _hardware_tag(String(first(split(String(get(fingerprint, "gpu", "")), ';')))),
+            _machine_discriminator(fingerprint),
         ],
     )
     return isempty(tags) ? host : join(vcat(host, tags), "-")
 end
 
 """
-    _hardware_fingerprint(; gpu_probe = false) -> Dict{String,Any}
+    _hardware_fingerprint() -> Dict{String,Any}
 
 Platform fingerprint for run metadata, using Julia's own introspection:
 host, OS/kernel, CPU model and logical core count, total memory, Julia
-version, Julia and BLAS thread counts, and the `versioninfo()` report. With `gpu_probe = true` an
-`nvidia-smi` query records name, VRAM, driver version, and compute
-capability of every visible GPU, one `;`-separated entry per device
-(`"unavailable"` when the tool or a device is absent). Together with the
-config and the git commits this makes every result attributable to
-config + commit + hardware.
+version, Julia and BLAS thread counts, and the `versioninfo()` report. Two
+`nvidia-smi` queries record name, VRAM, driver version and compute
+capability (`"gpu"`) and the UUID (`"gpu_uuid"`) of every visible device,
+one `;`-separated entry per device (`"unavailable"` when the tool or a
+device is absent); `"machine_id_file"` carries the content of
+`/etc/machine-id` when it is readable. Together with the config and the git
+commits this makes every result attributable to config + commit + hardware.
 """
-function _hardware_fingerprint(; gpu_probe::Bool = false)::Dict{String,Any}
+function _hardware_fingerprint()::Dict{String,Any}
     cpu = Sys.cpu_info()
     d = Dict{String,Any}(
         "host" => gethostname(),
@@ -688,18 +717,37 @@ function _hardware_fingerprint(; gpu_probe::Bool = false)::Dict{String,Any}
         "blas_threads" => BLAS.get_num_threads(),
         "versioninfo" => strip(sprint(InteractiveUtils.versioninfo)),
     )
-    if gpu_probe
-        gpu = try
-            strip(
-                read(
-                    `nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv,noheader`,
-                    String,
-                ),
-            )
-        catch
+    gpu = try
+        strip(
+            read(
+                `nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv,noheader`,
+                String,
+            ),
+        )
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError} || rethrow()
+        ""
+    end
+    d["gpu"] = isempty(gpu) ? "unavailable" : join(strip.(split(String(gpu), '\n')), "; ")
+    # Model and VRAM repeat across the devices of a batch; the UUID does not.
+    uuid = try
+        strip(read(`nvidia-smi --query-gpu=uuid --format=csv,noheader`, String))
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError} || rethrow()
+        ""
+    end
+    d["gpu_uuid"] = isempty(uuid) ? "unavailable" : join(strip.(split(String(uuid), '\n')), "; ")
+    # The last resort on a GPU-less host: systemd's per-installation identity.
+    machine_id_file = "/etc/machine-id"
+    d["machine_id_file"] = if isfile(machine_id_file)
+        try
+            String(strip(read(machine_id_file, String)))
+        catch e
+            e isa Union{SystemError,Base.IOError} || rethrow()
             ""
         end
-        d["gpu"] = isempty(gpu) ? "unavailable" : join(strip.(split(String(gpu), '\n')), "; ")
+    else
+        ""
     end
     # Hostnames need not be unique across the machines of a site; `machine` is.
     d["machine"] = _machine_id(d)
@@ -718,7 +766,8 @@ Return the number of available CPU cores for parallel compilation.
 function nproc_available()::Int
     try
         parse(Int, strip(read(`nproc`, String)))
-    catch
+    catch e
+        e isa Union{ProcessFailedException,Base.IOError,ArgumentError} || rethrow()
         Sys.CPU_THREADS
     end
 end

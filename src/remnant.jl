@@ -656,9 +656,10 @@ end
 
 Write the time series of `diag` as CSV (one row per snapshot, NB units
 plus `time_myr`) with the coalescence and segregation times in a leading
-comment line.
+comment line. An existing file is backed up, never overwritten.
 """
 function write_remnant_diagnostics(path::AbstractString, diag::RemnantDiagnostics)
+    _backup_existing(path)
     open(path, "w") do io
         println(
             io,

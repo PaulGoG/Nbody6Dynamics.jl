@@ -185,18 +185,18 @@ end
     catch err
         err
     end
-    @test bad_arch isa ErrorException && occursin("build.cuda_arch", bad_arch.msg)
-    @test_throws ErrorException load_config(write_cfg("[build]\ncuda_arch = [\"compute_90\"]\n"))
+    @test bad_arch isa ArgumentError && occursin("build.cuda_arch", bad_arch.msg)
+    @test_throws ArgumentError load_config(write_cfg("[build]\ncuda_arch = [\"compute_90\"]\n"))
     no_gpu = try
         load_config(write_cfg("[simulation]\ngpu_list = [0]\n"))
     catch err
         err
     end
-    @test no_gpu isa ErrorException && occursin("build.enable_gpu", no_gpu.msg)
+    @test no_gpu isa ArgumentError && occursin("build.enable_gpu", no_gpu.msg)
     gpu_on = "[build]\nenable_gpu = true\n[simulation]\n"
-    @test_throws ErrorException load_config(write_cfg(gpu_on * "gpu_list = [-1]\n"))
-    @test_throws ErrorException load_config(write_cfg(gpu_on * "gpu_list = [0, 0]\n"))
-    @test_throws ErrorException load_config(write_cfg(gpu_on * "gpu_list = [0, 1, 2, 3, 4]\n"))
+    @test_throws ArgumentError load_config(write_cfg(gpu_on * "gpu_list = [-1]\n"))
+    @test_throws ArgumentError load_config(write_cfg(gpu_on * "gpu_list = [0, 0]\n"))
+    @test_throws ArgumentError load_config(write_cfg(gpu_on * "gpu_list = [0, 1, 2, 3, 4]\n"))
     @test load_config(write_cfg(gpu_on * "gpu_list = [3, 1, 2, 0]\n")).simulation.gpu_list ==
           [3, 1, 2, 0]
 
@@ -233,7 +233,7 @@ end
     save_config(flags_cfg, rt)
     @test load_config(rt).build.nvcc_flags == ["-ccbin", "gcc-14"]
     @test BuildConfig().nvcc_flags == String[]
-    @test_throws ErrorException load_config(write_cfg("[build]\nnvcc_flags = [\" \"]\n"))
+    @test_throws ArgumentError load_config(write_cfg("[build]\nnvcc_flags = [\" \"]\n"))
     @test Nbody6Dynamics._cuflags_with_arch(joinpath(dir, "absent"), ["sm_90"]) ==
           "-I $helper -O3 " * cuda_gencode_flags(["sm_90"])
     @test Nbody6Dynamics._cuflags_with_arch(mk, String[]) ==
@@ -314,7 +314,7 @@ end
     # Launch script: GPU_LIST exported only when configured
     args = (joinpath(dir, "nbody6++"), "in.inp", "out1000", "err1000")
     s_gpu = read(Nbody6Dynamics._write_launch_script(dir, args..., cfg_gpu), String)
-    @test occursin("export GPU_LIST=\"0 1\"\n", s_gpu)
+    @test occursin("export GPU_LIST='0 1'\n", s_gpu)
     s_cpu = read(Nbody6Dynamics._write_launch_script(dir, args..., cfg_cpu), String)
     @test !occursin("GPU_LIST", s_cpu)
 

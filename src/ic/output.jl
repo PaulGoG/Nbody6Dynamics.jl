@@ -910,9 +910,7 @@ function _write_merger_ic_metadata(
     end
 
     _backup_existing(path)
-    open(path, "w") do io
-        TOML.print(io, d)
-    end
+    _atomic_write_toml(path, d)
     return nothing
 end
 
@@ -954,7 +952,10 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
     i = 1
     while haskey(raw, "cluster$i")
         c = raw["cluster$i"]::Dict
-        push!(cluster_specs, _parse_cluster_table(c, i, "kepler"))
+        # The metadata table carries the specification plus the realised
+        # counts; only the specification keys go to the parser.
+        spec_table = Dict{String,Any}(k => v for (k, v) in c if k in _CLUSTER_TABLE_KEYS)
+        push!(cluster_specs, _parse_cluster_table(spec_table, i, "kepler"))
         push!(n_pairs, Int(get(c, "N_pairs", 0)))
         i += 1
     end
