@@ -10,17 +10,17 @@
 
 A Julia package that automates the full lifecycle of [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations: install/build of the Fortran code, multi-cluster merger initial-condition generation, simulation execution, post-processing of all standard output files, and figures. Every phase is driven by a single TOML configuration and orchestrated through one entry point, `run_pipeline`.
 
-![Two star clusters merging: the initial conditions and the remnant after 12 Myr](docs/src/assets/merger_evolution.png)
+![Two star clusters merging: the initial conditions and the remnant after 20 Myr](docs/src/assets/merger_evolution.png)
 
 *Two King clusters of 4000 stars each, released 6 pc apart on an eccentric orbit, and the
-remnant they leave 12 Myr later. Note the axes: the pair spans 12 pc, the remnant and its halo
-nearly 70 pc. Initial conditions, integration, analysis and figure were all produced by this
-package from one configuration file; the case is `input_files/showcase/`.*
+remnant they leave 20 Myr later. Note the axes: the pair spans 14 pc, the remnant and its halo
+over 100 pc. Initial conditions, integration, analysis and figure were all produced by this
+package from one configuration file; the case is `input_files/showcase/equal_pipeline.toml`.*
 
-![Animation of the same merger over 12 Myr](docs/src/assets/merger_evolution.gif)
+![Animation of the same merger over 20 Myr](docs/src/assets/merger_evolution.gif)
 
 *The same run animated on fixed axes, one frame per Myr. The two clusters fall together and
-coalesce at 4 Myr, after which the remnant relaxes and sheds the halo of loosely bound stars
+coalesce at 3 Myr, after which the remnant relaxes and sheds the halo of loosely bound stars
 that fills the frame. Every run writes animations like this one alongside its static figures.*
 
 ## Project structure
@@ -337,7 +337,7 @@ Nbody6Dynamics/
 │   ├── Project.toml                 # Documentation build environment
 │   ├── src/                         # index, walkthrough (Literate), manual, input_files, multi_cluster_mergers, api, references
 │   ├── src/references.bib           # BibTeX of the sources cited (DocumenterCitations)
-│   └── src/assets/                  # figure and animation used by the README and the docs site
+│   └── src/assets/                  # figure and animation used by the README and the docs site, with their PROVENANCE.md
 ├── input_files/
 │   ├── N1k_quick.inp                # N=1000 smoke test (seconds)
 │   ├── N5k_medium.inp               # N=5000 medium verification run
