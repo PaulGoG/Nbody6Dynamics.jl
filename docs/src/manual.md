@@ -533,7 +533,7 @@ Consequences to know:
 - The entry scripts under `scripts/` run in their own environment (`scripts/Project.toml`) which carries the backend, so `julia scripts/run_setup.jl config.toml` plots as before. `bench/` has no backend, by design.
 - A sweep worker inherits the driver's environment and loads the backend only if the driver has one, so sweeps behave like the session that launched them.
 
-All plots use the built-in publication theme, activated globally with `set_publication_theme!()` (called automatically by the pipeline); `publication_theme()` returns it as a value for `with_theme` scoping. The theme is built at call time so that its Computer Modern faces come from MathTeXEngine's live registry: a face captured while the package precompiles carries a null FreeType pointer, and Makie would then render every plain-text label in its default sans font without warning.
+Every figure routine draws inside `with_theme(publication_theme())`: the session's theme is neither needed nor changed, and `publication_theme()` returns the theme as a value for scoping your own Makie code the same way. The theme is built at call time so that its Computer Modern faces come from MathTeXEngine's live registry: a face captured while the package precompiles carries a null FreeType pointer, and Makie would then render every plain-text label in its default sans font without warning.
 
 ### Theme rules
 
@@ -608,7 +608,6 @@ sevs = read_all_stellar_evolution(run_out)
 units = extract_scaling(diag)
 pos_pc = snap.pos .* units.rbar          # positions in parsecs
 
-set_publication_theme!()
 plot_hr(sevs[end], cfg.visualization; filename = "my_hr")
 
 # Full post-processing for a specific run
