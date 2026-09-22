@@ -24,7 +24,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libglib2.0-0 libcairo2 libpango-1.0-0 libpangocairo-1.0-0
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
       - uses: julia-actions/cache@v2
