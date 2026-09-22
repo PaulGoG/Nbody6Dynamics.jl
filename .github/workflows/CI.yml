@@ -19,7 +19,7 @@ jobs:
         version: ['1.13', '1']   # compat floor and current stable
         os: [ubuntu-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install system libraries for the Cairo/Makie stack
         run: |
           sudo apt-get update -qq
