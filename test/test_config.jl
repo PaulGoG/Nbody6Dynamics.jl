@@ -212,6 +212,54 @@ format = "pdf"
         write(path, body)
         @test_throws expected load_config(path)
     end
+
+    # Unknown keys and wrong types are refused, naming the key.
+    unknown = joinpath(TESTDIR, "unknown_key.toml")
+    write(unknown, "[simulation]\nomp_thread = 4\n")
+    err = try
+        load_config(unknown)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError && occursin("simulation.omp_thread", err.msg)
+    write(unknown, "[simulaton]\nomp_threads = 4\n")
+    err = try
+        load_config(unknown)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError && occursin("simulaton", err.msg)
+    write(unknown, "[simulation]\nomp_threads = \"four\"\n")
+    err = try
+        load_config(unknown)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError &&
+          occursin("simulation.omp_threads", err.msg) &&
+          occursin("integer", err.msg)
+    write(unknown, "[build]\ncuda_arch = [\"sm_90\", 90]\n")
+    err = try
+        load_config(unknown)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError && occursin("build.cuda_arch", err.msg)
+    write(unknown, "[visualization.style]\nmarker_budgett = 1.0\n")
+    err = try
+        load_config(unknown)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError && occursin("visualization.style.marker_budgett", err.msg)
+    # Defaults come from the structs: an empty file is the default configuration.
+    write(unknown, "")
+    @test load_config(unknown).simulation.omp_threads == SimulationConfig().omp_threads
 end
 
 # =====================================================================

@@ -98,52 +98,70 @@ is a seed ensemble of the base merger configuration.
 function load_sweep_config(path::AbstractString)::SweepConfig
     isfile(path) || error("Sweep configuration not found: $path")
     raw = TOML.parsefile(path)
-    haskey(raw, "sweep") || error("sweep config: missing [sweep] table in $path")
+    _reject_unknown(raw, ("sweep",), basename(path))
+    haskey(raw, "sweep") || _config_error("sweep", "table is missing in $path")
     s = raw["sweep"]
+    _reject_unknown(
+        s,
+        (
+            "name",
+            "pipeline_config",
+            "merger_config",
+            "grid",
+            "seeds",
+            "concurrency",
+            "omp_threads",
+            "poll_interval",
+            "runs_dir",
+            "controls",
+        ),
+        "sweep",
+    )
     base = dirname(abspath(path))
     resolve(p) = isabspath(p) ? String(p) : normpath(joinpath(base, p))
 
-    name = String(get(s, "name", ""))
+    name = _typed(get(s, "name", ""), String, "sweep.name")
     occursin(_SWEEP_NAME_PATTERN, name) ||
-        error("sweep config: name must match $(_SWEEP_NAME_PATTERN.pattern), got \"$name\"")
-    pipeline_config = resolve(String(get(s, "pipeline_config", "")))
-    isfile(pipeline_config) || error("sweep config: pipeline_config not found: $pipeline_config")
-    merger_config = resolve(String(get(s, "merger_config", "")))
-    isfile(merger_config) || error("sweep config: merger_config not found: $merger_config")
+        _config_error("sweep.name", "must match $(_SWEEP_NAME_PATTERN.pattern), got \"$name\"")
+    pipeline_config =
+        resolve(_typed(get(s, "pipeline_config", ""), String, "sweep.pipeline_config"))
+    isfile(pipeline_config) || _config_error("sweep.pipeline_config", "not found: $pipeline_config")
+    merger_config = resolve(_typed(get(s, "merger_config", ""), String, "sweep.merger_config"))
+    isfile(merger_config) || _config_error("sweep.merger_config", "not found: $merger_config")
 
     grid_raw = get(s, "grid", Dict{String,Any}())
-    grid_raw isa AbstractDict ||
-        error("sweep config: [sweep.grid] must be a table of key = [values]")
+    grid_raw isa AbstractDict || _config_error("sweep.grid", "must be a table of key = [values]")
     grid = Pair{String,Vector{Any}}[]
     for key in sort!(collect(String, keys(grid_raw)))
         vals = grid_raw[key]
         (vals isa AbstractVector && !isempty(vals)) ||
-            error("sweep config: grid axis \"$key\" must be a nonempty array")
+            _config_error("sweep.grid.$key", "must be a nonempty array")
         all(v -> v isa Real || v isa AbstractString, vals) ||
-            error("sweep config: grid axis \"$key\" must hold numbers, booleans or strings")
-        startswith(key, "merger.") || error(
-            "sweep config: grid axis \"$key\" must address the merger TOML from its root (\"merger.…\")",
+            _config_error("sweep.grid.$key", "must hold numbers, booleans or strings")
+        startswith(key, "merger.") || _config_error(
+            "sweep.grid.$key",
+            "must address the merger TOML from its root (\"merger.…\")",
         )
         key == "merger.seed" &&
-            error("sweep config: seeds are given by [sweep] seeds, not as a grid axis")
+            _config_error("sweep.grid.$key", "is not an axis: seeds are given by [sweep] seeds")
         push!(grid, key => Any[vals...])
     end
 
     seeds_raw = get(s, "seeds", Any[])
     (seeds_raw isa AbstractVector && !isempty(seeds_raw) && all(v -> v isa Integer, seeds_raw)) ||
-        error("sweep config: seeds must be a nonempty array of integers")
+        _config_error("sweep.seeds", "must be a nonempty array of integers")
     seeds = Int[seeds_raw...]
-    allunique(seeds) || error("sweep config: seeds must be distinct, got $seeds")
+    allunique(seeds) || _config_error("sweep.seeds", "must be distinct, got $seeds")
 
-    concurrency = Int(get(s, "concurrency", 5))
-    concurrency ≥ 1 || error("sweep config: concurrency must be ≥ 1, got $concurrency")
-    omp_threads = Int(get(s, "omp_threads", 4))
-    omp_threads ≥ 1 || error("sweep config: omp_threads must be ≥ 1, got $omp_threads")
-    poll_interval = Float64(get(s, "poll_interval", 2.0))
-    poll_interval > 0 || error("sweep config: poll_interval must be positive, got $poll_interval")
-    runs_dir = resolve(String(get(s, "runs_dir", "runs")))
-    controls = get(s, "controls", false)
-    controls isa Bool || error("sweep config: controls must be true or false")
+    concurrency = _typed(get(s, "concurrency", 5), Int, "sweep.concurrency")
+    concurrency ≥ 1 || _config_error("sweep.concurrency", "must be ≥ 1, got $concurrency")
+    omp_threads = _typed(get(s, "omp_threads", 4), Int, "sweep.omp_threads")
+    omp_threads ≥ 1 || _config_error("sweep.omp_threads", "must be ≥ 1, got $omp_threads")
+    poll_interval = _typed(get(s, "poll_interval", 2.0), Float64, "sweep.poll_interval")
+    poll_interval > 0 ||
+        _config_error("sweep.poll_interval", "must be positive, got $poll_interval")
+    runs_dir = resolve(_typed(get(s, "runs_dir", "runs"), String, "sweep.runs_dir"))
+    controls = _typed(get(s, "controls", false), Bool, "sweep.controls")
 
     return SweepConfig(
         name,
@@ -304,13 +322,13 @@ function prepare_sweep(cfg::SweepConfig; sweep_dir::AbstractString = "")
         _set_nested!(m, "merger.seed", p.seed)
         p.kind == "control" && (m = control_merger_dict(m))
         merger_path = joinpath(pdir, "merger.toml")
-        open(io -> TOML.print(io, m), merger_path, "w")
+        _atomic_write_toml(merger_path, m)
         load_merger_config(merger_path)
 
         c = deepcopy(pipeline_base)
         _sweep_pipeline_overrides!(c, cfg, pipeline_dir, pdir, merger_path)
         config_path = joinpath(pdir, "config.toml")
-        open(io -> TOML.print(io, c), config_path, "w")
+        _atomic_write_toml(config_path, c)
         load_config(config_path)
     end
 
@@ -363,7 +381,7 @@ function write_sweep_index(
         e
     end
     d = Dict{String,Any}("sweep" => header, "points" => entries)
-    open(io -> TOML.print(io, d), joinpath(sweep_dir, _SWEEP_INDEX_FILE), "w")
+    _atomic_write_toml(joinpath(sweep_dir, _SWEEP_INDEX_FILE), d)
     return nothing
 end
 
@@ -408,7 +426,7 @@ function _sweep_worker_command(point_dir::AbstractString)
     julia = Base.julia_cmd()
     project = dirname(Base.active_project())
     preamble = plotting_available() ? "using CairoMakie; " : ""
-    return `$julia --threads=$(Threads.nthreads()) --project=$project --startup-file=no -e "$(preamble)using Nbody6Dynamics; run_sweep_point(ARGS[1])" $point_dir`
+    return `$julia --threads=$(Threads.nthreads()) --project=$project --startup-file=no -e "$(preamble)using Nbody6Dynamics; Nbody6Dynamics.run_sweep_point(ARGS[1])" $point_dir`
 end
 
 """Fail before launching anything when the backend binary of the base
@@ -599,6 +617,7 @@ Write [`sweep_summary`](@ref) to `sweep_summary.csv` in `sweep_dir`
 function write_sweep_summary(sweep_dir::AbstractString)
     columns, rows = sweep_summary(sweep_dir)
     path = joinpath(sweep_dir, _SWEEP_SUMMARY_FILE)
+    _backup_existing(path)
     open(path, "w") do io
         println(io, join(_csv_cell.(columns), ","))
         for r in rows

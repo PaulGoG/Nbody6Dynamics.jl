@@ -295,6 +295,26 @@ truncate_jacobi = false
         @test cfg.orbit.eccentricity == 0.5
         @test cfg.output.format == "nbody"
         @test cfg.output.truncate_jacobi == false
+
+        # Unknown merger keys are refused, naming the key.
+        bad = joinpath(TESTDIR, "merger_unknown.toml")
+        base_text = read(joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml"), String)
+        write(bad, replace(base_text, "eccentricity" => "ecentricity"; count = 1))
+        err = try
+            load_merger_config(bad)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("ecentricity", err.msg)
+        write(bad, base_text * "\n[merger.cluster3]\nN = 10\n")
+        err = try
+            load_merger_config(bad)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("merger.cluster3", err.msg)
     end
 
     # --- TOML config loading (explicit mode) ---
@@ -709,7 +729,7 @@ dtplot = 2.0
         @test occursin("&INXTRNL0\nRG=8,0,0,VG=0,220,0 /", txt5)
         generate_merger_inp(inp3, 220, 4.0, 0.6; nbody6 = ru, tidal = TidalSpec(; kz14 = 1))
         @test !occursin("&INXTRNL0", read(inp3, String))
-        @test_throws ErrorException generate_merger_inp(
+        @test_throws ArgumentError generate_merger_inp(
             inp3,
             220,
             4.0,
@@ -717,13 +737,11 @@ dtplot = 2.0
             nbody6 = ru,
             tidal = TidalSpec(; kz14 = 4),
         )
-        @test_throws ErrorException Nbody6Dynamics._validate_tidal(
-            TidalSpec(; kz14 = 2, gmg = 1e11),
-        )
-        @test_throws ErrorException Nbody6Dynamics._validate_tidal(
+        @test_throws ArgumentError Nbody6Dynamics._validate_tidal(TidalSpec(; kz14 = 2, gmg = 1e11))
+        @test_throws ArgumentError Nbody6Dynamics._validate_tidal(
             TidalSpec(; kz14 = 5, rg = [8.0, 0, 0]),
         )
-        @test_throws ErrorException Nbody6Dynamics._validate_tidal_tolerance(
+        @test_throws ArgumentError Nbody6Dynamics._validate_tidal_tolerance(
             td2,
             Nbody6ParameterSpec(),
         )

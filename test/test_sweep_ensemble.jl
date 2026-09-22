@@ -65,6 +65,16 @@ $(extra)
     @test scfg.seeds == [1, 2] && scfg.concurrency == 2 && scfg.omp_threads == 3
     @test scfg.runs_dir == joinpath(work, "runs") && scfg.poll_interval == 2.0
 
+    bad_sweep = joinpath(work, "sweep_unknown.toml")
+    write(bad_sweep, replace(read(spath, String), "concurrency" => "concurency"))
+    err = try
+        load_sweep_config(bad_sweep)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError && occursin("sweep.concurency", err.msg)
+
     pts = sweep_points(scfg)
     @test length(pts) == 8                       # 2 × 2 grid × 2 seeds
     @test [p.index for p in pts] == 1:8
@@ -90,7 +100,7 @@ $(extra)
 
     # Validation
     bad(extra_or_text) =
-        (write(spath, extra_or_text); @test_throws ErrorException load_sweep_config(spath))
+        (write(spath, extra_or_text); @test_throws ArgumentError load_sweep_config(spath))
     bad(replace(sweep_toml(), "name = \"unit\"" => "name = \"unit sweep\""))
     bad(replace(sweep_toml(), "seeds = [1, 2]" => "seeds = [1, 1]"))
     bad(replace(sweep_toml(), "seeds = [1, 2]" => "seeds = []"))
@@ -445,16 +455,16 @@ end
     @test occursin("Time unit: T* =", read(joinpath(work, "ic_phys", "merger_summary.txt"), String))
     both = replace(small, r"tcrit = [0-9.]+" => "tcrit = 1.0\ntcrit_myr = 20.0")
     write(joinpath(work, "both.toml"), both)
-    @test_throws ErrorException load_merger_config(joinpath(work, "both.toml"))
+    @test_throws ArgumentError load_merger_config(joinpath(work, "both.toml"))
     neg = replace(small, r"tcrit = [0-9.]+" => "tcrit_myr = -1.0")
     write(joinpath(work, "neg.toml"), neg)
-    @test_throws ErrorException load_merger_config(joinpath(work, "neg.toml"))
+    @test_throws ArgumentError load_merger_config(joinpath(work, "neg.toml"))
     # dtplot below deltat is caught at generation once T* is known
     # (the control file carries a [merger.stellar] table with the scaled dtplot)
     @test occursin(r"dtplot = [0-9.]+", phys)
     late = replace(phys, r"dtplot = [0-9.]+" => "dtplot_myr = 1.0")
     write(joinpath(work, "late.toml"), late)
-    @test_throws ErrorException load_merger_config(joinpath(work, "late.toml"))   # both physical: config time
+    @test_throws ArgumentError load_merger_config(joinpath(work, "late.toml"))   # both physical: config time
     late_nb = replace(phys, r"dtplot = [0-9.]+" => "dtplot = 0.01")
     write(joinpath(work, "late_nb.toml"), late_nb)
     @test_throws ErrorException generate_merger_ic(
@@ -463,7 +473,7 @@ end
     )
     kepler_one = replace(small, "orbit_mode = \"explicit\"" => "orbit_mode = \"kepler\"")
     write(joinpath(work, "kepler_one.toml"), kepler_one)
-    @test_throws ErrorException load_merger_config(joinpath(work, "kepler_one.toml"))
+    @test_throws ArgumentError load_merger_config(joinpath(work, "kepler_one.toml"))
 
     # Sweep with controls: companions interleaved, derived at the point's values
     write(
@@ -495,7 +505,7 @@ end
     columns, rows = sweep_summary(sdir)
     @test columns[1:5] == ["index", "id", "kind", "control_of", "seed"]
     @test rows[2]["kind"] == "control" && rows[2]["control_of"] == pts[1].id
-    @test_throws ErrorException load_sweep_config(
+    @test_throws ArgumentError load_sweep_config(
         (
             write(
                 joinpath(work, "bad.toml"),
