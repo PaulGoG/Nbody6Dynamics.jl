@@ -20,8 +20,20 @@ remnant they leave 12 Myr later, produced end to end by this package.*
 
 ## Quick Start
 
+As a dependency of your own project (the package is not registered):
+
+```julia
+using Pkg
+Pkg.add(url = "https://github.com/PaulGoG/Nbody6Dynamics.jl")
+Pkg.add("CairoMakie")     # the figure backend
+```
+
+The directory of your `config.toml` is the project directory: the engine is built under its `backend/` and runs land under its `runs/`. `example_input("showcase/equal_pipeline.toml")` returns a shipped configuration to copy and edit.
+
+From a checkout:
+
 ```bash
-cd Nbody6Dynamics
+cd Nbody6Dynamics.jl
 
 # Install Julia dependencies (one-time)
 julia activate.jl          # package environment

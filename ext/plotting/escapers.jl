@@ -83,9 +83,10 @@ axes are Myr / M☉ / km s⁻¹ regardless of `cfg.units`.  Warns and returns
     n_esc = length(esc)
 
     fig = Figure(; size = _fig_two_panel(cfg))
-    # Fewer ticks than the _time_ticks default: escape times often span a
-    # narrow window and dense decimal labels collide at column width.
-    ttk = _nice_ticks(first(t), last(t); target_n = 6)
+    # Ticks over the padded ends of the axis: taken from the data extrema, the
+    # last Myr of the window carries none.
+    t_lo, t_hi = _pad_limits(first(t), last(t); frac = 0.05, floor = 0)
+    ttk = _time_ticks(t_lo, t_hi)
     esc_color = _SEMANTIC_COLORS[:escapers]
 
     # --- Panel 1: cumulative escaped mass (step curve) ---
@@ -94,6 +95,7 @@ axes are Myr / M☉ / km s⁻¹ regardless of `cfg.units`.  Warns and returns
         ylabel = L"M_\mathrm{esc}\;[\mathrm{M}_\odot]",
         xticklabelsvisible = false,
         xticks = ttk,
+        limits = ((t_lo, t_hi), _pad_limits(0.0, m_cum[end]; floor = 0)),
     )
     stairs!(ax1, t, m_cum; color = esc_color, step = :post)
     # The curve rises towards the lower right corner's diagonal — the
@@ -117,7 +119,12 @@ axes are Myr / M☉ / km s⁻¹ regardless of `cfg.units`.  Warns and returns
         ylabel = L"v_\mathrm{esc}\;[\mathrm{km\,s^{-1}}]",
         xticks = ttk,
         yscale = log10,
-        yticks = isempty(v_all) ? Makie.automatic : _log_ticks(extrema(v_all)...),
+        yticks = isempty(v_all) ? Makie.automatic :
+                 _log_ticks(minimum(v_all) / 1.2, maximum(v_all) * 1.2),
+        limits = (
+            (t_lo, t_hi),
+            isempty(v_all) ? nothing : (minimum(v_all) / 1.2, maximum(v_all) * 1.2),
+        ),
     )
 
     ms = _marker_size(cfg, length(vok))

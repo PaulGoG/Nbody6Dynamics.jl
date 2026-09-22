@@ -32,7 +32,7 @@ of the pair count is annotated in the upper panel.
     t = pop.time_myr
     single = n == 1
     tmin, tmax = single ? (t[1] - 0.5, t[1] + 0.5) : extrema(t)
-    tticks = single ? _nice_ticks(tmin, tmax; target_n = 5) : _time_ticks(tmin, tmax)
+    tticks = _time_ticks(tmin, tmax)
     c_tot = _SEMANTIC_COLORS[:n_pairs]
     c_hard = _SEMANTIC_COLORS[:binary_hard]
     c_soft = _SEMANTIC_COLORS[:binary_soft]
@@ -94,6 +94,9 @@ of the pair count is annotated in the upper panel.
             )
         end
     end
+    # Every count series of the upper panel, for the annotation's corner and limits
+    counts_x = repeat(Float64.(t), pop.classified ? 3 : 1)
+    counts_y = Float64.(pop.classified ? vcat(pop.n_pairs, pop.n_hard, pop.n_soft) : pop.n_pairs)
     n0, n1 = pop.n_pairs[1], pop.n_pairs[end]
     if !single && n0 > 0
         Δ = n1 - n0
@@ -102,7 +105,13 @@ of the pair count is annotated in the upper panel.
         _annotate!(
             ax1,
             latexstring("N_\\mathrm{pairs}: $(n0) \\rightarrow $(n1)\\;($(sign)$(pct)\\,\\%)");
-            corner = :br,
+            corner = _emptiest_corner(
+                counts_x,
+                counts_y;
+                corners = (:tl, :tr, :br),
+                ylims = all(iszero, pop.n_pairs) ? (0.0, 1.0) :
+                        _pad_limits(0, maximum(counts_y); floor = 0),
+            ),
             color = c_tot,
         )
     end
@@ -122,8 +131,8 @@ of the pair count is annotated in the upper panel.
             label = L"f_\mathrm{b}",
         ) : lines!(ax2, t, fb; color = c_tot, linewidth = _STYLE.data, label = L"f_\mathrm{b}")
     )
+    fh = [np > 0 ? 100 * nh / np : NaN for (nh, np) in zip(pop.n_hard, pop.n_pairs)]
     if pop.classified
-        fh = [np > 0 ? 100 * nh / np : NaN for (nh, np) in zip(pop.n_hard, pop.n_pairs)]
         single ?
         scatter!(
             ax2,
@@ -140,7 +149,24 @@ of the pair count is annotated in the upper panel.
     if !any(isfinite, fb) && !pop.classified
         _no_data_note!(ax2, "No stellar count or energy scale available")
     end
-    ylims!(ax2, 0.0, nothing)
+
+    # Limits: both panels keep a margin, so the tick labels at the joint of the
+    # stack never touch. A run without a single regularised pair has no scale
+    # of its own — a nominal one keeps the panels from degenerating.
+    fractions = filter(isfinite, fb)
+    pop.classified && append!(fractions, filter(isfinite, fh))
+    if all(iszero, pop.n_pairs)
+        ylims!(ax1, 0, 1)
+        ax1.yticks = [0, 1]
+        ylims!(ax2, 0, 100)
+        ax2.yticks = [0, 50, 100]
+    else
+        c_lo, c_hi = _pad_limits(0, maximum(counts_y); floor = 0)
+        ylims!(ax1, c_lo, c_hi)
+        f_lo, f_hi = _pad_limits(0, isempty(fractions) ? 100.0 : maximum(fractions); floor = 0)
+        ylims!(ax2, f_lo, f_hi)
+        ax2.yticks = _nice_ticks(f_lo, f_hi)
+    end
 
     # One legend, two families: the pair counts of the upper panel and the
     # fractions of the lower one (colour encodes the quantity in both).
@@ -328,7 +354,9 @@ epoch (dashed outline), with the pair counts annotated.
         ylabel = "Number of pairs",
         xticks = _nice_ticks(lo, hi),
     )
-    xlims!(ax, lo, hi)
+    # Margins on both sides, so the outermost bin edge and its tick label do
+    # not sit on the frame.
+    xlims!(ax, _pad_limits(lo, hi; frac = 0.03)...)
 
     if isempty(all_p)
         _no_data_note!(ax, "No regularised pairs")

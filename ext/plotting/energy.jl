@@ -33,6 +33,9 @@ records), N-body units otherwise.
     # plotting them on a log axis creates a spurious spike to the axis floor.
     nz = [abs(d) > 0 for d in de]
     de_abs = abs.(de[nz])
+    # Explicit limits so the peak keeps headroom on the log axis; the ticks
+    # follow the padded ends, not the data extrema.
+    de_lims = isempty(de_abs) ? nothing : (minimum(de_abs) * 0.8, maximum(de_abs) * 1.5)
 
     ax1 = Axis(
         fig[1, 1];
@@ -40,14 +43,13 @@ records), N-body units otherwise.
         yscale = log10,
         xticklabelsvisible = false,
         xticks = ttk,
-        yticks = isempty(de_abs) ? Makie.automatic : _log_ticks(extrema(de_abs)...),
+        yticks = de_lims === nothing ? Makie.automatic : _log_ticks(de_lims...),
     )
 
-    if !isempty(de_abs)
+    if de_lims !== nothing
         lines!(ax1, t[nz], de_abs; color = _SEMANTIC_COLORS[:energy_error])
-        # Explicit limits so the peak keeps headroom on the log axis
-        de_lo, de_hi = extrema(de_abs)
-        ylims!(ax1, de_lo * 0.8, de_hi * 1.5)
+        de_hi = maximum(de_abs)
+        ylims!(ax1, de_lims[1], de_lims[2])
         # Annotate the maximum error (2 significant digits)
         _annotate!(
             ax1,
@@ -65,6 +67,11 @@ records), N-body units otherwise.
 
     # Floor only on the log axis (zero/tiny Q is invalid there); raw otherwise
     q_plot = use_log_q ? max.(qvir, cfg.style.q_floor) : qvir
+    # Ticks over the padded ends of the panel, the virial guide always in range
+    q_lo, q_hi = extrema(q_plot)
+    q_lims =
+        use_log_q ? (min(q_lo, 0.5) * 0.8, max(q_hi, 0.5) * 1.5) :
+        _pad_limits(min(q_lo, 0.5), max(q_hi, 0.5); floor = 0)
 
     ax2 = Axis(
         fig[2, 1];
@@ -72,7 +79,8 @@ records), N-body units otherwise.
         ylabel = L"Q = T/|W|",
         xticks = ttk,
         yscale = use_log_q ? log10 : identity,
-        yticks = use_log_q ? _log_ticks(extrema(q_plot)...) : Makie.automatic,
+        yticks = use_log_q ? _log_ticks(q_lims...) : _nice_ticks(q_lims...),
+        limits = (nothing, q_lims),
     )
 
     lines!(
@@ -106,7 +114,9 @@ end
 
 Two-panel figure: (top) bound particle count N, (bottom) KS binary pairs.
 Each uses a linear y-axis since N and N_pairs evolve on different scales.
-The time axis is in Myr when `cfg.units == "physical"`.
+A run in which no pair is ever regularised gets the single N panel, with a
+note in place of the second one. The time axis is in Myr when
+`cfg.units == "physical"`.
 """
 @publication function Nbody6Dynamics.plot_particle_count(
     diag::DiagnosticsData,
@@ -121,7 +131,12 @@ The time axis is in Myr when `cfg.units == "physical"`.
     n = [r.n for r in adj]
     np = [r.npairs for r in adj]
 
-    fig = Figure(; size = _fig_two_panel(cfg))
+    # A run that never regularises a pair has no second panel to draw: an empty
+    # one reads as a broken figure.
+    no_pairs = all(iszero, np)
+    tlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]"
+
+    fig = Figure(; size = no_pairs ? _figsize_px(cfg) : _fig_two_panel(cfg))
     ttk = _time_ticks(first(t), last(t))
 
     # --- Top panel: N (bound particles) ---
@@ -143,8 +158,9 @@ The time axis is in Myr when `cfg.units == "physical"`.
 
     ax1 = Axis(
         fig[1, 1];
+        xlabel = no_pairs ? tlabel : "",
         ylabel = L"N\;\mathrm{(bound\;particles)}",
-        xticklabelsvisible = false,
+        xticklabelsvisible = no_pairs,
         xticks = ttk,
         limits = (nothing, ylims_n),
     )
@@ -160,26 +176,29 @@ The time axis is in Myr when `cfg.units == "physical"`.
         color = _SEMANTIC_COLORS[:n_particles],
     )
 
-    # --- Bottom panel: N_pairs (KS binaries) ---
-    np_lo, np_hi = extrema(np)
-    all_zero = np_lo == 0 && np_hi == 0
-    # When no binaries ever form, integer-ticks degenerates and the panel looks
-    # broken — give it a small fixed range and annotate.
-    np_ylims = all_zero ? (-0.5, 1.0) : nothing
-    np_ytk = all_zero ? [0.0, 1.0] : _integer_ticks(np_lo, np_hi)
-    ax2 = Axis(
-        fig[2, 1];
-        xlabel = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]",
-        ylabel = L"N_\mathrm{pairs}\;\mathrm{(KS\;binaries)}",
-        xticks = ttk,
-        yticks = np_ytk,
-        limits = (nothing, np_ylims),
-    )
-    lines!(ax2, t, np; color = _SEMANTIC_COLORS[:n_pairs])
-    all_zero && _no_data_note!(ax2, L"\mathrm{no\;KS\;binaries\;formed}")
+    if no_pairs
+        _annotate!(
+            ax1,
+            L"\mathrm{No\;regularised\;pairs}";
+            corner = _emptiest_corner(Float64.(t), Float64.(n); corners = (:tl, :br)),
+            color = :gray30,
+        )
+    else
+        # --- Bottom panel: N_pairs (KS binaries) ---
+        np_lo, np_hi = _pad_limits(minimum(np), maximum(np); floor = 0)
+        ax2 = Axis(
+            fig[2, 1];
+            xlabel = tlabel,
+            ylabel = L"N_\mathrm{pairs}\;\mathrm{(KS\;binaries)}",
+            xticks = ttk,
+            yticks = _integer_ticks(np_lo, np_hi),
+            limits = (nothing, (np_lo, np_hi)),
+        )
+        lines!(ax2, t, np; color = _SEMANTIC_COLORS[:n_pairs])
 
-    linkxaxes!(ax1, ax2)
-    rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
+        linkxaxes!(ax1, ax2)
+        rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
+    end
 
     _save_fig(cfg, filename, fig)
     return nothing

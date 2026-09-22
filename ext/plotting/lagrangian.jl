@@ -82,13 +82,16 @@ the scaling must be supplied by the caller).
     fig = Figure(; size = _figsize_px(cfg))
     ax, ts, sel_idx, r_scale = _lagrangian_axis(fig, lagr, cfg, selected_fractions, units)
 
+    # One palette entry per series index; the palette wraps only when more
+    # fractions are drawn than it holds, so no two of the usual five share a hue.
+    n_palette = length(_OKABE_ITO)
     for (ci, idx) in enumerate(sel_idx)
         lines!(
             ax,
             ts,
             _masked_radii(lagr, idx, r_scale);
             label = _fraction_pct_label(lagr.mass_fractions[idx]),
-            color = _OKABE_ITO[mod1(ci, length(_OKABE_ITO))],
+            color = _OKABE_ITO[length(sel_idx) ≤ n_palette ? ci : mod1(ci, n_palette)],
         )
     end
 

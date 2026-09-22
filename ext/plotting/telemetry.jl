@@ -64,7 +64,9 @@ Returns the output path, or `nothing` with fewer than two samples.
     length(samples) ≥ 2 ||
         (@warn "Fewer than two telemetry samples; nothing to plot"; return nothing)
     t, tlabel = _telemetry_time_axis([s.elapsed_s for s in samples])
-    ttk = _time_ticks(first(t), last(t))
+    # Ticks over the padded ends, so the start of the run carries its own tick
+    t_lo, t_hi = _pad_limits(first(t), last(t); frac = 0.03, floor = 0)
+    ttk = _time_ticks(t_lo, t_hi)
     gpu = any(s -> !isnan(s.gpu_util_pct), samples)
     nrows = gpu ? 3 : 2
     fig = Figure(; size = _telemetry_canvas(cfg, nrows))
@@ -117,26 +119,42 @@ Returns the output path, or `nothing` with fewer than two samples.
     end
 
     # --- Panel 2: resident memory ---
-    rss = [s.rss_mib for s in samples]
+    # GiB above two gibibytes: four-digit MiB tick labels crowd the axis.
+    rss_mib = [s.rss_mib for s in samples]
+    hwm_mib = [s.hwm_mib for s in samples]
+    mem_finite = finite(vcat(rss_mib, hwm_mib))
+    in_gib = !isempty(mem_finite) && maximum(mem_finite) > 2048
+    mem_scale = in_gib ? 1 / 1024 : 1.0
+    mem_unit = in_gib ? "GiB" : "MiB"
+    rss = rss_mib .* mem_scale
+    hwm = hwm_mib .* mem_scale
+    mem_lims =
+        isempty(mem_finite) ? nothing :
+        _pad_limits(minimum(mem_finite) * mem_scale, maximum(mem_finite) * mem_scale; floor = 0)
     ax2 = Axis(
         fig[2, 1];
-        ylabel = L"\mathrm{Memory} \; [\mathrm{MiB}]",
+        ylabel = latexstring("\\mathrm{Memory} \\; [\\mathrm{$(mem_unit)}]"),
         xlabel = gpu ? "" : tlabel,
         xticks = ttk,
         xticklabelsvisible = !gpu,
+        yticks = mem_lims === nothing ? Makie.automatic : _nice_ticks(mem_lims...),
+        limits = (nothing, mem_lims),
     )
     label_rss =
         isempty(finite(rss)) ? L"\mathrm{RSS}" :
-        latexstring(@sprintf("\\mathrm{RSS\\;(peak\\;%.3g\\;MiB)}", maximum(finite(rss))))
+        latexstring(
+            "\\mathrm{RSS\\;(peak\\;$(_fmt_latex_sig(maximum(finite(rss)), 3))\\;$(mem_unit))}",
+        )
     _telemetry_series!(ax2, t, rss, elements, labels, label_rss; color = _TELEMETRY_COLORS.memory)
+    # The high-water mark shares the memory colour: darker, so RSS stays legible
     _telemetry_series!(
         ax2,
         t,
-        [s.hwm_mib for s in samples],
+        hwm,
         elements,
         labels,
         L"\mathrm{High\;water\;mark}";
-        color = _TELEMETRY_COLORS.memory,
+        color = _band_edge(_TELEMETRY_COLORS.memory),
         linestyle = :dash,
     )
     push!(axes, ax2)
@@ -177,6 +195,7 @@ Returns the output path, or `nothing` with fewer than two samples.
 
     isempty(elements) || _top_legend!(fig, elements, labels; nbanks = length(elements) > 3 ? 2 : 1)
     linkxaxes!(axes...)
+    xlims!(ax1, t_lo, t_hi)
     rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
     return _save_fig(cfg, filename, fig)
 end

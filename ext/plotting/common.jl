@@ -65,7 +65,7 @@ data lines and 14-unit markers with a 1.5-unit edge. Built on every call so
 that the font faces are live ones, not faces captured at precompile time.
 Every figure routine of the package draws inside
 `with_theme(publication_theme())`, so the session's own theme is neither
-needed nor changed; [`set_publication_theme!`](@ref) activates it globally
+needed nor changed; [`Nbody6Dynamics.set_publication_theme!`](@ref) activates it globally
 for figures composed by hand.
 """
 function Nbody6Dynamics.publication_theme()
@@ -190,6 +190,17 @@ _fig_with_colorbar(cfg::VisualizationConfig) =
 """Two vertically stacked main panels (e.g. energy + virial)."""
 _fig_two_panel(cfg::VisualizationConfig) =
     (_figsize_px(cfg)[1], _figsize_px(cfg)[2] + _CANVAS.stacked_panel)
+
+"""A main panel over one auxiliary strip."""
+_fig_with_strip(cfg::VisualizationConfig) =
+    (_figsize_px(cfg)[1], _figsize_px(cfg)[2] + _CANVAS.strip)
+
+"""Weight the rows of a main panel (`main_row`) and its auxiliary strip (`strip_row`) so the strip takes `_CANVAS.strip` of every `_CANVAS.height + _CANVAS.strip` layout units."""
+function _strip_rows!(fig::Figure, main_row::Int, strip_row::Int)
+    rowsize!(fig.layout, main_row, Auto(_CANVAS.height))
+    rowsize!(fig.layout, strip_row, Auto(_CANVAS.strip))
+    return nothing
+end
 
 """
 Grids of panels get a wider canvas than a single panel —
@@ -476,7 +487,7 @@ function _top_legend!(
 end
 
 """
-    _log_ticks(lo, hi) -> (values, labels)
+    _log_ticks(lo, hi; plain = nothing) -> (values, labels)
 
 Decade-anchored ticks for `log10`-scaled axes: `10^n` at every decade in
 range, with 2× and 5× intermediates when the range spans ≤ 2 decades.
@@ -484,9 +495,11 @@ Labels follow the axis-typography standard: plain decimals throughout
 (`0.01, 0.1, 1, 10, 100`) when every tick lies within 10⁻³–10⁴ and the
 ticks span at most four decades; otherwise the exponent form, in which
 `10^0`, `10^1` and the 2×/5× multiples of `10^{-1}`–`10^{1}` still
-collapse to `1`, `10`, `0.2`, `5`, `20`.
+collapse to `1`, `10`, `0.2`, `5`, `20`. `plain` forces one style or the
+other, so that sibling figures of one run share it whatever data they
+happen to hold; `nothing` leaves the choice to the range.
 """
-function _log_ticks(lo::Real, hi::Real)
+function _log_ticks(lo::Real, hi::Real; plain::Union{Nothing,Bool} = nothing)
     lo, hi = min(lo, hi), max(lo, hi)
     lo > 0 || (lo = hi / 1e3)          # guard: log axes need positive range
     e_lo = floor(Int, log10(lo) + 1e-12)
@@ -502,8 +515,9 @@ function _log_ticks(lo::Real, hi::Real)
     end
     length(vals) < 2 && (vals = [10.0^e_lo, 10.0^e_hi])
     exponents = [floor(Int, log10(v) + 1e-9) for v in vals]
-    plain = all(e -> -3 ≤ e ≤ 4, exponents) && maximum(exponents) - minimum(exponents) ≤ 4
-    labels = [latexstring(_log_tick_label(v, plain)) for v in vals]
+    auto_plain = all(e -> -3 ≤ e ≤ 4, exponents) && maximum(exponents) - minimum(exponents) ≤ 4
+    use_plain = plain === nothing ? auto_plain : plain
+    labels = [latexstring(_log_tick_label(v, use_plain)) for v in vals]
     return (vals, labels)
 end
 
@@ -651,12 +665,14 @@ function _annotate!(
 end
 
 """
-    _emptiest_corner(xs, ys; corners = (:tl, :tr, :br), width = 0.35, height = 0.2)
+    _emptiest_corner(xs, ys; corners = (:tl, :tr, :br), width = 0.35, height = 0.2,
+                     xlims = nothing, ylims = nothing)
 
-The corner of the data's bounding box (fractions `width` × `height` of the
-ranges) holding the fewest points among `corners`, for placing an
-annotation clear of series whose course is not known in advance. Ties
-resolve in the order given.
+The corner of the panel (fractions `width` × `height` of the ranges) holding
+the fewest points among `corners`, for placing an annotation clear of series
+whose course is not known in advance. The panel is the axis limits when
+`xlims`/`ylims` are given, the data's bounding box otherwise. Ties resolve in
+the order given.
 """
 function _emptiest_corner(
     xs::AbstractVector{<:Real},
@@ -665,10 +681,14 @@ function _emptiest_corner(
     width::Real = 0.35,
     height::Real = 0.2,
     avoid_x::Real = NaN,
+    xlims::Union{Nothing,Tuple{<:Real,<:Real}} = nothing,
+    ylims::Union{Nothing,Tuple{<:Real,<:Real}} = nothing,
 )
     isempty(xs) && return first(corners)
-    x0, x1 = extrema(xs)
-    y0, y1 = extrema(ys)
+    # The corners of the panel when its limits are known (a padded axis has
+    # room the data hull does not show), of the data hull otherwise.
+    x0, x1 = xlims === nothing ? extrema(xs) : (Float64(xlims[1]), Float64(xlims[2]))
+    y0, y1 = ylims === nothing ? extrema(ys) : (Float64(ylims[1]), Float64(ylims[2]))
     dx = max(x1 - x0, eps(Float64))
     dy = max(y1 - y0, eps(Float64))
     u_avoid = isfinite(avoid_x) ? (avoid_x - x0) / dx : NaN
@@ -688,6 +708,117 @@ function _emptiest_corner(
         end
     end
     return corners[argmin(counts)]
+end
+
+"""
+    _pad_limits(lo, hi; frac = 0.08, floor = nothing) -> (lo′, hi′)
+
+Axis limits with a data margin of `frac` of the range on both sides, so that
+the tick labels at the ends — the joint of two stacked panels above all — keep
+their clearance. A `floor` (the physical lower bound of a non-negative
+quantity, usually `0`) is never crossed: when `lo == floor` the lower limit
+stays at `floor`. Degenerate ranges (`hi == lo`) open to
+±`max(abs(lo), 1) × frac`.
+"""
+function _pad_limits(lo::Real, hi::Real; frac::Real = 0.08, floor::Union{Nothing,Real} = nothing)
+    a, b = Float64(min(lo, hi)), Float64(max(lo, hi))
+    pad = b > a ? frac * (b - a) : max(abs(a), 1.0) * frac
+    at_floor = floor !== nothing && a ≤ Float64(floor)
+    return (at_floor ? Float64(floor) : a - pad, b + pad)
+end
+
+"""
+    _guide_label!(ax, text, y; xs, ys, color = :gray40, log = false, xlog = false,
+                  fontsize = _ANNOTATION_FONTSIZE)
+
+Label a horizontal guide line at `y` where the line is clearest, instead of
+parking the label in a corner it has no relation to. Four places are tried —
+just above or just below the line (3 % of the y-range, a factor 1.15 on a
+logarithmic axis), left-aligned at `minimum(xs)` or right-aligned at
+`maximum(xs)` — and the label takes the one whose box (30 % of the x-range at
+that end, 15 % of the y-range or a factor 2 on the label's side of the line)
+holds the fewest `(xs, ys)` points; `xlog` measures the end windows in
+`log10(x)`, as a logarithmic x-axis draws them. Ties go to above-right. The position is in data coordinates; `text` may
+be a `LaTeXString`.
+"""
+function _guide_label!(
+    ax,
+    text,
+    y::Real;
+    xs,
+    ys,
+    color = :gray40,
+    log::Bool = false,
+    xlog::Bool = false,
+    fontsize::Real = _ANNOTATION_FONTSIZE,
+)
+    xv = Float64[]
+    yv = Float64[]
+    for (x, v) in zip(xs, ys)
+        (isfinite(x) && isfinite(v)) || continue
+        xlog && x ≤ 0 && continue
+        push!(xv, Float64(x))
+        push!(yv, Float64(v))
+    end
+    if isempty(xv)
+        # No series to dodge: hang the label on the right end of the axis.
+        lims = ax.finallimits[]
+        x_end = Float64(lims.origin[1] + lims.widths[1])
+        text!(
+            ax,
+            x_end,
+            log ? y * 1.15 : y;
+            text = text,
+            align = (:right, :bottom),
+            offset = (-4, 2),
+            color = color,
+            fontsize = fontsize,
+        )
+        return nothing
+    end
+    x_lo, x_hi = extrema(xv)
+    y_lo, y_hi = extrema(yv)
+    # The end windows are measured along the axis as drawn: in log10(x) on a
+    # logarithmic x-axis, where a linear 30 % of the range is the outer decade.
+    xw = xlog ? log10.(xv) : xv
+    xw_lo, xw_hi = extrema(xw)
+    dx = max(xw_hi - xw_lo, eps(Float64))
+    dy = max(y_hi - y_lo, eps(Float64))
+    # Four candidate boxes — above or below the line, at either end — scored by
+    # the points they hold; the label goes into the emptiest, ties resolved
+    # towards above-right. The box on the label's own side of the line is what
+    # matters: points on the other side never touch the text.
+    above(v) = log ? (y ≤ v ≤ 2 * y) : (y ≤ v ≤ y + 0.15 * dy)
+    below(v) = log ? (0.5 * y ≤ v ≤ y) : (y - 0.15 * dy ≤ v ≤ y)
+    at_right(x) = x ≥ xw_hi - 0.3 * dx
+    at_left(x) = x ≤ xw_lo + 0.3 * dx
+    candidates = (
+        (true, true),    # right, above
+        (false, true),   # left, above
+        (true, false),   # right, below
+        (false, false),  # left, below
+    )
+    scores = map(candidates) do (right, up)
+        count(eachindex(xv)) do i
+            (right ? at_right(xw[i]) : at_left(xw[i])) && (up ? above(yv[i]) : below(yv[i]))
+        end
+    end
+    right, up = candidates[argmin(scores)]
+    y_text = if log
+        up ? y * 1.15 : y / 1.15
+    else
+        up ? y + 0.03 * dy : y - 0.03 * dy
+    end
+    text!(
+        ax,
+        right ? x_hi : x_lo,
+        y_text;
+        text = text,
+        align = (right ? :right : :left, up ? :bottom : :top),
+        color = color,
+        fontsize = fontsize,
+    )
+    return nothing
 end
 
 """Centred grey note for panels with no plottable data."""

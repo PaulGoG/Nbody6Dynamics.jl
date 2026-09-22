@@ -704,6 +704,33 @@ end
     @test !occursin("e-0", MakieExt._legend_value(1e-5))
 end
 
+@testset "Guide labels and padded limits" begin
+    # A margin on both ends, except across the physical floor of the quantity
+    @test MakieExt._pad_limits(0.0, 1.0; floor = 0) == (0.0, 1.08)
+    @test all(isapprox.(MakieExt._pad_limits(2.0, 4.0), (1.84, 4.16); atol = 1e-12))
+    lo, hi = MakieExt._pad_limits(3.0, 3.0)
+    @test lo < 3.0 < hi
+
+    # `plain` forces the label style; 10⁰ collapses to "1" either way, so the
+    # two forms part at 10² (plain "100" against the exponent form).
+    vals, labels = MakieExt._log_ticks(1.0, 1e6; plain = true)
+    @test vals[3] == 100.0
+    @test occursin("100", string(labels[3])) && !occursin("10^", string(labels[3]))
+    vals, labels = MakieExt._log_ticks(1.0, 1e6; plain = false)
+    @test occursin("10^", string(labels[3]))
+    # Without the keyword the range still decides
+    @test MakieExt._log_ticks(1.0, 1e6)[2] == labels
+
+    # The guide label goes to the end of the axis its series leave free
+    fig = CairoMakie.Figure()
+    ax = CairoMakie.Axis(fig[1, 1])
+    xs = collect(0.0:0.1:10.0)
+    ys = [x < 5 ? 0.0 : 1.0 for x in xs]     # data crowd the right end of y = 1
+    MakieExt._guide_label!(ax, "guide", 1.0; xs = xs, ys = ys)
+    txt = only(filter(p -> p isa CairoMakie.Makie.Text, ax.scene.plots))
+    @test txt.align[] == (:left, :bottom)   # the left end is the free one
+end
+
 @testset "Log-tick generator edge cases" begin
     # >2 in-range decades → decades only
     vals, _ = MakieExt._log_ticks(0.05, 50.0)

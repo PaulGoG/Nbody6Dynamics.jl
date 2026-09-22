@@ -22,10 +22,13 @@ _with_marker(v::AbstractVector{<:Real}, extra::Real) =
 """Fraction of the time range within which a marker label flips to the left of its line."""
 const _MARKER_EDGE_FRACTION = 0.2
 
+"""Clearance of an event label from its own line, as a fraction of the time range."""
+const _MARKER_LABEL_CLEARANCE = 0.01
+
 """Dashed vertical marker at `x` with `label` hanging from `y_top` (data
-coordinates, the caller's upper axis limit), on the right of the line
-unless `x` lies in the last `_MARKER_EDGE_FRACTION` of `t_range`; no-op
-for `NaN`."""
+coordinates, the caller's upper axis limit) clear of the line — one per cent
+of `t_range` to its right, or to its left when `x` lies in the last
+`_MARKER_EDGE_FRACTION` of `t_range`; no-op for `NaN`."""
 function _event_marker!(
     ax,
     x::Real,
@@ -38,13 +41,14 @@ function _event_marker!(
     vlines!(ax, [x]; color = color, linestyle = :dash, linewidth = _STYLE.guide)
     span = max(t_range[2] - t_range[1], eps(Float64))
     right_side = (x - t_range[1]) / span < 1 - _MARKER_EDGE_FRACTION
+    dx = _MARKER_LABEL_CLEARANCE * span
     text!(
         ax,
-        x,
+        right_side ? x + dx : x - dx,
         y_top;
         text = label,
         align = (right_side ? :left : :right, :top),
-        offset = (right_side ? 4 : -4, -2),
+        offset = (0, -2),
         fontsize = _ANNOTATION_FONTSIZE,
         color = color,
     )
@@ -83,7 +87,9 @@ with the coalescence time marked.
         linewidth = _STYLE.data,
         label = L"\lambda_R",
     )
-    ylims!(ax1, 0.0, 1.05)
+    λ_hi = any(valid) ? max(1.0, maximum(diag.lambda_r[valid])) : 1.0
+    l_top = _pad_limits(0.0, λ_hi; floor = 0)[2]
+    ylims!(ax1, 0.0, l_top)
     ax1b = Axis(
         fig[1, 1];
         yaxisposition = :right,
@@ -109,36 +115,36 @@ with the coalescence time marked.
     linkxaxes!(ax1, ax1b)
     any(validp) && ylims!(ax1b, 0.0, 1.15 * maximum(diag.lambda_peebles[validp]))
 
+    valida = isfinite.(diag.spin_alignment)
+    # The remnant spin stays close to the orbital axis: the panel holds the
+    # data down to cos θ = 0.8 at least, instead of the full [-1, 1] range
+    # the alignment could in principle take.
+    a_lo = any(valida) ? min(minimum(diag.spin_alignment[valida]), 0.8) : 0.8
+    # Headroom for the guide label, which clears its line by 3 % of the data range
+    a_top = max(1.05, 1.0 + 0.05 * (1.1 - a_lo))
     ax2 = Axis(
         fig[2, 1];
         xlabel = ax_t.label,
-        ylabel = L"\cos\theta_{\mathrm{spin},\,L_\mathrm{orb}}",
+        ylabel = L"\cos\theta_{\mathrm{spin,\,orb}}",
         xticks = ttk,
+        yticks = _nice_ticks(a_lo - 0.1, a_top),
     )
-    valida = isfinite.(diag.spin_alignment)
     lines!(ax2, t[valida], diag.spin_alignment[valida]; color = :black, linewidth = _STYLE.data)
     hlines!(ax2, [1.0]; color = (:grey, 0.6), linestyle = :dot, linewidth = _STYLE.guide)
-    # The guide label sits at the end of the axis furthest from the
-    # coalescence marker, so the two never cross.
-    label_left =
-        !isfinite(ax_t.t_coal) ||
-        (ax_t.t_coal - first(t)) > 0.5 * max(last(t) - first(t), eps(Float64))
-    text!(
+    any(valida) && _guide_label!(
         ax2,
-        label_left ? first(t) : last(t),
+        "Aligned with orbital L",
         1.0;
-        text = "Aligned with orbital L",
-        align = (label_left ? :left : :right, :top),
-        offset = (label_left ? 4 : -4, -2),
-        fontsize = _ANNOTATION_FONTSIZE,
+        xs = t[valida],
+        ys = diag.spin_alignment[valida],
         color = :grey,
     )
-    ylims!(ax2, -1.1, 1.15)
+    ylims!(ax2, a_lo - 0.1, a_top)
     linkxaxes!(ax1, ax2)
     rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
     tr = (first(t), last(t))
-    _event_marker!(ax1, ax_t.t_coal, L"t_\mathrm{coalesce}", 1.05, tr)
-    _event_marker!(ax2, ax_t.t_coal, L"t_\mathrm{coalesce}", 1.15, tr)
+    _event_marker!(ax1, ax_t.t_coal, L"t_\mathrm{coalesce}", l_top, tr)
+    _event_marker!(ax2, ax_t.t_coal, L"t_\mathrm{coalesce}", a_top, tr)
     if any(valid)
         _annotate!(
             ax1,
@@ -201,11 +207,23 @@ end
         strokewidth = _STYLE.marker_stroke,
     )
     hlines!(ax, [0.0]; color = (:grey, 0.6), linestyle = :dot, linewidth = _STYLE.guide)
+    any(valid) && _guide_label!(
+        ax,
+        L"v_\mathrm{rot} = 0",
+        0.0;
+        xs = R[valid],
+        ys = profile.v_rot_over_sigma[valid],
+        color = :grey,
+    )
     if isfinite(lambda_r)
         _annotate!(
             ax,
             latexstring("\\lambda_R = $(_fmt_latex_sig3(lambda_r))");
-            corner = _emptiest_corner(R[valid], profile.v_rot_over_sigma[valid]),
+            corner = _emptiest_corner(
+                R[valid],
+                profile.v_rot_over_sigma[valid];
+                corners = (:tl, :tr, :br),
+            ),
             color = c_r,
         )
     end
@@ -297,16 +315,15 @@ segregation times marked.
     v = isfinite.(diag.lambda_msr) .& isfinite.(diag.lambda_msr_err)
     l_top = 1.3 * lambda_threshold
     if any(v)
-        band!(
-            ax1,
-            t[v],
-            diag.lambda_msr[v] .- diag.lambda_msr_err[v],
-            diag.lambda_msr[v] .+ diag.lambda_msr_err[v];
-            color = (c_msr, 0.25),
-        )
+        lo_band = diag.lambda_msr[v] .- diag.lambda_msr_err[v]
+        hi_band = diag.lambda_msr[v] .+ diag.lambda_msr_err[v]
+        band!(ax1, t[v], lo_band, hi_band; color = (c_msr, _STYLE.band_alpha))
+        # Darker same-hue edges on the error band
+        msr_edge = _band_edge(c_msr)
+        lines!(ax1, t[v], lo_band; color = msr_edge, linewidth = _STYLE.band_edge)
+        lines!(ax1, t[v], hi_band; color = msr_edge, linewidth = _STYLE.band_edge)
         lines!(ax1, t[v], diag.lambda_msr[v]; color = c_msr, linewidth = _STYLE.data)
-        hi = maximum(diag.lambda_msr[v] .+ diag.lambda_msr_err[v])
-        l_top = 1.15 * max(hi, lambda_threshold)
+        l_top = 1.15 * max(maximum(hi_band), lambda_threshold)
     else
         _no_data_note!(ax1, "Too few members for the segregation estimate")
     end
@@ -318,19 +335,27 @@ segregation times marked.
         linestyle = :dot,
         linewidth = _STYLE.guide,
     )
-    text!(
-        ax1,
-        t[end],
-        lambda_threshold;
-        text = latexstring(
-            "\\Lambda_\\mathrm{MSR} = $(_fmt_latex_sig3(lambda_threshold))\\;\\mathrm{(threshold)}",
-        ),
-        align = (:right, :bottom),
-        offset = (0, 3),
-        fontsize = _ANNOTATION_FONTSIZE,
-        color = :grey,
-    )
     hlines!(ax1, [1.0]; color = (:grey, 0.5), linestyle = :dash, linewidth = _STYLE.guide)
+    if any(v)
+        _guide_label!(
+            ax1,
+            latexstring(
+                "\\Lambda_\\mathrm{MSR} = $(_fmt_latex_sig3(lambda_threshold))\\;\\mathrm{(segregated\\;above)}",
+            ),
+            lambda_threshold;
+            xs = t[v],
+            ys = diag.lambda_msr[v],
+            color = :grey,
+        )
+        _guide_label!(
+            ax1,
+            L"\Lambda_\mathrm{MSR} = 1",
+            1.0;
+            xs = t[v],
+            ys = diag.lambda_msr[v],
+            color = :grey,
+        )
+    end
 
     ax2 =
         Axis(fig[2, 1]; xlabel = ax_t.label, ylabel = L"r_{h,\mathrm{massive}} / r_h", xticks = ttk)
@@ -338,6 +363,14 @@ segregation times marked.
     any(vs) &&
         lines!(ax2, t[vs], diag.segregation_ratio[vs]; color = c_msr, linewidth = _STYLE.data)
     hlines!(ax2, [1.0]; color = (:grey, 0.5), linestyle = :dash, linewidth = _STYLE.guide)
+    any(vs) && _guide_label!(
+        ax2,
+        L"r_{h,\mathrm{massive}} = r_h",
+        1.0;
+        xs = t[vs],
+        ys = diag.segregation_ratio[vs],
+        color = :grey,
+    )
     s_top = any(vs) ? 1.15 * max(maximum(diag.segregation_ratio[vs]), 1.0) : 1.2
     ylims!(ax2, 0.0, s_top)
     linkxaxes!(ax1, ax2)

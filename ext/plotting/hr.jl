@@ -47,6 +47,8 @@ _hr_is_backdrop(k::Int) = STELLAR_CLASSES[k].key === _HR_BACKDROP
 
 """Marker size of the backdrop class relative to `_STYLE.marker`."""
 const _HR_BACKDROP_SCALE = 0.7
+"""Census-strip marker sizes, cycled by class index: classes whose counts coincide show as concentric rings."""
+const _HR_CENSUS_SIZES = (14, 11, 8)
 """Height of the census strip relative to a single-panel figure."""
 const _HR_STRIP_FRAC = 0.3
 """Layout units one bank of the legend row takes (the group headers take one more)."""
@@ -178,12 +180,14 @@ Census strip: stars per class against time for every class of the run but
 the backdrop, on a logarithmic count axis. A class absent at an epoch has no
 point there, so its line starts where the class appears and breaks while it
 is gone; a class present at one isolated epoch shows as a lone marker. The
-observable `epochs` are marked by dashed guides.
+markers are hollow and their size cycles with the class index, so classes of
+equal count at one epoch read as concentric rings instead of hiding one
+another. The observable `epochs` are marked by dashed guides.
 """
 function _draw_hr_census!(ax, run::_HRRun, epochs::Observable{Vector{Float64}})
     counts = class_counts(run.census)
     vlines!(ax, epochs; color = (:grey, 0.7), linestyle = :dash, linewidth = _STYLE.guide)
-    for k in _hr_strip_classes(run)
+    for (i, k) in enumerate(_hr_strip_classes(run))
         style = _hr_style(k)
         n = [c > 0 ? Float64(c) : NaN for c in view(counts, :, k)]
         scatterlines!(
@@ -193,9 +197,10 @@ function _draw_hr_census!(ax, run::_HRRun, epochs::Observable{Vector{Float64}})
             color = style.color,
             marker = style.marker,
             linestyle = style.linestyle,
-            markersize = _STYLE.marker,
-            strokecolor = _band_edge(style.color),
-            strokewidth = _STYLE.marker_stroke,
+            markersize = _HR_CENSUS_SIZES[mod1(i, length(_HR_CENSUS_SIZES))],
+            markercolor = :transparent,
+            strokecolor = style.color,
+            strokewidth = 2,
         )
     end
     return nothing
@@ -292,11 +297,15 @@ function _hr_figure(run::_HRRun, indices::Vector{Int}, cfg::VisualizationConfig;
     # The legend is as wide as the canvas allows and as deep as it then needs.
     key_width = isempty(key_entries) ? 0 : _HR_LEGEND_KEY_WIDTH
     legend_cols = max(1, floor(Int, (pw - key_width) / _HR_LEGEND_ENTRY_WIDTH))
-    nbanks = max(cld(length(class_entries), legend_cols), length(key_entries), 1)
+    # Banks are set by the family that needs them; a family with fewer entries
+    # than that takes `min(nbanks, length(entries))` and stays level with its
+    # own header instead of trailing empty banks under it.
+    nbanks = max(cld(length(class_entries), legend_cols), 1)
+    key_banks = min(nbanks, max(length(key_entries), 1))
     gap = grid ? _multipanel_gap(ncols; inner_ticks = false) : _TWO_PANEL_ROWGAP
     strip_height = round(Int, _HR_STRIP_FRAC * ph)
     extra =
-        (legend ? (nbanks + 1) * _HR_LEGEND_BANK_HEIGHT + gap : 0) +
+        (legend ? (max(nbanks, key_banks) + 1) * _HR_LEGEND_BANK_HEIGHT + gap : 0) +
         (strip ? strip_height + gap + _AXIS_PROTRUSION : 0)
     size =
         grid ? _fig_multipanel(cfg, nrows, ncols; inner_ticks = false, extra_height = extra) :
@@ -304,10 +313,12 @@ function _hr_figure(run::_HRRun, indices::Vector{Int}, cfg::VisualizationConfig;
     fig = Figure(; size = size)
 
     target_ticks = grid ? 3 : 8
-    xticks = _logval_ticks(run.tlims...; target_n = target_ticks)
-    yticks = _logval_ticks(run.llims...; target_n = target_ticks)
     # Data-free band above the data, where the time annotation sits
     llims = (run.llims[1], run.llims[2] + _MONTAGE_BAND_FRAC * (run.llims[2] - run.llims[1]))
+    # Ticks over the panel limits, not the data: the decade a padded end
+    # reaches into would otherwise go unlabelled.
+    xticks = _logval_ticks(run.tlims...; target_n = target_ticks)
+    yticks = _logval_ticks(llims...; target_n = target_ticks)
     scale = grid ? max(_multipanel_scale(cfg, ncols; inner_ticks = false), 0.75) : 1.0
     populations = [Observable(run.populations[i]) for i in indices]
     for (panel, pop) in enumerate(populations)

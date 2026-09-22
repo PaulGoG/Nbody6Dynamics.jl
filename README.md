@@ -30,6 +30,7 @@ Nbody6Dynamics/
 ├── Project.toml      # Package metadata and dependencies
 ├── activate.jl       # Activates and instantiates the package environment
 ├── config.toml       # Main pipeline configuration (edit this)
+├── CONTRIBUTING.md   # What a change needs
 ├── src/              # Library: orchestration, IC generator, readers, diagnostics
 ├── ext/              # Makie extension: figures and animations
 ├── scripts/          # CLI entry points
@@ -44,9 +45,27 @@ Nbody6Dynamics/
 
 The full tree is at the end of this file.
 
-## Environment setup
+## Installation
 
-Requires Julia ≥ 1.13, installed through [juliaup](https://github.com/JuliaLang/juliaup) (`juliaup add release`). Development and the validated hosts run Julia 1.13. Manifests are not under version control: each environment resolves from its `Project.toml` on first activation, and every run stores the manifest it resolved as `environment_manifest.toml` in its run directory.
+Requires Julia ≥ 1.13, installed through [juliaup](https://github.com/JuliaLang/juliaup) (`juliaup add release`). The package is not registered; add it to a project of your own by URL, together with a Makie backend for the figures:
+
+```julia
+using Pkg
+Pkg.add(url = "https://github.com/PaulGoG/Nbody6Dynamics.jl")
+Pkg.add("CairoMakie")
+```
+
+```julia
+using CairoMakie, Nbody6Dynamics
+cfg = load_config("config.toml")        # your project's configuration
+results = run_pipeline(cfg)
+```
+
+The directory of that `config.toml` is the project directory: the engine is cloned and built under its `backend/` and the runs land under its `runs/`, never inside the package. The shipped inputs are reachable with `example_input("N1k_quick.inp")`, and `example_input("showcase/equal_pipeline.toml")` returns a complete pipeline configuration to copy and edit. Building the Fortran engine needs `git`, `gfortran` and `make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
+
+## Environment setup of a checkout
+
+Development and the validated hosts run Julia 1.13. Manifests are not under version control: each environment resolves from its `Project.toml` on first activation, and every run stores the manifest it resolved as `environment_manifest.toml` in its run directory.
 
 Every environment ships an activation script that activates and instantiates it silently. Running one on a new machine performs the dependency resolution and precompilation once:
 
@@ -59,7 +78,7 @@ julia bench/activate.jl    # benchmarks (optional)
 
 An interactive session starts with `julia -i activate.jl`.
 
-The scripts under `scripts/`, `docs/` and `bench/` include their environment's activation script, so they need no project flag; those environments develop the package by a relative path and always run against the local source. Building the Fortran backend additionally needs `git`, `gfortran`/`make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
+The scripts under `scripts/`, `docs/` and `bench/` include their environment's activation script, so they need no project flag; those environments develop the package by a relative path and always run against the local source.
 
 ### Figures are an extension
 
@@ -179,11 +198,15 @@ Runs three end-to-end targets through `run_pipeline` (requires a built binary in
 
 ## Documentation
 
-Documenter.jl docs live under `docs/` (Manual, Input Files, Cluster Mergers, API Reference):
+The documentation site (Manual, Input Files, Cluster Mergers, API Reference, a walkthrough from a merger TOML to the generated initial conditions) is at [paulgog.github.io/Nbody6Dynamics.jl/dev](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/). It builds from `docs/`:
 
 ```bash
 julia docs/make.jl   # builds to docs/build/
 ```
+
+## Contributing
+
+Issues and pull requests are welcome; `CONTRIBUTING.md` says what a change needs (tests, formatting, docstrings, a changelog entry, and the formulation behind any physics).
 
 ## Licence
 
@@ -210,10 +233,11 @@ If this package contributes to published work, please cite it through the metada
 
 ```
 Nbody6Dynamics/
-├── .github/                         # CI, Format, Documentation and Backend workflows; Dependabot configuration
+├── .github/                         # CI, Format, Documentation and Backend workflows; Dependabot; issue and PR templates
 ├── .JuliaFormatter.toml             # Formatter configuration
 ├── .mailmap                         # Author identities folded into one
 ├── README.md
+├── CONTRIBUTING.md                  # What a change needs
 ├── LICENSE                          # MIT
 ├── CITATION.cff                     # Citation metadata
 ├── CHANGELOG.md                     # Release history (Changelog.jl conventions)
@@ -299,7 +323,7 @@ Nbody6Dynamics/
 │   ├── test_telemetry.jl            # Hardware telemetry sampler, readers and figure
 │   ├── test_engine_gated.jl         # Shipped GPU-host configurations; engine- and GPU-gated runs
 │   ├── test_qa.jl                   # Static QA: Aqua, ExplicitImports, JET
-│   └── fixtures/                    # Real Nbody6++ output excerpts (esc.11, lagr.7, out1000, sev.83_0, bev.82_0)
+│   └── fixtures/                    # Real Nbody6++ output excerpts (esc.11, lagr.7, out1000, sev.83_0, bev.82_0) with their PROVENANCE.md
 ├── bench/
 │   ├── thread_scaling.jl            # Thread- and N-scaling of the backend from run telemetry (cost model)
 │   ├── gpu_scaling.jl               # GPU-versus-CPU binary at equal N and threads, per GPU_LIST (speed-up table)

@@ -136,7 +136,7 @@ initial cluster decomposition is no longer physically meaningful.
             t_merge = t[idx_merge]
             merge_plot =
                 vlines!(ax, [t_merge]; color = :black, linestyle = :dash, linewidth = _STYLE.guide)
-            merge_label = latexstring("t_\\mathrm{merge} \\approx $(round(t_merge; digits=2))")
+            merge_label = latexstring("t_\\mathrm{merge} \\approx $(_fmt_latex_sig3(t_merge))")
         end
 
         # Twin axis: count of spatially-distinct clusters. Two clusters are
@@ -408,15 +408,20 @@ times in Myr when `cfg.units == "physical"`.
         end
     end
 
+    # Radii of every series of the upper panel, for its limits
+    r_panel = filter(isfinite, vec(r_h))
+
     # Engine's global 50 % radius about its single density centre
     if lagr !== nothing && !isempty(lagr.time)
         i50 = findfirst(==(0.5), lagr.mass_fractions)
         if i50 !== nothing
             t_l = physical ? lagr.time .* tscale(snaps[1].header) : lagr.time
+            r_50 = lagr.radii[i50, :] .* r_unit
+            append!(r_panel, filter(isfinite, r_50))
             lines!(
                 ax1,
                 t_l,
-                lagr.radii[i50, :] .* r_unit;
+                r_50;
                 color = :gray40,
                 linestyle = :dash,
                 linewidth = _STYLE.fit,
@@ -427,8 +432,24 @@ times in Myr when `cfg.units == "physical"`.
     end
 
     hlines!(ax2, [1.0]; color = :gray50, linestyle = :dash, linewidth = _STYLE.guide)
-    _annotate!(ax2, L"M_{\mathrm{bound},i} = M_i"; corner = :tl, dy = 0.10, color = :gray40)
-    ylims!(ax2, 0.0, 1.08)
+    # Occupancy of the bound-fraction panel, for the guide label and the limits
+    f_x = Float64[]
+    f_y = Float64[]
+    for i in axes(f_bound, 1), k in axes(f_bound, 2)
+        isfinite(f_bound[i, k]) || continue
+        push!(f_x, t[k])
+        push!(f_y, f_bound[i, k])
+    end
+    isempty(f_y) ||
+        _guide_label!(ax2, L"M_{\mathrm{bound},i} = M_i", 1.0; xs = f_x, ys = f_y, color = :gray40)
+    f_lo, f_hi = _pad_limits(isempty(f_y) ? 0.0 : minimum(f_y), 1.0; floor = 0)
+    ylims!(ax2, f_lo, f_hi)
+    ax2.yticks = _nice_ticks(f_lo, f_hi)
+    if !isempty(r_panel)
+        r_lo, r_hi = _pad_limits(0.0, maximum(r_panel); floor = 0)
+        ylims!(ax1, r_lo, r_hi)
+        ax1.yticks = _nice_ticks(r_lo, r_hi)
+    end
     linkxaxes!(ax1, ax2)
     rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
     n_series ≥ 2 && _top_legend!(fig, ax1; nbanks = min(3, cld(n_series, 4)))
@@ -474,7 +495,8 @@ drawn. Radii in pc and densities in M☉ pc⁻³ when `cfg.units == "physical"`.
         (@info "Skipping density profiles: no cluster with enough members"; return nothing)
     with_model = specs !== nothing
 
-    fig = Figure(; size = with_model ? _fig_two_panel(cfg) : _figsize_px(cfg))
+    # The ratio panel is an auxiliary strip, not a second main panel.
+    fig = Figure(; size = with_model ? _fig_with_strip(cfg) : _figsize_px(cfg))
     ax1 = Axis(
         fig[1, 1];
         xlabel = with_model ? "" : (physical ? L"r \; [\mathrm{pc}]" : L"r \; [\mathrm{NB}]"),
@@ -492,8 +514,8 @@ drawn. Radii in pc and densities in M☉ pc⁻³ when `cfg.units == "physical"`.
             ylabel = L"\rho \, / \, \rho_{\mathrm{model}}",
             xscale = log10,
             yscale = log10,
-            yticks = _log_ticks(0.1, 10.0),
         ) : nothing
+    with_model && _strip_rows!(fig, 1, 2)
 
     detail = n_cl ≤ 5
     r_all = Float64[]
@@ -588,15 +610,30 @@ drawn. Radii in pc and densities in M☉ pc⁻³ when `cfg.units == "physical"`.
     end
     if with_model
         hlines!(ax2, [1.0]; color = :gray50, linestyle = :dash, linewidth = _STYLE.guide)
-        _annotate!(ax2, L"\rho = \rho_{\mathrm{model}}"; corner = :tr, color = :gray40)
-        # Within a factor of ten of the model; the outermost shells at a King
-        # model's tidal edge run away and are clipped.
-        ylims!(ax2, 0.1, 10.0)
+        q_x = reduce(vcat, r_ratio; init = Float64[])
+        q_y = reduce(vcat, ratios; init = Float64[])
+        isempty(q_y) || _guide_label!(
+            ax2,
+            L"\rho = \rho_{\mathrm{model}}",
+            1.0;
+            xs = q_x,
+            ys = q_y,
+            color = :gray40,
+            log = true,
+            xlog = true,
+        )
+        # Symmetric about the model in log, holding the data: a factor of two
+        # at least, so that agreement is not magnified into disagreement.
+        q_fin = [q for q in q_y if isfinite(q) && q > 0]
+        m = (isempty(q_fin) ? log10(2) : max(maximum(abs.(log10.(q_fin))), log10(2))) + 0.1
+        ylims!(ax2, 10.0^-m, 10.0^m)
+        ax2.yticks = _log_ticks(10.0^-m, 10.0^m)
         linkxaxes!(ax1, ax2)
         rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
     end
     if !isempty(ρ_all)
-        ax1.yticks = _log_ticks(minimum(ρ_all), maximum(ρ_all))
+        # One tick style for every epoch of a run, whatever range it spans.
+        ax1.yticks = _log_ticks(minimum(ρ_all), maximum(ρ_all); plain = false)
         xt = _log_ticks(minimum(r_all), maximum(r_all))
         ax1.xticks = xt
         ax2 === nothing || (ax2.xticks = xt)
@@ -651,6 +688,10 @@ labelled. Velocities in km s⁻¹ and radii in pc when `cfg.units ==
     rows_sr = Vector{Vector{Float64}}()
     rows_beta = Vector{Vector{Float64}}()
     rows_r = Vector{Vector{Float64}}()
+    # Occupancy of both panels, for their limits and the anisotropy guide label
+    sig_all = Float64[]
+    beta_x = Float64[]
+    beta_y = Float64[]
     for i in 1:n_cl
         prof = profiles[i]
         prof === nothing && continue
@@ -677,6 +718,13 @@ labelled. Velocities in km s⁻¹ and radii in pc when `cfg.units ==
                 linewidth = _STYLE.fit,
             )
             lines!(ax2, r, prof.beta[valid]; color = color, linewidth = _STYLE.data)
+            append!(sig_all, filter(isfinite, prof.sigma_r[valid] .* v_unit))
+            append!(sig_all, filter(isfinite, prof.sigma_t[valid] .* v_unit))
+            for (x, b) in zip(r, prof.beta[valid])
+                isfinite(b) || continue
+                push!(beta_x, x)
+                push!(beta_y, b)
+            end
             n_series += 1
         else
             push!(rows_sr, prof.sigma_r[valid] .* v_unit)
@@ -726,10 +774,28 @@ labelled. Velocities in km s⁻¹ and radii in pc when `cfg.units ==
                 band!(ax, grid[valid], lo[valid], hi[valid]; color = (c, 0.25))
                 lines!(ax, grid[valid], mean[valid]; color = c, linewidth = _STYLE.data)
             end
+            if ax === ax1
+                append!(sig_all, filter(isfinite, vcat(lo[valid], hi[valid])))
+            else
+                for (x, b) in zip(vcat(grid[valid], grid[valid]), vcat(lo[valid], hi[valid]))
+                    isfinite(b) || continue
+                    push!(beta_x, x)
+                    push!(beta_y, b)
+                end
+            end
         end
         n_series = 2
     end
     if detail && n_series ≥ 1
+        # Colour names the cluster, line style the component of the dispersion.
+        lines!(
+            ax1,
+            r_all[1:1],
+            [NaN];
+            color = :black,
+            linewidth = _STYLE.data,
+            label = L"\sigma_r\;\mathrm{(solid)}",
+        )
         lines!(
             ax1,
             r_all[1:1],
@@ -739,10 +805,21 @@ labelled. Velocities in km s⁻¹ and radii in pc when `cfg.units ==
             linewidth = _STYLE.fit,
             label = L"\sigma_t\;\mathrm{(dashed)}",
         )
-        n_series += 1
+        n_series += 2
     end
     hlines!(ax2, [0.0]; color = :gray50, linestyle = :dash, linewidth = _STYLE.guide)
-    _annotate!(ax2, L"\beta = 0\;\mathrm{(isotropic)}"; corner = :tr, color = :gray40)
+    isempty(beta_y) || _guide_label!(
+        ax2,
+        L"\beta = 0\;\mathrm{(isotropic)}",
+        0.0;
+        xs = beta_x,
+        ys = beta_y,
+        color = :gray40,
+        xlog = true,
+    )
+    isempty(sig_all) || ylims!(ax1, _pad_limits(0.0, maximum(sig_all); floor = 0)...)
+    isempty(beta_y) ||
+        ylims!(ax2, _pad_limits(min(0.0, minimum(beta_y)), max(0.0, maximum(beta_y)))...)
     if !isempty(r_all)
         xt = _log_ticks(minimum(r_all), maximum(r_all))
         ax1.xticks = xt
