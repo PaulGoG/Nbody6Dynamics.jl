@@ -30,7 +30,7 @@ jobs:
           NBODY6_BINARY_TEST_ARTIFACTS: ${{ github.workspace }}/binary-test-artifacts
           OMP_NUM_THREADS: '2'
         run: julia -e 'include("activate.jl"); Pkg.test()'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: binary-test-artifacts
