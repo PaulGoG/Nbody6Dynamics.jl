@@ -1,9 +1,12 @@
 # Nbody6Dynamics.jl
 
 [![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)
-[![Documentation](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Documentation.yml/badge.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/)
-[![Coverage](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl)
+[![Format check](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml)
+[![Backend build](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml)
+[![Codecov](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl)
+[![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![Release](https://img.shields.io/github/v/release/PaulGoG/Nbody6Dynamics.jl?display_name=tag&sort=semver)](https://github.com/PaulGoG/Nbody6Dynamics.jl/releases)
 [![Julia](https://img.shields.io/badge/Julia-1.13%2B-9558B2.svg?logo=julia&logoColor=white)](https://julialang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Project Status: Active](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
