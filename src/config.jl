@@ -10,6 +10,10 @@ Missing sections or keys fall back to defaults defined in the `@kwdef` structs.
 The parsed configuration is validated fail-fast by [`_validate`](@ref):
 enumerated choices, numerical bounds, and required non-empty fields raise an
 error naming the offending `section.key` before any pipeline phase starts.
+The directory of `path` is recorded as `config_dir`: relative paths in the
+configuration resolve against it, and it is the default `base_dir` of the
+entry points, so a project directory holding a `config.toml` receives its
+`backend/` and `runs/` there, wherever the package is installed.
 """
 function load_config(path::AbstractString)::Nbody6Config
     raw = TOML.parsefile(path)
@@ -20,6 +24,7 @@ function load_config(path::AbstractString)::Nbody6Config
         _parse_postprocess(get(raw, "postprocess", Dict{String,Any}())),
         _parse_visualization(get(raw, "visualization", Dict{String,Any}())),
         _parse_merger_pipeline(get(raw, "merger", Dict{String,Any}())),
+        dirname(abspath(path)),
     )
     _validate(cfg)
     return cfg
@@ -303,4 +308,42 @@ end
 
 function _struct_to_dict(s)
     Dict(String(k) => getfield(s, k) for k in fieldnames(typeof(s)))
+end
+
+"""
+    _resolve_path(base_dir, path) -> String
+
+`path` made absolute: unchanged when already absolute, otherwise joined onto
+`base_dir` and normalised. An empty `path` stays empty.
+"""
+function _resolve_path(base_dir::AbstractString, path::AbstractString)::String
+    isempty(path) && return ""
+    return isabspath(path) ? String(path) : normpath(joinpath(abspath(base_dir), path))
+end
+
+"""
+    _with_absolute_paths(cfg, base_dir) -> Nbody6Config
+
+A copy of `cfg` whose path-valued keys (`install.install_dir`,
+`simulation.input_file`, `simulation.runs_dir`, `postprocess.data_dir`,
+`merger.config_file`) are absolute, resolved against `base_dir`, and whose
+`config_dir` is `base_dir`. The frozen `config.toml` of a run is written from
+this form so that it records the paths the run used and can be loaded from
+anywhere.
+"""
+function _with_absolute_paths(cfg::Nbody6Config, base_dir::AbstractString)::Nbody6Config
+    rebuild(x; kw...) = typeof(x)(; (k => getfield(x, k) for k in fieldnames(typeof(x)))..., kw...)
+    return Nbody6Config(
+        rebuild(cfg.install; install_dir = _resolve_path(base_dir, cfg.install.install_dir)),
+        cfg.build,
+        rebuild(
+            cfg.simulation;
+            input_file = _resolve_path(base_dir, cfg.simulation.input_file),
+            runs_dir = _resolve_path(base_dir, cfg.simulation.runs_dir),
+        ),
+        rebuild(cfg.postprocess; data_dir = _resolve_path(base_dir, cfg.postprocess.data_dir)),
+        cfg.visualization,
+        rebuild(cfg.merger; config_file = _resolve_path(base_dir, cfg.merger.config_file)),
+        String(abspath(base_dir)),
+    )
 end

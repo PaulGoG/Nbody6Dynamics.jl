@@ -29,8 +29,10 @@ function main()
     @info "Loading configuration from: $config_path"
     cfg = load_config(config_path)
 
+    # Relative paths of the configuration resolve against its own directory
+    # (cfg.config_dir), which is where backend/ and runs/ are created.
     t0 = time()
-    results = run_pipeline(cfg; base_dir = dirname(abspath(config_path)))
+    results = run_pipeline(cfg)
 
     for (k, v) in results
         n = v isa AbstractVector ? length(v) : v isa DiagnosticsData ? length(v.adjust) : 1

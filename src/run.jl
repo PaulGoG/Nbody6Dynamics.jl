@@ -43,7 +43,7 @@ end
 const _SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 """
-    run_simulation(cfg::Nbody6Config; base_dir = _PROJECT_ROOT, run_id = "") -> String
+    run_simulation(cfg::Nbody6Config; base_dir = cfg.config_dir, run_id = "") -> String
 
 Execute the Nbody6++ simulation with:
 - Unique run ID and isolated output directory
@@ -51,18 +51,19 @@ Execute the Nbody6++ simulation with:
 - Real-time ADJUST line monitoring with wall-clock timer and heartbeat spinner
 - Frozen config snapshot saved alongside output
 
-Returns the path to the run directory.
+`simulation.input_file`, `install.install_dir` and `simulation.runs_dir`
+resolve against `base_dir` when relative. Returns the path to the run
+directory.
 """
 function run_simulation(
     cfg::Nbody6Config;
-    base_dir::AbstractString = _PROJECT_ROOT,
+    base_dir::AbstractString = cfg.config_dir,
     run_id::AbstractString = "",
 )::String
     sim = cfg.simulation
 
-    # --- Resolve input file (relative to the backend source tree) ---
-    src_dir = joinpath(base_dir, cfg.install.install_dir)
-    input_path = abspath(joinpath(src_dir, sim.input_file))
+    # --- Resolve the input file against the project directory ---
+    input_path = _resolve_path(base_dir, sim.input_file)
     isfile(input_path) || error("Input file not found: $input_path")
 
     # --- Generate run ID and create directory structure ---
@@ -71,7 +72,7 @@ function run_simulation(
     #       plots/       — post-processing plots (created later)
     #       config.toml  — frozen config
     isempty(run_id) && (run_id = generate_run_id(sim.run_id_prefix))
-    run_dir = abspath(joinpath(base_dir, sim.runs_dir, run_id))
+    run_dir = joinpath(_resolve_path(base_dir, sim.runs_dir), run_id)
     out_dir = joinpath(run_dir, "output")
     mkpath(out_dir)
 
@@ -158,7 +159,7 @@ end
 
 """
     restart_simulation(run_dir; tcrit_extra, dump = nothing, tcrtp0 = nothing,
-                       base_dir = _PROJECT_ROOT) -> String
+                       base_dir = nothing) -> String
 
 Continue a finished or interrupted run from one of the engine's COMMON
 dumps for `tcrit_extra` further N-body time units. The chosen dump
@@ -168,7 +169,9 @@ written from the run's original input file; the engine runs in the same
 output directory with stdout and stderr appended, so `out1000`, `lagr.7`,
 `esc.11`, and the time-stamped snapshot and stellar-evolution files
 continue. `RUN_INFO.toml` gains one entry in its `segments` list per
-launch and the telemetry of each segment goes to its own CSV. Returns
+launch and the telemetry of each segment goes to its own CSV. The frozen
+`config.toml` of the run carries absolute paths, so the engine tree is found
+without a `base_dir`; one may still be given to override it. Returns
 `run_dir`.
 """
 function restart_simulation(
@@ -176,7 +179,7 @@ function restart_simulation(
     tcrit_extra::Real,
     dump::Union{Nothing,AbstractString} = nothing,
     tcrtp0::Union{Nothing,Real} = nothing,
-    base_dir::AbstractString = _PROJECT_ROOT,
+    base_dir::Union{Nothing,AbstractString} = nothing,
 )::String
     run_dir = abspath(run_dir)
     out_dir = joinpath(run_dir, "output")
@@ -189,6 +192,7 @@ function restart_simulation(
         "restart: original input file not recorded or missing (run.input_file in RUN_INFO.toml)",
     )
     cfg = load_config(joinpath(run_dir, "config.toml"))
+    base_dir === nothing && (base_dir = cfg.config_dir)
 
     chosen = dump === nothing ? _latest_dump(out_dir) : String(dump)
     chosen === nothing && error("restart: no COMMON dump (comm.[12]_<t>) in $out_dir")
@@ -216,24 +220,25 @@ end
 
 """
     _execute_simulation(cfg, run_dir, out_dir, input_path;
-                        base_dir = _PROJECT_ROOT, label = "simulation",
+                        base_dir = cfg.config_dir, label = "simulation",
                         restart = nothing) -> String
 
 Shared execution core for [`run_simulation`](@ref), the merger pipeline,
 and [`restart_simulation`](@ref): locates the binary, freezes the config
-into `run_dir`, copies the binary and the input file into `out_dir` for
-reproducibility, writes the launch script, and runs it under the teed run
-log with the opt-in live monitor. `input_path` must be absolute (the
-launch script executes from `out_dir`). With `restart = (; dump,
-tcrit_extra)` the binary copy is reused, stdout and stderr are appended,
-and the run summary records a further segment. Returns `run_dir`.
+into `run_dir` (with its paths made absolute against `base_dir`, see
+[`_with_absolute_paths`](@ref)), copies the binary and the input file into
+`out_dir` for reproducibility, writes the launch script, and runs it under
+the teed run log with the opt-in live monitor. `input_path` must be
+absolute (the launch script executes from `out_dir`). With `restart = (;
+dump, tcrit_extra)` the binary copy is reused, stdout and stderr are
+appended, and the run summary records a further segment. Returns `run_dir`.
 """
 function _execute_simulation(
     cfg::Nbody6Config,
     run_dir::AbstractString,
     out_dir::AbstractString,
     input_path::AbstractString;
-    base_dir::AbstractString = _PROJECT_ROOT,
+    base_dir::AbstractString = cfg.config_dir,
     label::AbstractString = "simulation",
     restart::Union{Nothing,NamedTuple} = nothing,
 )::String
@@ -242,11 +247,11 @@ function _execute_simulation(
     is_restart = restart !== nothing
 
     # --- Locate binary ---
-    src_dir = joinpath(base_dir, cfg.install.install_dir)
+    src_dir = _resolve_path(base_dir, cfg.install.install_dir)
     binary = _find_binary(src_dir, sim.binary_name, cfg.build)
 
-    # --- Save frozen config ---
-    is_restart || save_config(cfg, joinpath(run_dir, "config.toml"))
+    # --- Save frozen config (absolute paths: loadable from anywhere) ---
+    is_restart || save_config(_with_absolute_paths(cfg, base_dir), joinpath(run_dir, "config.toml"))
 
     # --- Copy binary, build record and input for reproducibility (kept on restart) ---
     local_binary = joinpath(out_dir, basename(binary))
@@ -924,7 +929,7 @@ function _write_run_summary(
     d = Dict{String,Any}(
         "run" => run_table,
         "provenance" => Dict{String,Any}(
-            "package_commit" => _source_stamp(_PROJECT_ROOT),
+            "package_commit" => _source_stamp(_PACKAGE_ROOT),
             "backend_commit" => isempty(src_dir) ? "unknown" : _git_commit(src_dir),
         ),
         "hardware" => _hardware_fingerprint(; gpu_probe = cfg.build.enable_gpu),

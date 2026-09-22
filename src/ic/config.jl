@@ -245,7 +245,7 @@ end
 
 """
     MergerOutputSpec(; format = "nbody", truncate_jacobi = true,
-                       output_dir = ".", tcrit = 100.0, dtadj = 1.0, deltat = 1.0)
+                       output_dir = "", tcrit = 100.0, dtadj = 1.0, deltat = 1.0)
 
 Output and integration parameters for merger ICs.
 
@@ -253,7 +253,10 @@ Output and integration parameters for merger ICs.
 - `format::String`: `"nbody"` (KZ(22)=2, N-body units) — the only supported format.
 - `truncate_jacobi::Bool`: truncate each cluster at the nearest-neighbour
   Jacobi radius before combining.
-- `output_dir::String`: directory for generated files.
+- `output_dir::String`: directory for generated files; empty (the default)
+  leaves the choice to the caller — `run_merger_pipeline` then creates a
+  `runs/merger_<timestamp>/` under the working directory, and the main
+  pipeline always writes into its run directory.
 - `tcrit::Float64`: simulation end time (NB units when `format = "nbody"`).
 - `dtadj::Float64`, `deltat::Float64`: adjustment and snapshot intervals.
 - `tcrit_myr`, `dtadj_myr`, `deltat_myr`: the same three in Myr; a positive
@@ -269,7 +272,7 @@ intervals with a loop that never terminates on other values.
 Base.@kwdef struct MergerOutputSpec
     format::String = "nbody"
     truncate_jacobi::Bool = true
-    output_dir::String = "."
+    output_dir::String = ""
     tcrit::Float64 = 100.0
     dtadj::Float64 = 1.0
     deltat::Float64 = 1.0
@@ -580,7 +583,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
     output = MergerOutputSpec(;
         format = get(out_raw, "format", "nbody")::String,
         truncate_jacobi = get(out_raw, "truncate_jacobi", true)::Bool,
-        output_dir = get(out_raw, "output_dir", ".")::String,
+        output_dir = get(out_raw, "output_dir", "")::String,
         tcrit = Float64(get(out_raw, "tcrit", 100.0)),
         dtadj = Float64(get(out_raw, "dtadj", 1.0)),
         deltat = Float64(get(out_raw, "deltat", 1.0)),

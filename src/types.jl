@@ -194,6 +194,14 @@ end
     Nbody6Config
 
 Top-level configuration aggregating all subsections.
+
+`config_dir` is the directory every relative path of the configuration
+resolves against — `install.install_dir`, `simulation.input_file`,
+`simulation.runs_dir`, `postprocess.data_dir` and `merger.config_file` — and
+the default `base_dir` of the pipeline entry points. [`load_config`](@ref)
+sets it to the directory of the file it read; a configuration built in memory
+takes the working directory. It is not a configuration key and is not
+written by [`save_config`](@ref).
 """
 struct Nbody6Config
     install::InstallConfig
@@ -202,7 +210,17 @@ struct Nbody6Config
     postprocess::PostprocessConfig
     visualization::VisualizationConfig
     merger::MergerPipelineConfig
+    config_dir::String
 end
+
+Nbody6Config(
+    install::InstallConfig,
+    build::BuildConfig,
+    simulation::SimulationConfig,
+    postprocess::PostprocessConfig,
+    visualization::VisualizationConfig,
+    merger::MergerPipelineConfig,
+) = Nbody6Config(install, build, simulation, postprocess, visualization, merger, pwd())
 
 # ---------------------------------------------------------------------------
 # Snapshot header — maps to conf.3 AS(1:20) array

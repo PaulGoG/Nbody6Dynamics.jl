@@ -51,7 +51,7 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
 
                                                                                   [simulation]
                                                                                   run_test = true
-                                                                                  input_file = "../../input_files/N1k_quick.inp"
+                                                                                  input_file = "$(example_input("N1k_quick.inp"))"
                                                                                   runs_dir = "$(runs_dir)"
                                                                                   binary_name = "nbody6++"
                                                                                   mpi_ranks = 1
@@ -254,7 +254,7 @@ nproc = 0
 
 [simulation]
 run_test = true
-input_file = "../../input_files/N1k_quick.inp"
+input_file = "$(example_input("N1k_quick.inp"))"
 runs_dir = "$(runs_dir)"
 binary_name = "nbody6++"
 mpi_ranks = 1

@@ -48,7 +48,7 @@
     println("makie_loaded=", any(m -> nameof(m) === :Makie, Base.loaded_modules_array()))
     """
     out = readchomp(
-        `$(Base.julia_cmd()) --project=$(Nbody6Dynamics._PROJECT_ROOT) --startup-file=no -e $headless`,
+        `$(Base.julia_cmd()) --project=$(Nbody6Dynamics._PACKAGE_ROOT) --startup-file=no -e $headless`,
     )
     @test occursin("available=false", out)
     @test occursin("entry=PlottingUnavailable:plot_energy", out)

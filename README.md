@@ -129,6 +129,8 @@ results = postprocess_external("/scratch/sim42/output")
 
 Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, frozen `config.toml`). Run IDs come from `generate_run_id` (prefix + timestamp + 4-hex uniqueness suffix); merger runs prepend `merger_` to the configured prefix.
 
+The directory of the configuration file is the project directory: relative paths in the file (`install_dir`, `input_file`, `runs_dir`, `data_dir`, `config_file`) resolve against it, and `backend/` and `runs/` are created there, never inside the package. A project therefore needs only a `config.toml`; the shipped inputs are reachable through `example_input("N1k_quick.inp")` when the package was installed by URL rather than cloned.
+
 ## Status
 
 | Component | Status | Notes |

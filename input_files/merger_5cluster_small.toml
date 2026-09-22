@@ -59,7 +59,7 @@ velocity = [0.02173, -0.006991, 0]
 [merger.output]
 format = "nbody"
 truncate_jacobi = true
-output_dir = "."
+output_dir = ""
 tcrit = 5.0
 dtadj = 0.5
 deltat = 1.0

@@ -39,4 +39,4 @@ velocity = [-0.023, 0.03986, 0]    # inward
 [merger.output]
 format = "nbody"
 truncate_jacobi = true
-output_dir = "."
+output_dir = ""

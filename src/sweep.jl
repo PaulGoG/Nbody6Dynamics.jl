@@ -239,8 +239,8 @@ function _set_nested!(d::AbstractDict, path::AbstractString, value)
 end
 
 """Pipeline-config overrides of a sweep point: no install phase, absolute
-backend path, the point directory as run root, the derived merger TOML,
-and the sweep's thread count."""
+backend and input paths, the point directory as run root, the derived
+merger TOML, and the sweep's thread count."""
 function _sweep_pipeline_overrides!(
     c::AbstractDict,
     cfg::SweepConfig,
@@ -256,6 +256,10 @@ function _sweep_pipeline_overrides!(
     sim = get!(c, "simulation", Dict{String,Any}())
     sim["run_test"] = true
     sim["runs_dir"] = abspath(point_dir)
+    # The point's config lives in its own directory: paths the base config
+    # states relative to its location are made absolute here.
+    haskey(sim, "input_file") &&
+        (sim["input_file"] = _resolve_path(pipeline_dir, sim["input_file"]))
     sim["omp_threads"] = cfg.omp_threads
     sim["monitor"] = false
     pp = get!(c, "postprocess", Dict{String,Any}())

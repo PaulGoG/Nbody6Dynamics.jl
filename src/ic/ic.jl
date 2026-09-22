@@ -31,7 +31,10 @@ One-call entry point for multi-cluster merger IC generation.
 3. Writes `dat.10` + `merger.inp` + `merger_summary.txt`
 4. Generates diagnostic plots (projections, velocity field, IMF, density)
 
-Returns a [`MergerICResult`](@ref) for programmatic inspection.
+The output directory is `output_dir` when given, else the TOML's
+`[merger.output] output_dir` (resolved against the TOML's own directory when
+relative), else a fresh `runs/merger_<timestamp>/` under the working
+directory. Returns a [`MergerICResult`](@ref) for programmatic inspection.
 
 # Example
 ```julia
@@ -56,14 +59,14 @@ function run_merger_pipeline(
 
     # Resolve output directory
     out = if !isempty(output_dir)
-        output_dir
-    elseif cfg.output.output_dir != "."
-        cfg.output.output_dir
+        String(output_dir)
+    elseif !isempty(cfg.output.output_dir)
+        _resolve_path(dirname(abspath(config_path)), cfg.output.output_dir)
     else
-        # Auto-generate a unique run directory under the project's runs/.
+        # Auto-generate a unique run directory under the working directory.
         # The suffix RNG is cosmetic (directory uniqueness), so the global
         # RNG is fine here; the physics RNG is resolved in generate_merger_ic.
-        joinpath(_PROJECT_ROOT, "runs", generate_run_id("merger"))
+        joinpath(pwd(), "runs", generate_run_id("merger"))
     end
 
     @info "Output directory: $out"

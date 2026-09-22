@@ -14,7 +14,7 @@ install_dir = "backend/Nbody6PPGPU-beijing"
 
 [simulation]
 run_test = true
-input_file = "../../input_files/N1k_quick.inp"
+input_file = "$(example_input("N1k_quick.inp"))"
 runs_dir = "runs"
 omp_threads = 8
 run_id_prefix = "sw"

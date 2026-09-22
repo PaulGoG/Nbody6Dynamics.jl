@@ -29,7 +29,7 @@ eccentricity = 0.6
 [merger.output]
 format = "nbody"
 truncate_jacobi = true
-output_dir = "."
+output_dir = ""
 tcrit = 5.0                      # end time [NB]
 dtadj = 0.5                      # ADJUST diagnostic interval [NB]
 deltat = 1.0                     # snapshot interval [NB]

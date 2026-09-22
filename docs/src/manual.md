@@ -35,6 +35,8 @@ cfg = load_config("config.toml")
 results = run_pipeline(cfg)
 ```
 
+The directory of that file is the project directory: every relative path in the configuration (`install.install_dir`, `simulation.input_file`, `simulation.runs_dir`, `postprocess.data_dir`, `merger.config_file`) resolves against it, and the engine tree and the run directories are created there. `load_config` records it as `cfg.config_dir`, which is the default `base_dir` of every entry point; a configuration built in memory takes the working directory. Nothing is ever written under the package's own tree, so an installation by URL (`Pkg.add(url = ...)`) and a checkout behave alike; the inputs the package ships are reachable either way through `example_input("N1k_quick.inp")`.
+
 ---
 
 ## 2. Prerequisites
@@ -71,7 +73,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `enabled`     | Bool   | `true`  | Enable the install/build phase |
 | `source_url`  | String | `"https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"` | Git repository to clone |
 | `ref`         | String | `"618d7a4"` | Commit, tag, or branch checked out after cloning (the default is the validated upstream v2026.07 commit); `""` keeps the default branch. An existing source directory is left as is |
-| `install_dir` | String | `"backend/Nbody6PPGPU-beijing"` | Source directory, relative to the package root; must be nonempty |
+| `install_dir` | String | `"backend/Nbody6PPGPU-beijing"` | Source directory, relative to the project directory (the configuration file's directory); must be nonempty |
 | `reinstall`   | Bool   | `false` | Delete and re-clone if `true` |
 | `clean_build` | Bool   | `true`  | Run `make clean` before building |
 
@@ -93,8 +95,8 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | Key             | Type   | Default | Description |
 |-----------------|--------|---------|-------------|
 | `run_test`      | Bool   | `true`  | Run the simulation phase |
-| `input_file`    | String | `"examples/input_files/N10k_noDat10.inp"` | Path to the `.inp` input file; must be nonempty |
-| `runs_dir`      | String | `"runs"` | Base directory for run output; must be nonempty |
+| `input_file`    | String | `"examples/input_files/N10k_noDat10.inp"` | Path to the `.inp` input file, relative to the project directory (the shipped `config.toml` points at `input_files/N25k_production.inp`); must be nonempty |
+| `runs_dir`      | String | `"runs"` | Base directory for run output, relative to the project directory; must be nonempty |
 | `binary_name`   | String | `"nbody6++"` | Expected binary name |
 | `mpi_ranks`     | Int    | `1`     | Number of MPI ranks; must be ≥ 1, and > 1 requires `build.enable_mpi = true` |
 | `omp_threads`   | Int    | `0`     | OpenMP threads for the backend, exported as `OMP_NUM_THREADS`; must be ≥ 0. `0` leaves the OpenMP runtime default: an inherited `OMP_NUM_THREADS`, else every logical CPU. Oversubscription (`omp_threads × mpi_ranks` above the host's logical CPUs) warns at launch |
@@ -169,7 +171,7 @@ Presentation knobs collected in the `PlotStyle` struct (`cfg.visualization.style
 | Key           | Type   | Default | Description |
 |---------------|--------|---------|-------------|
 | `enabled`     | Bool   | `false` | Generate merger ICs before the simulation phase |
-| `config_file` | String | `""`    | Path to the merger cluster TOML (e.g. `"input_files/merger_demo_small.toml"`); relative paths resolve against the package root; must be nonempty when `enabled = true` |
+| `config_file` | String | `""`    | Path to the merger cluster TOML (e.g. `"input_files/merger_demo_small.toml"`); relative paths resolve against the project directory; must be nonempty when `enabled = true` |
 
 The merger TOML schema itself (clusters, profiles, IMFs, orbit, output, seed) is documented in [Input File Reference](@ref) and [Multi-Cluster Merger Simulations](@ref).
 
@@ -321,7 +323,7 @@ Each run gets a unique ID `{prefix}_YYYYMMDD_HHMMSS_{4hex}` (e.g. `run_20260325_
 
 ```
 runs/run_20260325_143022_a1f3/
-├── config.toml          # frozen snapshot of the configuration used
+├── config.toml          # frozen snapshot of the configuration used, with its paths made absolute
 ├── RUN_INFO.toml        # run summary: identity/timing/thread layout, commits, hardware fingerprint, telemetry summary, file inventory, pipeline completion
 ├── telemetry.csv        # hardware telemetry time series (when telemetry_interval > 0)
 ├── nbody6dynamics.log   # teed pipeline log
@@ -338,7 +340,7 @@ runs/run_20260325_143022_a1f3/
 └── plots/               # post-processing plots & GIF animations
 ```
 
-Merger runs additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, and `merger_ic.toml` in `output/`.
+Merger runs additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, and `merger_ic.toml` in `output/`, and `remnant_diagnostics.csv` next to `stellar_census.csv` in the run directory; both data products are written by the pipeline itself, with or without a figure backend.
 
 ### Launch script
 

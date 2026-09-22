@@ -132,13 +132,15 @@ function Nbody6Dynamics.generate_plots(
                         )
                         @info "Plotting velocity dispersion profiles (final snapshot)..."
                         plot_velocity_dispersion(snaps[end], ranges, vis)
-                        @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
-                        diag = remnant_diagnostics(snaps, ranges)
-                        write_remnant_diagnostics(
-                            joinpath(dirname(abspath(sim_dir)), "remnant_diagnostics.csv"),
-                            diag,
-                        )
-                        remnant_figures(diag, vis)
+                        # Computed by `postprocess` for pipeline runs (and written
+                        # there as remnant_diagnostics.csv); derived here only for
+                        # results that did not pass through it.
+                        diag = get(results, :remnant, nothing)
+                        if diag === nothing
+                            @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
+                            diag = remnant_diagnostics(snaps, ranges)
+                        end
+                        remnant_figures(diag::RemnantDiagnostics, vis)
                     end
                 end
             end

@@ -3,17 +3,17 @@
 # =============================================================================
 
 """
-    setup_nbody6(cfg::Nbody6Config; base_dir = _PROJECT_ROOT)
+    setup_nbody6(cfg::Nbody6Config; base_dir = cfg.config_dir)
 
 Orchestrate the full install pipeline:
   clone → configure → HDF5 patch → CUDA setup → build.
 
 All paths are resolved relative to `base_dir` (defaults to the package root).
 """
-function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = _PROJECT_ROOT)
+function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = cfg.config_dir)
     install = cfg.install
     build = cfg.build
-    src_dir = joinpath(base_dir, install.install_dir)
+    src_dir = _resolve_path(base_dir, install.install_dir)
 
     # ------------------------------------------------------------------
     # 1. Dependency check
@@ -159,7 +159,7 @@ fields (`clockRate`, `computeMode`) that CUDA 13.0 removed, so it no longer
 compiles with a CUDA 13 toolkit; this directory precedes it in the `nvcc`
 include path.
 """
-const _CUDA_HELPER_DIR = joinpath(_PROJECT_ROOT, "deps", "cuda")
+const _CUDA_HELPER_DIR = joinpath(_PACKAGE_ROOT, "deps", "cuda")
 
 """
     _cuflags_with_arch(makefile, archs, nvcc_flags = String[];

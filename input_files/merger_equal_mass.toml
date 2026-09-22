@@ -29,4 +29,4 @@ eccentricity = 0.7               # 0 ≤ e < 1
 [merger.output]
 format = "nbody"                 # N-body units (KZ(22)=2)
 truncate_jacobi = true           # Truncate at mutual Jacobi radius
-output_dir = "."
+output_dir = ""

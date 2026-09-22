@@ -5,6 +5,29 @@ pre-1.0 minor versions may break APIs (private project, no-compat policy).
 
 ## [Unreleased]
 
+### Changed (breaking)
+- The project directory, not the package tree, receives the engine and the
+  runs. `load_config` records the directory of the file it read as
+  `cfg.config_dir`; every relative path of the configuration
+  (`install.install_dir`, `simulation.input_file`, `simulation.runs_dir`,
+  `postprocess.data_dir`, `merger.config_file`) resolves against it, and it is
+  the default `base_dir` of `setup_nbody6`, `run_simulation`, `postprocess`
+  and `run_pipeline`. `simulation.input_file` used to resolve against the
+  engine tree, which is why the shipped configurations said
+  `"../../input_files/…"`; they now say `"input_files/…"` (root
+  `config.toml`) or `"../N1k_quick.inp"` (the pipeline TOMLs under
+  `input_files/`). The frozen `config.toml` of a run carries absolute paths,
+  so `restart_simulation` needs no `base_dir`. `run_merger_pipeline` writes
+  to the TOML's `output_dir` (relative to the TOML) or, when that is empty —
+  the new default, in place of `"."` — to `runs/merger_<timestamp>/` under
+  the working directory. `run_gpu_validation` defaults to the working
+  directory. `example_input(name)` returns the path of a shipped input file
+  for installations without a checkout.
+- Remnant diagnostics are a data product of `postprocess` (`:remnant`), and
+  `run_pipeline` writes `remnant_diagnostics.csv` next to
+  `stellar_census.csv`; the figure layer no longer writes it, so a headless
+  host gets it too.
+
 ### Added
 - Stellar classes and a class census. `STELLAR_CLASSES` groups the SSE/BSE
   types as the engine does for its per-type Lagrangian radii;

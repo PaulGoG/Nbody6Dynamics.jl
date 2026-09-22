@@ -343,7 +343,7 @@ end
     end
 
     # This repository is a git checkout, so the commit wins.
-    stamp = Nbody6Dynamics._source_stamp(Nbody6Dynamics._PROJECT_ROOT)
+    stamp = Nbody6Dynamics._source_stamp(Nbody6Dynamics._PACKAGE_ROOT)
     @test stamp == "unknown" || !occursin("+nogit", stamp)
 end
 

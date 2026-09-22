@@ -1,6 +1,6 @@
 # Input File Reference
 
-The project's input files live in `input_files/` at the package root. Two kinds exist:
+The input files ship under `input_files/` in the package tree (`example_input(name)` returns the path of one). Two kinds exist:
 
 - **`.inp`** — Fortran NAMELIST input files for single-cluster Nbody6++ runs (used via `simulation.input_file`)
 - **`.toml`** — merger IC configurations for the Julia IC generator (used via `merger.config_file` or `run_merger_pipeline`)
@@ -97,7 +97,7 @@ In `"explicit"` mode this section is ignored (a warning is emitted if present).
 |---|---|---|---|
 | `format` | String | `"nbody"` | `dat.10` in N-body units, `KZ(22)=2` (only supported value) |
 | `truncate_jacobi` | Bool | `true` | Truncate each cluster at its nearest-neighbour Jacobi radius before combining |
-| `output_dir` | String | `"."` | Output directory (overridden by the pipeline, which writes into `runs/merger_.../output/`) |
+| `output_dir` | String | `""` | Output directory; a relative path resolves against the TOML's own directory. Empty leaves the choice to the caller: `run_merger_pipeline` creates `runs/merger_<timestamp>/` under the working directory, and the main pipeline always writes into `runs/merger_.../output/` |
 | `tcrit` | Float | `100.0` | Simulation end time (NB units for `"nbody"`) |
 | `dtadj` | Float | `1.0` | ADJUST diagnostic interval |
 | `deltat` | Float | `1.0` | Snapshot (conf.3) interval |

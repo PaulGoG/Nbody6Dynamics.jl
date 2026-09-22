@@ -215,3 +215,89 @@ format = "pdf"
 end
 
 # =====================================================================
+
+# =====================================================================
+@testset "Project directory and path resolution" begin
+    proj = mktempdir()
+    cfg_path = joinpath(proj, "config.toml")
+    write(
+        cfg_path,
+        """
+[install]
+enabled = false
+install_dir = "engine/tree"
+
+[simulation]
+run_test = false
+input_file = "inputs/case.inp"
+runs_dir = "results"
+
+[postprocess]
+data_dir = "external/output"
+
+[merger]
+enabled = false
+config_file = "merger.toml"
+""",
+    )
+    cfg = load_config(cfg_path)
+    # The directory of the file is the resolution base and the default base_dir.
+    @test cfg.config_dir == proj
+    # A configuration built in memory takes the working directory.
+    @test Nbody6Config(
+        InstallConfig(),
+        BuildConfig(),
+        SimulationConfig(),
+        PostprocessConfig(),
+        VisualizationConfig(),
+        MergerPipelineConfig(),
+    ).config_dir == pwd()
+    # config_dir is not a configuration key: it survives save/load through the path only.
+    frozen = joinpath(proj, "sub", "frozen.toml")
+    mkpath(dirname(frozen))
+    save_config(cfg, frozen)
+    @test !haskey(Nbody6Dynamics.TOML.parsefile(frozen), "config_dir")
+    @test load_config(frozen).config_dir == dirname(frozen)
+
+    # One resolution base for every relative path; absolute paths are honoured.
+    @test Nbody6Dynamics._resolve_path(proj, "a/b") == joinpath(proj, "a", "b")
+    @test Nbody6Dynamics._resolve_path(proj, "/abs/c") == "/abs/c"
+    @test Nbody6Dynamics._resolve_path(proj, "") == ""
+    @test Nbody6Dynamics._resolve_path(joinpath(proj, "x"), "../y") == joinpath(proj, "y")
+    abs_cfg = Nbody6Dynamics._with_absolute_paths(cfg, proj)
+    @test abs_cfg.install.install_dir == joinpath(proj, "engine", "tree")
+    @test abs_cfg.simulation.input_file == joinpath(proj, "inputs", "case.inp")
+    @test abs_cfg.simulation.runs_dir == joinpath(proj, "results")
+    @test abs_cfg.postprocess.data_dir == joinpath(proj, "external", "output")
+    @test abs_cfg.merger.config_file == joinpath(proj, "merger.toml")
+    @test abs_cfg.config_dir == proj
+    @test abs_cfg.build == cfg.build && abs_cfg.visualization.style == cfg.visualization.style
+    # An already absolute form is a fixed point.
+    again = Nbody6Dynamics._with_absolute_paths(abs_cfg, "/elsewhere")
+    @test again.install.install_dir == abs_cfg.install.install_dir
+    # An empty data_dir stays empty (it means "no external directory").
+    @test Nbody6Dynamics._with_absolute_paths(load_config(frozen), proj).postprocess.data_dir ==
+          joinpath(proj, "external", "output")
+    plain = joinpath(proj, "plain.toml")
+    write(plain, "[postprocess]\ndata_dir = \"\"\n")
+    @test Nbody6Dynamics._with_absolute_paths(load_config(plain), proj).postprocess.data_dir == ""
+
+    # The latest-run lookup and the input file follow base_dir, not the package tree.
+    mkpath(joinpath(proj, "results", "run_20260101_000000_abcd"))
+    @test Nbody6Dynamics._find_latest_run(cfg, proj) ==
+          joinpath(proj, "results", "run_20260101_000000_abcd")
+    @test isempty(Nbody6Dynamics._find_latest_run(cfg, mktempdir()))
+    err = try
+        run_simulation(cfg)
+    catch e
+        e
+    end
+    @test err isa ErrorException && occursin(joinpath(proj, "inputs", "case.inp"), err.msg)
+
+    # Shipped inputs are reachable without a checkout.
+    @test isfile(example_input("N1k_quick.inp"))
+    @test example_input("showcase/equal_pipeline.toml") == normpath(
+        joinpath(Nbody6Dynamics._PACKAGE_ROOT, "input_files", "showcase", "equal_pipeline.toml"),
+    )
+    @test_throws ArgumentError example_input("does_not_ship.inp")
+end

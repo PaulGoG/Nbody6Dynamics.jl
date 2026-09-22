@@ -17,7 +17,29 @@ using PrecompileTools: @setup_workload, @compile_workload
 
 # Package root directory — all relative config paths resolve against this.
 # Computed at precompile time: @__DIR__ = src/, dirname = Nbody6Dynamics/.
-const _PROJECT_ROOT = dirname(@__DIR__)
+"""
+Root of the package source tree. Used for read-only purposes only — the
+shipped `input_files/`, the CUDA helper headers under `deps/cuda/` and the
+package's own provenance stamp. Nothing is ever written under it: run and
+build directories resolve against the configuration's `config_dir` or an
+explicit `base_dir`, so an installation in a read-only depot works as a
+checkout does.
+"""
+const _PACKAGE_ROOT = dirname(@__DIR__)
+
+"""
+    example_input(name) -> String
+
+Absolute path of a file shipped under the package's `input_files/` directory
+(`example_input("N1k_quick.inp")`, `example_input("showcase/equal_pipeline.toml")`),
+for a user who installed the package by URL and has no checkout to point a
+configuration at. Raises an `ArgumentError` when no such file ships.
+"""
+function example_input(name::AbstractString)::String
+    path = normpath(joinpath(_PACKAGE_ROOT, "input_files", name))
+    isfile(path) || throw(ArgumentError("no shipped input file named \"$name\" under input_files/"))
+    return path
+end
 
 # ---------------------------------------------------------------------------
 # Core types (must come first)
@@ -98,22 +120,29 @@ include("ic/ic.jl")
 # ---------------------------------------------------------------------------
 
 """
-    postprocess(cfg::Nbody6Config; run_dir = "", base_dir = _PROJECT_ROOT) -> Dict{Symbol,Any}
+    postprocess(cfg::Nbody6Config; run_dir = "", base_dir = cfg.config_dir) -> Dict{Symbol,Any}
 
 Run all enabled post-processing steps and return collected results.
 
 Data directory resolution (in priority order):
 1. `run_dir` keyword — `run_dir/output/` (from a simulation run)
-2. `cfg.postprocess.data_dir` — explicit external directory from config.toml
-3. Falls back to the most recent run under `base_dir/runs/`
+2. `cfg.postprocess.data_dir` — explicit external directory from config.toml,
+   resolved against `base_dir` when relative
+3. Falls back to the most recent run under `base_dir/<runs_dir>/`
    (via `_find_latest_run`); errors if none exists.
 
-`base_dir` defaults to the package root directory, making the pipeline path-agnostic.
+`base_dir` defaults to the configuration's `config_dir` (the directory of the
+file it was loaded from).
+
+Besides the readers, the derived data products are computed here: the class
+census (`:stellar_census`) and, for a merger run — one whose output holds a
+`merger_summary.txt` and at least two snapshots — the remnant diagnostics
+(`:remnant`, a [`RemnantDiagnostics`](@ref)).
 """
 function postprocess(
     cfg::Nbody6Config;
     run_dir::AbstractString = "",
-    base_dir::AbstractString = _PROJECT_ROOT,
+    base_dir::AbstractString = cfg.config_dir,
 )::Dict{Symbol,Any}
     pp = cfg.postprocess
 
@@ -124,7 +153,7 @@ function postprocess(
         joinpath(run_dir, "output")
     elseif !isempty(pp.data_dir)
         # Explicit external directory from config
-        abspath(pp.data_dir)
+        _resolve_path(base_dir, pp.data_dir)
     else
         latest = _find_latest_run(cfg, base_dir)
         isempty(latest) && error(
@@ -195,11 +224,22 @@ function postprocess(
         )
     end
 
+    # Remnant diagnostics of a merger run: a data product, so it is computed
+    # here and not in the figure layer, and a headless host gets it too.
+    summary_path = joinpath(sim_dir, "merger_summary.txt")
+    if haskey(results, :snapshots) && length(results[:snapshots]) ≥ 2 && isfile(summary_path)
+        ranges = parse_merger_summary(summary_path)
+        if !isempty(ranges)
+            @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
+            results[:remnant] = remnant_diagnostics(results[:snapshots], ranges)
+        end
+    end
+
     return results
 end
 
 """
-    run_pipeline(cfg::Nbody6Config; base_dir = _PROJECT_ROOT, run_id = "") -> Dict{Symbol,Any}
+    run_pipeline(cfg::Nbody6Config; base_dir = cfg.config_dir, run_id = "") -> Dict{Symbol,Any}
 
 Top-level orchestrator that runs the full pipeline (or any subset) based on
 the config flags.  This is the **single entry point** for config-driven workflows.
@@ -239,14 +279,22 @@ If `data_dir` is empty but `run_test = false`, the most recent run in
 `run_id` fixes the run directory name (`<runs_dir>/<run_id>`); when empty,
 `generate_run_id` derives it from `simulation.run_id_prefix` and the time.
 
+`base_dir` is the project directory: every relative path of the configuration
+(`install.install_dir`, `simulation.input_file`, `simulation.runs_dir`,
+`postprocess.data_dir`, `merger.config_file`) resolves against it. It defaults
+to `cfg.config_dir`, the directory of the file `load_config` read, so
+`julia scripts/run_setup.jl path/to/config.toml` keeps its engine and its
+runs next to that file, never inside the package.
+
 # Returns
 A `Dict{Symbol,Any}` with keys `:snapshots`, `:diagnostics`, `:lagr`,
-`:escapers`, `:stellar_evo`, `:binary_evo` (present only when corresponding data exists).
+`:escapers`, `:stellar_evo`, `:binary_evo`, `:stellar_census`, `:remnant`
+(present only when corresponding data exists).
 Returns an empty dict if post-processing is disabled.
 """
 function run_pipeline(
     cfg::Nbody6Config;
-    base_dir::AbstractString = _PROJECT_ROOT,
+    base_dir::AbstractString = cfg.config_dir,
     run_id::AbstractString = "",
 )::Dict{Symbol,Any}
     # A run that must end in figures is refused before the build and the
@@ -274,12 +322,8 @@ function run_pipeline(
     run_dir = ""
     if cfg.merger.enabled
         @info "Phase 1.5: Generating merger initial conditions..."
-        merger_cfg_path = cfg.merger.config_file
+        merger_cfg_path = _resolve_path(base_dir, cfg.merger.config_file)
         isempty(merger_cfg_path) && error("merger.enabled=true but merger.config_file is empty")
-        # Resolve relative paths against project root
-        if !isabspath(merger_cfg_path)
-            merger_cfg_path = joinpath(base_dir, merger_cfg_path)
-        end
         isfile(merger_cfg_path) || error("Merger config not found: $merger_cfg_path")
 
         merger_cfg = load_merger_config(merger_cfg_path)
@@ -322,11 +366,11 @@ function run_pipeline(
     if cfg.postprocess.enabled
         if !isempty(cfg.postprocess.data_dir)
             @info "Phase 3: Post-processing external data: $(cfg.postprocess.data_dir)"
-            results = postprocess(cfg)
+            results = postprocess(cfg; base_dir = base_dir)
             push!(phases, "postprocess")
         elseif !isempty(run_dir)
             @info "Phase 3: Post-processing run: $(basename(run_dir))"
-            results = postprocess(cfg; run_dir = run_dir)
+            results = postprocess(cfg; run_dir = run_dir, base_dir = base_dir)
             push!(phases, "postprocess")
         else
             @warn "Phase 3: No data to post-process (no run_dir and no data_dir)"
@@ -341,7 +385,7 @@ function run_pipeline(
     # Directory that receives the derived products of this data set
     products_dir = if !isempty(cfg.postprocess.data_dir)
         # normpath strips any trailing slash so dirname yields the parent
-        dirname(abspath(normpath(cfg.postprocess.data_dir)))
+        dirname(_resolve_path(base_dir, cfg.postprocess.data_dir))
     else
         run_dir
     end
@@ -350,6 +394,12 @@ function run_pipeline(
     # without a plotting backend must get them too.
     if haskey(results, :stellar_census) && !isempty(products_dir)
         write_stellar_census(joinpath(products_dir, "stellar_census.csv"), results[:stellar_census])
+    end
+    if haskey(results, :remnant) && !isempty(products_dir)
+        write_remnant_diagnostics(
+            joinpath(products_dir, "remnant_diagnostics.csv"),
+            results[:remnant],
+        )
     end
 
     # ── Phase 4: Plots ──
@@ -371,7 +421,7 @@ pointing at `merger.inp` instead of the config's input file.
 function _run_merger_simulation(
     cfg::Nbody6Config,
     merger_result::MergerICResult;
-    base_dir::AbstractString = _PROJECT_ROOT,
+    base_dir::AbstractString = cfg.config_dir,
 )::String
     # The run directory is the merger's parent (merger writes to run_dir/output/).
     # Absolute paths required — the launch script runs from out_dir via cd().
@@ -392,7 +442,7 @@ function _run_merger_simulation(
     )
 end
 
-"""Find the most recent run directory under `base_dir/runs_dir/`.
+"""Find the most recent run directory under `base_dir/runs_dir/` (`runs_dir` resolved against `base_dir`).
 
 Matches both plain runs (`<prefix>_*`) and merger runs
 (`merger_<prefix>_*`), which share the timestamp-based naming from
@@ -400,7 +450,7 @@ Matches both plain runs (`<prefix>_*`) and merger runs
 the most recent run.
 """
 function _find_latest_run(cfg::Nbody6Config, base_dir::AbstractString)::String
-    runs_base = joinpath(base_dir, cfg.simulation.runs_dir)
+    runs_base = _resolve_path(base_dir, cfg.simulation.runs_dir)
     isdir(runs_base) || return ""
     prefix = cfg.simulation.run_id_prefix * "_"
     merger_prefix = "merger_" * prefix
@@ -465,7 +515,7 @@ export RadialProfile, radial_profile, cluster_profiles, system_profile, model_de
 export plot_density_profiles, plot_velocity_dispersion
 export animate_cluster, animate_hr, animate_lagrangian
 export set_publication_theme!, publication_theme, plotting_available
-export generate_run_id, restart_simulation, export_for_paper
+export generate_run_id, restart_simulation, export_for_paper, example_input
 export nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 export detect_platform, check_dependencies, detect_cuda_path
 export engine_interval

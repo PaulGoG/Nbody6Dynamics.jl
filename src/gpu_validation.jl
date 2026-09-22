@@ -6,7 +6,7 @@
 const _VALIDATION_STAGES = (:suite, :gpu, :cpu, :bench)
 
 """
-    run_gpu_validation(; base_dir = _PROJECT_ROOT, stages = [:suite, :gpu, :cpu, :bench],
+    run_gpu_validation(; base_dir = pwd(), stages = [:suite, :gpu, :cpu, :bench],
                        bench_n = [20000, 50000, 100000], bench_threads = [4, 8],
                        bench_gpu_lists = nothing, bench_tcrit = 0.25,
                        dry_run = false) -> String
@@ -64,7 +64,7 @@ TOML.parsefile(joinpath(dir, "VALIDATION.toml"))["results"]["suite"]["status"]
 ```
 """
 function run_gpu_validation(;
-    base_dir::AbstractString = _PROJECT_ROOT,
+    base_dir::AbstractString = pwd(),
     stages::AbstractVector{Symbol} = collect(_VALIDATION_STAGES),
     bench_n::AbstractVector{<:Integer} = [20000, 50000, 100000],
     bench_threads::AbstractVector{<:Integer} = [4, 8],

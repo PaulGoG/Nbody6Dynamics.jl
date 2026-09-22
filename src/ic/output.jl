@@ -571,6 +571,7 @@ function generate_merger_ic(
     output_dir::AbstractString = "",
 )
     out_dir = isempty(output_dir) ? cfg.output.output_dir : output_dir
+    isempty(out_dir) && (out_dir = pwd())
     mkpath(out_dir)
 
     n_clusters = length(cfg.clusters)
@@ -852,7 +853,7 @@ function _write_merger_ic_metadata(
         "meta" => Dict{String,Any}(
             "generated_at" => Dates.format(now(), "yyyy-mm-dd HH:MM:SS"),
             "schema_version" => 3,   # 3: explicit-orbit velocities in km s⁻¹
-            "commit" => _source_stamp(_PROJECT_ROOT),
+            "commit" => _source_stamp(_PACKAGE_ROOT),
             "seed" => seed,
             "external_rng" => external_rng,
             "N_total" => N_total,
