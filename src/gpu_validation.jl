@@ -3,13 +3,24 @@
 # scaling benchmark, every stage logged into one directory under runs/
 # =============================================================================
 
-const _VALIDATION_STAGES = (:suite, :gpu, :cpu, :bench)
+"""
+The 6×10⁵-body probe pipelines of `input_files/gpu/<stage>.toml`, one stage
+each; not in the default stage list.
+"""
+const _PROBE_STAGES = (:gpu_merger_600k, :gpu_single_600k, :cpu_merger_600k, :cpu_single_600k)
+const _VALIDATION_STAGES = (:suite, :gpu, :cpu, :bench, _PROBE_STAGES...)
+
+"""
+Stages that cannot run without a working `nvcc`: the GPU-gated suite, the
+CUDA build and the CUDA probes.
+"""
+_needs_nvcc(stage::Symbol) = stage in (:suite, :gpu, :gpu_merger_600k, :gpu_single_600k)
 
 """
     run_gpu_validation(; base_dir = pwd(), stages = [:suite, :gpu, :cpu, :bench],
                        bench_n = [20000, 50000, 100000], bench_threads = [4, 8],
                        bench_gpu_lists = nothing, bench_tcrit = 0.25,
-                       dry_run = false) -> String
+                       dry_run = false, stop_on_failure = false) -> String
 
 Run the acceptance sequence of a CUDA host and collect everything under
 `<base_dir>/runs/gpu_validation_<machine>_<timestamp>/`, `<machine>` being
@@ -32,19 +43,28 @@ created). Stages, in order:
   the same merger;
 - `:bench` — `bench/gpu_scaling.jl` over `bench_n` × `bench_threads` ×
   `bench_gpu_lists` (default `[[0]]`, plus `[0, 1]` when two devices are
-  visible) for `bench_tcrit` N-body time units; needs both binaries.
+  visible) for `bench_tcrit` N-body time units; needs both binaries;
+- `:gpu_merger_600k`, `:gpu_single_600k`, `:cpu_merger_600k`,
+  `:cpu_single_600k` — the probes above 5×10⁵ bodies,
+  `input_files/gpu/<stage>.toml`, each on the tree its binary needs; not in
+  the default list.
+
+The probe stages and the benchmark are launched with `JULIA_NUM_THREADS`
+set to `auto` unless the environment sets it, because their
+initial-condition generation is a threaded pair sum.
 
 Each stage is a separate Julia process whose output is echoed and written
 to its log with terminal escape sequences removed; a failing stage is
-recorded and the later stages still run. `VALIDATION.toml` is rewritten
-after every stage, so an interrupted sequence leaves a readable record.
+recorded and the later stages still run unless `stop_on_failure` is set.
+`VALIDATION.toml` is rewritten after every stage, so an interrupted
+sequence leaves a readable record.
 
-A stage's verdict rests on its artefacts as well as its exit code: a `:gpu`
-or `:cpu` stage that exits zero without leaving a run directory marked
+A stage's verdict rests on its artefacts as well as its exit code: a `:gpu`,
+`:cpu` or probe stage that exits zero without leaving a run directory marked
 `[pipeline] completed` is recorded `incomplete` with the reason,
 because the run summary is written when the
 engine exits and a process killed during post-processing or plotting would
-otherwise pass. Both pipeline stages are launched with a run ID the driver
+otherwise pass. Every pipeline stage is launched with a run ID the driver
 assigns (`--run-id`, recorded as `run_ids` in `VALIDATION.toml`), so the
 directory that carries the verdict is identified by name and a concurrent
 run elsewhere under `runs/` cannot be mistaken for it.
@@ -57,6 +77,14 @@ repeated unasked, and SIGKILL or SIGTERM come from an operator, the
 out-of-memory killer or a session teardown, which a rerun would only meet
 again. Every retried signal is recorded with the stage.
 
+With `stop_on_failure = true` the run is a gated chain: once a stage ends
+`failed` or `incomplete`, every later stage is recorded `skipped` with the
+reason `after failed stage :<stage>` and not run; and when the stage list
+holds a stage that needs `nvcc` (the suite, the CUDA build, the CUDA probes)
+while the host-compiler probe did not pass, every stage is skipped before
+anything runs, with the probe's verdict as the reason. A dry run plans the
+commands regardless.
+
 With `dry_run = true` the host record and the planned commands are written
 and nothing is executed. Returns the validation directory.
 
@@ -68,7 +96,7 @@ TOML.parsefile(joinpath(dir, "VALIDATION.toml"))["results"]["suite"]["status"]
 """
 function run_gpu_validation(;
     base_dir::AbstractString = pwd(),
-    stages::AbstractVector{Symbol} = collect(_VALIDATION_STAGES),
+    stages::AbstractVector{Symbol} = [:suite, :gpu, :cpu, :bench],
     bench_n::AbstractVector{<:Integer} = [20000, 50000, 100000],
     bench_threads::AbstractVector{<:Integer} = [4, 8],
     bench_gpu_lists::Union{Nothing,AbstractVector{<:AbstractVector{<:Integer}}} = nothing,
@@ -77,6 +105,7 @@ function run_gpu_validation(;
     retry_signals::AbstractVector{<:Integer} = collect(_CRASH_SIGNALS),
     retry_stages::AbstractVector{Symbol} = [:suite],
     dry_run::Bool = false,
+    stop_on_failure::Bool = false,
 )::String
     base_dir = abspath(base_dir)
     for s in stages
@@ -102,7 +131,11 @@ function run_gpu_validation(;
     stamp = Dates.format(Dates.now(), "yyyymmdd_HHMMSS")
     # The pipeline stages are told which run ID to use, so their artefacts are
     # matched by name rather than by modification time.
-    run_ids = Dict(:gpu => "gpu_validation_$(stamp)_gpu", :cpu => "gpu_validation_$(stamp)_cpu")
+    run_ids = Dict{Symbol,String}(
+        :gpu => "gpu_validation_$(stamp)_gpu",
+        :cpu => "gpu_validation_$(stamp)_cpu",
+        (s => "gpu_validation_$(stamp)_$(s)" for s in _PROBE_STAGES)...,
+    )
     # The host record is taken first: its machine identity names the directory,
     # because the hostname alone does not distinguish the machines of a fleet.
     host = _validation_host_record(base_dir)
@@ -133,16 +166,29 @@ function run_gpu_validation(;
             "stages" => String.(retry_stages),
         ),
         "dry_run" => dry_run,
+        "stop_on_failure" => stop_on_failure,
         "results" => Dict{String,Any}(),
     )
     _write_validation_summary(out_dir, summary)
 
+    nvcc_gate =
+        stop_on_failure && !dry_run && host["nvcc_probe"] != "passed" && any(_needs_nvcc, stages)
+    failed_stage = nothing
     for s in stages
         cmd = commands[s]
         entry = Dict{String,Any}("command" => _command_string(cmd))
         unmet = _stage_prerequisite(s, base_dir)
         if dry_run
             entry["status"] = "planned"
+        elseif nvcc_gate
+            entry["status"] = "skipped"
+            entry["reason"] =
+                "host-compiler probe did not pass: " * first(eachline(IOBuffer(host["nvcc_probe"])))
+            @warn "Stage :$s skipped: $(entry["reason"])"
+        elseif stop_on_failure && failed_stage !== nothing
+            entry["status"] = "skipped"
+            entry["reason"] = "after failed stage :$failed_stage"
+            @warn "Stage :$s skipped: $(entry["reason"])"
         elseif unmet !== nothing
             entry["status"] = "skipped"
             entry["reason"] = unmet
@@ -184,6 +230,7 @@ function run_gpu_validation(;
             else
                 @info "Stage :$s passed ($(_format_elapsed(time() - t0)))"
             end
+            entry["status"] in ("failed", "incomplete") && (failed_stage = s)
         end
         summary["results"][String(s)] = entry
         _write_validation_summary(out_dir, summary)
@@ -205,9 +252,17 @@ end
 
 `nothing` when `stage` can run, otherwise the reason it cannot: the
 benchmark needs the CPU and the GPU build trees that the `:cpu` and `:gpu`
-stages produce under `base_dir/backend`.
+stages produce under `base_dir/backend`, and each probe stage the tree its
+binary needs, `Nbody6PPGPU-beijing-gpu` for the `gpu_*` probes and
+`Nbody6PPGPU-beijing` for the `cpu_*` ones. The other stages have none.
 """
 function _stage_prerequisite(stage::Symbol, base_dir::AbstractString)::Union{Nothing,String}
+    if stage in _PROBE_STAGES
+        on_gpu = startswith(String(stage), "gpu_")
+        tree = on_gpu ? "Nbody6PPGPU-beijing-gpu" : "Nbody6PPGPU-beijing"
+        isdir(joinpath(base_dir, "backend", tree, "build")) && return nothing
+        return "no build under backend/$tree (the $(on_gpu ? ":gpu" : ":cpu") stage produces it)"
+    end
     stage == :bench || return nothing
     missing_trees = String[]
     for tree in ("Nbody6PPGPU-beijing", "Nbody6PPGPU-beijing-gpu")
@@ -223,8 +278,8 @@ end
     _stage_incomplete(stage, base_dir, run_id) -> Union{Nothing,String}
 
 `nothing` when a stage that exited zero also left the artefacts it is
-supposed to produce, otherwise the reason it did not. The `:gpu` and `:cpu`
-stages each run under the run ID the driver assigned them, so the directory
+supposed to produce, otherwise the reason it did not. The `:gpu`, `:cpu` and
+probe stages each run under the run ID the driver assigned them, so the directory
 to judge is exactly `base_dir/runs/<run_id>`: it must exist, carry the
 `[pipeline] completed` marker and hold an engine segment that reached END
 RUN. `:suite` and `:bench` are judged by their exit code alone, the
@@ -240,7 +295,7 @@ function _stage_incomplete(
     base_dir::AbstractString,
     run_id::AbstractString,
 )::Union{Nothing,String}
-    stage in (:gpu, :cpu) || return nothing
+    stage in (:gpu, :cpu) || stage in _PROBE_STAGES || return nothing
     run_dir = joinpath(base_dir, "runs", run_id)
     isdir(run_dir) || return "the stage left no run directory runs/$run_id"
     _pipeline_completed(run_dir) ||
@@ -322,12 +377,14 @@ end
 """
     _validation_commands(base_dir, bench_n, bench_threads, gpu_lists, tcrit, run_ids) -> Dict{Symbol,Cmd}
 
-The four stage commands, each a Julia child process running in `base_dir`
-with the environment it needs (`NBODY6_GPU_TESTS` for the suite, the CPU
-and GPU backend trees for the benchmark). The `:gpu` and `:cpu` pipelines
-are given the run ID `run_ids[:gpu]` and `run_ids[:cpu]` through
-`--run-id`, so [`_stage_incomplete`](@ref) finds their run directory by
-name instead of guessing it from modification times.
+The stage commands, each a Julia child process running in `base_dir` with
+the environment it needs (`NBODY6_GPU_TESTS` for the suite, the CPU and GPU
+backend trees for the benchmark). The six pipeline stages, `:gpu`, `:cpu`
+and the probes, are given their run ID `run_ids[stage]` through `--run-id`,
+so [`_stage_incomplete`](@ref) finds their run directory by name instead of
+guessing it from modification times. The probes and the benchmark get
+`JULIA_NUM_THREADS`, inherited from the environment or `auto`, because
+their initial-condition generation is a threaded pair sum.
 """
 function _validation_commands(
     base_dir::AbstractString,
@@ -346,6 +403,7 @@ function _validation_commands(
     gpu_tree = joinpath(base_dir, "backend", "Nbody6PPGPU-beijing-gpu")
     gpu_arg = join((join(string.(l), ",") for l in gpu_lists), ";")
     in_base(cmd) = Cmd(cmd; dir = base_dir)
+    threads = get(ENV, "JULIA_NUM_THREADS", "auto")
     return Dict{Symbol,Cmd}(
         :suite => in_base(
             addenv(
@@ -360,8 +418,17 @@ function _validation_commands(
                 `$julia $bench $(join(string.(bench_n), ",")) $(join(string.(bench_threads), ",")) $gpu_arg $(string(tcrit))`,
                 "NBODY6_CPU_BACKEND" => cpu_tree,
                 "NBODY6_GPU_BACKEND" => gpu_tree,
+                "JULIA_NUM_THREADS" => threads,
             ),
         ),
+        (
+            s => in_base(
+                addenv(
+                    `$julia $setup $(joinpath(base_dir, "input_files", "gpu", "$(s).toml")) --run-id=$(run_ids[s])`,
+                    "JULIA_NUM_THREADS" => threads,
+                ),
+            ) for s in _PROBE_STAGES
+        )...,
     )
 end
 

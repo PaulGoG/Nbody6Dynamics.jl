@@ -26,6 +26,13 @@ entries say so.
   configurations that run them on the trees the recipe builds. The
   benchmark case raises its virialisation limit to the engine's `b1m`
   capacity.
+- `run_gpu_validation`: the four probe pipelines as stages
+  (`gpu_merger_600k`, `gpu_single_600k`, `cpu_merger_600k`,
+  `cpu_single_600k`, opt-in) and `stop_on_failure` (`--stop-on-failure`),
+  which skips every stage after a failed one and runs nothing needing `nvcc`
+  when the host-compiler probe did not pass, so a workstation campaign is one
+  gated invocation. The probe and benchmark stages inherit
+  `JULIA_NUM_THREADS` or get `auto`.
 
 ## [0.3.0] — 2026-09-22
 

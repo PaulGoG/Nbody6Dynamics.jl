@@ -319,6 +319,69 @@
     @test occursin("Nbody6PPGPU-beijing-gpu", skipped_summary["results"]["bench"]["reason"])
     @test !isfile(joinpath(skipped, "bench.log")) && haskey(skipped_summary, "finished")
     @test Nbody6Dynamics._stage_prerequisite(:suite, bare) === nothing
+    # The probe stages are opt-in pipelines with their own run IDs
+    probes = run_gpu_validation(;
+        base_dir = vdir,
+        stages = [:gpu_merger_600k, :cpu_single_600k],
+        dry_run = true,
+    )
+    probe_summary = Nbody6Dynamics.TOML.parsefile(joinpath(probes, "VALIDATION.toml"))
+    @test probe_summary["results"]["gpu_merger_600k"]["status"] == "planned"
+    @test probe_summary["results"]["cpu_single_600k"]["status"] == "planned"
+    probe_cmd = probe_summary["results"]["gpu_merger_600k"]["command"]
+    @test occursin("gpu_merger_600k.toml", probe_cmd) &&
+          occursin("--run-id=gpu_validation_", probe_cmd)
+    @test haskey(probe_summary["run_ids"], "gpu_merger_600k") &&
+          haskey(probe_summary["run_ids"], "cpu_single_600k")
+    @test probe_summary["stop_on_failure"] == false
+    # Each probe needs the tree its binary is built in
+    @test occursin(
+        "Nbody6PPGPU-beijing-gpu",
+        Nbody6Dynamics._stage_prerequisite(:gpu_merger_600k, bare),
+    )
+    cpu_unmet = Nbody6Dynamics._stage_prerequisite(:cpu_single_600k, bare)
+    @test occursin("Nbody6PPGPU-beijing", cpu_unmet) && !occursin("-gpu", cpu_unmet)
+    # Gated chain: the :cpu stage fails (no scripts/run_setup.jl under bare),
+    # so the probe after it is skipped for that reason and never spawned
+    chain = run_gpu_validation(;
+        base_dir = bare,
+        stages = [:cpu, :cpu_single_600k],
+        stop_on_failure = true,
+    )
+    chain_summary = Nbody6Dynamics.TOML.parsefile(joinpath(chain, "VALIDATION.toml"))
+    chain_results = chain_summary["results"]
+    @test chain_results["cpu"]["status"] == "failed"
+    @test chain_results["cpu_single_600k"]["status"] == "skipped"
+    @test occursin("after failed stage :cpu", chain_results["cpu_single_600k"]["reason"])
+    @test !isfile(joinpath(chain, "cpu_single_600k.log"))
+    @test chain_summary["stop_on_failure"] == true
+    # Without the gate the probe is judged on its own prerequisite
+    open_chain = run_gpu_validation(; base_dir = bare, stages = [:cpu, :cpu_single_600k])
+    open_results = Nbody6Dynamics.TOML.parsefile(joinpath(open_chain, "VALIDATION.toml"))["results"]
+    @test open_results["cpu"]["status"] == "failed"
+    @test open_results["cpu_single_600k"]["status"] == "skipped"
+    open_reason = open_results["cpu_single_600k"]["reason"]
+    @test occursin("Nbody6PPGPU-beijing", open_reason) &&
+          !occursin("after failed stage", open_reason)
+    mkpath(joinpath(bare, "backend", "Nbody6PPGPU-beijing", "build"))
+    @test Nbody6Dynamics._stage_prerequisite(:cpu_single_600k, bare) === nothing
+    # A host whose compiler probe did not pass runs nothing when a stage needs nvcc
+    if !Nbody6Dynamics.check_command("nvcc")
+        bare2 = mktempdir()
+        gated =
+            run_gpu_validation(; base_dir = bare2, stages = [:gpu, :cpu], stop_on_failure = true)
+        gated_host = Nbody6Dynamics.TOML.parsefile(joinpath(gated, "HOST_INFO.toml"))
+        # A toolkit off PATH may still pass the probe; the gate is then open.
+        if gated_host["nvcc_probe"] != "passed"
+            gated_results =
+                Nbody6Dynamics.TOML.parsefile(joinpath(gated, "VALIDATION.toml"))["results"]
+            for s in ("gpu", "cpu")
+                @test gated_results[s]["status"] == "skipped"
+                @test occursin("host-compiler probe", gated_results[s]["reason"])
+                @test !isfile(joinpath(gated, "$s.log"))
+            end
+        end
+    end
     # Benchmark artefact collection on an empty bench tree is a no-op
     @test Nbody6Dynamics._collect_bench_artefacts(joinpath(vdir, "bench"), out, 0.0) == String[]
 end
@@ -356,6 +419,7 @@ end
 
         # Only the run directory the stage was assigned counts.
         @test Nbody6Dynamics._stage_incomplete(:cpu, base, "absent_id") !== nothing
+        @test Nbody6Dynamics._stage_incomplete(:cpu_single_600k, base, "absent_id") !== nothing
 
         # The pipeline also completes on partial output: an engine that
         # ended without END RUN fails the stage despite the marker.
