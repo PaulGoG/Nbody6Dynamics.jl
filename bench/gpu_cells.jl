@@ -12,7 +12,7 @@
 #
 #   julia bench/gpu_cells.jl [--cells=single,dual] [--n=1000000] [--threads=8]
 #                            [--gpus="0;0,1"] [--tcrit=2.0] [--cpu] [--mpi-ranks=1]
-#                            [--label=<tag>]
+#                            [--startup-timeout=14400] [--label=<tag>]
 #
 # --gpus     ';'-separated GPU_LIST values ("0" = the first device, "0,1" = the
 #            first two); "" runs no device rows.
@@ -20,6 +20,9 @@
 # --mpi-ranks=R > 1 runs the device rows on the MPI+CUDA binary with R ranks,
 #            every rank applying the same GPU list (the engine has no
 #            per-rank device slicing).
+# --startup-timeout=S the engine's start-up watchdog in seconds (default
+#            14400): the time allowed up to the first adjustment beyond t = 0,
+#            which the CPU binary at 10^6 bodies exceeds within an hour.
 # --label    a tag written into the run prefix and the CSV name.
 #
 # Binaries: NBODY6_GPU_BACKEND (default backend/Nbody6PPGPU-beijing-gpu),
@@ -51,6 +54,7 @@ gpu_lists = [[0]]
 tcrit = 2.0
 with_cpu = false
 mpi_ranks = 1
+startup_timeout = 14400.0
 label = ""
 for a in ARGS
     if a == "--cpu"
@@ -67,13 +71,16 @@ for a in ARGS
         global tcrit = parse(Float64, v)
     elseif (v = option(a, "mpi-ranks")) !== nothing
         global mpi_ranks = parse(Int, v)
+    elseif (v = option(a, "startup-timeout")) !== nothing
+        global startup_timeout = parse(Float64, v)
     elseif (v = option(a, "label")) !== nothing
         global label = v
     else
         println(
             stderr,
             "usage: gpu_cells.jl [--cells=single,dual] [--n=N1,N2] [--threads=T1,T2] " *
-            "[--gpus=\"0;0,1\"] [--tcrit=T] [--cpu] [--mpi-ranks=R] [--label=tag]",
+            "[--gpus=\"0;0,1\"] [--tcrit=T] [--cpu] [--mpi-ranks=R] " *
+            "[--startup-timeout=S] [--label=tag]",
         )
         exit(2)
     end
@@ -83,6 +90,7 @@ for c in cells
 end
 mpi_ranks ≥ 1 || error("--mpi-ranks must be ≥ 1")
 tcrit > 0 || error("--tcrit must be > 0")
+startup_timeout > 0 || error("--startup-timeout must be > 0 s")
 isempty(gpu_lists) && !with_cpu && error("nothing to run: no GPU lists and no --cpu")
 
 const BACKEND_CPU =
@@ -136,7 +144,7 @@ function pipeline_toml(merger_path, nthreads, prefix; gpu::Bool, gpu_list::Vecto
     run_id_prefix = "$prefix"
     monitor = false
     telemetry_interval = 2.0
-    startup_timeout = 3600.0
+    startup_timeout = $(startup_timeout)
     exit_grace = 600.0
 
     [postprocess]

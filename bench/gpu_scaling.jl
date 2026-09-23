@@ -10,14 +10,20 @@
 # backend/Nbody6PPGPU-beijing-gpu).
 #
 #   NBODY6_GPU_BACKEND=backend/Nbody6PPGPU-beijing-gpu \
-#     julia bench/gpu_scaling.jl [N_list] [thread_list] [gpu_lists] [tcrit]
+#     julia bench/gpu_scaling.jl [N_list] [thread_list] [gpu_lists] [tcrit] [startup_timeout]
 #   e.g. julia bench/gpu_scaling.jl 20000,50000,100000 4,8 "0;0,1" 0.25
 #
 # gpu_lists: ';'-separated GPU_LIST values ("0" = first device, "0,1" = the
-# first two); a CPU-binary row is added for every (N, threads). Results:
-# bench/results/gpu_scaling_<timestamp>.csv (one row per run) and a console
-# table with the GPU speed-up over the CPU binary at equal N and threads.
-# Runs live under bench/runs/ (ignored by git).
+# first two); a CPU-binary row is added for every (N, threads).
+# startup_timeout: the engine's start-up watchdog in seconds (default 14400).
+# The cases integrate for tcrit with adjustments every 0.25, so at the default
+# tcrit the first adjustment is the end of the run and the watchdog bounds the
+# whole run: the CPU binary at 10^6 bodies needs more than an hour on every
+# host measured so far. Results: bench/results/gpu_scaling_<timestamp>.csv
+# (one row per run) and a console table with the GPU speed-up over the CPU
+# binary at equal N and threads. A case that fails is reported and the grid
+# continues; the exit status is nonzero when any case failed. Runs live under
+# bench/runs/ (ignored by git).
 # =============================================================================
 
 include(joinpath(@__DIR__, "activate.jl"))
@@ -37,6 +43,8 @@ N_list = length(ARGS) ≥ 1 ? parse_list(ARGS[1], Int) : [20000, 50000]
 threads = length(ARGS) ≥ 2 ? parse_list(ARGS[2], Int) : [4, 8]
 gpu_lists = length(ARGS) ≥ 3 ? [parse_list(s, Int) for s in split(ARGS[3], ';')] : [[0]]
 tcrit = length(ARGS) ≥ 4 ? parse(Float64, ARGS[4]) : 0.25
+startup_timeout = length(ARGS) ≥ 5 ? parse(Float64, ARGS[5]) : 14400.0
+startup_timeout > 0 || error("startup_timeout must be > 0 s")
 
 # Both binaries must be present; the selection by suffix tag is the one the
 # pipeline applies (see `_find_binary`).
@@ -75,7 +83,7 @@ function pipeline_toml(merger_path, nthreads, prefix; gpu::Bool, gpu_list::Vecto
     run_id_prefix = "$prefix"
     monitor = false
     telemetry_interval = 2.0
-    startup_timeout = 3600.0
+    startup_timeout = $(startup_timeout)
 
     [postprocess]
     enabled = false
@@ -154,10 +162,26 @@ function run_case(N, nt, variant, gpu_list)
     return row
 end
 
+# A failed case must not cost the cases after it: the failure is logged with
+# its cause and the grid goes on; the summary and the exit status report it.
+failed = String[]
+function run_case_guarded(N, nt, variant, gpu_list)
+    try
+        run_case(N, nt, variant, gpu_list)
+    catch e
+        e isa InterruptException && rethrow()
+        label =
+            "N = $N, threads = $nt, $variant" * (isempty(gpu_list) ? "" : " $(join(gpu_list, ","))")
+        push!(failed, label)
+        @error "Benchmark case failed: $label" exception = (e, catch_backtrace())
+    end
+    return nothing
+end
+
 for N in N_list, nt in threads
-    run_case(N, nt, "cpu", Int[])
+    run_case_guarded(N, nt, "cpu", Int[])
     for gl in gpu_lists
-        run_case(N, nt, "gpu", gl)
+        run_case_guarded(N, nt, "gpu", gl)
     end
 end
 
@@ -184,3 +208,7 @@ for N in unique(r.N_total for r in rows), nt in threads
     end
 end
 println("Results: ", csv_path)
+if !isempty(failed)
+    println("Failed cases (no row written): ", join(failed, "; "))
+    exit(1)
+end
