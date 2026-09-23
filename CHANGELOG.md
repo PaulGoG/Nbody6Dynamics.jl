@@ -33,6 +33,13 @@ entries say so.
   when the host-compiler probe did not pass, so a workstation campaign is one
   gated invocation. The probe and benchmark stages inherit
   `JULIA_NUM_THREADS` or get `auto`.
+- `bench/gpu_cells.jl`: benchmark cells on the device, a grid of (cell, N,
+  host threads, `GPU_LIST`, MPI ranks) points run with post-processing off
+  and read back into one CSV row per run (wall time, backend timing table,
+  kernel throughput, GPU utilisation, power and memory, host RSS, CPU
+  efficiency, machine identity, run ID). `bench/merger_case.jl` gains the
+  single-cluster cell (`single_toml`) next to the two-cluster case and
+  `cell_toml` to select either.
 
 ## [0.3.0] — 2026-09-22
 
