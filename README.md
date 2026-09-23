@@ -331,6 +331,7 @@ Nbody6Dynamics/
 │   ├── thread_scaling.jl            # Thread- and N-scaling of the backend from run telemetry (cost model)
 │   ├── gpu_scaling.jl               # GPU-versus-CPU binary at equal N and threads, per GPU_LIST (speed-up table)
 │   ├── gpu_cells.jl                 # Benchmark cells on the device: (cell, N, threads, GPU list, MPI ranks) grid, one CSV row per run
+│   ├── gpu_cells_figures.jl         # Scaling (strong, weak, host threads) and cross-hardware figures from the cell CSVs; --synthetic rehearsal
 │   ├── merger_case.jl               # The single- and dual-cluster cells shared by the scaling scripts
 │   ├── benchmarks.jl                # BenchmarkTools suite (kept out of tests)
 │   ├── activate.jl                  # Activates the bench environment (package developed by relative path)

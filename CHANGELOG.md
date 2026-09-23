@@ -40,6 +40,11 @@ entries say so.
   efficiency, machine identity, run ID). `bench/merger_case.jl` gains the
   single-cluster cell (`single_toml`) next to the two-cluster case and
   `cell_toml` to select either.
+- `bench/gpu_cells_figures.jl`: the scaling figure (strong, weak and
+  host-thread scaling of the two-device machine) and the cross-hardware
+  figure (wall time per card with the regular-force share as a tick; kernel
+  rate as a fraction of the FP32 peak) from the cell CSVs, a console table,
+  and a `--synthetic` rehearsal mode.
 
 ## [0.3.0] — 2026-09-22
 
