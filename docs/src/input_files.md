@@ -83,6 +83,7 @@ For the full option catalogue see the Nbody6++ manual (Khalisi & Spurzem, Heidel
 | `n_clusters` | Int | `2` | Number of `[merger.clusterN]` tables to read (N = 1…n_clusters, all required) |
 | `orbit_mode` | String | `"kepler"` | `"kepler"` (exactly 2 clusters, placement auto-computed) or `"explicit"` (≥ 2 clusters, per-cluster `position`/`velocity` required) |
 | `seed` | Int | *absent* | RNG seed; see [Seed semantics](#seed-semantics) |
+| `virial_max_n` | Int | `200000` | Largest N, per cluster and for the combined system, for which the exact O(N²) potential is evaluated (virialisation of each cluster, combined virial ratio). A cluster above it is refused at load, naming the key; raise the value deliberately for large initial conditions. The pair sum is threaded and costs ≈ N²/2 evaluations: 11 s at N = 2×10⁵ on twelve threads, quadratic from there |
 
 ### `[merger.orbit]` (Kepler mode only)
 
@@ -326,6 +327,14 @@ Clones and builds the engine with CUDA into its own tree — CPU and GPU objects
 ### `gpu/cpu_pipeline.toml`
 
 Clones and builds the AVX engine without CUDA into the default tree on the same host and runs the same merger as `gpu_pipeline.toml`, so the two runs and `bench/gpu_scaling.jl` are comparable binary against binary.
+
+### `gpu/merger_600k.toml` and `gpu/single_600k.toml`
+
+The probes above 5 × 10⁵ bodies. The merger is the case of `merger_50k.toml` at twelve times the membership: two King clusters of 300 000 stars, `W0 = 6`, half-mass radius 2 pc, Kroupa masses between 0.08 and 100 M☉, released at a 10 pc apocentre with `e = 0.5`; Jacobi truncation leaves 575 080 bodies, the combined half-mass radius is 5.3 pc and the N-body time unit 0.32 Myr. The single cluster has the same structure with 600 000 stars at rest (`n_clusters = 1`, explicit mode, no truncation; unit 0.07 Myr). Both are integrated for two time units with adjustments every 0.25 and outputs every 0.5, enough for the engine's cost per time unit to be measured well past start-up while the CPU reference stays within a few hours on a workstation. Both raise `virial_max_n` to 10⁶, since the generator otherwise refuses to virialise a cluster above 2 × 10⁵ stars; the pair sum takes about three minutes per case on twelve threads.
+
+### `gpu/gpu_merger_600k.toml`, `gpu/cpu_merger_600k.toml`, `gpu/gpu_single_600k.toml`, `gpu/cpu_single_600k.toml`
+
+The pipeline configurations of the two probes on the CUDA and the AVX binary: device 0, eight host threads, a start-up watchdog of one hour (the initial force and neighbour lists of 6 × 10⁵ bodies take minutes on the host), post-processing and figures on. Their install phase is off; they use the trees that `gpu_pipeline.toml` and `cpu_pipeline.toml` build. `postprocess.pair_sum_max_n` stays at its default, so the remnant and per-cluster diagnostics are skipped with a warning at this size and the binaries are compared on the engine time recorded in `RUN_INFO.toml`.
 
 ### `showcase/tidal_merger.toml`
 

@@ -315,6 +315,30 @@ truncate_jacobi = false
             e
         end
         @test err isa ArgumentError && occursin("merger.cluster3", err.msg)
+
+        # The O(N²) virialisation limit is a config key; clusters above it are refused.
+        write(bad, replace(base_text, "[merger]\n" => "[merger]\nvirial_max_n = 500\n"; count = 1))
+        err = try
+            load_merger_config(bad)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError &&
+              occursin("merger.cluster1.N", err.msg) &&
+              occursin("merger.virial_max_n", err.msg)
+        write(bad, replace(base_text, "[merger]\n" => "[merger]\nvirial_max_n = 0\n"; count = 1))
+        err = try
+            load_merger_config(bad)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("merger.virial_max_n", err.msg)
+        write(bad, replace(base_text, "[merger]\n" => "[merger]\nvirial_max_n = 5000\n"; count = 1))
+        @test load_merger_config(bad).virial_max_n == 5000
+        write(bad, base_text)
+        @test load_merger_config(bad).virial_max_n == Nbody6Dynamics._VIRIAL_NMAX
     end
 
     # --- TOML config loading (explicit mode) ---

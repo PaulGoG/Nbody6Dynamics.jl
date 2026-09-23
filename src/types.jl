@@ -118,6 +118,7 @@ Base.@kwdef struct PostprocessConfig
     stellar_evo_pattern::String = "sev.83_*"
     read_binary_evo::Bool = true
     binary_evo_pattern::String = "bev.82_*"
+    pair_sum_max_n::Int = 100_000
 end
 
 """

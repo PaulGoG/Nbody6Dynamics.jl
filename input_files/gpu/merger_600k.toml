@@ -1,0 +1,42 @@
+# Two equal King clusters of 300 000 stars on an eccentric orbit, two N-body time units: the GPU-advantage probe above 5×10⁵ bodies
+
+[merger]
+seed = 31
+n_clusters = 2
+orbit_mode = "kepler"
+virial_max_n = 1000000   # ≥ 1; largest N for the exact O(N²) virialisation (per cluster and combined)
+
+[merger.cluster1]
+model = "king"
+N = 300000
+W0 = 6.0
+rbar = 2.0          # half-mass radius [pc]
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+
+[merger.cluster2]
+model = "king"
+N = 300000
+W0 = 6.0
+rbar = 2.0
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+
+[merger.orbit]
+apocentre = 10.0    # [pc]
+eccentricity = 0.5
+
+[merger.output]
+format = "nbody"
+truncate_jacobi = true
+tcrit = 2.0         # N-body time units
+dtadj = 0.25
+deltat = 0.5
+
+[merger.stellar]
+dtplot = 1.0        # N-body time units; ≥ deltat
+
+[merger.nbody6]
+qe = 0.01           # energy-error tolerance of the ADJUST check

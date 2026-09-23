@@ -552,6 +552,37 @@ end
     )
     @test isfile(joinpath(plots_dir, "merger_cluster_virial_blocks.png"))
 
+    # The dispatcher gates the O(N²) merger figures on the particle count;
+    # the separation is drawn either way.
+    sim_gate = joinpath(mktempdir(), "output")
+    mkpath(sim_gate)
+    write(
+        joinpath(sim_gate, "merger_summary.txt"),
+        "  Cluster 1: king, imf=kroupa, N=40 (after trunc: 40), M=1 M☉\n" *
+        "  Cluster 2: king, imf=kroupa, N=40 (after trunc: 40), M=1 M☉\n",
+    )
+    @test parse_merger_summary(joinpath(sim_gate, "merger_summary.txt")) == collect.(ranges)
+    gate_dir = mktempdir()
+    vis_gate = VisualizationConfig(; format = "png", output_dir = gate_dir)
+    results_gate = Dict{Symbol,Any}(:snapshots => snaps)
+    @test_logs (:warn, r"pair_sum_max_n") match_mode = :any generate_plots(
+        results_gate,
+        vis_gate;
+        sim_dir = sim_gate,
+        animations = false,
+        pair_sum_max_n = 10,
+    )
+    @test isfile(joinpath(gate_dir, "merger_cluster_separation.png"))
+    @test !isfile(joinpath(gate_dir, "merger_cluster_virial.png"))
+    generate_plots(
+        results_gate,
+        vis_gate;
+        sim_dir = sim_gate,
+        animations = false,
+        pair_sum_max_n = 80,
+    )
+    @test isfile(joinpath(gate_dir, "merger_cluster_virial.png"))
+
     # Envelope statistics helper: NaNs are skipped, all-NaN columns stay NaN
     env = [1.0 NaN 3.0; 5.0 NaN 1.0]
     lo, hi, mean_vals = MakieExt._envelope_stats(env)

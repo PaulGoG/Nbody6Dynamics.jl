@@ -110,7 +110,7 @@ One invocation each; details in the sections below.
 | Run the benchmarks | `julia bench/benchmarks.jl` |
 | Validate a CUDA host | `julia scripts/run_gpu_validation.jl` (GPU-gated suite, GPU and CPU pipelines, scaling benchmark; host record, logs and results under `runs/gpu_validation_<host>_<timestamp>/`; `--dry-run`, `--stages=`) |
 | Build and run on a CUDA host by hand | `julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml` (CPU reference: `cpu_pipeline.toml`; recipe in the manual) |
-| Measure the GPU speed-up | `julia bench/gpu_scaling.jl 20000,50000 4,8 "0;0,1" 0.25` (needs the CPU and the GPU binary) |
+| Measure the GPU speed-up | `julia bench/gpu_scaling.jl 20000,50000 4,8 "0;0,1" 0.25` (needs the CPU and the GPU binary); `600000,1000000 8 "0" 0.25` reaches the regime above 5 × 10⁵ bodies, as do the `*_600k.toml` pipelines under `input_files/gpu/` |
 | Build the documentation | `julia docs/make.jl` (also executes the walkthrough; the site lands in `docs/build/`) |
 
 ## Usage
@@ -361,7 +361,7 @@ Nbody6Dynamics/
 │   ├── merger_27cluster_cubic.toml  # 27 clusters on a 3×3×3 cubic grid
 │   ├── verif_triorbit.toml          # Bound Lagrange-triangle verification target
 │   ├── verif_3d5cluster.toml        # 5 clusters distributed in 3D (projection/COM verification)
-│   ├── gpu/                         # CUDA-host recipe: GPU and CPU reference builds + a 2 × 25k merger (see the manual)
+│   ├── gpu/                         # CUDA-host recipe: GPU and CPU reference builds, a 2 × 25k merger, the 6 × 10⁵-body probes (see the manual)
 │   ├── sweep_demo.toml              # Demonstration sweep (eccentricity × secondary size × seeds)
 │   └── showcase/                    # Four science cases with Myr intervals: equal-mass eccentric merger,
 │                                    #   binary-rich unequal merger, tidal-field merger, sweep with controls

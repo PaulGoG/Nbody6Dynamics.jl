@@ -9,7 +9,9 @@
 
 Merger TOML of the benchmark case for `N_total` stars in two equal King
 clusters, integrated for `tcrit` N-body time units with adjustments every
-0.25 and outputs every 0.5.
+0.25 and outputs every 0.5. The virialisation limit is raised to 2×10⁶ so
+that the benchmark reaches the engine's `b1m` capacity (NMAX = 1 572 864):
+a benchmark is a deliberate cost.
 """
 function merger_toml(N_total::Integer, tcrit::Real)
     n = N_total ÷ 2
@@ -18,6 +20,7 @@ function merger_toml(N_total::Integer, tcrit::Real)
     n_clusters = 2
     orbit_mode = "kepler"
     seed = 11
+    virial_max_n = 2000000
 
     [merger.cluster1]
     model = "king"

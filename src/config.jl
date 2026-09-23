@@ -312,6 +312,10 @@ function _validate(cfg::Nbody6Config)
             "postprocess.binary_evo_pattern",
             "must be nonempty when read_binary_evo = true",
         )
+    pp.pair_sum_max_n ≥ 0 || _config_error(
+        "postprocess.pair_sum_max_n",
+        "must be ≥ 0 (0 disables the pair-sum diagnostics); got $(pp.pair_sum_max_n)",
+    )
 
     # [visualization]
     vis.format in ("pdf", "svg", "png") || _config_error(

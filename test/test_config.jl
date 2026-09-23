@@ -28,6 +28,7 @@ read_escapers = true
 escapers_file = "esc.11"
 read_stellar_evo = true
 stellar_evo_pattern = "sev.83_*"
+pair_sum_max_n = 5000
 
 [visualization]
 enabled = false
@@ -50,6 +51,8 @@ export_width = 5.0
     @test cfg.postprocess.stellar_evo_pattern == "sev.83_*"
     @test cfg.postprocess.read_binary_evo == true
     @test cfg.postprocess.binary_evo_pattern == "bev.82_*"
+    @test cfg.postprocess.pair_sum_max_n == 5000
+    @test PostprocessConfig().pair_sum_max_n == 100_000
     @test cfg.visualization.dpi == 150
     @test cfg.visualization.export_width == 5.0
     @test cfg.install.source_url == "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
@@ -173,6 +176,7 @@ format = "pdf"
             "[postprocess]\nread_stellar_evo = true\nstellar_evo_pattern = \"\"\n",
             "postprocess.stellar_evo_pattern",
         ),
+        ("pair_sum_max_n", "[postprocess]\npair_sum_max_n = -1\n", "postprocess.pair_sum_max_n"),
         ("format", "[visualization]\nformat = \"gif\"\n", "visualization.format"),
         ("column", "[visualization]\ncolumn = \"triple\"\n", "visualization.column"),
         ("units", "[visualization]\nunits = \"cgs\"\n", "visualization.units"),

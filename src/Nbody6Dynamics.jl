@@ -137,7 +137,9 @@ file it was loaded from).
 Besides the readers, the derived data products are computed here: the class
 census (`:stellar_census`) and, for a merger run — one whose output holds a
 `merger_summary.txt` and at least two snapshots — the remnant diagnostics
-(`:remnant`, a [`RemnantDiagnostics`](@ref)).
+(`:remnant`, a [`RemnantDiagnostics`](@ref)), provided no snapshot holds
+more than `postprocess.pair_sum_max_n` particles (the bound-set selection is
+an O(N²) pair sum).
 """
 function postprocess(
     cfg::Nbody6Config;
@@ -225,13 +227,21 @@ function postprocess(
     end
 
     # Remnant diagnostics of a merger run: a data product, so it is computed
-    # here and not in the figure layer, and a headless host gets it too.
+    # here and not in the figure layer, and a headless host gets it too. The
+    # bound-set selection is an O(N²) pair sum, so it is subject to the
+    # configured particle limit.
     summary_path = joinpath(sim_dir, "merger_summary.txt")
     if haskey(results, :snapshots) && length(results[:snapshots]) ≥ 2 && isfile(summary_path)
         ranges = parse_merger_summary(summary_path)
         if !isempty(ranges)
-            @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
-            results[:remnant] = remnant_diagnostics(results[:snapshots], ranges)
+            n_max = maximum(nparticles, results[:snapshots])
+            if n_max ≤ pp.pair_sum_max_n
+                @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
+                results[:remnant] = remnant_diagnostics(results[:snapshots], ranges)
+            else
+                @warn "Remnant diagnostics skipped: snapshots of up to $n_max particles exceed " *
+                      "postprocess.pair_sum_max_n = $(pp.pair_sum_max_n) (O(N²) pair sums)"
+            end
         end
     end
 

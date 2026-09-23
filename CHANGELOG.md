@@ -4,6 +4,29 @@ Notable changes to Nbody6Dynamics.jl, by version. The package follows
 semantic versioning; before 1.0 a minor version may change the API, and the
 entries say so.
 
+## [Unreleased]
+
+### Added
+
+- `[merger] virial_max_n` (default 200 000): the largest N, per cluster and
+  for the combined system, for which the initial-condition generator
+  evaluates the exact O(N²) potential. A cluster above it is refused when the
+  configuration is loaded, naming the key, instead of failing inside the
+  sampler; large initial conditions raise it deliberately.
+- `[postprocess] pair_sum_max_n` (default 100 000): the largest snapshot
+  particle count for which the O(N²) pair-sum diagnostics run (remnant
+  diagnostics, per-cluster virial ratio and structure, bound-member
+  profiles). Above it they are skipped with a warning naming the key; the
+  readers and the other figures are unaffected. `generate_plots` takes the
+  same limit as a keyword.
+- The probes above 5 × 10⁵ bodies under `input_files/gpu/`:
+  `merger_600k.toml` (two King clusters of 300 000 stars on the orbit of
+  `merger_50k.toml`) and `single_600k.toml` (one King cluster of 600 000 at
+  rest), each for two N-body time units, with the CUDA and AVX pipeline
+  configurations that run them on the trees the recipe builds. The
+  benchmark case raises its virialisation limit to the engine's `b1m`
+  capacity.
+
 ## [0.3.0] — 2026-09-22
 
 First public release. Nbody6Dynamics.jl automates the lifecycle of

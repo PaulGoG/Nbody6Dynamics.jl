@@ -15,6 +15,32 @@
     @test length(m.clusters) == 2 && all(c -> c.N == 25000, m.clusters)
     @test m.nbody6.qe == 0.01 && m.output.tcrit_myr == 50.0
     @test m.orbit.apocentre == 10.0
+
+    # The 6×10⁵-body probes: one merger and one single cluster, each run by
+    # the CUDA and the AVX binary from the trees the recipe above builds.
+    m6 = load_merger_config(joinpath(gdir, "merger_600k.toml"))
+    @test length(m6.clusters) == 2 && all(c -> c.N == 300_000, m6.clusters)
+    @test m6.virial_max_n == 1_000_000 && m6.output.truncate_jacobi
+    @test m6.output.tcrit == 2.0 && m6.output.dtadj == 0.25 && m6.output.deltat == 0.5
+    @test m6.orbit.apocentre == 10.0 && m6.nbody6.qe == 0.01
+    s6 = load_merger_config(joinpath(gdir, "single_600k.toml"))
+    @test length(s6.clusters) == 1 && s6.clusters[1].N == 600_000
+    @test s6.orbit_mode == "explicit" && s6.virial_max_n == 1_000_000
+    @test !s6.output.truncate_jacobi && s6.output.tcrit == m6.output.tcrit
+    for (case, merger_file) in (("merger", "merger_600k.toml"), ("single", "single_600k.toml"))
+        g6 = load_config(joinpath(gdir, "gpu_$(case)_600k.toml"))
+        @test !g6.install.enabled && endswith(g6.install.install_dir, "Nbody6PPGPU-beijing-gpu")
+        @test g6.build.enable_gpu && g6.simulation.gpu_list == [0] && g6.simulation.omp_threads == 8
+        @test g6.merger.enabled && g6.merger.config_file == merger_file
+        @test g6.postprocess.enabled && g6.visualization.enabled
+        c6 = load_config(joinpath(gdir, "cpu_$(case)_600k.toml"))
+        @test !c6.install.enabled && endswith(c6.install.install_dir, "Nbody6PPGPU-beijing")
+        @test !c6.build.enable_gpu &&
+              isempty(c6.simulation.gpu_list) &&
+              c6.simulation.omp_threads == 8
+        @test c6.merger.config_file == merger_file
+        @test c6.simulation.startup_timeout == g6.simulation.startup_timeout == 3600.0
+    end
 end
 
 # =====================================================================

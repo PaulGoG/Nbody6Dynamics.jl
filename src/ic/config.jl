@@ -401,7 +401,7 @@ end
 # -----------------------------------------------------------------------------
 
 """
-    MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, stellar, tidal, seed])
+    MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, stellar, tidal, seed, virial_max_n])
 
 Top-level configuration for multi-cluster merger initial conditions.
 
@@ -423,6 +423,9 @@ Top-level configuration for multi-cluster merger initial conditions.
 - `stellar::StellarSpec`: stellar-evolution settings
 - `tidal::TidalSpec`: external galactic field
 - `seed::Union{Int, Nothing}`: RNG seed. `nothing` = non-deterministic.
+- `virial_max_n::Int`: largest N, per cluster and for the combined system, for which the exact
+  O(N²) potential is evaluated (virialisation of each cluster, combined virial ratio); default
+  `_VIRIAL_NMAX` (200 000)
 """
 struct MergerConfig
     clusters::Vector{ClusterSpec}
@@ -433,6 +436,7 @@ struct MergerConfig
     stellar::StellarSpec
     tidal::TidalSpec
     seed::Union{Int,Nothing}
+    virial_max_n::Int
 end
 
 # Convenience form: derived integration parameters, default stellar
@@ -447,7 +451,39 @@ MergerConfig(
     stellar::StellarSpec = StellarSpec(),
     tidal::TidalSpec = TidalSpec(),
     seed::Union{Int,Nothing} = nothing,
-) = MergerConfig(clusters, String(orbit_mode), orbit, output, nbody6, stellar, tidal, seed)
+    virial_max_n::Int = _VIRIAL_NMAX,
+) = MergerConfig(
+    clusters,
+    String(orbit_mode),
+    orbit,
+    output,
+    nbody6,
+    stellar,
+    tidal,
+    seed,
+    virial_max_n,
+)
+
+MergerConfig(
+    clusters::Vector{ClusterSpec},
+    orbit_mode::AbstractString,
+    orbit::OrbitSpec,
+    output::MergerOutputSpec,
+    nbody6::Nbody6ParameterSpec,
+    stellar::StellarSpec,
+    tidal::TidalSpec,
+    seed::Union{Int,Nothing},
+) = MergerConfig(
+    clusters,
+    String(orbit_mode),
+    orbit,
+    output,
+    nbody6,
+    stellar,
+    tidal,
+    seed,
+    _VIRIAL_NMAX,
+)
 
 # -----------------------------------------------------------------------------
 # MergerICResult
@@ -554,6 +590,8 @@ function load_merger_config(path::AbstractString)::MergerConfig
         "merger.orbit_mode",
         "must be \"kepler\" or \"explicit\", got \"$orbit_mode\"",
     )
+    virial_max_n = _typed(get(m, "virial_max_n", _VIRIAL_NMAX), Int, "merger.virial_max_n")
+    virial_max_n ≥ 1 || _config_error("merger.virial_max_n", "must be ≥ 1; got $virial_max_n")
 
     cluster_keys = ["cluster$k" for k in 1:max(n_clusters, 0)]
     for k in sort!(collect(String, keys(m)))
@@ -563,7 +601,17 @@ function load_merger_config(path::AbstractString)::MergerConfig
     _reject_unknown(
         m,
         vcat(
-            ["n_clusters", "orbit_mode", "seed", "orbit", "output", "nbody6", "stellar", "tidal"],
+            [
+                "n_clusters",
+                "orbit_mode",
+                "seed",
+                "virial_max_n",
+                "orbit",
+                "output",
+                "nbody6",
+                "stellar",
+                "tidal",
+            ],
             cluster_keys,
         ),
         "merger",
@@ -635,6 +683,15 @@ function load_merger_config(path::AbstractString)::MergerConfig
     for (i, spec) in enumerate(clusters)
         _validate_cluster_spec(spec, i)
     end
+    for (i, spec) in enumerate(clusters)
+        spec.N ≤ virial_max_n || _config_error(
+            "merger.cluster$i.N",
+            "= $(spec.N) exceeds merger.virial_max_n = $virial_max_n: " *
+            "virialising a cluster evaluates its exact O(N²) potential " *
+            "(≈ $(round(spec.N^2 / 2e9; digits = 1))×10⁹ pair evaluations); " *
+            "raise merger.virial_max_n to accept that cost",
+        )
+    end
     if orbit_mode == "kepler"
         orbit.apocentre > 0 ||
             _config_error("merger.orbit.apocentre", "must be > 0; got $(orbit.apocentre)")
@@ -657,7 +714,17 @@ function load_merger_config(path::AbstractString)::MergerConfig
     _validate_tidal(tidal)
     _validate_tidal_tolerance(tidal, nbody6)
 
-    return MergerConfig(clusters, orbit_mode, orbit, output, nbody6, stellar, tidal, seed)
+    return MergerConfig(
+        clusters,
+        orbit_mode,
+        orbit,
+        output,
+        nbody6,
+        stellar,
+        tidal,
+        seed,
+        virial_max_n,
+    )
 end
 
 # Energy tolerance below which a tidal-field run halts at its first adjustment:

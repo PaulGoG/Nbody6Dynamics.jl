@@ -505,7 +505,7 @@ end
 # ---------------------------------------------------------------------------
 # Internal: sample a single cluster from its spec
 # ---------------------------------------------------------------------------
-function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rng())
+function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rng(), nmax::Int)
     # Total-mass handling is delegated to the IMFSpec subtype (natural Kroupa
     # keeps the sampled sum; rescaled/equal enforce their targets).
     masses = sample_masses(spec.imf, spec.N, rng)
@@ -539,7 +539,7 @@ function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rn
         pos .*= spec.rbar / r_hm
     end
 
-    energies = virialise!(sys_mass, pos, vel)
+    energies = virialise!(sys_mass, pos, vel; nmax = nmax)
     binaries =
         (system_binary = system_binary, m1 = bins.m1, m2 = bins.m2, a_pc = bins.a_pc, e = bins.e)
     return (
@@ -601,7 +601,7 @@ function generate_merger_ic(
         begin
             @info "  Cluster $i: $(profile_name(spec.profile)) profile, N=$(spec.N), " *
                   "imf=$(imf_name(spec.imf)), M≈$(round(expected_mass(spec.imf, spec.N); digits=1)) M☉"
-            _sample_cluster(spec; rng = use_rng)
+            _sample_cluster(spec; rng = use_rng, nmax = cfg.virial_max_n)
         end for (i, spec) in enumerate(cfg.clusters)
     ]
 
@@ -642,11 +642,11 @@ function generate_merger_ic(
     # binding energies excluded): the virial ratio of the whole
     # configuration, the resolution of the members by the length unit, and
     # the integration parameters scaled to the smallest member.
-    q_virial, t_cr_config_code = if N_systems ≤ _VIRIAL_NMAX
+    q_virial, t_cr_config_code = if N_systems ≤ cfg.virial_max_n
         T, W = _kinetic_and_potential(mass_combined, pos_combined, vel_combined)
         (W < 0 ? T / abs(W) : NaN, crossing_time(M_total, T + W))
     else
-        @warn "Combined virial ratio not evaluated: N = $N_systems systems exceed $(_VIRIAL_NMAX) (O(N²) pair sum)"
+        @warn "Combined virial ratio not evaluated: N = $N_systems systems exceed merger.virial_max_n = $(cfg.virial_max_n) (O(N²) pair sum)"
         (NaN, NaN)
     end
 

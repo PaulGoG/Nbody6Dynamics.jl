@@ -62,13 +62,22 @@ end
 
 """
     generate_plots(results::Dict{Symbol,Any}, vis::VisualizationConfig;
-                   sim_dir::AbstractString = "", animations::Bool = true)
+                   sim_dir::AbstractString = "", animations::Bool = true,
+                   pair_sum_max_n::Integer = PostprocessConfig().pair_sum_max_n)
 
 Generate all available plots (and, when `animations = true`, GIF
 animations) from post-processing results, saving into `vis.output_dir`.
 `sim_dir` names the directory holding the raw simulation output; when given,
 it is searched for `merger_summary.txt` to produce the merger-specific
 figures (inter-cluster separation, per-cluster virial ratio).
+
+`pair_sum_max_n` bounds the merger figures built on O(N²) pair sums, the
+per-cluster virial ratio and structure, the bound-member density and
+velocity-dispersion profiles and the remnant figures: they are drawn only
+when no snapshot holds more particles than this, with a warning otherwise;
+the inter-cluster separation is drawn regardless. The default is that of
+`PostprocessConfig`, and the `Nbody6Config` method passes
+`cfg.postprocess.pair_sum_max_n`.
 
 This is the single plot dispatcher — both the config-driven pipeline
 (via the `Nbody6Config` method) and [`postprocess_external`](@ref) route
@@ -79,6 +88,7 @@ function Nbody6Dynamics.generate_plots(
     vis::VisualizationConfig;
     sim_dir::AbstractString = "",
     animations::Bool = true,
+    pair_sum_max_n::Integer = PostprocessConfig().pair_sum_max_n,
 )
     if haskey(results, :snapshots)
         snaps = results[:snapshots]::Vector{Snapshot}
@@ -101,46 +111,57 @@ function Nbody6Dynamics.generate_plots(
                             @info "Plotting inter-cluster separation..."
                             plot_cluster_separation(snaps, ranges, vis)
                         end
-                        @info "Plotting per-cluster virial ratio..."
-                        plot_cluster_virial(snaps, ranges, vis)
-                        @info "Plotting per-cluster structure..."
-                        plot_cluster_structure(
-                            snaps,
-                            ranges,
-                            vis;
-                            lagr = get(results, :lagr, nothing),
-                        )
-                        # Radial profiles against the generating models (merger_ic.toml)
-                        ic_meta = joinpath(sim_dir, "merger_ic.toml")
-                        specs =
-                            isfile(ic_meta) ? load_merger_ic_result(sim_dir).cluster_specs : nothing
-                        specs === nothing || length(specs) == length(ranges) || (specs = nothing)
-                        @info "Plotting density profiles (initial and final snapshots)..."
-                        plot_density_profiles(
-                            snaps[1],
-                            ranges,
-                            vis;
-                            specs = specs,
-                            filename = "merger_density_profiles_initial",
-                        )
-                        plot_density_profiles(
-                            snaps[end],
-                            ranges,
-                            vis;
-                            specs = specs,
-                            filename = "merger_density_profiles_final",
-                        )
-                        @info "Plotting velocity dispersion profiles (final snapshot)..."
-                        plot_velocity_dispersion(snaps[end], ranges, vis)
-                        # Computed by `postprocess` for pipeline runs (and written
-                        # there as remnant_diagnostics.csv); derived here only for
-                        # results that did not pass through it.
-                        diag = get(results, :remnant, nothing)
-                        if diag === nothing
-                            @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
-                            diag = remnant_diagnostics(snaps, ranges)
+                        n_max = maximum(nparticles, snaps)
+                        if n_max ≤ pair_sum_max_n
+                            @info "Plotting per-cluster virial ratio..."
+                            plot_cluster_virial(snaps, ranges, vis)
+                            @info "Plotting per-cluster structure..."
+                            plot_cluster_structure(
+                                snaps,
+                                ranges,
+                                vis;
+                                lagr = get(results, :lagr, nothing),
+                            )
+                            # Radial profiles against the generating models (merger_ic.toml)
+                            ic_meta = joinpath(sim_dir, "merger_ic.toml")
+                            specs =
+                                isfile(ic_meta) ? load_merger_ic_result(sim_dir).cluster_specs :
+                                nothing
+                            specs === nothing ||
+                                length(specs) == length(ranges) ||
+                                (specs = nothing)
+                            @info "Plotting density profiles (initial and final snapshots)..."
+                            plot_density_profiles(
+                                snaps[1],
+                                ranges,
+                                vis;
+                                specs = specs,
+                                filename = "merger_density_profiles_initial",
+                            )
+                            plot_density_profiles(
+                                snaps[end],
+                                ranges,
+                                vis;
+                                specs = specs,
+                                filename = "merger_density_profiles_final",
+                            )
+                            @info "Plotting velocity dispersion profiles (final snapshot)..."
+                            plot_velocity_dispersion(snaps[end], ranges, vis)
+                            # Computed by `postprocess` for pipeline runs (and written
+                            # there as remnant_diagnostics.csv); derived here only for
+                            # results that did not pass through it.
+                            diag = get(results, :remnant, nothing)
+                            if diag === nothing
+                                @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
+                                diag = remnant_diagnostics(snaps, ranges)
+                            end
+                            remnant_figures(diag::RemnantDiagnostics, vis)
+                        else
+                            @warn "Per-cluster virial ratio, structure, profiles and " *
+                                  "remnant figures skipped: snapshots of up to $n_max " *
+                                  "particles exceed postprocess.pair_sum_max_n = " *
+                                  "$pair_sum_max_n (O(N²) pair sums)"
                         end
-                        remnant_figures(diag::RemnantDiagnostics, vis)
                     end
                 end
             end
@@ -293,5 +314,10 @@ function Nbody6Dynamics.generate_plots(
         cfg.visualization
     end
     sim_dir = !isempty(run_dir) ? joinpath(run_dir, "output") : ""
-    return generate_plots(results, vis; sim_dir = sim_dir)
+    return generate_plots(
+        results,
+        vis;
+        sim_dir = sim_dir,
+        pair_sum_max_n = cfg.postprocess.pair_sum_max_n,
+    )
 end
