@@ -290,8 +290,11 @@ function _execute_simulation(
         cpu_before = _children_cpu_times()
         t_start = time()
         @info "Starting $label..."
+        # Own session (detach): the hangup of a terminal closing above the
+        # pipeline never reaches the engine. An operator interrupt is turned
+        # into `_terminate` below, since the terminal's Ctrl-C no longer is.
         process = cd(out_dir) do
-            run(`bash $launch_script`; wait = false)
+            run(detach(`bash $launch_script`); wait = false)
         end
 
         # Segment index: 1 for the initial launch, one more per restart.
@@ -324,16 +327,23 @@ function _execute_simulation(
 
         # Live ticker is opt-in and interactive-only; the Fortran stdout is
         # captured to out1000 regardless.
-        if sim.monitor && stderr isa Base.TTY
-            _monitor_stdout_file(
-                stdout_path,
-                process,
-                t_start;
-                live = sim.live_diagnostics,
-                live_interval = sim.live_interval,
-            )
+        try
+            if sim.monitor && stderr isa Base.TTY
+                _monitor_stdout_file(
+                    stdout_path,
+                    process,
+                    t_start;
+                    live = sim.live_diagnostics,
+                    live_interval = sim.live_interval,
+                )
+            end
+            wait(process)
+        catch e
+            e isa InterruptException || rethrow()
+            @warn "Interrupted; terminating the engine (SIGTERM, then SIGKILL after $(_KILL_GRACE_SECONDS) s)"
+            _terminate(process)
+            rethrow()
         end
-        wait(process)
         watchdog === nothing || (watchdog.stop[] = true)
         completion === nothing || (completion.stop[] = true)
 

@@ -45,6 +45,12 @@
     # the runner reports the signal separately or a crash is recorded as
     # a success.
     @test Nbody6Dynamics._tee_run(`sh -c 'kill -s SEGV $$'`, log) == (exitcode = 0, signal = 11)
+    # The child runs in its own session (detach), so the hangup of a terminal
+    # closing above the driver never reaches it: it is its own session leader.
+    Sys.islinux() && @test Nbody6Dynamics._tee_run(
+        `sh -c '[ "$(ps -o sid= -p $$ | tr -d " ")" = "$$" ]'`,
+        log,
+    ) == (exitcode = 0, signal = 0)
 
     # A crash signal is retried up to max_retries, keeping every output
     sdir = mktempdir()

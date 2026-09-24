@@ -458,23 +458,56 @@ kept apart because a signal-killed process reports `exitcode == 0` through
 libuv — the code alone would record a crash as a success — while folding
 the signal into the code would confuse it with a genuine exit code ≥ 128.
 A command that cannot be spawned throws.
+
+A `Cmd` is started in its own session (`detach`): the hangup of a terminal
+closing above this process then never reaches it. `nohup` shields the
+driver alone, because a child spawned by Julia carries libuv's default
+signal dispositions; on 2026-09-24 two campaigns lost their running stage on
+every host to exactly that. Since a detached child no longer receives the
+terminal's Ctrl-C either, an `InterruptException` here is forwarded through
+[`_interrupt_child`](@ref) before it propagates.
 """
 function _tee_run(
     cmd::Base.AbstractCmd,
     logfile::AbstractString,
 )::@NamedTuple{exitcode::Int, signal::Int}
     out = Pipe()
-    proc = run(pipeline(cmd; stdout = out, stderr = out); wait = false)
+    spawned = cmd isa Cmd ? detach(cmd) : cmd
+    proc = run(pipeline(spawned; stdout = out, stderr = out); wait = false)
     close(out.in)
-    open(logfile, "w") do log
-        for line in eachline(out)
-            println(stdout, line)
-            println(log, replace(line, _ANSI_ESCAPE => ""))
-            flush(log)
+    try
+        open(logfile, "w") do log
+            for line in eachline(out)
+                println(stdout, line)
+                println(log, replace(line, _ANSI_ESCAPE => ""))
+                flush(log)
+            end
         end
+        wait(proc)
+    catch e
+        e isa InterruptException || rethrow()
+        _interrupt_child(proc)
+        rethrow()
     end
-    wait(proc)
     return (exitcode = Int(proc.exitcode), signal = Int(proc.termsignal))
+end
+
+"""
+    _interrupt_child(proc; grace = _KILL_GRACE_SECONDS)
+
+Forward an operator interrupt to a detached child: SIGINT first, so a Julia
+child unwinds and terminates its own engine, then SIGTERM after `grace`
+seconds and SIGKILL after another `grace` seconds while it is still running.
+"""
+function _interrupt_child(proc::Base.Process; grace::Real = _KILL_GRACE_SECONDS)
+    process_running(proc) || return nothing
+    kill(proc, Base.SIGINT)
+    deadline = time() + grace
+    while process_running(proc) && time() < deadline
+        sleep(0.2)
+    end
+    process_running(proc) && _terminate(proc; grace = grace)
+    return nothing
 end
 
 """

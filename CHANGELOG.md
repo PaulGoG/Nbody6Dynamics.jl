@@ -48,6 +48,13 @@ entries say so.
 
 ### Fixed
 
+- Stage processes of the validation driver and the engine itself start in
+  their own session (`detach`). A terminal closing above a `nohup`-ed
+  driver used to kill the running stage and its engine: `nohup` shields
+  the driver alone, a child spawned by Julia has libuv's default signal
+  dispositions. Two campaigns of 2026-09-23/24 lost their running stage on
+  every host that way. An operator interrupt (Ctrl-C) is forwarded
+  explicitly: SIGINT to a stage, SIGTERM then SIGKILL to the engine.
 - `bench/gpu_cells_figures.jl`: the logarithmic floor of the hardware
   figure's wall-time panel is derived from the regular-force times as well
   as the wall times, so the regular-force tick of a bar is never clipped
