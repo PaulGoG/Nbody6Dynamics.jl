@@ -773,6 +773,8 @@ function hardware_figure(rows, cards, out)
     end
     walls = [r.wall_s for e in entries for r in values(e.cells) if isfinite(r.wall_s)]
     filter!(>(0), walls)
+    # The regular-force ticks sit below the bar tops; the axis floor must show them too.
+    ticks = [r.t_reg for e in entries for r in values(e.cells) if isfinite(r.t_reg) && r.t_reg > 0]
     if isempty(walls)
         println("no finite wall time: hardware figure skipped")
         return nothing
@@ -787,7 +789,7 @@ function hardware_figure(rows, cards, out)
     )
 
     fig = Figure(; size = (900, with_rate ? 950 : 600))
-    y_lo = exp10(floor(log10(0.7 * minimum(walls))))
+    y_lo = exp10(floor(log10(0.7 * minimum(vcat(walls, ticks)))))
     # Four times the tallest bar: room for its value label and, above that,
     # for the class labels beside the divider.
     y_hi = exp10(log10(maximum(walls)) + 0.6)

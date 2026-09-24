@@ -46,6 +46,14 @@ entries say so.
   rate as a fraction of the FP32 peak) from the cell CSVs, a console table,
   and a `--synthetic` rehearsal mode.
 
+### Fixed
+
+- `bench/gpu_cells_figures.jl`: the logarithmic floor of the hardware
+  figure's wall-time panel is derived from the regular-force times as well
+  as the wall times, so the regular-force tick of a bar is never clipped
+  below the axis (it was, for every card whose regular-force time fell under
+  the first decade of the wall times).
+
 ## [0.3.0] — 2026-09-22
 
 First public release. Nbody6Dynamics.jl automates the lifecycle of
