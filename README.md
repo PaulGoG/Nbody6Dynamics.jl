@@ -111,6 +111,7 @@ One invocation each; details in the sections below.
 | Validate a CUDA host | `julia scripts/run_gpu_validation.jl` (GPU-gated suite, GPU and CPU pipelines, scaling benchmark; host record, logs and results under `runs/gpu_validation_<host>_<timestamp>/`; `--dry-run`, `--stages=`; `--stop-on-failure` and the `*_600k` probe stages make a gated one-shot campaign) |
 | Build and run on a CUDA host by hand | `julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml` (CPU reference: `cpu_pipeline.toml`; recipe in the manual) |
 | Measure the GPU speed-up | `julia bench/gpu_scaling.jl 20000,50000 4,8 "0;0,1" 0.25` (needs the CPU and the GPU binary); `600000,1000000 8 "0" 0.25` reaches the regime above 5 × 10⁵ bodies, as do the `*_600k.toml` pipelines under `input_files/gpu/` |
+| Measure the device's FP32 peak | `julia bench/fp32_peak_probe.jl --out=runs` (own shared environment, created on first use; `--backend=cpu` without a device) |
 | Build the documentation | `julia docs/make.jl` (also executes the walkthrough; the site lands in `docs/build/`) |
 
 ## Usage
@@ -332,6 +333,7 @@ Nbody6Dynamics/
 │   ├── gpu_scaling.jl               # GPU-versus-CPU binary at equal N and threads, per GPU_LIST (speed-up table)
 │   ├── gpu_cells.jl                 # Benchmark cells on the device: (cell, N, threads, GPU list, MPI ranks) grid, one CSV row per run
 │   ├── gpu_cells_figures.jl         # Scaling (strong, weak, host threads) and cross-hardware figures from the cell CSVs; --synthetic rehearsal
+│   ├── fp32_peak_probe.jl           # Measured FP32 peak of the device (GPUDiagnostics), fp32_peak_<host>.toml for the fraction-of-peak panel
 │   ├── merger_case.jl               # The single- and dual-cluster cells shared by the scaling scripts
 │   ├── benchmarks.jl                # BenchmarkTools suite (kept out of tests)
 │   ├── activate.jl                  # Activates the bench environment (package developed by relative path)

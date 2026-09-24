@@ -19,6 +19,11 @@ entries say so.
   profiles). Above it they are skipped with a warning naming the key; the
   readers and the other figures are unaffected. `generate_plots` takes the
   same limit as a keyword.
+- `bench/fp32_peak_probe.jl`: the measured FP32 peak of the device with the
+  peak probe of GPUDiagnostics.jl, written as `fp32_peak_<hostname>.toml`
+  for the fraction-of-peak panel of `gpu_cells_figures.jl`. The script keeps
+  its own shared environment (`@nb6_fp32_peak`) and installs
+  GPUDiagnostics, KernelAbstractions and CUDA there on first use.
 - The probes above 5 × 10⁵ bodies under `input_files/gpu/`:
   `merger_600k.toml` (two King clusters of 300 000 stars on the orbit of
   `merger_50k.toml`) and `single_600k.toml` (one King cluster of 600 000 at
