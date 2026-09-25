@@ -39,7 +39,7 @@
               isempty(c6.simulation.gpu_list) &&
               c6.simulation.omp_threads == 8
         @test c6.merger.config_file == merger_file
-        @test c6.simulation.startup_timeout == g6.simulation.startup_timeout == 3600.0
+        @test c6.simulation.startup_timeout == g6.simulation.startup_timeout == 14400.0
     end
 end
 

@@ -222,17 +222,27 @@ function read_rows(paths)
 end
 
 """
+    _short_host(name) -> String
+
+`name` up to its first dot: the host label without the domain.
+"""
+_short_host(name::AbstractString) = String(first(split(name, '.')))
+
+"""
     read_cards(path, peak_files) -> Vector{NamedTuple}
 
 Cards `(match, label, class, peak, source)` of the `[[card]]` tables in
 `path`, datacenter cards first, each class in file order. A card with a
 `host` takes its FP32 peak from the `fp32_peak_*.toml` among `peak_files`
-whose `host` equals it, unless that file names another device.
+whose `host` equals it (domain part ignored: `gethostname()` may return
+`trustee.example.org` where the card says `trustee`) and whose `device`
+(when recorded) contains the card's `match`; several cards may share a
+host name, one record each.
 """
 function read_cards(path, peak_files)
     doc = TOML.parsefile(path)
     get(doc, "card", nothing) isa AbstractVector || error("$path: no [[card]] tables")
-    measured = Dict{String,Tuple{Float64,String,String}}()
+    measured = Tuple{String,Float64,String,String}[]      # (host, tflops, file, device)
     for file in peak_files
         d = TOML.parsefile(file)
         tflops = get(get(d, "fp32", Dict()), "tflops", nothing)
@@ -240,7 +250,7 @@ function read_cards(path, peak_files)
             println("$(basename(file)): no host or fp32.tflops, ignored")
             continue
         end
-        measured[d["host"]] = (Float64(tflops), file, get(d, "device", ""))
+        push!(measured, (String(d["host"]), Float64(tflops), file, String(get(d, "device", ""))))
     end
     cards = map(enumerate(doc["card"])) do (i, c)
         for key in ("match", "label", "class", "fp32_peak_tflops")
@@ -250,13 +260,15 @@ function read_cards(path, peak_files)
             error("$path: card $i: class must be one of \"datacenter\" | \"consumer\"")
         peak = Float64(c["fp32_peak_tflops"])
         source = "datasheet"
-        host = get(c, "host", "")
-        if haskey(measured, host)
-            tflops, file, device = measured[host]
-            if isempty(device) || occursin(c["match"], device)
-                peak = tflops
-                source = "measured $(basename(file))"
-            else
+        host = _short_host(get(c, "host", ""))
+        on_host = filter(m -> _short_host(m[1]) == host, measured)
+        hit = findfirst(m -> isempty(m[4]) || occursin(c["match"], m[4]), on_host)
+        if hit !== nothing
+            _, tflops, file, _ = on_host[hit]
+            peak = tflops
+            source = "measured $(basename(file))"
+        else
+            for (_, _, file, device) in on_host
                 println(
                     "$(basename(file)) measured \"$device\", not \"$(c["match"])\": ",
                     "datasheet peak kept",

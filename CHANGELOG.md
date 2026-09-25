@@ -53,6 +53,15 @@ entries say so.
 
 ### Fixed
 
+- `startup_timeout` of the four 6 × 10⁵-body probe pipelines under
+  `input_files/gpu/` raised from 3600 s to 14 400 s: the AVX build needs more
+  than an hour to its first adjustment on a slow host (i7-10750H, EPYC 7551P),
+  and the watchdog killed the `cpu_merger_600k` probe there at 3600 s.
+- `gpu_cells_figures.jl`: FP32 peak records are matched by host *and*
+  device, so two cards in hosts of the same name (one workstation name, two
+  machines) each take their own measured peak instead of one overwriting the
+  other in the lookup; the host comparison ignores the domain part, which
+  `gethostname()` includes on some machines and the cards file does not.
 - Stage processes of the validation driver and the engine itself start in
   their own session (`detach`). A terminal closing above a `nohup`-ed
   driver used to kill the running stage and its engine: `nohup` shields

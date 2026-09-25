@@ -26,7 +26,7 @@ gpu_list = [0]            # device indices for the engine (<= 4 per process); []
 run_id_prefix = "gpu_merger600k"
 monitor = true
 telemetry_interval = 5.0
-startup_timeout = 3600.0  # s; the initial force and neighbour lists of 6×10⁵ bodies take minutes on the host
+startup_timeout = 14400.0  # s; the first adjustment of 6×10⁵ bodies on a slow host takes over an hour with the AVX build
 exit_grace = 600.0
 
 [postprocess]
