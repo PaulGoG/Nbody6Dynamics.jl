@@ -298,7 +298,10 @@ truncate_jacobi = false
 
         # Unknown merger keys are refused, naming the key.
         bad = joinpath(TESTDIR, "merger_unknown.toml")
-        base_text = read(joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"), String)
+        base_text = read(
+            joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"),
+            String,
+        )
         write(bad, replace(base_text, "eccentricity" => "ecentricity"; count = 1))
         err = try
             load_merger_config(bad)

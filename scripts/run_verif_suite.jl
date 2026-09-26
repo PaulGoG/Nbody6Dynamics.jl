@@ -80,8 +80,14 @@ end
 
 const SUITE = [
     (name = "single", raw = cfg_for_single("input_files/engine/N5k_medium.inp", "verif_single")),
-    (name = "triorbit", raw = cfg_for_merger("input_files/verification/verif_triorbit.toml", "verif_triorbit")),
-    (name = "3d5cluster", raw = cfg_for_merger("input_files/verification/verif_3d5cluster.toml", "verif_3d5")),
+    (
+        name = "triorbit",
+        raw = cfg_for_merger("input_files/verification/verif_triorbit.toml", "verif_triorbit"),
+    ),
+    (
+        name = "3d5cluster",
+        raw = cfg_for_merger("input_files/verification/verif_3d5cluster.toml", "verif_3d5"),
+    ),
 ]
 
 # Intermediate configs go to a scratch dir (the TOML round-trip through

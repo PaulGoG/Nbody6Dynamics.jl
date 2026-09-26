@@ -342,7 +342,7 @@ Nbody6Dynamics/
 │   ├── make.jl                      # Documenter.jl build script
 │   ├── activate.jl                  # Activates the docs environment (package developed by relative path)
 │   ├── Project.toml                 # Documentation build environment
-│   ├── src/                         # index, walkthrough (Literate), manual, input_files, multi_cluster_mergers, api, references
+│   ├── src/                         # index, walkthrough (Literate), manual, input_files, showcase, multi_cluster_mergers, api, references
 │   ├── src/references.bib           # BibTeX of the sources cited (DocumenterCitations)
 │   └── src/assets/                  # figure and animation used by the README and the docs site, with their PROVENANCE.md
 ├── input_files/                     # Shipped inputs, one folder per purpose (input_files/README.md)
