@@ -6,7 +6,11 @@ entries say so.
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- The telemetry figure's legend is at most two columns wide. With a device
+  present it carries six entries with their summary values, and three
+  columns of those overran the canvas on every campaign run.
 
 ## [0.4.0] — 2026-09-26
 

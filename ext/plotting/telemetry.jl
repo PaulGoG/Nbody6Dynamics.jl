@@ -193,7 +193,9 @@ Returns the output path, or `nothing` with fewer than two samples.
         push!(axes, ax3)
     end
 
-    isempty(elements) || _top_legend!(fig, elements, labels; nbanks = length(elements) > 3 ? 2 : 1)
+    # At most two columns: the entries carry their summary values and six of
+    # them in three columns overran the canvas on runs with a device.
+    isempty(elements) || _top_legend!(fig, elements, labels; nbanks = cld(length(elements), 2))
     linkxaxes!(axes...)
     xlims!(ax1, t_lo, t_hi)
     rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
