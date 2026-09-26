@@ -127,7 +127,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `stellar_evo_pattern` | String | `"sev.83_*"` | Glob pattern for stellar evolution files (matches what this fork's `hrplot.F` writes: `sev.83_<time>`); must be nonempty when `read_stellar_evo = true` |
 | `read_binary_evo`     | Bool   | `true`  | Read the regularised-binary snapshots |
 | `binary_evo_pattern`  | String | `"bev.82_*"` | Glob pattern for the binary files (`bev.82_<time>`, written by `hrplot.F` alongside `sev.83`); must be nonempty when `read_binary_evo = true` |
-| `pair_sum_max_n`      | Int    | `100000` | Largest snapshot particle count for which the O(N²) pair-sum diagnostics run: the remnant diagnostics (`remnant_diagnostics.csv` and its figures), the per-cluster virial ratio and structure, and the bound-member density and velocity-dispersion profiles. Above it they are skipped with a warning naming the key; the readers and the energy, Lagrangian-radii, escaper, stellar and snapshot figures are unaffected. `0` disables them |
+| `pair_sum_max_n`      | Int    | `100000` | Largest snapshot particle count for which the O(N²) pair-sum diagnostics run: the remnant diagnostics (`remnant_diagnostics.csv` and its figures), the per-cluster virial ratio and structure, and the bound-member density and velocity-dispersion profiles. Above it they are skipped with a warning naming the key; the readers and the energy, Lagrangian-radii, escaper, stellar and snapshot figures are unaffected; the binary figures' hard/soft scale is taken over the bound systems up to the same limit and over every system above it. `0` disables them |
 
 !!! note "HDF5 snapshot support was removed"
     Setting `snapshot_format = "hdf5"` raises an error. The old HDF5 reader

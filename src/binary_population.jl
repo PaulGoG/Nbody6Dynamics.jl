@@ -208,15 +208,21 @@ function binary_population(
 end
 
 """
-    binary_scales(bevs, snaps::Vector{Snapshot}) -> (; m_mean, sigma_kms, n_stars)
+    binary_scales(bevs, snaps::Vector{Snapshot};
+                  pair_sum_max_n = PostprocessConfig().pair_sum_max_n)
+        -> (; m_mean, sigma_kms, n_stars)
 
 Per-epoch hard/soft energy scales and stellar counts for `bevs`, each taken
-from the snapshot in `snaps` closest in physical time. Returns `nothing`
-when `snaps` is empty.
+from the snapshot in `snaps` closest in physical time. The scale of a
+snapshot of at most `pair_sum_max_n` particles is taken over its bound
+systems ([`hardness_scale`](@ref) with `bound_only`), an O(N²) selection;
+above that limit it is taken over every system. Returns `nothing` when
+`snaps` is empty.
 """
 function binary_scales(
     bevs::AbstractVector{BinaryEvolutionSnapshot},
-    snaps::AbstractVector{Snapshot},
+    snaps::AbstractVector{Snapshot};
+    pair_sum_max_n::Integer = PostprocessConfig().pair_sum_max_n,
 )
     isempty(snaps) && return nothing
     t_snap = [time_myr(s.header) for s in snaps]
@@ -226,7 +232,7 @@ function binary_scales(
     n_stars = Vector{Int}(undef, n)
     for (i, b) in enumerate(bevs)
         j = argmin(abs.(t_snap .- b.time_myr))
-        sc = hardness_scale(snaps[j], b)
+        sc = hardness_scale(snaps[j], b; bound_only = nparticles(snaps[j]) ≤ pair_sum_max_n)
         m_mean[i] = sc.m_mean
         sigma[i] = sc.sigma_kms
         n_stars[i] = nparticles(snaps[j])

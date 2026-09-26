@@ -6,20 +6,29 @@
 # hand all route through `generate_plots`.
 
 """
-    _plot_binary_diagnostics(bevs, results, vis)
+    _plot_binary_diagnostics(bevs, results, vis; pair_sum_max_n)
 
 Binary-population figures for `bevs`. The hard/soft energy scale and the
 stellar count per epoch come from the conf.3 snapshots when present
 ([`binary_scales`](@ref)); without snapshots the stellar count falls back
-to the ADJUST diagnostics and the pairs are left unclassified.
+to the ADJUST diagnostics and the pairs are left unclassified. The scale
+is taken over the bound systems only while no snapshot holds more than
+`pair_sum_max_n` particles (an O(N²) selection), over every system above
+that, with a warning.
 """
 function _plot_binary_diagnostics(
     bevs::Vector{BinaryEvolutionSnapshot},
     results::Dict{Symbol,Any},
-    vis::VisualizationConfig,
+    vis::VisualizationConfig;
+    pair_sum_max_n::Integer,
 )
     snaps = get(results, :snapshots, Snapshot[])::Vector{Snapshot}
-    scales = binary_scales(bevs, snaps)
+    n_max = isempty(snaps) ? 0 : maximum(nparticles, snaps)
+    n_max ≤ pair_sum_max_n ||
+        @warn "Binary hard/soft scale taken over all systems, not the bound set: " *
+              "snapshots of up to $n_max particles exceed postprocess.pair_sum_max_n = " *
+              "$pair_sum_max_n (O(N²) pair sums)"
+    scales = binary_scales(bevs, snaps; pair_sum_max_n)
     if scales === nothing
         n_stars = nothing
         if haskey(results, :diagnostics)
@@ -75,7 +84,9 @@ figures (inter-cluster separation, per-cluster virial ratio).
 per-cluster virial ratio and structure, the bound-member density and
 velocity-dispersion profiles and the remnant figures: they are drawn only
 when no snapshot holds more particles than this, with a warning otherwise;
-the inter-cluster separation is drawn regardless. The default is that of
+the inter-cluster separation is drawn regardless. The bound-set selection
+behind the binary figures' hard/soft scale obeys the same limit, above
+which the scale is taken over every system. The default is that of
 `PostprocessConfig`, and the `Nbody6Config` method passes
 `cfg.postprocess.pair_sum_max_n`.
 
@@ -230,7 +241,7 @@ function Nbody6Dynamics.generate_plots(
         bevs = results[:binary_evo]::Vector{BinaryEvolutionSnapshot}
         if !isempty(bevs)
             @info "Plotting binary population..."
-            _plot_binary_diagnostics(bevs, results, vis)
+            _plot_binary_diagnostics(bevs, results, vis; pair_sum_max_n)
         end
     end
 

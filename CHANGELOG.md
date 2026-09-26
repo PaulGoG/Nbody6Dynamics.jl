@@ -8,6 +8,11 @@ entries say so.
 
 ### Fixed
 
+- The binary-population figures no longer run an ungated O(N²) pair sum:
+  their hard/soft scale selected the bound systems of every snapshot
+  whatever `pair_sum_max_n`, forty minutes of the post-processing of the
+  575 080-body probe. Above the limit the scale is now taken over every
+  system, with a warning; `binary_scales` takes the limit as a keyword.
 - The telemetry figure's legend is at most two columns wide. With a device
   present it carries six entries with their summary values, and three
   columns of those overran the canvas on every campaign run.

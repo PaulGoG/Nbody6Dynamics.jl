@@ -101,6 +101,12 @@
     @test scales.m_mean ≈ [2.0, 2.0] rtol = 1e-6
     @test scales.sigma_kms ≈ fill(sc.sigma_kms, 2) rtol = 1e-6
     @test binary_scales([bev0], Snapshot[]) === nothing
+    # Above the pair-sum limit the scale is taken over every system.
+    sc_all = hardness_scale(snap, bev0; bound_only = false)
+    scales_all = binary_scales([bev0], [snap]; pair_sum_max_n = 0)
+    @test scales_all.n_stars == [6]
+    @test scales_all.m_mean ≈ [sc_all.m_mean] rtol = 1e-6
+    @test scales_all.sigma_kms ≈ [sc_all.sigma_kms] rtol = 1e-6
 
     # Figures: time series, single epoch, classified and unclassified
     # elements, period histograms, and the no-data paths.
