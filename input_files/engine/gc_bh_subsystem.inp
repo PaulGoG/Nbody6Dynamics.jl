@@ -1,0 +1,45 @@
+! =============================================================================
+! Globular cluster with a black-hole subsystem
+!   N = 100 000, King W0 = 6, Z = 0.0002, 2500 primordial binaries, Kroupa IMF
+!   0.08-100 Msun, point-mass galaxy at 8 kpc (circular orbit), TCRIT = 2000 NB
+!   (about 2 Gyr). Science case, expected phenomena, cost and references:
+!   documentation, Input Files, "Engine inputs: the science cases".
+! =============================================================================
+
+&INNBODY6
+KSTART=1,TCOMP=1.0E8,TCRTP0=259200,isernb=40,iserreg=40,iserks=0 /
+
+&ININPUT
+N=100000,NFIX=1,NCRIT=10,NRAND=41827,NNBOPT=80,NRUN=1,NCOMM=10,
+ETAI=0.01,ETAR=0.01,RS0=0.12,DTADJ=2.0,DELTAT=20.0,TCRIT=2000.0,QE=1.0E-02,RBAR=3.00,ZMBAR=0.7,
+KZ(1:10)= 1 1 1 0 1 0 3 2 3 2
+KZ(11:20)=0 1 0 2 2 0 0 0 3 6
+KZ(21:30)=1 1 2 0 2 2 3 2 0 2
+KZ(31:40)=1 0 2 2 1 0 1 1 2 1
+KZ(41:50)=0 0 0 0 0 4 3 0 3 0 ,
+DTMIN=2.5E-6,RMIN=8.E-5,ETAU=0.1,ECLOSE=1.0,GMIN=1.0E-06,GMAX=0.01,SMAX=1.0,
+Level='C' /
+
+&INSSE /
+
+&INBSE /
+
+&INCOLL /
+
+&INDATA
+ALPHAS=2.35,BODY1=100.0,BODYN=0.08,NBIN0=2500,NHI0=0,ZMET=0.0002,EPOCH0=0,DTPLOT=20.0 /
+
+&INSETUP SEMI=,ECC=,APO=,N2=,SCALE=,ZM1=,ZM2,ZMH,RCUT= /
+
+&INSCALE
+Q=0.5,VXROT=0.0,VZROT=0.0,RTIDE=0.0 /
+
+&INXTRNL0
+GMG=1.0E11,RG0=8.0,DISK=,A=,B=,VCIRC=,RCIRC=,GMB=,AR=,GAM=,RG=,,,VG=,,,MP=,AP2=,MPDOT=,TDELAY= /
+
+&INBINPOP
+SEMI0=0.001,ECC0=-1.0,RATIO=1.0,RANGE=5.0,NSKIP=3,IDORM=0 /
+
+&INHIPOP
+SEMI0=,ECC0=,RATIO=,RANGE= /
+

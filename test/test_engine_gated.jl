@@ -124,7 +124,7 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         _keep(run_dir, "single")
 
         # 2. Merger demo with frequent dumps, then a restart
-        mtoml = read(joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml"), String)
+        mtoml = read(joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"), String)
         # Fixed seed for reproducibility of the engine-dependent runs
         mtoml = replace(mtoml, r"tcrit = [0-9.]+" => "tcrit = 2.0")
         mtoml =

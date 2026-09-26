@@ -47,7 +47,7 @@ function pipeline_toml(merger_path, nthreads, prefix)
 
     [simulation]
     run_test = true
-    input_file = "../../input_files/N1k_quick.inp"
+    input_file = "../../input_files/engine/N1k_quick.inp"
     runs_dir = "$(runs_dir)"
     binary_name = "nbody6++"
     mpi_ranks = 1

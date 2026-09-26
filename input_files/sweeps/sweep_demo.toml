@@ -2,12 +2,12 @@
 
 [sweep]
 name = "demo"
-pipeline_config = "../config.toml"        # relative to this file
-merger_config = "merger_demo_small.toml"  # relative to this file
+pipeline_config = "../../config.toml"        # relative to this file
+merger_config = "../mergers/merger_demo_small.toml"  # relative to this file
 seeds = [11, 12]                          # merger.seed at every grid point; distinct integers
 concurrency = 5                           # simultaneous jobs; ≥ 1
 omp_threads = 4                           # OpenMP threads per job; ≥ 1
-runs_dir = "../runs"                      # sweep root; the sweep gets sweep_<name>_<timestamp>/
+runs_dir = "../../runs"                      # sweep root; the sweep gets sweep_<name>_<timestamp>/
 
 [sweep.grid]                              # dotted merger-TOML keys → values; Cartesian product
 "merger.orbit.eccentricity" = [0.0, 0.6]

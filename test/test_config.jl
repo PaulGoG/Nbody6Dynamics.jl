@@ -352,4 +352,41 @@ config_file = "merger.toml"
         joinpath(Nbody6Dynamics._PACKAGE_ROOT, "input_files", "showcase", "equal_pipeline.toml"),
     )
     @test_throws ArgumentError example_input("does_not_ship.inp")
+    # A bare name resolves across the folders by purpose (the flat names of 0.3.0 stay valid).
+    @test example_input("N1k_quick.inp") == example_input("engine/N1k_quick.inp")
+    @test example_input("merger_demo_small.toml") == normpath(
+        joinpath(Nbody6Dynamics._PACKAGE_ROOT, "input_files", "mergers", "merger_demo_small.toml"),
+    )
+end
+
+# =====================================================================
+
+@testset "Every shipped configuration loads" begin
+    root = joinpath(Nbody6Dynamics._PACKAGE_ROOT, "input_files")
+    # The layout by purpose: nothing loose at the top, every folder present.
+    @test isempty(
+        filter(isfile, readdir(root; join = true)) ∩
+        filter(p -> endswith(p, ".toml") || endswith(p, ".inp"), readdir(root; join = true)),
+    )
+    for sub in ("engine", "mergers", "verification", "sweeps", "showcase", "gpu")
+        @test isdir(joinpath(root, sub))
+    end
+    # Every TOML parses with the loader its top-level table selects, and the
+    # relative references inside the sweep files point at files that ship.
+    n = 0
+    for (dir, _, files) in walkdir(root), f in sort(files)
+        endswith(f, ".toml") || continue
+        path = joinpath(dir, f)
+        raw = Nbody6Dynamics.TOML.parsefile(path)
+        if haskey(raw, "sweep")
+            @test load_sweep_config(path) isa Nbody6Dynamics.SweepConfig
+        elseif haskey(raw, "install") || haskey(raw, "simulation")
+            @test load_config(path) isa Nbody6Dynamics.Nbody6Config
+        else
+            @test load_merger_config(path) isa Nbody6Dynamics.MergerConfig
+        end
+        n += 1
+    end
+    @test n ≥ 30
+    @test count(f -> endswith(f, ".inp"), readdir(joinpath(root, "engine"))) == 10
 end

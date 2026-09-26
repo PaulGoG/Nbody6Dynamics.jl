@@ -37,7 +37,7 @@ config_file = ""
     write(
         base_merger,
         replace(
-            read(joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml"), String),
+            read(joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"), String),
             "[merger]\n" => "[merger]\nseed = 7\n";
             count = 1,
         ),
@@ -284,7 +284,7 @@ end
     )
     write(
         joinpath(work, "merger.toml"),
-        read(joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml"), String),
+        read(joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"), String),
     )
     function _done_sweep(name, grid_text, seeds_text)
         spath = joinpath(work, "sweep_$(name).toml")
@@ -372,7 +372,7 @@ end
 # =====================================================================
 
 @testset "Control configurations" begin
-    demo = joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml")
+    demo = joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml")
     raw = Nbody6Dynamics.TOML.parsefile(demo)
     raw["merger"]["cluster2"]["N"] = 500
     raw["merger"]["cluster2"]["rbar"] = 4.0

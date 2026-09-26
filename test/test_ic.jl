@@ -204,7 +204,7 @@
 
     # --- verif_triorbit.toml Lagrange equilibrium (config regression) ---
     @testset "verif_triorbit config equilibrium" begin
-        path = joinpath(@__DIR__, "..", "input_files", "verif_triorbit.toml")
+        path = joinpath(@__DIR__, "..", "input_files", "verification", "verif_triorbit.toml")
         cfg = load_merger_config(path)
         @test length(cfg.clusters) == 3
         m = expected_mass(cfg.clusters[1].imf, cfg.clusters[1].N)   # 900 M☉, equal bodies
@@ -298,7 +298,7 @@ truncate_jacobi = false
 
         # Unknown merger keys are refused, naming the key.
         bad = joinpath(TESTDIR, "merger_unknown.toml")
-        base_text = read(joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml"), String)
+        base_text = read(joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"), String)
         write(bad, replace(base_text, "eccentricity" => "ecentricity"; count = 1))
         err = try
             load_merger_config(bad)

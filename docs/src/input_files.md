@@ -1,53 +1,109 @@
 # Input File Reference
 
-The input files ship under `input_files/` in the package tree (`example_input(name)` returns the path of one). Two kinds exist:
+The inputs ship under `input_files/` in the package tree, one folder per purpose. `example_input(name)` returns the absolute path of one for a project outside the checkout (`example_input("engine/N1k_quick.inp")`; a bare name such as `example_input("N1k_quick.inp")` is looked up across the folders). Four kinds of file exist:
 
-- **`.inp`** — Fortran NAMELIST input files for single-cluster Nbody6++ runs (used via `simulation.input_file`)
-- **`.toml`** — merger IC configurations for the Julia IC generator (used via `merger.config_file` or `run_merger_pipeline`)
+- **engine inputs** (`.inp`, under `engine/`) — Fortran NAMELIST inputs of single-cluster Nbody6++ runs, used through `simulation.input_file`;
+- **merger configurations** (`.toml`, under `mergers/` and `verification/`, and the merger TOMLs of `showcase/` and `gpu/`) — initial conditions for the Julia generator, used through `merger.config_file` or `run_merger_pipeline`;
+- **pipeline configurations** (`*_pipeline.toml` under `showcase/` and `gpu/`) — complete configurations for `scripts/run_setup.jl`, with every path relative to their own folder;
+- **sweep configurations** (`sweeps/`, `showcase/sweep.toml`) — a grid over a merger TOML for `scripts/run_sweep.jl`.
 
-## Directory contents
+```
+input_files/
+├── engine/          # single-cluster engine inputs
+├── mergers/         # merger initial-condition configurations
+├── verification/    # the two targets of scripts/run_verif_suite.jl
+├── sweeps/          # sweep configurations
+├── showcase/        # five end-to-end cases (Showcase Cases)
+└── gpu/             # CUDA-host validation and the probes above 5 × 10⁵ bodies
+```
+
+## Engine inputs
 
 | File | Purpose |
 |---|---|
-| `N1k_quick.inp` | 1k-particle smoke test; isolated, no binaries, TCRIT=5 NB, Level C |
-| `N5k_medium.inp` | 5k-particle medium test; isolated, no binaries, TCRIT=10 NB |
-| `N25k_production.inp` | 25k production open cluster; Z=0.001, 200 binaries, point-mass tide at 13.3 kpc, TCRIT=200 NB |
-| `N100k_production.inp` | 100k production open cluster; Z=0.001, 500 binaries, tidal field, TCRIT=100 NB |
-| `imbh_runaway.inp` | IMBH formation via runaway collisions; 100k, ultra-dense (RBAR=0.5 pc), no binaries, isolated, TCRIT=20 NB |
-| `gc_bh_subsystem.inp` | Globular-cluster BH subsystem; 100k, Z=0.0002, 2500 binaries, tide at 8 kpc, TCRIT=2000 NB |
-| `tidal_tails.inp` | Tidal stripping near the Galactic centre; 50k, Z=0.02, tide at 2 kpc, TCRIT=500 NB |
-| `young_massive_binaries.inp` | Binary-rich young massive cluster; 50k, 50% binaries (NBIN0=12500), isolated, TCRIT=100 NB |
-| `pop3_cluster.inp` | Population III cluster; 50k, Z=1e-8, top-heavy IMF (ALPHAS=1.0, 8–300 M☉), TCRIT=200 NB |
-| `merger_demo_small.toml` | 2×1000 King clusters, Kepler orbit; runs in seconds — full-pipeline demo, TCRIT=5 NB |
-| `merger_equal_mass.toml` | 2×50000 King clusters, q=1 production merger (core-merger / IMBH science case) |
-| `merger_minor_plummer.toml` | Plummer minor merger, q=0.1 (100k primary + 10k satellite); dynamical-friction inspiral |
-| `merger_triple_cluster.toml` | 3×30000 King clusters, explicit triangular infall configuration |
-| `merger_3cluster_small.toml` | 3×800 clusters (2 King + 1 Plummer), explicit triangle — small demo |
-| `merger_5cluster_small.toml` | 5×500 clusters, pentagon layout with inward velocities — small demo |
-| `N10k_long.inp` | 10k-body single cluster, extended TCRIT (long-run variant of the upstream example) |
-| `merger_27cluster_cubic.toml` | 27×1000 clusters on a 3×3×3 cubic grid, inward velocities; stress test for the many-cluster plot paths |
-| `verif_triorbit.toml` | Verification: 3 equal clusters on a rotating Lagrange-equilibrium triangle (seed 7; see below) |
-| `verif_3d5cluster.toml` | Verification: 5 clusters distributed out of the z=0 plane; exercises xz/yz projections and 3D COM tracking (seed 13) |
+| `engine/N1k_quick.inp` | 1k-particle smoke test; isolated, no binaries, TCRIT=5 NB, Level C |
+| `engine/N5k_medium.inp` | 5k-particle medium test; isolated, no binaries, TCRIT=10 NB; the `single` target of the verification suite |
+| `engine/N10k_long.inp` | 10k-body single cluster, extended TCRIT=50 NB (long-run variant of the upstream example) |
+| `engine/N25k_production.inp` | 25k production open cluster; Z=0.001, 200 binaries, point-mass tide at 13.3 kpc, TCRIT=200 NB |
+| `engine/N100k_production.inp` | 100k production open cluster; Z=0.001, 500 binaries, tidal field, TCRIT=100 NB |
+| `engine/gc_bh_subsystem.inp` | Globular-cluster black-hole subsystem; 100k, Z=0.0002, 2500 binaries, tide at 8 kpc, TCRIT=2000 NB — [science case](@ref "Engine inputs: the science cases") |
+| `engine/imbh_runaway.inp` | IMBH formation via runaway collisions; 100k, ultra-dense (RBAR=0.5 pc), no binaries, isolated, TCRIT=20 NB — science case |
+| `engine/pop3_cluster.inp` | Population III cluster; 50k, Z=1e-8, top-heavy IMF (ALPHAS=1.0, 8–300 M☉), TCRIT=200 NB — science case |
+| `engine/tidal_tails.inp` | Tidal stripping near the Galactic centre; 50k, Z=0.02, tide at 2 kpc, TCRIT=500 NB — science case |
+| `engine/young_massive_binaries.inp` | Binary-rich young massive cluster; 50k, 50 % binaries (NBIN0=12500), isolated, TCRIT=100 NB — science case |
 
 Every shipped `.inp` sets `QE = 1.0E-02`: with `KZ(2) = 1` the engine halts when the relative energy change over one adjustment interval exceeds `5 QE`, and these runs evolve stars (`KZ(19) = 3`), carry binaries, and mostly sit in a point-mass tidal field whose work the engine's energy check charges to the error, so a tolerance of the order of `1e-4` stops them on ordinary events (a KS termination halted the 1k smoke run at t = 3 of 5) while `1.0` would disable the check. At `1e-2` the check still catches an integration that goes wrong by 5 % per interval, which is what it is for.
 
-To use an `.inp` file, set in `config.toml`:
+To use an `.inp` file, point `simulation.input_file` at it, relative to the directory of the configuration (from the root `config.toml` of a checkout):
 
 ```toml
 [simulation]
 run_test   = true
-input_file = "../../input_files/N25k_production.inp"
+input_file = "input_files/engine/N25k_production.inp"
 ```
+
+## Merger configurations
+
+| File | Purpose |
+|---|---|
+| `mergers/merger_demo_small.toml` | 2×1000 King clusters, Kepler orbit; runs in seconds — the full-pipeline demo of the root `config.toml`, TCRIT=5 NB |
+| `mergers/merger_equal_mass.toml` | 2×50000 King clusters, q=1 production merger (core-merger / IMBH science case) |
+| `mergers/merger_minor_plummer.toml` | Plummer minor merger, q=0.1 (100k primary + 10k satellite); dynamical-friction inspiral |
+| `mergers/merger_triple_cluster.toml` | 3×30000 King clusters, explicit triangular infall configuration |
+| `mergers/merger_3cluster_small.toml` | 3×800 clusters (2 King + 1 Plummer), explicit triangle — small demo |
+| `mergers/merger_5cluster_small.toml` | 5×500 clusters, pentagon layout with inward velocities — small demo |
+| `mergers/merger_27cluster_cubic.toml` | 27×1000 clusters on a 3×3×3 cubic grid, inward velocities; a cold-collapse stress test of the many-cluster figure paths, not a merger in the engine's regime (see Cluster Mergers, "Feasibility and limitations") |
 
 To use a merger TOML:
 
 ```toml
 [merger]
 enabled     = true
-config_file = "input_files/merger_demo_small.toml"
+config_file = "input_files/mergers/merger_demo_small.toml"
 ```
 
-or directly `run_merger_pipeline("input_files/merger_demo_small.toml")`.
+or directly `run_merger_pipeline("input_files/mergers/merger_demo_small.toml")`. The schema is documented below ([Merger TOML schema](@ref)).
+
+## Verification configurations
+
+| File | Purpose |
+|---|---|
+| `verification/verif_triorbit.toml` | Three equal clusters on a rotating Lagrange-equilibrium triangle (seed 7); the derivation is [below](@ref "`verif_triorbit.toml` — Lagrange-equilibrium triangle") |
+| `verification/verif_3d5cluster.toml` | Five clusters distributed out of the z=0 plane; exercises the xz/yz projections and the three-dimensional COM tracking (seed 13) |
+
+Both run through `scripts/run_verif_suite.jl` together with `engine/N5k_medium.inp`.
+
+## Sweep configurations
+
+`sweeps/sweep_demo.toml` is a small demonstration grid (orbital eccentricity × secondary size × two seeds) over `mergers/merger_demo_small.toml` with the root `config.toml` as its pipeline base; `showcase/sweep.toml` is the showcase sweep with isolated controls. The file format is in the manual, section Parameter sweeps.
+
+## Showcase and GPU-host cases
+
+The five cases of `showcase/`, their reference runs and the figures they produce are on the page [Showcase Cases](@ref). The files of `gpu/` (the CUDA and AVX builds, the 2 × 25 000-star validation merger and the probes above 5 × 10⁵ bodies) are described [below](@ref "The GPU-host and verification cases"); the recipe for a CUDA host is in the manual.
+
+## Engine inputs: the science cases
+
+Five of the engine inputs are science cases rather than tests: each sets up a cluster in which a specific dynamical process dominates, with the parameters that process needs. They are shipped as starting points, not as validated results: none of them has been run by the package's author, and the cost figures are estimates for the AVX build from the N-scaling of the shipped runs, with the wall-clock limit `TCRTP0` of each file set accordingly. The stellar-evolution level of every file is `C` [Kamlah2022](@cite).
+
+### `gc_bh_subsystem.inp` — globular cluster with a black-hole subsystem
+
+Metal-poor globular clusters retain a population of stellar-mass black holes that segregates to the core and forms a dynamically decoupled subsystem: it delays core collapse by acting as a central energy source, hardens black-hole binaries in three-body encounters and produces mergers, and is depleted by gravitational-wave recoil and dynamical ejection; once it is exhausted, the cluster undergoes a late core collapse [ArcaSedda2024](@cite), [Banerjee2022](@cite). Setup: N = 100 000, King `W0 = 6`, `Z = 0.0002`, 2500 primordial binaries, Kroupa IMF 0.08–100 M☉, point-mass galaxy at 8 kpc on a circular orbit, `TCRIT = 2000` NB (about 2 Gyr): the formation of the subsystem and its early depletion, not the 12 Gyr life of the cluster. Expected: mass segregation of the black holes within about 100 Myr, binary hardening and ejected mergers, gradual depletion, tidal stripping. Cost: days on 16–24 cores.
+
+### `imbh_runaway.inp` — IMBH formation through runaway collisions
+
+In ultra-dense young clusters (`r_h` of 0.1–0.5 pc) the most massive stars sink to the core within a Myr and collide repeatedly, building a very massive star that can collapse into an intermediate-mass black hole [Vergara2025](@cite), [ArcaSedda2023](@cite). Setup: N = 100 000, King `W0 = 9`, `r_h = 0.5` pc, `Z = 0.001`, no primordial binaries, Kroupa IMF 0.08–150 M☉, isolated, `TCRIT = 20` NB (about 20 Myr, the runaway phase). Expected: mass segregation of the O and B stars within 1–2 Myr, runaway mergers in the core, a very massive star and its collapse at a few Myr, exchange encounters that form an IMBH binary, hypervelocity ejections. Cost: hours on 16–24 cores.
+
+### `pop3_cluster.inp` — Population III cluster
+
+The first clusters formed from primordial gas with a top-heavy mass function, because the lack of metals suppresses cooling and fragmentation; with negligible winds, massive stars keep their mass to core collapse, which produces very massive black holes by direct collapse, pair-instability supernovae that leave no remnant, and pulsational pair instability [Wu2026](@cite). Setup: N = 50 000, King `W0 = 6`, `Z = 10⁻⁸`, flat IMF (`ALPHAS = 1.0`, equal mass per logarithmic bin) over 8–300 M☉, 250 primordial binaries, point-mass galaxy at 13.3 kpc, `TCRIT = 200` NB (about 500 Myr). Expected: rapid segregation, pair-instability explosions removing the most massive stars, a black-hole subsystem within a few Myr, black-hole mergers, dissolution as the supernova mass loss unbinds the system. Caveat: `Z = 10⁻⁸` lies below the metallicity range of the engine's stellar-evolution fits (10⁻⁴ to 0.03, [Hurley2000](@cite)), so the stars evolve at the edge of the tables. Cost: one to two days on 16–24 cores.
+
+### `tidal_tails.inp` — tidal tails near the Galactic centre
+
+Clusters in strong tidal fields lose stars through the Lagrange points and develop tails whose morphology, with its epicyclic overdensities, records the orbit and the mass-loss history [Kupper2010](@cite); clusters near the Galactic centre dissolve fastest [Park2018](@cite), and Palomar 5 is the archetype of a tail-dominated halo cluster [Gieles2021](@cite). Setup: N = 50 000, King `W0 = 5`, `Z = 0.02`, 2500 primordial binaries, Kroupa IMF 0.08–100 M☉, point-mass galaxy at 2 kpc on a circular orbit, `TCRIT = 500` NB (about 1 Gyr). Expected: stripping from the start, tails within about 50 Myr, preferential loss of low-mass stars, more than half the mass lost, core contraction as the tidal boundary shrinks. The engine's point-mass field (`KZ(14) = 2`) charges the tidal work to its energy check (see Cluster Mergers, "Escapers"); `QE = 0.01` accommodates it. Cost: one to two days on 16–24 cores.
+
+### `young_massive_binaries.inp` — young massive cluster with a high binary fraction
+
+More than seventy per cent of massive O stars are born in binaries [Sana2012](@cite); in a dense young cluster these drive mass transfer, stripped-envelope supernovae, X-ray binaries, double compact objects and runaway stars [Banerjee2021](@cite). Setup: N = 50 000 as 25 000 singles and 12 500 pairs (`NBIN0 = 12500`), King `W0 = 6`, `Z = 0.02`, Kroupa IMF 0.08–150 M☉, isolated, `TCRIT = 100` NB (about 50 Myr). Expected: early supernovae ejecting neutron stars, binary disruptions and runaway OB stars, blue stragglers from mass transfer, X-ray binaries, double compact objects within about 30 Myr, a diverse escaper population. Cost: half a day to a day on 16–24 cores.
 
 ---
 
@@ -310,7 +366,7 @@ With stellar evolution active (the Level C defaults), BSE mass loss drives a slo
 
 ---
 
-## Example cases
+## The GPU-host and verification cases
 
 ### `verif_3d5cluster.toml`
 
@@ -335,20 +391,6 @@ The probes above 5 × 10⁵ bodies. The merger is the case of `merger_50k.toml` 
 ### `gpu/gpu_merger_600k.toml`, `gpu/cpu_merger_600k.toml`, `gpu/gpu_single_600k.toml`, `gpu/cpu_single_600k.toml`
 
 The pipeline configurations of the two probes on the CUDA and the AVX binary: device 0, eight host threads, a start-up watchdog of one hour (the initial force and neighbour lists of 6 × 10⁵ bodies take minutes on the host), post-processing and figures on. Their install phase is off; they use the trees that `gpu_pipeline.toml` and `cpu_pipeline.toml` build. `postprocess.pair_sum_max_n` stays at its default, so the remnant and per-cluster diagnostics are skipped with a warning at this size and the binaries are compared on the engine time recorded in `RUN_INFO.toml`.
-
-### `showcase/tidal_merger.toml`
-
-An equal-mass merger inside a point-mass galactic potential (`KZ(14) = 2`). The engine evaluates no tidal energy, hence the relaxed tolerance, and the run is judged against the isolated case.
-
-### `showcase/flagship_merger.toml`
-
-Two equal King clusters of 25 000 stars on a wide eccentric orbit, followed for 50 Myr: the scale at which the package's GPU path was validated, run here on the AVX build.
-
-### `showcase/sweep_merger.toml`
-
-Base configuration of the showcase sweep: two equal King clusters of 1 pc half-mass radius on a 5 pc orbit. The infall time from apocentre is half the Kepler period, 12 Myr at `e = 0.5` against 8 Myr at `e = 0.9`, so both grid points coalesce within the run and the eccentricity axis separates them.
-
----
 
 ## Sources
 

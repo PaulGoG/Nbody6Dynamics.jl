@@ -187,7 +187,7 @@ end
         joinpath(sw, "pipeline.toml"),
         "[install]\ninstall_dir = \"backend\"\n[simulation]\ninput_file = \"x.inp\"\n",
     )
-    cp(joinpath(@__DIR__, "..", "input_files", "merger_demo_small.toml"), joinpath(sw, "m.toml"))
+    cp(joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"), joinpath(sw, "m.toml"))
     st = joinpath(sw, "sweep.toml")
     write(
         st,

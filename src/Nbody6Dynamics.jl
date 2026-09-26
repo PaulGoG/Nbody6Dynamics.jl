@@ -30,15 +30,34 @@ const _PACKAGE_ROOT = dirname(@__DIR__)
 """
     example_input(name) -> String
 
-Absolute path of a file shipped under the package's `input_files/` directory
-(`example_input("N1k_quick.inp")`, `example_input("showcase/equal_pipeline.toml")`),
+Absolute path of a file shipped under the package's `input_files/` directory,
 for a user who installed the package by URL and has no checkout to point a
-configuration at. Raises an `ArgumentError` when no such file ships.
+configuration at. `name` is a path below `input_files/`
+(`example_input("engine/N1k_quick.inp")`, `example_input("showcase/equal_pipeline.toml")`);
+a bare file name is looked up across the sub-directories
+(`example_input("N1k_quick.inp")`), which keeps the names of the flat layout
+before 0.4.0 valid. Raises an `ArgumentError` when no such file ships, or
+when a bare name matches in more than one place.
 """
 function example_input(name::AbstractString)::String
-    path = normpath(joinpath(_PACKAGE_ROOT, "input_files", name))
-    isfile(path) || throw(ArgumentError("no shipped input file named \"$name\" under input_files/"))
-    return path
+    root = joinpath(_PACKAGE_ROOT, "input_files")
+    path = normpath(joinpath(root, name))
+    isfile(path) && return path
+    if !occursin('/', name) && !occursin('\\', name)
+        hits = String[]
+        for (dir, _, files) in walkdir(root)
+            name in files && push!(hits, normpath(joinpath(dir, name)))
+        end
+        length(hits) == 1 && return first(hits)
+        length(hits) > 1 && throw(
+            ArgumentError(
+                "\"$name\" ships in more than one place under input_files/ (" *
+                join(relpath.(hits, root), ", ") *
+                "); give the sub-directory",
+            ),
+        )
+    end
+    throw(ArgumentError("no shipped input file named \"$name\" under input_files/"))
 end
 
 # ---------------------------------------------------------------------------

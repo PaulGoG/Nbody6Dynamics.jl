@@ -37,7 +37,7 @@ Nbody6Dynamics/
 ├── src/              # Library: orchestration, IC generator, readers, diagnostics
 ├── ext/              # Makie extension: figures and animations
 ├── scripts/          # CLI entry points
-├── input_files/      # Engine .inp files, merger/sweep TOMLs, showcase cases
+├── input_files/      # Shipped inputs by purpose: engine/, mergers/, verification/, sweeps/, showcase/, gpu/
 ├── test/             # Unit and physics-validation suite
 ├── bench/            # Benchmarks and scaling scripts
 ├── docs/             # Documenter.jl site sources
@@ -103,8 +103,8 @@ One invocation each; details in the sections below.
 | Instantiate the package environment | `julia activate.jl` |
 | Instantiate the script environment (figures) | `julia scripts/activate.jl` |
 | Run the main pipeline | `julia scripts/run_setup.jl [config.toml]` |
-| Run a parameter sweep | `julia scripts/run_sweep.jl input_files/sweep_demo.toml [--dry-run]` |
-| Run a showcase case | `julia scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (also `binary_`, `tidal_`; the sweep via `scripts/run_sweep.jl input_files/showcase/sweep.toml`) |
+| Run a parameter sweep | `julia scripts/run_sweep.jl input_files/sweeps/sweep_demo.toml [--dry-run]` |
+| Run a showcase case | `julia scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (also `binary_`, `tidal_`, `flagship_`; the sweep via `scripts/run_sweep.jl input_files/showcase/sweep.toml`; the cases, their reference runs and figures: docs, Showcase Cases) |
 | Run the verification suite | `julia scripts/run_verif_suite.jl` |
 | Execute the test suite | `julia -e 'include("activate.jl"); Pkg.test()'` |
 | Run the benchmarks | `julia bench/benchmarks.jl` |
@@ -142,7 +142,7 @@ julia scripts/run_setup.jl [config.toml]
 Standalone merger IC generation (no main config needed):
 
 ```julia
-result = run_merger_pipeline("input_files/merger_equal_mass.toml")
+result = run_merger_pipeline("input_files/mergers/merger_equal_mass.toml")
 # writes dat.10, merger.inp, merger_summary.txt + diagnostic plots
 ```
 
@@ -161,7 +161,7 @@ The directory of the configuration file is the project directory: relative paths
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Install / build | Working | Clone, `configure`, HDF5 Makefile patch, parallel make; CUDA path auto-detection; GPU builds compiled for the visible devices' compute capabilities or an explicit `cuda_arch` list (the upstream configure emits no architecture flag), `BUILD_INFO.toml` next to the binary, CPU/GPU/MPI binary variants selected by suffix. Validated on four CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.1); see the manual, section Validated hardware |
+| Install / build | Working | Clone, `configure`, HDF5 Makefile patch, parallel make; CUDA path auto-detection; GPU builds compiled for the visible devices' compute capabilities or an explicit `cuda_arch` list (the upstream configure emits no architecture flag), `BUILD_INFO.toml` next to the binary, CPU/GPU/MPI binary variants selected by suffix. Validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3); see the manual, section Validated hardware |
 | Merger IC generator | Working | Plummer + King samplers (King c(W0) validated against published concentrations); Kroupa (2001) IMF; Kepler two-body and explicit N-cluster orbit modes; primordial binaries (Kroupa 1995 periods, thermal eccentricities, written in the engine's pair convention); Jacobi truncation; seeded reproducibility — the TOML `seed` drives the sampler RNG and propagates to Nbody6's `NRAND`; the output intervals are written as dyadic rationals with exact decimals, because the engine's digit counter never terminates on other values. The engine itself has no multi-centre diagnostics: cluster-level results before coalescence come from the snapshot-based per-cluster tools, not from `lagr.7`/`esc.11`; see "Feasibility and limitations" in the merger documentation |
 | Remnant diagnostics | Working | Bound remnant of the whole system per snapshot: Casertano–Hut core radius (engine densities or sixth-neighbour estimate), half-mass radius, rotation (λ_R, Peebles λ_P, spin alignment with the orbital angular momentum, v_rot/σ profile), Allison et al. (2009) Λ_MSR mass segregation with segregation time, union-find coalescence time; `remnant_diagnostics.csv` and four figures per merger run |
 | Stellar population | Working | `STELLAR_CLASSES` (engine grouping of K* = −1…15), `hr_population` (single stars and members of KS pairs together), `stellar_census` per epoch and class, written as `stellar_census.csv`; HR figures with a run-level legend and a census strip |
@@ -202,7 +202,7 @@ Runs three end-to-end targets through `run_pipeline` (requires a built binary in
 
 ## Documentation
 
-The documentation site (Manual, Input Files, Cluster Mergers, API Reference, a walkthrough from a merger TOML to the generated initial conditions) is at [paulgog.github.io/Nbody6Dynamics.jl/dev](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/). It builds from `docs/`:
+The documentation site (Manual, Input Files, Showcase Cases, Cluster Mergers, API Reference, a walkthrough from a merger TOML to the generated initial conditions) is at [paulgog.github.io/Nbody6Dynamics.jl/dev](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/). It builds from `docs/`:
 
 ```bash
 julia docs/make.jl   # builds to docs/build/
@@ -345,30 +345,13 @@ Nbody6Dynamics/
 │   ├── src/                         # index, walkthrough (Literate), manual, input_files, multi_cluster_mergers, api, references
 │   ├── src/references.bib           # BibTeX of the sources cited (DocumenterCitations)
 │   └── src/assets/                  # figure and animation used by the README and the docs site, with their PROVENANCE.md
-├── input_files/
-│   ├── N1k_quick.inp                # N=1000 smoke test (seconds)
-│   ├── N5k_medium.inp               # N=5000 medium verification run
-│   ├── N25k_production.inp          # N=25000 production run
-│   ├── N100k_production.inp         # N=100000 production run
-│   ├── gc_bh_subsystem.inp          # Globular cluster with BH subsystem
-│   ├── imbh_runaway.inp             # IMBH formation via runaway collisions
-│   ├── pop3_cluster.inp             # Population III near-zero-metallicity cluster
-│   ├── tidal_tails.inp              # Tidal-tail formation, Galactic-centre cluster
-│   ├── young_massive_binaries.inp   # Young massive cluster, high binary fraction
-│   ├── merger_demo_small.toml       # Quick equal-mass King merger demo (N=1000/cluster)
-│   ├── merger_equal_mass.toml       # Equal-mass King merger (q=1), eccentric orbit
-│   ├── merger_minor_plummer.toml    # Minor Plummer merger (q=0.1), inspiral setup
-│   ├── merger_triple_cluster.toml   # Triple cluster, explicit-position orbit mode
-│   ├── merger_3cluster_small.toml   # 3-cluster equilateral triangle, small
-│   ├── merger_5cluster_small.toml   # 5-cluster pentagon, small
-│   ├── N10k_long.inp                # 10k single cluster, extended TCRIT (long run)
-│   ├── merger_27cluster_cubic.toml  # 27 clusters on a 3×3×3 cubic grid
-│   ├── verif_triorbit.toml          # Bound Lagrange-triangle verification target
-│   ├── verif_3d5cluster.toml        # 5 clusters distributed in 3D (projection/COM verification)
-│   ├── gpu/                         # CUDA-host recipe: GPU and CPU reference builds, a 2 × 25k merger, the 6 × 10⁵-body probes (see the manual)
-│   ├── sweep_demo.toml              # Demonstration sweep (eccentricity × secondary size × seeds)
-│   └── showcase/                    # Four science cases with Myr intervals: equal-mass eccentric merger,
-│                                    #   binary-rich unequal merger, tidal-field merger, sweep with controls
+├── input_files/                     # Shipped inputs, one folder per purpose (input_files/README.md)
+│   ├── engine/                      # Single-cluster engine inputs: N1k_quick … N100k_production, N10k_long, five science cases
+│   ├── mergers/                     # Merger initial-condition TOMLs: demo, equal-mass, minor Plummer, triple, 3- and 5-cluster, 27-cluster grid
+│   ├── verification/                # verif_triorbit (Lagrange triangle), verif_3d5cluster (five clusters in 3D)
+│   ├── sweeps/                      # sweep_demo (eccentricity × secondary size × seeds over the demo merger)
+│   ├── showcase/                    # Five end-to-end cases with Myr intervals: equal, binary, tidal, flagship, sweep with controls
+│   └── gpu/                         # CUDA-host recipe: GPU and CPU builds, the 2 × 25k merger, the 6 × 10⁵-body probes
 ├── backend/                         # (gitignored) cloned Nbody6PPGPU-beijing source + build
 └── runs/                            # (gitignored) per-run output/, plots/, frozen config.toml
 ```

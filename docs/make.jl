@@ -44,6 +44,7 @@ makedocs(;
         "Walkthrough" => "walkthrough.md",
         "Manual" => "manual.md",
         "Input Files" => "input_files.md",
+        "Showcase Cases" => "showcase.md",
         "Cluster Mergers" => "multi_cluster_mergers.md",
         "API Reference" => "api.md",
         "References" => "references.md",

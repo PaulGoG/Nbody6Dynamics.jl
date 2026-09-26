@@ -1,4 +1,4 @@
-# Full-pipeline configuration for the 27-cluster cubic-grid merger scenario
+# Pipeline configuration of a checkout; the shipped default runs the small two-cluster demo merger
 
 [install]
 enabled        = false           # clone and build the engine before running
@@ -20,13 +20,13 @@ nproc           = 0             # ≥ 0; 0 = auto-detect
 
 [simulation]
 run_test      = true
-input_file    = "input_files/N25k_production.inp"   # nonempty, relative to this file; overridden by merger.inp
+input_file    = "input_files/engine/N1k_quick.inp"         # nonempty, relative to this file; overridden by merger.inp
 runs_dir      = "runs"          # nonempty
 binary_name   = "nbody6++"
 mpi_ranks     = 1               # ≥ 1; > 1 requires build.enable_mpi
 omp_threads   = 0               # ≥ 0; 0 = OpenMP runtime default (all logical CPUs)
 gpu_list      = []              # CUDA device indices for GPU_LIST; ≥ 0, distinct, ≤ 4 entries; [] = all; requires build.enable_gpu
-run_id_prefix = "cubic27"       # nonempty
+run_id_prefix = "demo"          # nonempty
 monitor       = true            # live progress ticker (interactive terminals only)
 live_diagnostics = false        # in-terminal sparklines of Q and |ΔE/E| (with monitor; interactive only)
 live_interval    = 30.0         # s; ≥ 1; period of the sparkline panel
@@ -73,4 +73,4 @@ anim_px_per_unit    = 1.4       # pixels per canvas unit of animation frames, > 
 
 [merger]
 enabled     = true
-config_file = "input_files/merger_27cluster_cubic.toml"   # nonempty when enabled = true
+config_file = "input_files/mergers/merger_demo_small.toml"   # nonempty when enabled = true

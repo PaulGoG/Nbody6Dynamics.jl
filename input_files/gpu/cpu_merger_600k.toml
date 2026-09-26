@@ -14,7 +14,7 @@ nproc = 0
 
 [simulation]
 run_test = true
-input_file = "../N1k_quick.inp"   # relative to this file; unused: merger.inp is generated
+input_file = "../engine/N1k_quick.inp"   # relative to this file; unused: merger.inp is generated
 runs_dir = "../../runs"
 binary_name = "nbody6++"
 mpi_ranks = 1

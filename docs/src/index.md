@@ -13,7 +13,7 @@ remnant they leave 20 Myr later, produced end to end by this package.*
 - **Pipeline orchestration** — Single `run_pipeline(cfg)` entry point driven by `config.toml`: install/build → merger ICs → simulation → post-processing → plots, each phase independently switchable
 - **Install & build** — Clone, configure, patch (HDF5 build flags), and compile Nbody6++GPU with auto-detected CUDA/MPI
 - **Simulate** — Unique run IDs, frozen config snapshots, isolated `runs/<run_id>/` directories, real-time ADJUST monitoring
-- **Post-process** — Readers for `conf.3_*` snapshots (Fortran binary), stdout diagnostics (`out1000`), Lagrangian radii (`lagr.7`), escapers (`esc.11`), and stellar evolution (`sev.83_*`)
+- **Post-process** — Readers for `conf.3_*` snapshots (Fortran binary), stdout diagnostics (`out1000`), Lagrangian radii (`lagr.7`), escapers (`esc.11`), stellar evolution (`sev.83_*`) and regularised binaries (`bev.82_*`)
 - **Visualise** — Static figures and GIF animations with CairoMakie, including merger-specific diagnostics (inter-cluster separation, per-cluster virial ratio, IC overview plots)
 - **External post-processing** — Config-free `postprocess_external(dir)` for arbitrary Nbody6++ output directories, with automatic file discovery via `scan_output`
 - **Tests** — Unit tests against real output fixtures (`out1000`, `lagr.7`, `esc.11`, `sev.83`) plus physics validation (King concentration, Plummer `r_hm = 1.305a`, Kroupa mean mass, virialisation, Kepler/Jacobi relations)
@@ -77,7 +77,7 @@ cfg = load_config("config.toml")
 results = run_pipeline(cfg)
 
 # One-call merger IC generation (no config.toml needed)
-result = run_merger_pipeline("input_files/merger_demo_small.toml")
+result = run_merger_pipeline("input_files/mergers/merger_demo_small.toml")
 
 # Post-process an external output directory directly
 results = postprocess_external("/path/to/output")
@@ -95,6 +95,6 @@ See the [API Reference](@ref) for the complete public interface.
 ## Contents
 
 ```@contents
-Pages = ["manual.md", "input_files.md", "multi_cluster_mergers.md", "api.md"]
+Pages = ["manual.md", "input_files.md", "showcase.md", "multi_cluster_mergers.md", "api.md"]
 Depth = 2
 ```

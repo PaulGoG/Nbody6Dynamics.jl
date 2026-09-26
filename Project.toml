@@ -2,7 +2,7 @@ name = "Nbody6Dynamics"
 uuid = "7d8e9f0a-1b2c-4d3e-8f6a-7b8c9d0e1f2a"
 license = "MIT"
 version = "0.3.0"
-authors = ["Paul-Adrian Gogîță <gogitapaul@yahoo.ro>"]
+authors = ["Paul-Adrian Gogîță"]
 
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"

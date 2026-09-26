@@ -81,7 +81,7 @@ run ID generation, and runtime telemetry.
 """
 Base.@kwdef struct SimulationConfig
     run_test::Bool = true
-    input_file::String = "examples/input_files/N10k_noDat10.inp"
+    input_file::String = "input_files/engine/N1k_quick.inp"
     runs_dir::String = "runs"
     binary_name::String = "nbody6++"
     mpi_ranks::Int = 1

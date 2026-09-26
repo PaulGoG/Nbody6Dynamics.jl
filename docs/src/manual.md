@@ -95,7 +95,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | Key             | Type   | Default | Description |
 |-----------------|--------|---------|-------------|
 | `run_test`      | Bool   | `true`  | Run the simulation phase |
-| `input_file`    | String | `"examples/input_files/N10k_noDat10.inp"` | Path to the `.inp` input file, relative to the project directory (the shipped `config.toml` points at `input_files/N25k_production.inp`); must be nonempty |
+| `input_file`    | String | `"input_files/engine/N1k_quick.inp"` | Path to the `.inp` input file, relative to the project directory (the shipped `config.toml` points at `input_files/engine/N25k_production.inp`); must be nonempty |
 | `runs_dir`      | String | `"runs"` | Base directory for run output, relative to the project directory; must be nonempty |
 | `binary_name`   | String | `"nbody6++"` | Expected binary name |
 | `mpi_ranks`     | Int    | `1`     | Number of MPI ranks; must be ≥ 1, and > 1 requires `build.enable_mpi = true` |
@@ -172,7 +172,7 @@ Presentation knobs collected in the `PlotStyle` struct (`cfg.visualization.style
 | Key           | Type   | Default | Description |
 |---------------|--------|---------|-------------|
 | `enabled`     | Bool   | `false` | Generate merger ICs before the simulation phase |
-| `config_file` | String | `""`    | Path to the merger cluster TOML (e.g. `"input_files/merger_demo_small.toml"`); relative paths resolve against the project directory; must be nonempty when `enabled = true` |
+| `config_file` | String | `""`    | Path to the merger cluster TOML (e.g. `"input_files/mergers/merger_demo_small.toml"`); relative paths resolve against the project directory; must be nonempty when `enabled = true` |
 
 The merger TOML schema itself (clusters, profiles, IMFs, orbit, output, seed) is documented in [Input File Reference](@ref) and [Multi-Cluster Merger Simulations](@ref).
 
@@ -249,7 +249,7 @@ Other facts of the GPU build:
 
 ### Validated hardware
 
-The GPU path has been validated end to end on four hosts spanning four NVIDIA generations and two toolchain eras:
+The GPU path has been validated end to end on five hosts spanning four NVIDIA generations and two toolchain eras:
 
 | GPU | Compute capability | CUDA | Host CPU | OS, glibc, GCC |
 |---|---|---|---|---|
@@ -257,6 +257,7 @@ The GPU path has been validated end to end on four hosts spanning four NVIDIA ge
 | RTX 5070 Ti, 16 GiB | 12.0 | 13.1 | i9-13900KS | Fedora 44, 2.43, 16.2.1 |
 | RTX 2080 Super Max-Q, 8 GiB | 7.5 | 13.1 | i7-10750H | Fedora 44, 2.43, 16.2.1 |
 | Tesla T4, 15 GiB | 7.5 | 11.8 | EPYC 7551P | Ubuntu 20.04, 2.31, 9.4 |
+| H200 NVL, 2 × 141 GiB (Slurm node) | 9.0 | 13.3 | EPYC 9755 | RHEL 9 family, 2.34, 11.5 |
 
 No host needed a package change. The `nvcc` host-compiler probe selected the plain toolchain on the Ubuntu 20.04 host and `-ccbin g++-15 -U_GNU_SOURCE -D_DEFAULT_SOURCE` on the Fedora ones on its own, so the same configuration file builds on a 2020 userspace with CUDA 11.8 and on a 2026 one with CUDA 13.1.
 
@@ -425,8 +426,8 @@ controls = false                           # isolated single-cluster control com
 ```
 
 ```bash
-julia scripts/run_sweep.jl input_files/sweep_demo.toml            # run
-julia scripts/run_sweep.jl input_files/sweep_demo.toml --dry-run  # prepare only
+julia scripts/run_sweep.jl input_files/sweeps/sweep_demo.toml            # run
+julia scripts/run_sweep.jl input_files/sweeps/sweep_demo.toml --dry-run  # prepare only
 ```
 
 Axes address the merger TOML from its root; the parent table must exist in the base file (add `[merger.tidal]` with `kz14 = 0` to sweep the tidal field), and `merger.seed` is reserved for `seeds`. Axes are processed in key order with the first varying fastest; point directories read `<index>_<axis>=<value>_…_seed=<seed>`.

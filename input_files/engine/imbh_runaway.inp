@@ -1,0 +1,45 @@
+! =============================================================================
+! IMBH formation through runaway stellar collisions in a young dense cluster
+!   N = 100 000, King W0 = 9, r_h = 0.5 pc, Z = 0.001, no primordial binaries,
+!   Kroupa IMF 0.08-150 Msun, isolated, TCRIT = 20 NB (about 20 Myr).
+!   Science case, expected phenomena, cost and references: documentation,
+!   Input Files, "Engine inputs: the science cases".
+! =============================================================================
+
+&INNBODY6
+KSTART=1,TCOMP=1.0E8,TCRTP0=43200,isernb=40,iserreg=40,iserks=0 /
+
+&ININPUT
+N=100000,NFIX=1,NCRIT=10,NRAND=73219,NNBOPT=80,NRUN=1,NCOMM=10,
+ETAI=0.01,ETAR=0.01,RS0=0.08,DTADJ=0.5,DELTAT=1.0,TCRIT=20.0,QE=1.0E-02,RBAR=0.50,ZMBAR=0.7,
+KZ(1:10)= 1 1 1 0 1 0 3 2 3 2
+KZ(11:20)=0 1 0 0 2 0 0 0 3 6
+KZ(21:30)=1 1 2 0 2 2 3 2 0 2
+KZ(31:40)=1 0 2 2 1 0 1 1 2 1
+KZ(41:50)=0 0 0 0 0 4 3 0 3 0 ,
+DTMIN=1.0E-7,RMIN=4.E-5,ETAU=0.1,ECLOSE=1.0,GMIN=1.0E-06,GMAX=0.01,SMAX=0.5,
+Level='C' /
+
+&INSSE /
+
+&INBSE /
+
+&INCOLL /
+
+&INDATA
+ALPHAS=2.35,BODY1=150.0,BODYN=0.08,NBIN0=0,NHI0=0,ZMET=0.001,EPOCH0=0,DTPLOT=1.0 /
+
+&INSETUP SEMI=,ECC=,APO=,N2=,SCALE=,ZM1=,ZM2,ZMH,RCUT= /
+
+&INSCALE
+Q=0.5,VXROT=0.0,VZROT=0.0,RTIDE=0.0 /
+
+&INXTRNL0
+GMG=0.0,RG0=0.0,DISK=,A=,B=,VCIRC=,RCIRC=,GMB=,AR=,GAM=,RG=,,,VG=,,,MP=,AP2=,MPDOT=,TDELAY= /
+
+&INBINPOP
+SEMI0=,ECC0=,RATIO=,RANGE=,NSKIP=,IDORM= /
+
+&INHIPOP
+SEMI0=,ECC0=,RATIO=,RANGE= /
+

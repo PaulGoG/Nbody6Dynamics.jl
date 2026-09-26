@@ -51,6 +51,37 @@ entries say so.
   rate as a fraction of the FP32 peak) from the cell CSVs, a console table,
   and a `--synthetic` rehearsal mode.
 
+### Changed
+
+- `input_files/` is laid out by purpose: `engine/` (the ten single-cluster
+  engine inputs), `mergers/` (the seven merger configurations),
+  `verification/` (the two targets of the verification suite), `sweeps/`
+  (the demonstration sweep), next to the unchanged `showcase/` and `gpu/`.
+  File names are unchanged; `example_input` resolves a bare name across the
+  folders, so `example_input("N1k_quick.inp")` and the other names of 0.3.0
+  keep working, while a name that ships in more than one place must be given
+  with its folder. The shipped pipeline and sweep TOMLs point at the new
+  paths; a project's own configuration that named a shipped input by its old
+  flat path must add the folder. `input_files/README.md` maps the folders to
+  the documentation.
+- The root `config.toml` runs the two-cluster demo merger
+  (`mergers/merger_demo_small.toml`, seconds) instead of the 27-cluster
+  cubic grid, a cold-collapse stress test outside the engine's regime that
+  is kept under `mergers/` and described as such.
+- The five science engine inputs carry a short factual header; their
+  science cases, expected phenomena, cost estimates and references (with
+  DOIs) moved to the Input Files page, which is organised by folder. A new
+  documentation page, Showcase Cases, describes the five showcase
+  configurations, their reference runs of 2026-09-11 (wall times, energy
+  errors, run identifiers) and what a run produces; the flagship case is
+  identified with the validation merger of `gpu/merger_50k.toml`, whose
+  integration is timed on every validated host. The manual's validated
+  hardware table carries the H200 NVL node. The default of
+  `simulation.input_file` names a file that ships
+  (`input_files/engine/N1k_quick.inp`); it named a path that did not exist.
+- The package's author line in `Project.toml` carries the name only, as the
+  licence does.
+
 ### Fixed
 
 - A retried validation stage starts from a clean run directory: the

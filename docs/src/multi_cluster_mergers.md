@@ -6,14 +6,14 @@ Nbody6Dynamics ships a merger initial-condition generator (`src/ic/`) that produ
 
 ```julia
 # One-call: TOML → dat.10 + merger.inp + summary + metadata + diagnostic plots
-result = run_merger_pipeline("input_files/merger_demo_small.toml")
+result = run_merger_pipeline("input_files/mergers/merger_demo_small.toml")
 
 # Config-driven: generate ICs, run the simulation, post-process, plot
 # (config.toml: merger.enabled = true, merger.config_file = "input_files/...")
 results = run_pipeline(load_config("config.toml"))
 
 # Programmatic
-cfg    = load_merger_config("input_files/merger_demo_small.toml")
+cfg    = load_merger_config("input_files/mergers/merger_demo_small.toml")
 result = generate_merger_ic(cfg; output_dir = "my_ics")
 
 # Reload a previously generated IC from disk (no re-sampling)
@@ -143,7 +143,7 @@ Post-processing then adds two merger-specific plots whenever `merger_summary.txt
 
 ## Parameter sweeps
 
-A sweep TOML (`input_files/sweep_demo.toml`) names a base pipeline config and a base merger config, the grid axes as dotted keys into the merger TOML (`"merger.orbit.eccentricity" = [0.0, 0.6]`, `"merger.cluster2.N" = [500, 1000]`, Cartesian product; the parent table must exist in the base file) and the seeds replicated at every grid point. `scripts/run_sweep.jl` (or `run_sweep`) writes one directory per point with the derived `merger.toml` and `config.toml`, runs the points as concurrent worker processes with the configured `omp_threads` (four threads per job and five jobs at a time follow the cost model of the reference workstation), keeps `sweep_index.toml` current, writes `sweep_summary.csv` (final time, star and pair counts, energy error, virial ratio per point) and draws the comparison figures: the half-mass Lagrangian radius and the energy error of every run on common axes, coloured by the value of one grid axis with seeds sharing the colour. `--dry-run` prepares everything without launching. With several seeds the completed points of each grid point form an ensemble: `plot_sweep_ensemble` draws the median and the central 68 % and 95 % bands of the Lagrangian radius, the energy error, or the star and pair counts on a common time grid, and a sweep without grid axes is the plain seed ensemble of one configuration. The mass ratio, the orbital eccentricity, the apocentre, the tidal field (`merger.tidal.kz14`, with a `[merger.tidal]` table in the base file) and the binary fraction are all reachable this way; see the manual for the file format.
+A sweep TOML (`input_files/sweeps/sweep_demo.toml`) names a base pipeline config and a base merger config, the grid axes as dotted keys into the merger TOML (`"merger.orbit.eccentricity" = [0.0, 0.6]`, `"merger.cluster2.N" = [500, 1000]`, Cartesian product; the parent table must exist in the base file) and the seeds replicated at every grid point. `scripts/run_sweep.jl` (or `run_sweep`) writes one directory per point with the derived `merger.toml` and `config.toml`, runs the points as concurrent worker processes with the configured `omp_threads` (four threads per job and five jobs at a time follow the cost model of the reference workstation), keeps `sweep_index.toml` current, writes `sweep_summary.csv` (final time, star and pair counts, energy error, virial ratio per point) and draws the comparison figures: the half-mass Lagrangian radius and the energy error of every run on common axes, coloured by the value of one grid axis with seeds sharing the colour. `--dry-run` prepares everything without launching. With several seeds the completed points of each grid point form an ensemble: `plot_sweep_ensemble` draws the median and the central 68 % and 95 % bands of the Lagrangian radius, the energy error, or the star and pair counts on a common time grid, and a sweep without grid axes is the plain seed ensemble of one configuration. The mass ratio, the orbital eccentricity, the apocentre, the tidal field (`merger.tidal.kz14`, with a `[merger.tidal]` table in the base file) and the binary fraction are all reachable this way; see the manual for the file format.
 
 ## Control runs
 
@@ -176,7 +176,7 @@ Nbody6++GPU integrates a multi-cluster system correctly as a set of point masses
 
 ## Showcase configurations
 
-`input_files/showcase/` holds four cases that exercise the pipeline end to end within minutes on a workstation, each as a merger TOML with a matching pipeline TOML (paths relative to the folder): an equal-mass King pair on an eccentric orbit that coalesces within the run (`equal_*`), an unequal pair with 20 % primordial binaries in both clusters and the relaxed energy tolerance such runs need (`binary_*`), the equal pair inside a point-mass galactic potential (`tidal_*`), and an eccentricity × seed sweep with isolated controls (`sweep.toml`). All intervals are given in Myr, so merger, control and sweep points cover the same physical span.
+`input_files/showcase/` holds five cases, each a merger TOML with a matching pipeline TOML (paths relative to the folder): an equal-mass King pair on an eccentric orbit that coalesces within the run (`equal_*`), an unequal pair with 20 % primordial binaries in both clusters and the relaxed energy tolerance such runs need (`binary_*`), the equal pair inside a point-mass galactic potential (`tidal_*`), an eccentricity × seed sweep with isolated controls (`sweep.toml`), and the 2 × 25 000-star merger over 50 Myr at which the CUDA path was validated (`flagship_*`). The four small cases run within minutes on a workstation. All intervals are given in Myr, so merger, control and sweep points cover the same physical span. Configuration, reference runs and figures of each case: [Showcase Cases](@ref).
 
 ## Verification configs
 
