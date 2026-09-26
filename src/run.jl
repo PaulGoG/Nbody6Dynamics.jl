@@ -250,6 +250,14 @@ function _execute_simulation(
     src_dir = _resolve_path(base_dir, cfg.install.install_dir)
     binary = _find_binary(src_dir, sim.binary_name, cfg.build)
 
+    # --- Provenance at launch: the record names the code that ran, not the
+    # tree found when the record is written hours later (a `git pull` during
+    # a long run used to change the recorded commit).
+    provenance = Dict{String,Any}(
+        "package_commit" => _source_stamp(_PACKAGE_ROOT),
+        "backend_commit" => isempty(src_dir) ? "unknown" : _git_commit(src_dir),
+    )
+
     # --- Save frozen config (absolute paths: loadable from anywhere) ---
     is_restart || save_config(_with_absolute_paths(cfg, base_dir), joinpath(run_dir, "config.toml"))
 
@@ -300,6 +308,10 @@ function _execute_simulation(
         # Segment index: 1 for the initial launch, one more per restart.
         segment = 1 + _segment_count(joinpath(run_dir, "RUN_INFO.toml"))
 
+        # The helper tasks below hand an operator interrupt to this task, the
+        # one waiting on the engine: SIGINT lands in whichever task is current.
+        waiting = current_task()
+
         # The launch script execs the binary, so its PID is the process PID;
         # an mpirun launcher is handled through the process-tree scan.
         monitor = if sim.telemetry_interval > 0
@@ -310,6 +322,7 @@ function _execute_simulation(
                 interval = sim.telemetry_interval,
                 gpu_probe = cfg.build.enable_gpu,
                 csv_name = segment == 1 ? "telemetry.csv" : "telemetry_$(segment).csv",
+                interrupt_to = waiting,
             )
         else
             nothing
@@ -318,12 +331,22 @@ function _execute_simulation(
         # Start-up watchdog: terminate a run that never advances past t = 0.
         watchdog =
             sim.startup_timeout > 0 ?
-            _start_startup_watchdog(stdout_path, process, sim.startup_timeout) : nothing
+            _start_startup_watchdog(
+                stdout_path,
+                process,
+                sim.startup_timeout;
+                interrupt_to = waiting,
+            ) : nothing
         # Completion monitor: an engine that printed END RUN but never exits
         # is terminated after the grace period and recorded as completed.
         completion =
-            sim.exit_grace > 0 ? _start_completion_monitor(stdout_path, process, sim.exit_grace) :
-            nothing
+            sim.exit_grace > 0 ?
+            _start_completion_monitor(
+                stdout_path,
+                process,
+                sim.exit_grace;
+                interrupt_to = waiting,
+            ) : nothing
 
         # Live ticker is opt-in and interactive-only; the Fortran stdout is
         # captured to out1000 regardless.
@@ -340,8 +363,14 @@ function _execute_simulation(
             wait(process)
         catch e
             e isa InterruptException || rethrow()
-            @warn "Interrupted; terminating the engine (SIGTERM, then SIGKILL after $(_KILL_GRACE_SECONDS) s)"
+            # Kill first, report after: the console may be gone with whoever
+            # sent the interrupt, and a report that fails must not leave the
+            # engine running.
             _terminate(process)
+            watchdog === nothing || (watchdog.stop[] = true)
+            completion === nothing || (completion.stop[] = true)
+            monitor === nothing || (monitor.stop_requested = true)
+            @warn "Interrupted; the engine was terminated (SIGTERM, SIGKILL after $(_KILL_GRACE_SECONDS) s if needed)"
             rethrow()
         end
         watchdog === nothing || (watchdog.stop[] = true)
@@ -373,6 +402,7 @@ function _execute_simulation(
             telemetry = telemetry,
             input_file = basename(input_copy),
             src_dir = src_dir,
+            provenance = provenance,
             segment = Dict{String,Any}(
                 "index" => segment,
                 "kind" => is_restart ? "restart" : "initial",
@@ -522,37 +552,72 @@ function _terminate(process::Base.Process; grace::Real = _KILL_GRACE_SECONDS)
         sleep(0.2)
     end
     if process_running(process)
-        @warn "Engine still running $(grace) s after SIGTERM; sending SIGKILL"
+        # The signal goes before the report: a report may fail (closed console
+        # pipe) and the kill must not depend on it.
         kill(process, Base.SIGKILL)
+        @warn "Engine still running $(grace) s after SIGTERM; SIGKILL sent"
     end
     return nothing
 end
 
 """
-    _start_startup_watchdog(stdout_path, process, timeout) -> (; stop, fired, task)
+    _forwarding_interrupts(body, target) -> Task
+
+`@async body()`, except that an `InterruptException` raised inside the task
+is re-thrown in `target` (the task waiting on the engine) instead of ending
+the helper. SIGINT is delivered to whichever task the main thread is running
+at that moment — under a long `wait` that is usually one of the helper
+tasks polling the engine — while the engine's termination lives in the
+waiting task's handler; without the hand-over the helper died and the
+engine ran on. `target === nothing` keeps the plain behaviour.
+"""
+function _forwarding_interrupts(body::Function, target::Union{Nothing,Task})
+    return @async begin
+        try
+            body()
+        catch e
+            (e isa InterruptException && target !== nothing && !istaskdone(target)) || rethrow()
+            schedule(target, e; error = true)
+        end
+        nothing
+    end
+end
+
+"""
+    _start_startup_watchdog(stdout_path, process, timeout; interrupt_to = nothing)
+        -> (; stop, fired, task)
 
 Asynchronous watchdog: unless the stdout shows an adjustment beyond t = 0
 within `timeout` seconds, the process is terminated (SIGTERM, then SIGKILL
-after `_KILL_GRACE_SECONDS`) and `fired` is set. Setting `stop` ends the
-watchdog quietly.
+after `_KILL_GRACE_SECONDS`) and `fired` is set. The kill precedes the log
+record of it: on 2026-09-25 an orphaned pipeline's watchdog fired, its
+warning failed on the closed console pipe, and the engine it had not yet
+signalled ran for thirteen hours. Setting `stop` ends the watchdog quietly;
+an `InterruptException` landing in the task goes to `interrupt_to`
+([`_forwarding_interrupts`](@ref)).
 """
-function _start_startup_watchdog(stdout_path::AbstractString, process::Base.Process, timeout::Real)
+function _start_startup_watchdog(
+    stdout_path::AbstractString,
+    process::Base.Process,
+    timeout::Real;
+    interrupt_to::Union{Nothing,Task} = nothing,
+)
     stop = Ref(false)
     fired = Ref(false)
     task = errormonitor(
-        @async begin
+        _forwarding_interrupts(interrupt_to) do
             deadline = time() + timeout
             while !stop[] && process_running(process)
                 _adjust_advanced(stdout_path) && return nothing
                 if time() > deadline
                     fired[] = true
-                    @warn "Start-up watchdog: no adjustment beyond t = 0 after $(timeout) s; terminating the engine"
                     _terminate(process)
+                    @warn "Start-up watchdog: no adjustment beyond t = 0 after $(timeout) s; the engine was terminated"
                     return nothing
                 end
                 sleep(min(2.0, timeout))
             end
-        end
+        end,
     )
     return (stop = stop, fired = fired, task = task)
 end
@@ -601,27 +666,35 @@ COMMON dump after `END RUN` when `KZ(1) > 0`; that write keeps a file
 changing and therefore keeps the engine alive, whatever its duration. What
 the monitor ends is an engine that has finished writing and does not exit,
 as observed in tidal-field runs, which otherwise blocks the pipeline until
-an external timeout. Setting `stop` ends the monitor quietly.
+an external timeout. Setting `stop` ends the monitor quietly; an
+`InterruptException` landing in the task goes to `interrupt_to`
+([`_forwarding_interrupts`](@ref)). The kill precedes its log record, as in
+[`_start_startup_watchdog`](@ref).
 """
-function _start_completion_monitor(stdout_path::AbstractString, process::Base.Process, grace::Real)
+function _start_completion_monitor(
+    stdout_path::AbstractString,
+    process::Base.Process,
+    grace::Real;
+    interrupt_to::Union{Nothing,Task} = nothing,
+)
     out_dir = dirname(abspath(stdout_path))
     stop = Ref(false)
     fired = Ref(false)
     task = errormonitor(
-        @async begin
+        _forwarding_interrupts(interrupt_to) do
             completed = false
             while !stop[] && process_running(process)
                 completed || (completed = _run_completed(stdout_path))
                 if completed && time() - _latest_mtime(out_dir) ≥ grace
                     fired[] = true
-                    @warn "Completion monitor: END RUN printed and the output directory idle for $(grace) s, " *
-                          "but the engine has not exited; terminating it"
                     _terminate(process)
+                    @warn "Completion monitor: END RUN printed and the output directory idle for $(grace) s, " *
+                          "but the engine had not exited; it was terminated"
                     return nothing
                 end
                 sleep(min(5.0, max(grace, 1.0)))
             end
-        end
+        end,
     )
     return (stop = stop, fired = fired, task = task)
 end
@@ -937,6 +1010,7 @@ function _write_run_summary(
     input_file::AbstractString = "",
     segment::Union{Nothing,Dict{String,Any}} = nothing,
     src_dir::AbstractString = "",
+    provenance::Union{Nothing,Dict{String,Any}} = nothing,
 )
     info_path = joinpath(run_dir, "RUN_INFO.toml")
     previous = isfile(info_path) ? TOML.parsefile(info_path) : Dict{String,Any}()
@@ -968,12 +1042,18 @@ function _write_run_summary(
     devices = _reported_gpu_devices(joinpath(dirname(stdout_path), "err1000"))
     isempty(devices) || (run_table["gpu_devices"] = devices)
 
-    d = Dict{String,Any}(
-        "run" => run_table,
-        "provenance" => Dict{String,Any}(
+    # Commits captured at launch when given (`_execute_simulation`); the
+    # fallback reads the trees now, which is right only for a record written
+    # in the same session as the launch.
+    stamps =
+        provenance === nothing ?
+        Dict{String,Any}(
             "package_commit" => _source_stamp(_PACKAGE_ROOT),
             "backend_commit" => isempty(src_dir) ? "unknown" : _git_commit(src_dir),
-        ),
+        ) : Dict{String,Any}(provenance)
+    d = Dict{String,Any}(
+        "run" => run_table,
+        "provenance" => stamps,
         "hardware" => _hardware_fingerprint(),
     )
     manifest = _snapshot_manifest(run_dir)

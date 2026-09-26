@@ -53,6 +53,29 @@ entries say so.
 
 ### Fixed
 
+- The start-up watchdog and the completion monitor terminate the engine
+  before they report it, and `_terminate` sends SIGKILL before it reports the
+  escalation. The report came first, and a pipeline whose driver had died
+  wrote it to a closed pipe: the watchdog task ended on `EPIPE` with the
+  kill never sent, and the engine it should have ended ran for thirteen
+  hours beside its rerun (2026-09-25). The console sink of a run's logger
+  now absorbs a failed write as well (`_ResilientLogger`), so a pipeline
+  whose launcher is gone still writes its run record and its file log.
+- An operator interrupt reaches the engine. The validation driver and every
+  entry script that starts a stage or an engine set
+  `Base.exit_on_sigint(false)`, so SIGINT raises `InterruptException` instead
+  of ending the script at once — the forwarding of `dbf7274` never ran,
+  because a non-interactive Julia exits on SIGINT before any handler. Inside
+  a pipeline the helper tasks (telemetry sampler, start-up watchdog,
+  completion monitor) hand an interrupt that lands in them to the task
+  waiting on the engine, whose handler terminates it: SIGINT is delivered to
+  whichever task is current, and under a long wait that is usually a helper.
+  A SIGTERM or SIGKILL of a pipeline still leaves its engine (own session)
+  running; the manual names the process sweep that ends the whole tree.
+- The run record's `package_commit` and `backend_commit` are captured when
+  the engine is launched, not when the record is written: a `git pull` on
+  the host during a long run used to stamp the record with a commit that
+  had not run.
 - `startup_timeout` of the four 6 × 10⁵-body probe pipelines under
   `input_files/gpu/` raised from 3600 s to 14 400 s: the AVX build needs more
   than an hour to its first adjustment on a slow host (i7-10750H, EPYC 7551P),

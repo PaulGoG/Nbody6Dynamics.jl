@@ -31,6 +31,10 @@ include(joinpath(@__DIR__, "activate.jl"))
 using Nbody6Dynamics, TOML, Dates, Printf
 using Nbody6Dynamics: detect_compute_capabilities
 
+# SIGINT raises `InterruptException` (a plain script would exit at once): the
+# pipeline handler then terminates the engine, which runs in its own session.
+Base.exit_on_sigint(false)
+
 include("merger_case.jl")
 
 const BENCH = @__DIR__

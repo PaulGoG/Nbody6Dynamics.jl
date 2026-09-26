@@ -52,6 +52,26 @@
         log,
     ) == (exitcode = 0, signal = 0)
 
+    # An operator interrupt is forwarded to a detached stage (SIGINT first).
+    child = run(detach(`sleep 30`); wait = false)
+    Nbody6Dynamics._interrupt_child(child; grace = 5.0)
+    @test !process_running(child) && Nbody6Dynamics._exit_status(child) == -2
+    # Every entry script that starts a stage or an engine makes SIGINT an
+    # exception, so that the forwarding above and the pipeline's handler run
+    # at all: a plain script exits at once and orphans its detached children.
+    root = normpath(joinpath(@__DIR__, ".."))
+    for script in (
+        "scripts/run_gpu_validation.jl",
+        "scripts/run_setup.jl",
+        "scripts/run_sweep.jl",
+        "scripts/run_verif_suite.jl",
+        "bench/gpu_scaling.jl",
+        "bench/gpu_cells.jl",
+        "bench/thread_scaling.jl",
+    )
+        @test occursin("Base.exit_on_sigint(false)", read(joinpath(root, script), String))
+    end
+
     # A crash signal is retried up to max_retries, keeping every output
     sdir = mktempdir()
     slog = joinpath(sdir, "stage.log")

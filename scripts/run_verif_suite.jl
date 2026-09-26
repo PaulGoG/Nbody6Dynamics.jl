@@ -13,6 +13,10 @@ include(joinpath(@__DIR__, "activate.jl"))
 using CairoMakie   # loads the figure routines (package extension)
 using Nbody6Dynamics, TOML, Dates
 
+# SIGINT raises `InterruptException` (a plain script would exit at once): the
+# pipeline handler then terminates the engine, which runs in its own session.
+Base.exit_on_sigint(false)
+
 cd(PROJ)
 
 function make_base_cfg()

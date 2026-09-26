@@ -456,6 +456,22 @@ end
     @test info["run"]["stdout_lines"] == 2
     @test haskey(info["provenance"], "package_commit")
     @test haskey(info["provenance"], "backend_commit")
+    # Stamps captured at launch are recorded as given, not re-read from the tree
+    Nbody6Dynamics._write_run_summary(
+        cfg_info,
+        run_dir,
+        "testrun_a1b2",
+        joinpath(out_dir, "out1000"),
+        out_dir,
+        1.0;
+        provenance = Dict{String,Any}(
+            "package_commit" => "launch01",
+            "backend_commit" => "b02-dirty",
+        ),
+    )
+    stamped = Nbody6Dynamics.TOML.parsefile(joinpath(run_dir, "RUN_INFO.toml"))
+    @test stamped["provenance"]["package_commit"] == "launch01"
+    @test stamped["provenance"]["backend_commit"] == "b02-dirty"
     @test info["hardware"]["cpu_threads"] ≥ 1
     @test "out1000" in info["output"]["files"]
     @test info["output"]["total_bytes"] > 0
@@ -541,6 +557,27 @@ end
 end
 
 # =====================================================================
+
+# Loggers for the watchdog tests: one records whether the engine was still
+# running when the kill was reported, one fails on every record (a console
+# whose pipe has closed).
+struct _OrderLogger <: Base.CoreLogging.AbstractLogger
+    proc::Base.Process
+    running_at_report::Vector{Bool}
+end
+Base.CoreLogging.min_enabled_level(::_OrderLogger) = Base.CoreLogging.Warn
+Base.CoreLogging.shouldlog(::_OrderLogger, args...) = true
+Base.CoreLogging.catch_exceptions(::_OrderLogger) = false
+function Base.CoreLogging.handle_message(l::_OrderLogger, level, msg, args...; kwargs...)
+    push!(l.running_at_report, process_running(l.proc))
+    return nothing
+end
+
+struct _ClosedPipeLogger <: Base.CoreLogging.AbstractLogger end
+Base.CoreLogging.min_enabled_level(::_ClosedPipeLogger) = Base.CoreLogging.Debug
+Base.CoreLogging.shouldlog(::_ClosedPipeLogger, args...) = true
+Base.CoreLogging.handle_message(::_ClosedPipeLogger, args...; kwargs...) =
+    throw(Base.IOError("write: broken pipe (EPIPE)", -32))
 
 @testset "Restart bookkeeping" begin
     # Dump selection by time suffix
@@ -658,6 +695,42 @@ end
     @test !wd2.fired[]
     wd2.stop[] = true
     wait(fine)
+
+    # The kill precedes its report: with the console gone, a report that
+    # fails must not leave the engine running (an orphaned pipeline of
+    # 2026-09-25 ran its engine for 13 h after the watchdog had fired).
+    stalled_o = run(`sleep 30`; wait = false)
+    order = _OrderLogger(stalled_o, Bool[])
+    wd_o = Base.CoreLogging.with_logger(order) do
+        Nbody6Dynamics._start_startup_watchdog(joinpath(run_dir, "absent"), stalled_o, 1.0)
+    end
+    wait(stalled_o)
+    wait(wd_o.task)
+    @test wd_o.fired[] && !process_running(stalled_o)
+    @test order.running_at_report == [false]
+    # A console whose pipe has closed is absorbed by the resilient sink.
+    resilient = Nbody6Dynamics._ResilientLogger(_ClosedPipeLogger())
+    @test Base.CoreLogging.with_logger(resilient) do
+        @warn "nobody listens"
+        true
+    end
+    @test_throws Base.IOError Base.CoreLogging.with_logger(_ClosedPipeLogger()) do
+        @warn "nobody listens"
+    end
+    # An interrupt landing in a helper task is handed to the task waiting on
+    # the engine, whose handler terminates it; the helper survives.
+    stalled_i = run(`sleep 30`; wait = false)
+    wd_i = Nbody6Dynamics._start_startup_watchdog(
+        joinpath(run_dir, "absent"),
+        stalled_i,
+        60.0;
+        interrupt_to = current_task(),
+    )
+    @async (sleep(0.5); schedule(wd_i.task, InterruptException(); error = true))
+    @test_throws InterruptException wait(stalled_i)
+    Nbody6Dynamics._terminate(stalled_i; grace = 5.0)
+    wait(wd_i.task)
+    @test !process_running(stalled_i) && !istaskfailed(wd_i.task)
 
     # restart_simulation refuses runs without the bookkeeping it needs
     @test_throws ErrorException restart_simulation(mktempdir(); tcrit_extra = 1.0)

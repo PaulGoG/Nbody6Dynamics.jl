@@ -24,6 +24,11 @@ include(joinpath(@__DIR__, "activate.jl"))
 using Nbody6Dynamics
 using TOML
 
+# SIGINT raises `InterruptException` (a plain script would exit at once): the
+# handler in `_tee_run` then interrupts the running stage, which runs in its
+# own session and would otherwise be orphaned together with its engine.
+Base.exit_on_sigint(false)
+
 const USAGE =
     "usage: run_gpu_validation.jl [--stages=suite,gpu,cpu,bench] [--dry-run] " *
     "[--n=N1,N2,...] [--threads=T1,T2,...] [--gpus=\"0;0,1\"] [--tcrit=T] " *

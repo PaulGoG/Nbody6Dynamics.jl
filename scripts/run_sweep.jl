@@ -16,6 +16,10 @@ include(joinpath(@__DIR__, "activate.jl"))
 using CairoMakie   # loads the figure routines (package extension)
 using Nbody6Dynamics
 
+# SIGINT raises `InterruptException` (a plain script would exit at once): the
+# pipeline handler then terminates the engine, which runs in its own session.
+Base.exit_on_sigint(false)
+
 function main()
     args = filter(a -> !startswith(a, "--"), ARGS)
     dry_run = "--dry-run" in ARGS

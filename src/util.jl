@@ -83,12 +83,40 @@ function _snapshot_manifest(run_dir::AbstractString)::Union{Nothing,String}
 end
 
 """
+    _ResilientLogger(inner) <: AbstractLogger
+
+Forward every record to `inner` and absorb a failure of that sink. The
+console of a pipeline is a pipe to whoever launched it; once that process
+is gone every write raises `EPIPE`, and a record that cannot be printed
+must not end the task that was about to terminate an engine, nor the
+pipeline before its run record is written (both happened on 2026-09-25 to
+a stage whose driver had died). The file sink of [`_with_run_log`](@ref)
+is unaffected: the tee keeps writing there.
+"""
+struct _ResilientLogger <: Logging.AbstractLogger
+    inner::Logging.AbstractLogger
+end
+Logging.min_enabled_level(l::_ResilientLogger) = Logging.min_enabled_level(l.inner)
+Logging.shouldlog(l::_ResilientLogger, args...) = Logging.shouldlog(l.inner, args...)
+Logging.catch_exceptions(::_ResilientLogger) = false
+function Logging.handle_message(l::_ResilientLogger, args...; kwargs...)
+    try
+        Logging.handle_message(l.inner, args...; kwargs...)
+    catch
+        # The sink is gone; there is nowhere left to report that.
+    end
+    return nothing
+end
+
+"""
     _with_run_log(f, run_dir) -> result of f()
 
 Run `f()` with the current logger teed to a plain-text, ANSI-free
 `nbody6dynamics.log` inside `run_dir` (structured logging to file for
-long runs). Console behaviour is unchanged; the file sink records
-timestamped Info+ records and is appended to across pipeline phases.
+long runs). Console output is unchanged while the console exists; a
+console whose pipe has closed is ignored ([`_ResilientLogger`](@ref)). The
+file sink records timestamped Info+ records and is appended to across
+pipeline phases.
 """
 function _with_run_log(f, run_dir::AbstractString)
     mkpath(run_dir)
@@ -103,7 +131,10 @@ function _with_run_log(f, run_dir::AbstractString)
                 args.message,
             )
         end
-        tee = TeeLogger(Logging.current_logger(), MinLevelLogger(file_logger, Logging.Info))
+        tee = TeeLogger(
+            _ResilientLogger(Logging.current_logger()),
+            MinLevelLogger(file_logger, Logging.Info),
+        )
         return Logging.with_logger(f, tee)
     end
 end

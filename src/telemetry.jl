@@ -307,14 +307,17 @@ function _sleep_until(mon::TelemetryMonitor, deadline::Float64)
 end
 
 """
-    _start_telemetry(run_dir, pid, t_start; interval, gpu_probe) -> TelemetryMonitor
+    _start_telemetry(run_dir, pid, t_start; interval, gpu_probe, csv_name = "telemetry.csv",
+                     interrupt_to = nothing) -> TelemetryMonitor
 
 Start the asynchronous sampler for the process tree rooted at `pid`,
 appending one row per `interval` seconds to `<run_dir>/telemetry.csv`
 (header = the [`TelemetrySample`](@ref) field names). An existing CSV is
 backed up, never overwritten. The task shares the
 main thread and yields between samples, so it interleaves with the process
-wait and the live monitor without extra threads.
+wait and the live monitor without extra threads. An `InterruptException`
+landing in the task is handed to `interrupt_to`, the task waiting on the
+engine ([`_forwarding_interrupts`](@ref)).
 """
 function _start_telemetry(
     run_dir::AbstractString,
@@ -323,6 +326,7 @@ function _start_telemetry(
     interval::Float64,
     gpu_probe::Bool,
     csv_name::AbstractString = "telemetry.csv",
+    interrupt_to::Union{Nothing,Task} = nothing,
 )::TelemetryMonitor
     interval > 0 || throw(ArgumentError("telemetry interval must be > 0 s; got $interval"))
     csv_path = joinpath(run_dir, csv_name)
@@ -341,7 +345,7 @@ function _start_telemetry(
     io = open(csv_path, "w")
     println(io, join(string.(fieldnames(TelemetrySample)), ","))
     flush(io)
-    mon.task = @async begin
+    mon.task = _forwarding_interrupts(interrupt_to) do
         try
             while !mon.stop_requested
                 t_next = time() + mon.interval
