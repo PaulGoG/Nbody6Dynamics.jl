@@ -69,7 +69,9 @@ assigns (`--run-id`, recorded as `run_ids` in `VALIDATION.toml`), so the
 directory that carries the verdict is identified by name and a concurrent
 run elsewhere under `runs/` cannot be mistaken for it.
 A stage killed by one of `retry_signals` is run again, up to `max_retries`
-times, when it is listed in `retry_stages`. The defaults retry the test
+times, when it is listed in `retry_stages`. A retried pipeline stage starts from a
+clean run directory; the crashed attempt's directory is kept as
+`runs/<run_id>.attempt<k>.signal<N>` beside its log. The defaults retry the test
 suite once after a crash signal (SIGILL, SIGABRT, SIGBUS, SIGSEGV — a
 compiler crash during JIT is an upstream fault, not a verdict on the
 package) and nothing else: a pipeline stage is hours of work that is not
@@ -203,6 +205,7 @@ function run_gpu_validation(;
                 s;
                 max_retries = s in retry_stages ? Int(max_retries) : 0,
                 retry_signals = retry_signals,
+                run_dir = haskey(run_ids, s) ? joinpath(base_dir, "runs", run_ids[s]) : "",
             )
             code = result.exitcode
             died = result.signal != 0
@@ -512,13 +515,17 @@ end
 
 """
     _run_stage_with_retry(cmd, log, stage; max_retries = 1,
-                          retry_signals = _CRASH_SIGNALS) -> (result, retried)
+                          retry_signals = _CRASH_SIGNALS, run_dir = "") -> (result, retried)
 
 Run `cmd` through [`_tee_run`](@ref), writing to `log`. While the process
 is killed by one of `retry_signals` and fewer than `max_retries` reruns
 have been made, its output is kept as `<stage>.attempt<k>.signal<N>.log`
-and the command is run again. Returns the final result and the signals of
-the attempts that were retried, in order.
+and the command is run again. A pipeline stage's `run_dir` (the directory
+its `--run-id` names) is moved aside as `<run_dir>.attempt<k>.signal<N>`
+before the rerun, so the retry starts from a clean directory instead of
+appending a second engine segment to the crashed attempt's record. Returns
+the final result and the signals of the attempts that were retried, in
+order.
 """
 function _run_stage_with_retry(
     cmd::Base.AbstractCmd,
@@ -526,17 +533,22 @@ function _run_stage_with_retry(
     stage::Symbol;
     max_retries::Integer = 1,
     retry_signals = _CRASH_SIGNALS,
+    run_dir::AbstractString = "",
 )
     retried = Int[]
     result = _tee_run(cmd, log)
     while result.signal in retry_signals && length(retried) < max_retries
         push!(retried, result.signal)
-        crash_log =
-            string(splitext(log)[1], ".attempt", length(retried), ".signal", result.signal, ".log")
+        suffix = string(".attempt", length(retried), ".signal", result.signal)
+        crash_log = string(splitext(log)[1], suffix, ".log")
         mv(log, crash_log; force = true)
+        kept = basename(crash_log)
+        if !isempty(run_dir) && isdir(run_dir)
+            mv(run_dir, run_dir * suffix; force = true)
+            kept *= " and " * basename(run_dir) * suffix
+        end
         @warn "Stage :$stage was killed by signal $(result.signal); its output is kept in " *
-              "$(basename(crash_log)) and the stage is run again " *
-              "(retry $(length(retried)) of $max_retries)."
+              "$kept and the stage is run again (retry $(length(retried)) of $max_retries)."
         result = _tee_run(cmd, log)
     end
     return result, retried

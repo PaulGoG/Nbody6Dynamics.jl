@@ -104,6 +104,21 @@
             :suite,
         )
     @test result == (exitcode = 0, signal = 0) && retried == [11]
+    # A retried pipeline stage starts from a clean run directory; the
+    # crashed attempt's directory is kept beside its log.
+    rdir = joinpath(sdir, "runs", "stage_cpu")
+    marker2 = joinpath(sdir, "once2")
+    crashy = `sh -c "mkdir -p $rdir; if [ -e $marker2 ]; then exit 0; else touch $marker2 $rdir/first; kill -s SEGV \$\$; fi"`
+    result, retried =
+        @test_logs (:warn, r"stage_cpu.attempt1.signal11") Nbody6Dynamics._run_stage_with_retry(
+            crashy,
+            joinpath(sdir, "clean.log"),
+            :cpu;
+            run_dir = rdir,
+        )
+    @test result == (exitcode = 0, signal = 0) && retried == [11]
+    @test isfile(joinpath(rdir * ".attempt1.signal11", "first"))
+    @test isdir(rdir) && !isfile(joinpath(rdir, "first"))
     # Not retried: a kill from outside, retries switched off, an ordinary failure
     result, retried = Nbody6Dynamics._run_stage_with_retry(`sh -c 'kill -s KILL $$'`, slog, :suite)
     @test result.signal == 9 && isempty(retried)

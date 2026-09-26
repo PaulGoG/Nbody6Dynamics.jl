@@ -53,6 +53,12 @@ entries say so.
 
 ### Fixed
 
+- A retried validation stage starts from a clean run directory: the
+  crashed attempt's `runs/<run_id>` is kept as
+  `runs/<run_id>.attempt<k>.signal<N>` beside its log, where the rerun used
+  to append a second engine segment to the same record and accumulate the
+  elapsed time. This makes `--retry-stages` usable for the pipeline stages,
+  which the host with the JIT crashes needs.
 - The start-up watchdog and the completion monitor terminate the engine
   before they report it, and `_terminate` sends SIGKILL before it reports the
   escalation. The report came first, and a pipeline whose driver had died
