@@ -6,6 +6,10 @@ entries say so.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.4.0] — 2026-09-26
+
 ### Added
 
 - `[merger] virial_max_n` (default 200 000): the largest N, per cluster and
