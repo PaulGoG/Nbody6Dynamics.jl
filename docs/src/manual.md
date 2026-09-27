@@ -707,7 +707,7 @@ plotting backend.
 
 ## 12. N-body Units and Conversions
 
-Nbody6++ uses Hénon N-body units [Henon1971](@cite) internally: `G = 1`, `M_total = 1`, `E_total = -1/4`. The virial ratio is `Q = T/|W|` with equilibrium at `Q = 0.5`.
+Nbody6++ works in N-body units with `G = 1` and `M_total = 1`. When the engine builds the initial model itself, or reads a King model (`KZ(22) < 2` or `KZ(22) ≥ 6`), it rescales to Hénon units [Henon1971](@cite), `E_total = -1/4`, which makes the virial radius the unit of length. Nbody6Dynamics writes `dat.10` with `KZ(22) = 2`, which the engine reads without rescaling: the unit of length `RBAR` is the half-mass radius of the whole initial configuration, and `E_total` differs from `-1/4`. An isolated King `W₀ = 6` cluster starts near `E_total = -0.20` (`r_V ≈ 1.25 r_h`); a bound pair starts lower, its orbital binding energy adding to the total. The virial ratio is `Q = T/|W|` with equilibrium at `Q = 0.5`.
 
 Physical conversions come from the scaling factors printed in the `PHYSICAL SCALING` stdout block and collected into a `UnitScaling`:
 

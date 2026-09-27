@@ -67,12 +67,18 @@ end
 """
     to_nbody_units!(mass, pos, vel, M_total_solar, rbar_pc)
 
-Convert from physical units (M☉, pc, km/s) to Hénon N-body units
-(G=1, M_total=1, E=-1/4) in-place.
+Convert from physical units (M☉, pc, km/s) to N-body units (G = 1,
+M_total = 1, length unit `rbar_pc`) in-place.
+
+The callers pass the half-mass radius of the whole initial configuration as
+`rbar_pc`, and the engine reads the result with `KZ(22) = 2`, which skips its
+rescaling to E = -1/4. The total energy is therefore not -1/4: an isolated
+King W₀ = 6 cluster starts near -0.20 (r_V ≈ 1.25 r_h), and a bound pair lower
+still, its orbital binding energy adding to the total.
 
 # N-body scaling
 - Mass: `m_nb = m_solar / M_total_solar`
-- Length: `r_nb = r_pc / rbar_pc` (rbar = virial radius in pc)
+- Length: `r_nb = r_pc / rbar_pc` (rbar = length unit in pc)
 - Velocity: `v_nb = v_kms / vstar` where `vstar = sqrt(G M_total / rbar)`
   in km/s, i.e. `_CODE_VSTAR_KMS × sqrt(M_total / rbar)`.
 """
