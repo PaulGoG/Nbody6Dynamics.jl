@@ -206,6 +206,31 @@ format = "pdf"
             "visualization.style.anim_target_seconds",
         ),
         (
+            "snapshot_render",
+            "[visualization.style]\nsnapshot_render = \"hexbin\"\n",
+            "visualization.style.snapshot_render",
+        ),
+        (
+            "density_min_n",
+            "[visualization.style]\ndensity_min_n = 0\n",
+            "visualization.style.density_min_n",
+        ),
+        (
+            "density_bins",
+            "[visualization.style]\ndensity_bins = 8\n",
+            "visualization.style.density_bins",
+        ),
+        (
+            "density_decades",
+            "[visualization.style]\ndensity_decades = 0.0\n",
+            "visualization.style.density_decades",
+        ),
+        (
+            "density_mass_frac",
+            "[visualization.style]\ndensity_mass_frac = 1.5\n",
+            "visualization.style.density_mass_frac",
+        ),
+        (
             "merger_config_file",
             "[merger]\nenabled = true\nconfig_file = \"\"\n",
             "merger.config_file",

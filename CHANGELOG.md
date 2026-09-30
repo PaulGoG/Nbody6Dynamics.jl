@@ -6,6 +6,24 @@ entries say so.
 
 ## [Unreleased]
 
+### Added
+
+- Surface-density rendering of particle projections. `plot_snapshot`,
+  `plot_snapshot_evolution` and `animate_cluster` draw the projected surface
+  mass density (log₁₀ Σ in M☉ pc⁻², one colour scale per figure or
+  animation) instead of the mass-coloured scatter, whose markers overlap into
+  a flat disc above a few thousand particles. `[visualization.style]` gains
+  `snapshot_render` (`"auto"`, `"scatter"`, `"density"`), `density_min_n`,
+  `density_bins`, `density_decades` and `density_mass_frac`; the limits of a
+  density panel enclose that mass fraction, so escapers no longer set the
+  scale.
+
+### Changed
+
+- With the default `snapshot_render = "auto"`, snapshots of 20 000 particles
+  or more are drawn as surface density; `"scatter"` restores the former
+  figures.
+
 ### Fixed
 
 - The binary-population figures no longer run an ungated O(N²) pair sum:

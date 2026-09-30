@@ -70,6 +70,11 @@ zoom_frac           = 0.15      # 0 < zoom_frac ≤ 1
 anim_fps            = 0         # ≥ 0; 0 = auto from frame count
 anim_target_seconds = 15.0      # > 0
 anim_px_per_unit    = 1.4       # pixels per canvas unit of animation frames, > 0
+snapshot_render     = "auto"    # one of: "auto" | "scatter" | "density"; auto = density from density_min_n particles on
+density_min_n       = 20000     # ≥ 1
+density_bins        = 400       # grid cells per axis of a density panel, 16–4096
+density_decades     = 4.0       # colour range below the peak surface density [dex], > 0
+density_mass_frac   = 0.99      # mass fraction whose extent sets the panel limits, 0 < f ≤ 1
 
 [merger]
 enabled     = true

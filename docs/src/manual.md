@@ -166,6 +166,11 @@ Presentation knobs collected in the `PlotStyle` struct (`cfg.visualization.style
 | `anim_fps`            | Int   | `0`       | Animation frame rate; `0` selects automatically from frame count; must be ≥ 0 |
 | `anim_target_seconds` | Float | `12.0`    | Target GIF duration used by the automatic FPS selection; must be > 0 |
 | `anim_px_per_unit`    | Float | `1.4`     | Pixels per layout unit of animation frames (a single-panel canvas is 900 × 600 units); must be > 0 |
+| `snapshot_render`     | String | `"auto"` | Particle projections (snapshot figures, their evolution montage and the cluster animation) as a mass-coloured scatter or as the projected surface mass density; one of `"auto"`, `"scatter"`, `"density"`; `"auto"` renders density from `density_min_n` particles on |
+| `density_min_n`       | Int   | `20000`   | Particle count from which `"auto"` renders surface density; must be ≥ 1 |
+| `density_bins`        | Int   | `400`     | Grid cells per axis of a surface-density panel; must satisfy `16 ≤ density_bins ≤ 4096` |
+| `density_decades`     | Float | `4.0`     | Colour range of a surface-density map below its maximum [dex]; must be > 0 |
+| `density_mass_frac`   | Float | `0.99`    | Mass fraction whose projected extent sets the limits of a surface-density panel, so that escapers do not set the scale; must satisfy `0 < density_mass_frac ≤ 1` |
 
 ### `[merger]`
 
@@ -562,7 +567,7 @@ Every figure routine draws inside `with_theme(publication_theme())`: the session
 - **Never-overwrite policy**: before saving, any existing file at the target path is moved to the first free `name#k.ext` sibling (DrWatson-`safesave` style); this applies to plots, animations, `dat.10`, `merger.inp`, and metadata files alike
 - Legends appear only when ≥ 2 items are plotted; axis limits snap to nice round values with a visual buffer
 
-Multi-panel montages (`snapshot_evolution_*`, `hr_evolution`) are one column wide like every other figure: the panels share the preset width (a shared colorbar column is taken from the panel area), use three ticks per axis, keep a data-free band above the data for the in-axis time annotation, and scale their markers with the panel width; inner tick labels are hidden and the panel gap is compact unless the adaptive zoom shows every panel's ticks. A three-column grid at the `single` preset has 25 mm panels, so `double` is the preset for montages placed in a manuscript.
+Multi-panel montages (`snapshot_evolution_*`, `hr_evolution`) are one column wide like every other figure: the panels share the preset width (a shared colorbar column is taken from the panel area), use three ticks per axis, keep a data-free band above the data for the in-axis time annotation (a surface-density map fills its panel and carries the annotation in white), and scale their markers with the panel width; inner tick labels are hidden and the panel gap is compact unless the adaptive zoom shows every panel's ticks. A three-column grid at the `single` preset has 25 mm panels, so `double` is the preset for montages placed in a manuscript.
 
 ### Plot inventory
 
@@ -570,8 +575,8 @@ Static plots take the extension from `visualization.format`; animations are alwa
 
 | Function | Description | Output files |
 |----------|-------------|--------------|
-| `plot_snapshot(snap, vis)` | Scatter projections, viridis mass colouring `log₁₀(m/M_tot)` | `snapshot_final_{xy,xz,yz}` |
-| `plot_snapshot_evolution(snaps, vis)` | Up to 6 panels, shared colorbar; adaptive per-panel zoom when extents vary by more than `1/zoom_frac` | `snapshot_evolution_{xy,xz,yz}` |
+| `plot_snapshot(snap, vis)` | Scatter projections, viridis mass colouring `log₁₀(m/M_tot)`, or the projected surface mass density `log₁₀ Σ` [M☉ pc⁻²] (inferno) under `snapshot_render` | `snapshot_final_{xy,xz,yz}` |
+| `plot_snapshot_evolution(snaps, vis)` | Up to 6 panels, shared colorbar; adaptive per-panel zoom when extents vary by more than `1/zoom_frac`; surface-density panels on one colour scale, their extent that of `density_mass_frac` of the mass | `snapshot_evolution_{xy,xz,yz}` |
 | `plot_energy(diag, vis)` | Two panels: log `\|ΔE/E\|` and virial ratio with `Q = 0.5` reference | `energy` |
 | `plot_particle_count(diag, vis)` | Two panels: bound N and KS pairs, integer ticks | `particle_count` |
 | `plot_lagrangian(lagr, vis)` | Selected mass-fraction radii vs time, log y | `lagrangian_radii` |
@@ -590,7 +595,7 @@ Static plots take the extension from `visualization.format`; animations are alwa
 | `plot_cluster_separation(snaps, ranges, vis)` | Pairwise COM separations of the initial clusters; per-pair lines for ≤ 5 clusters, min/max/mean envelope + surviving-cluster staircase and coalescence marker otherwise | `merger_cluster_separation` |
 | `plot_cluster_virial(snaps, ranges, vis)` | Internal virial ratio `Q_i(t)` per initial cluster (COM-subtracted, self-gravity only); log axis when `max(Q) > q_log_threshold` | `merger_cluster_virial` |
 | `plot_merger_ic(result, vis)` | IC diagnostics: projections, 3-panel overview, velocity quiver by cluster, IMF histogram with Kroupa reference slopes, per-cluster radial density | `merger_ic_{xy,xz,yz}`, `merger_ic_overview`, `merger_ic_velocity`, `merger_ic_imf`, `merger_ic_density` |
-| `animate_cluster(snaps, vis)` | Animated scatter per projection, global or adaptive limits | `cluster_evolution_{xy,xz,yz}.gif` |
+| `animate_cluster(snaps, vis)` | Animated scatter or surface density per projection, global or adaptive limits, one colour scale for all frames | `cluster_evolution_{xy,xz,yz}.gif` |
 | `animate_lagrangian(lagr, vis)` | Progressive line draw with ghost background and time cursor | `lagrangian_anim.gif` |
 | `animate_hr(sevs, vis; bevs)` | Animated HR diagram in the layout of `plot_hr`: fixed legend and axes, the epoch guide moving along the census strip | `hr_evolution_anim.gif` |
 | `plot_telemetry(samples, vis)` | Run telemetry against wall-clock time: cores busy with the host load average on a twin axis, resident memory (RSS, high-water mark), GPU utilisation when sampled; the means and the peak RSS are legend entries. Drawn for every run directory that holds the sampler's `telemetry*.csv` (`read_run_telemetry` concatenates the segments of restarted runs) | `telemetry` |

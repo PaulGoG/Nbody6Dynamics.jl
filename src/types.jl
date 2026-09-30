@@ -133,11 +133,20 @@ Stylistic plotting parameters, configurable via `[visualization.style]` in
 - `marker_min`, `marker_max`: clamp bounds for the scatter marker size [pt]
 - `q_log_threshold`: switch virial-ratio axes to log scale when max(Q) exceeds this
 - `q_floor`: clamp floor for the virial ratio on *log-scale* axes only
-- `zoom_frac`: fraction of particles defining the adaptive zoom-in radius
+- `zoom_frac`: extent-ratio threshold below which snapshot panels and animation
+  frames are zoomed each on its own data
 - `anim_fps`: animation frame rate; `0` selects automatically from frame count
 - `anim_target_seconds`: target duration used by the automatic FPS selection
 - `anim_px_per_unit`: pixels per canvas unit of animation frames (a single-panel
   canvas is 900 × 600 units)
+- `snapshot_render`: particle projections as a mass-coloured scatter (`"scatter"`),
+  as the projected surface mass density (`"density"`), or `"auto"`: density from
+  `density_min_n` particles on, where scatter markers overlap into a flat disc
+- `density_min_n`: particle count from which `"auto"` renders surface density
+- `density_bins`: grid cells per axis of a surface-density panel
+- `density_decades`: colour range of a surface-density map below its maximum [dex]
+- `density_mass_frac`: mass fraction whose projected extent sets the limits of a
+  surface-density panel, so that escapers do not set the scale
 """
 Base.@kwdef struct PlotStyle
     marker_budget::Float64 = 27000.0
@@ -149,6 +158,11 @@ Base.@kwdef struct PlotStyle
     anim_fps::Int = 0
     anim_target_seconds::Float64 = 12.0
     anim_px_per_unit::Float64 = 1.4
+    snapshot_render::String = "auto"
+    density_min_n::Int = 20_000
+    density_bins::Int = 400
+    density_decades::Float64 = 4.0
+    density_mass_frac::Float64 = 0.99
 end
 
 """

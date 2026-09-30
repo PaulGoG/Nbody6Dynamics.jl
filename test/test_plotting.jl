@@ -793,3 +793,99 @@ end
     @test MakieExt._log_tick_label(20.0, false) == "20"
     @test MakieExt._log_tick_label(200.0, false) == "2\\times 10^{2}"
 end
+
+@testset "Surface-density rendering" begin
+    style(; kw...) = VisualizationConfig(;
+        output_dir = joinpath(TESTDIR, "test_density"),
+        format = "png",
+        dpi = 72,
+        style = Nbody6Dynamics.PlotStyle(; kw...),
+    )
+
+    # The switch: auto from density_min_n on, the explicit modes regardless of N.
+    @test !MakieExt._density_render(style(; density_min_n = 100), 99)
+    @test MakieExt._density_render(style(; density_min_n = 100), 100)
+    @test !MakieExt._density_render(style(; snapshot_render = "scatter"), 10^7)
+    @test MakieExt._density_render(style(; snapshot_render = "density"), 2)
+
+    # Mass-weighted extent: the square that holds the requested mass fraction.
+    xs = [1.0, -2.0, 0.0, 4.0]
+    ys = [0.0, 0.5, 3.0, -1.0]
+    @test MakieExt._mass_extent(xs, ys, ones(4), 0.5) == 2.0
+    @test MakieExt._mass_extent(xs, ys, ones(4), 1.0) == 4.0
+    @test MakieExt._mass_extent(xs, ys, [10.0, 1.0, 1.0, 1.0], 0.75) == 1.0
+    @test MakieExt._mass_extent(zeros(3), zeros(3), ones(3), 0.9) == 1.0
+
+    # Σ conserves the mass inside the square, drops what lies outside or is not
+    # finite, and peaks where the mass is.
+    rng = StableRNG(7)
+    px = 0.5 .* randn(rng, 2000)
+    py = 0.5 .* randn(rng, 2000)
+    m = rand(rng, 2000)
+    inside = (abs.(px) .< 3.5) .& (abs.(py) .< 3.5)
+    hw, nb = 5.0, 100
+    Σ = MakieExt._surface_density(px, py, m, hw, nb)
+    @test size(Σ) == (nb, nb)
+    @test sum(Σ) * (2hw / nb)^2 ≈ sum(m[inside]) rtol = 1e-10
+    Σout = MakieExt._surface_density([0.0, 7.0, NaN], [0.0, 0.0, 0.0], [1.0, 5.0, 5.0], hw, nb)
+    @test sum(Σout) * (2hw / nb)^2 ≈ 1.0 rtol = 1e-10
+    @test argmax(Σout) in (CartesianIndex(50, 50), CartesianIndex(51, 51))
+    @test MakieExt._log_density(Σout, 0.0)[1, 1] == -1.0
+
+    # The three figure routines in density mode, physical units from the header.
+    function snap_at(t, d)
+        n = 400
+        params = zeros(Float32, 20)
+        params[1] = Float32(t)
+        params[3] = 2.0f0      # rbar [pc]
+        params[4] = 1.0f4      # zmbar [M☉]
+        params[11] = 0.5f0     # tscale [Myr]
+        pos = Float32.(0.3 .* randn(rng, 3, n))
+        pos[1, 1:(n ÷ 2)] .-= Float32(d)
+        pos[1, (n ÷ 2 + 1):end] .+= Float32(d)
+        pos[:, end] .= 40.0f0   # an escaper far outside the mass
+        Snapshot(
+            SnapshotHeader(Int32(n), Int32(1), Int32(1), Int32(20), params),
+            Int32.(1:n),
+            fill(Float32(1 / n), n),
+            pos,
+            Float32.(0.1 .* randn(rng, 3, n)),
+            Float32[],
+            Float32[],
+        )
+    end
+    snaps = [snap_at(t, d) for (t, d) in ((0.0, 2.0), (1.0, 0.8), (2.0, 0.0))]
+    vis = style(; snapshot_render = "density", density_bins = 64)
+    @test MakieExt._physical_units(vis, snaps, true)
+    # The escaper at 40 NB does not set the density panel limits.
+    @test MakieExt._mass_extent(
+        snaps[1].pos[1, :] .* 2,
+        snaps[1].pos[2, :] .* 2,
+        MakieExt._body_masses(snaps[1], true),
+        0.99,
+    ) < 20
+    plot_snapshot(snaps[end], vis; filename = "density_snap", projections = [:xy])
+    @test isfile(joinpath(TESTDIR, "test_density", "density_snap_xy.png"))
+    plot_snapshot_evolution(snaps, vis; filename = "density_evolution", projections = [:xy])
+    @test isfile(joinpath(TESTDIR, "test_density", "density_evolution_xy.png"))
+    paths = animate_cluster(snaps, vis; filename = "density_anim", projections = [:xy], fps = 2)
+    @test all(isfile, paths)
+    # Without a mass scale in the header the maps fall back to N-body units.
+    nomass = Snapshot(
+        SnapshotHeader(
+            Int32(2),
+            Int32(1),
+            Int32(1),
+            Int32(20),
+            Float32[0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        ),
+        Int32[1, 2],
+        Float32[0.5, 0.5],
+        Float32[0 1; 0 0; 0 0],
+        zeros(Float32, 3, 2),
+        Float32[],
+        Float32[],
+    )
+    @test MakieExt._physical_units(vis, [nomass], false)
+    @test !MakieExt._physical_units(vis, [nomass], true)
+end

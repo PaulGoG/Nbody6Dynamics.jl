@@ -364,6 +364,24 @@ function _validate(cfg::Nbody6Config)
         "visualization.style.anim_target_seconds",
         "must be > 0; got $(st.anim_target_seconds)",
     )
+    st.snapshot_render in ("auto", "scatter", "density") || _config_error(
+        "visualization.style.snapshot_render",
+        "must be one of \"auto\", \"scatter\", \"density\"; got \"$(st.snapshot_render)\"",
+    )
+    st.density_min_n ≥ 1 ||
+        _config_error("visualization.style.density_min_n", "must be ≥ 1; got $(st.density_min_n)")
+    (16 ≤ st.density_bins ≤ 4096) || _config_error(
+        "visualization.style.density_bins",
+        "must satisfy 16 ≤ density_bins ≤ 4096; got $(st.density_bins)",
+    )
+    st.density_decades > 0 || _config_error(
+        "visualization.style.density_decades",
+        "must be > 0; got $(st.density_decades)",
+    )
+    (0 < st.density_mass_frac ≤ 1) || _config_error(
+        "visualization.style.density_mass_frac",
+        "must satisfy 0 < density_mass_frac ≤ 1; got $(st.density_mass_frac)",
+    )
 
     # [merger]
     cfg.merger.enabled &&

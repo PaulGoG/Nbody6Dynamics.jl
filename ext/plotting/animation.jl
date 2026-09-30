@@ -24,8 +24,11 @@ end
                     fps::Union{Int,Nothing} = nothing) -> Vector{String}
 
 Create animated GIFs of the cluster's spatial evolution across snapshots,
-one per projection.  Positions are shown in pc and the time annotation in
-Myr when `cfg.units == "physical"` (header AS scaling); N-body otherwise.
+one per projection: mass-coloured scatter frames, or projected surface mass
+density on one colour scale for the whole animation when
+`cfg.style.snapshot_render` selects it for the largest snapshot.  Positions
+are shown in pc and the time annotation in Myr when `cfg.units == "physical"`
+(header AS scaling); N-body otherwise.
 
 # Arguments
 - `snaps`: ordered vector of `Snapshot`s
@@ -59,9 +62,11 @@ Returns a vector of output file paths.
         )
     )
 
-    physical = cfg.units == "physical" && all(_has_physical_scaling(s.header) for s in snaps)
+    density = _density_render(cfg, maximum(nparticles, snaps))
+    physical = _physical_units(cfg, snaps, density)
     unit_str = physical ? "pc" : "NB"
     scales = [physical ? rbar(snap.header) : 1.0 for snap in snaps]
+    masses = [density ? _body_masses(snap, physical) : Float64[] for snap in snaps]
 
     ms = _marker_size(cfg, nparticles(snaps[1]))
 
@@ -74,12 +79,25 @@ Returns a vector of output file paths.
     for projection in projections
         ix, iy, xsym, ysym = _proj_indices(projection)
 
+        frame_xy(i) = (snaps[i].pos[ix, :] .* scales[i], snaps[i].pos[iy, :] .* scales[i])
+
         # Check if adaptive zoom is needed
         all_indices = collect(1:nframes)
-        use_adaptive = _needs_adaptive_zoom(snaps, all_indices, ix, iy, cfg.style.zoom_frac)
+        extents =
+            density ?
+            [
+                _mass_extent(frame_xy(i)..., masses[i], cfg.style.density_mass_frac) for
+                i in 1:nframes
+            ] : Float64[]
+        use_adaptive =
+            density ? minimum(extents) / maximum(extents) < cfg.style.zoom_frac :
+            _needs_adaptive_zoom(snaps, all_indices, ix, iy, cfg.style.zoom_frac)
 
         # Pre-compute per-frame limits for adaptive mode
-        frame_limits = if use_adaptive
+        frame_limits = if density
+            use_adaptive ? [_centred_limits(e) for e in extents] :
+            fill(_centred_limits(maximum(extents)), nframes)
+        elseif use_adaptive
             [
                 _square_limits(snaps[i].pos[ix, :] .* scales[i], snaps[i].pos[iy, :] .* scales[i]) for i in 1:nframes
             ]
@@ -118,41 +136,74 @@ Returns a vector of output file paths.
             yticks = _nice_ticks(ylo0, yhi0; target_n = 5),
             xgridvisible = false,
             ygridvisible = false,
+            _density_axis_attributes(density)...,
         )
-        _annotate!(ax, time_text)
 
-        # Single source observable so positions and colours update atomically
-        # even when the particle count changes between frames (Point2f handles
-        # the varying length).
-        frame_data = @lift begin
-            snap = snaps[$frame_idx]
-            sc = scales[$frame_idx]
-            (
-                points = Point2f.(snap.pos[ix, :] .* sc, snap.pos[iy, :] .* sc),
-                colors = log10.(max.(Float64.(snap.mass), 1e-30)),
+        if density
+            # One colour scale for the whole animation: a first pass finds the
+            # peak, the frames are then gridded again as they are drawn.
+            frame_density(i) = _surface_density(
+                frame_xy(i)...,
+                masses[i],
+                frame_limits[i][2],
+                cfg.style.density_bins,
+            )
+            dhi = maximum(i -> _log_peak(frame_density(i)), 1:nframes)
+            dlo = dhi - cfg.style.density_decades
+            nb = cfg.style.density_bins
+            grid = @lift begin
+                hw = frame_limits[$frame_idx][2]
+                (
+                    centres = _cell_centres(hw, nb),
+                    logΣ = _log_density(frame_density($frame_idx), dlo),
+                )
+            end
+            heatmap!(
+                ax,
+                @lift($grid.centres),
+                @lift($grid.centres),
+                @lift($grid.logΣ);
+                colormap = _DENSITY_COLORMAP,
+                colorrange = (dlo, dhi),
+                lowclip = first(Makie.to_colormap(_DENSITY_COLORMAP)),
+            )
+            _annotate!(ax, time_text; color = :white)
+            _density_colorbar!(fig[1, 2], dlo, dhi, physical)
+        else
+            _annotate!(ax, time_text)
+
+            # Single source observable so positions and colours update atomically
+            # even when the particle count changes between frames (Point2f handles
+            # the varying length).
+            frame_data = @lift begin
+                snap = snaps[$frame_idx]
+                sc = scales[$frame_idx]
+                (
+                    points = Point2f.(snap.pos[ix, :] .* sc, snap.pos[iy, :] .* sc),
+                    colors = log10.(max.(Float64.(snap.mass), 1e-30)),
+                )
+            end
+            pts = @lift($frame_data.points)
+            colors = @lift($frame_data.colors)
+
+            scatter!(
+                ax,
+                pts;
+                color = colors,
+                colormap = :viridis,
+                colorrange = (cmin, cmax),
+                markersize = ms,
+                strokewidth = 0,
+            )
+
+            Colorbar(
+                fig[1, 2];
+                colormap = :viridis,
+                colorrange = (cmin, cmax),
+                label = L"\log_{10}(m \, / \, M_\mathrm{tot})",
+                ticks = _nice_colorbar_ticks(cmin, cmax),
             )
         end
-        pts = @lift($frame_data.points)
-        colors = @lift($frame_data.colors)
-
-        scatter!(
-            ax,
-            pts;
-            color = colors,
-            colormap = :viridis,
-            colorrange = (cmin, cmax),
-            markersize = ms,
-            strokewidth = 0,
-        )
-
-        # Add colorbar
-        Colorbar(
-            fig[1, 2];
-            colormap = :viridis,
-            colorrange = (cmin, cmax),
-            label = L"\log_{10}(m \, / \, M_\mathrm{tot})",
-            ticks = _nice_colorbar_ticks(cmin, cmax),
-        )
         colgap!(fig.layout, _COLORBAR_COLGAP)
 
         _backup_existing(outpath)
