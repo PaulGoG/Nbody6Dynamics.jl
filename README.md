@@ -1,15 +1,8 @@
 # Nbody6Dynamics.jl
 
-[![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)
-[![Format check](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml)
-[![Backend build](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml)
-[![Codecov](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl)
-[![Docs](https://img.shields.io/badge/docs-dev-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/)
-[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
-[![Release](https://img.shields.io/github/v/release/PaulGoG/Nbody6Dynamics.jl?display_name=tag&sort=semver)](https://github.com/PaulGoG/Nbody6Dynamics.jl/releases)
-[![Julia](https://img.shields.io/badge/Julia-1.13%2B-9558B2.svg?logo=julia&logoColor=white)](https://julialang.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Project Status: Active](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active)
+| Documentation | Build and tests | Code quality | Release |
+|:-:|:-:|:-:|:-:|
+| [![Docs stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/stable/)<br>[![Docs dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/) | [![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)<br>[![Backend build](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml)<br>[![Codecov](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl) | [![Format check](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml)<br>[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)<br>[![JET](https://img.shields.io/badge/tested_with-JET.jl-233f9a.svg)](https://github.com/aviatesk/JET.jl) | [![Release](https://img.shields.io/github/v/release/PaulGoG/Nbody6Dynamics.jl?display_name=tag&sort=semver)](https://github.com/PaulGoG/Nbody6Dynamics.jl/releases)<br>[![Julia](https://img.shields.io/badge/Julia-1.13%2B-9558B2.svg?logo=julia&logoColor=white)](https://julialang.org)<br>[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)<br>[![Project Status: Active](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active) |
 
 A Julia package that automates the full lifecycle of [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations: install/build of the Fortran code, multi-cluster merger initial-condition generation, simulation execution, post-processing of all standard output files, and figures. Every phase is driven by a single TOML configuration and orchestrated through one entry point, `run_pipeline`.
 
