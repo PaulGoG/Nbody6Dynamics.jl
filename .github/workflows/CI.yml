@@ -5,6 +5,12 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner image; lets a newer image be checked before ubuntu-latest moves to it'
+        type: choice
+        options: [ubuntu-latest, ubuntu-24.04, ubuntu-26.04]
+        default: ubuntu-latest
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -20,7 +26,7 @@ jobs:
       fail-fast: false
       matrix:
         version: ['1.13', '1']   # compat floor and current stable
-        os: [ubuntu-latest]
+        os: ["${{ inputs.runner || 'ubuntu-latest' }}"]
     steps:
       - uses: actions/checkout@v7
       - name: Install system libraries for the Cairo/Makie stack
