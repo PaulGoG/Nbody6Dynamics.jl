@@ -167,7 +167,7 @@ Returns a vector of output file paths.
                 colorrange = (dlo, dhi),
                 lowclip = first(Makie.to_colormap(_DENSITY_COLORMAP)),
             )
-            _annotate!(ax, time_text; color = :white)
+            _annotate!(ax, time_text; _DENSITY_ANNOTATION...)
             _density_colorbar!(fig[1, 2], dlo, dhi, physical)
         else
             _annotate!(ax, time_text)

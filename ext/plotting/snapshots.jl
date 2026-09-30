@@ -65,7 +65,7 @@ density in M☉ pc⁻² and the time annotation in Myr when
             hi = _log_peak(Σ)
             lo = hi - cfg.style.density_decades
             _density_heatmap!(ax, Σ, xhi, lo, hi)
-            _annotate!(ax, _time_annotation(t_val, physical); color = :white)
+            _annotate!(ax, _time_annotation(t_val, physical); _DENSITY_ANNOTATION...)
             _density_colorbar!(fig[1, 2], lo, hi, physical)
         else
             _annotate!(ax, _time_annotation(t_val, physical))
@@ -257,7 +257,7 @@ are labelled.  The extent of a density panel is that of the mass fraction
 
             if density
                 _density_heatmap!(ax, maps[idx], xhi, dlo, dhi)
-                _annotate!(ax, _time_annotation(t_val, physical); color = :white)
+                _annotate!(ax, _time_annotation(t_val, physical); _DENSITY_ANNOTATION...)
             else
                 _annotate!(ax, _time_annotation(t_val, physical))
                 log_m = log10.(max.(Float64.(snap.mass), 1e-30))
@@ -343,6 +343,11 @@ const _DENSITY_COLORMAP = :inferno
 to suppress the shot noise of sparsely populated cells without widening the
 core at the default resolution."""
 const _DENSITY_SMOOTH_CELLS = 1.0
+
+"""Placement of the time annotation on a density map, which has no data-free
+band: white, in the top-right corner, where no tick mark can sit beside it and
+read as a minus sign (ticks are drawn on the left and bottom spines only)."""
+const _DENSITY_ANNOTATION = (; color = :white, corner = :tr)
 
 """Whether projections of `n` particles render as surface density under
 `cfg.style.snapshot_render` (`"auto"`: from `density_min_n` particles on)."""
