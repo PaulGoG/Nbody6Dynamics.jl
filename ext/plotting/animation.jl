@@ -206,6 +206,22 @@ Returns a vector of output file paths.
         end
         colgap!(fig.layout, _COLORBAR_COLGAP)
 
+        # A square axis in the 3:2 canvas would leave a blank strip before the
+        # colourbar: fix the box and let the canvas follow it. Under adaptive
+        # zoom the tick labels change from frame to frame, so the widest is
+        # reserved first and the box stays put.
+        if use_adaptive
+            ax.yticklabelspace = maximum(1:nframes) do i
+                xlo, xhi, ylo, yhi = frame_limits[i]
+                limits!(ax, xlo, xhi, ylo, yhi)
+                ax.yticks = _nice_ticks(ylo, yhi; target_n = 5)
+                Float64(tight_yticklabel_spacing!(ax))
+            end
+            limits!(ax, xlo0, xhi0, ylo0, yhi0)
+            ax.yticks = _nice_ticks(ylo0, yhi0; target_n = 5)
+        end
+        _fit_canvas_to_boxes!(fig, 1, 1, _figsize_px(cfg)[2] - _AXIS_PROTRUSION, 1.0)
+
         _backup_existing(outpath)
         record(
             fig,

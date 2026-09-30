@@ -26,6 +26,10 @@ entries say so.
 
 ### Fixed
 
+- `animate_cluster` fits its canvas to the square axis, as `plot_snapshot`
+  does: a blank strip about a quarter of the frame wide separated the axis
+  from the colourbar. Under adaptive zoom the widest tick labels of the
+  animation are reserved, so the axis no longer shifts between frames.
 - The binary-population figures no longer run an ungated O(N²) pair sum:
   their hard/soft scale selected the bound systems of every snapshot
   whatever `pair_sum_max_n`, forty minutes of the post-processing of the
