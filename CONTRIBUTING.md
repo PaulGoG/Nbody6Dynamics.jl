@@ -30,7 +30,9 @@ under `NBODY6_BACKEND_ROOT`. Julia 1.13 or later is required; a Linux host with
 - The suite green, including the static checks it carries (Aqua, JET,
   ExplicitImports). Add tests for what the change does; remove tests for what
   it no longer does.
-- Formatting per `.JuliaFormatter.toml` (`using JuliaFormatter; format(".")`).
+- Formatting per `.JuliaFormatter.toml` with JuliaFormatter 2.14, the version
+  the format check installs (`using JuliaFormatter; format(".")`); other
+  versions may wrap lines differently.
 - Docstrings for every public function or type, and the manual or the input
   file reference updated when behaviour or configuration keys change.
 - An entry under `[Unreleased]` in `CHANGELOG.md`.

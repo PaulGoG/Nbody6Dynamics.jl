@@ -8,14 +8,14 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
         with:
           version: '1'
       - name: Check formatting against .JuliaFormatter.toml
         run: |
           julia -e '
-            using Pkg; Pkg.add(name = "JuliaFormatter", version = "2")
+            using Pkg; Pkg.add(name = "JuliaFormatter", version = "2.14")
             using JuliaFormatter
             format(".") || begin
               @error "Files are not formatted per .JuliaFormatter.toml (diff follows)"
