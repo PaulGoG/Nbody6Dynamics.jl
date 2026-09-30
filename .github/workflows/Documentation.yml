@@ -11,6 +11,11 @@ on:
         type: choice
         options: [ubuntu-latest, ubuntu-24.04, ubuntu-26.04]
         default: ubuntu-latest
+# Every deploying run pushes to gh-pages: one at a time, or the later push is
+# rejected (a release pushes the tag and main together). Pull requests only build.
+concurrency:
+  group: docs-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
+  cancel-in-progress: false
 permissions:
   contents: write
   pull-requests: read
