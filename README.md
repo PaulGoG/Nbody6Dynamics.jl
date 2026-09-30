@@ -6,18 +6,20 @@
 
 A Julia package that automates the full lifecycle of [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations: install/build of the Fortran code, multi-cluster merger initial-condition generation, simulation execution, post-processing of all standard output files, and figures. Every phase is driven by a single TOML configuration and orchestrated through one entry point, `run_pipeline`.
 
-![Two star clusters merging: the initial conditions and the remnant after 20 Myr](docs/src/assets/merger_evolution.png)
+![Projected surface density of two merging star clusters: the pair at release, the two cores at 4 Myr and the remnant at 50 Myr](docs/src/assets/merger_evolution.png)
 
-*Two King clusters of 4000 stars each, released 6 pc apart on an eccentric orbit, and the
-remnant they leave 20 Myr later. Note the axes: the pair spans 14 pc, the remnant and its halo
-over 100 pc. Initial conditions, integration, analysis and figure were all produced by this
-package from one configuration file; the case is `input_files/showcase/equal_pipeline.toml`.*
+*Two King clusters of 25 000 stars each, released 10 pc apart at the apocentre of an orbit of
+eccentricity 0.5, drawn as projected surface mass density: the pair at release, the two cores
+still distinct at 4 Myr, and the remnant with its halo at 50 Myr. The integration took 7.6 min
+of engine time on one NVIDIA H200 NVL. Initial conditions, integration, analysis and figure were
+all produced by this package; the case is `input_files/gpu/merger_50k.toml`.*
 
-![Animation of the same merger over 20 Myr](docs/src/assets/merger_evolution.gif)
+![Animation of the same merger over 50 Myr](docs/src/assets/merger_evolution.gif)
 
-*The same run animated on fixed axes, one frame per Myr. The two clusters fall together and
-coalesce at 3 Myr, after which the remnant relaxes and sheds the halo of loosely bound stars
-that fills the frame. Every run writes animations like this one alongside its static figures.*
+*The same run animated on fixed axes, one frame per 2 Myr. The cores fall together and merge
+between 6 and 8 Myr; the remnant then relaxes while its halo of loosely bound stars spreads past
+the frame, which holds 95 % of the mass at every epoch. Every run writes animations like this
+one alongside its static figures.*
 
 ## Project structure
 
