@@ -87,6 +87,7 @@ end
     include("test_platform_build.jl")
     include("test_validation.jl")
     include("test_run.jl")
+    include("test_resume.jl")
     include("test_io.jl")
     include("test_diagnostics.jl")
     include("test_sweep_ensemble.jl")

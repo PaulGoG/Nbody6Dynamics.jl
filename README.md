@@ -255,6 +255,7 @@ Nbody6Dynamics/
 │   ├── telemetry.jl                 # Runtime CPU/memory/GPU telemetry of the backend process tree
 │   ├── install.jl                   # Clone, configure, HDF5 Makefile patch, build
 │   ├── run.jl                       # Simulation launcher: run dirs, launch script, live monitoring
+│   ├── resume.jl                    # Restart dump selection, the join of segments (what a killed segment wrote after its dump is moved aside)
 │   ├── gpu_validation.jl            # run_gpu_validation: logged validation stages of a CUDA host under runs/
 │   ├── external.jl                  # scan_output + postprocess_external for arbitrary output dirs
 │   ├── cluster_structure.jl         # Per-cluster structure from snapshots: bound members, centres, radii, dispersions
@@ -315,6 +316,7 @@ Nbody6Dynamics/
 │   ├── test_platform_build.jl       # Platform and CUDA detection, engine source tree, GPU build target
 │   ├── test_validation.jl           # GPU validation driver and stage verdicts
 │   ├── test_run.jl                  # Run IDs, machine identity, watchdogs, restarts, provenance
+│   ├── test_resume.jl               # Dump completeness, dump selection, the join on synthetic run directories
 │   ├── test_io.jl                   # Readers: conf.3, out1000, lagr.7, esc.11, sev.83, bev.82, fixtures
 │   ├── test_diagnostics.jl          # Binary population, remnant, stellar classes, cluster structure
 │   ├── test_sweep_ensemble.jl       # Sweeps, seeded ensembles, control configurations

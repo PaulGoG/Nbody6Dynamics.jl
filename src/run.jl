@@ -129,6 +129,10 @@ Write the restart input for `KSTART = 2` from the original input file: the
 the original `&ININPUT` block with `TCRIT` set to `tcrit_extra`, which the
 engine adds to the saved time (`modify.F`: `TCRIT = TTOT + TCRIT`). Later
 namelists are not read on restart and are omitted.
+
+The increment is written with round-trip precision: the engine ends a run at
+the first adjustment beyond `TCRIT − 20 DTMIN`, and four decimals moved the
+end time by more than that at large N.
 """
 function _write_restart_inp(
     path::AbstractString,
@@ -146,7 +150,8 @@ function _write_restart_inp(
     if tcrtp0 !== nothing
         b6 = replace(b6, r"TCRTP0\s*=\s*[0-9.eE+-]+" => @sprintf("TCRTP0=%.6G", tcrtp0))
     end
-    bi = replace(mi.captures[1], r"TCRIT\s*=\s*[0-9.eE+-]+" => @sprintf("TCRIT=%.4f", tcrit_extra))
+    bi =
+        replace(mi.captures[1], r"TCRIT\s*=\s*[0-9.eE+-]+" => "TCRIT=" * repr(Float64(tcrit_extra)))
     occursin("TCRIT=", bi) ||
         error("restart: no TCRIT entry found in the &ININPUT block of $original_inp")
     open(path, "w") do io

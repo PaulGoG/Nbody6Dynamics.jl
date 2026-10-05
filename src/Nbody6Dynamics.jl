@@ -94,6 +94,7 @@ include("telemetry.jl")
 # Simulation execution
 # ---------------------------------------------------------------------------
 include("run.jl")
+include("resume.jl")
 
 # ---------------------------------------------------------------------------
 # GPU validation of a CUDA host (logged stages under runs/)

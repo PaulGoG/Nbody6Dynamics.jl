@@ -609,7 +609,7 @@ Base.CoreLogging.handle_message(::_ClosedPipeLogger, args...; kwargs...) =
     Nbody6Dynamics._write_restart_inp(rin, orig, 3.0; tcrtp0 = 900.0)
     txt = read(rin, String)
     @test occursin("KSTART=2,TCOMP=1E+08,TCRTP0=900,isernb=40", txt)
-    @test occursin("TCRIT=3.0000,QE=2.000E-04", txt)
+    @test occursin("TCRIT=3.0,QE=2.000E-04", txt)
     @test occursin("KZ(11:20)=0 1 0 0 0 0 0 0 3 0", txt) && occursin("Level='C' /", txt)
     @test !occursin("&INSSE", txt) && !occursin("&INDATA", txt)
     @test_throws ArgumentError Nbody6Dynamics._write_restart_inp(rin, orig, 0.0)
