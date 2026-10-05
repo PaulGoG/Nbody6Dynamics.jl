@@ -217,11 +217,22 @@ function _parse_nvidia_smi(output::AbstractString)::NTuple{5,Float64}
     )
 end
 
-"""One `nvidia-smi` query, aggregated by [`_parse_nvidia_smi`](@ref); throws when the tool fails."""
-function _query_nvidia_smi()::NTuple{5,Float64}
-    output =
-        read(`nvidia-smi --query-gpu=$(_NVIDIA_SMI_QUERY) --format=csv,noheader,nounits`, String)
-    return _parse_nvidia_smi(output)
+"""
+    _nvidia_smi_cmd(gpu_list = Int[]) -> Cmd
+
+The `nvidia-smi` query of the sampler, restricted to the device indices of
+`gpu_list` (`--id=i,j,…`, PCI-bus numbering) when it is not empty; every
+device otherwise.
+"""
+function _nvidia_smi_cmd(gpu_list::AbstractVector{<:Integer} = Int[])::Cmd
+    base = `nvidia-smi --query-gpu=$(_NVIDIA_SMI_QUERY) --format=csv,noheader,nounits`
+    isempty(gpu_list) && return base
+    return `$base --id=$(join(gpu_list, ','))`
+end
+
+"""One `nvidia-smi` query over the devices of `gpu_list` (all when empty), aggregated by [`_parse_nvidia_smi`](@ref); throws when the tool fails."""
+function _query_nvidia_smi(gpu_list::AbstractVector{<:Integer} = Int[])::NTuple{5,Float64}
+    return _parse_nvidia_smi(read(_nvidia_smi_cmd(gpu_list), String))
 end
 
 # ---------------------------------------------------------------------------
@@ -233,8 +244,9 @@ end
 
 Handle of the asynchronous sampler started by [`_start_telemetry`](@ref):
 the root PID, launch time, sampling interval, CSV path, the collected
-samples, and the task state. `gpu_probe` flips to `false` after the first
-failed `nvidia-smi` call so one missing tool cannot flood the run log.
+samples, and the task state; `gpu_list` restricts the GPU columns to those
+device indices (empty = every device). `gpu_probe` flips to `false` after the
+first failed `nvidia-smi` call so one missing tool cannot flood the run log.
 """
 mutable struct TelemetryMonitor
     const pid::Int
@@ -243,6 +255,7 @@ mutable struct TelemetryMonitor
     const csv_path::String
     const samples::Vector{TelemetrySample}
     const clk_tck::Int
+    const gpu_list::Vector{Int}
     gpu_probe::Bool
     stop_requested::Bool
     task::Union{Nothing,Task}
@@ -268,7 +281,7 @@ function _take_sample!(mon::TelemetryMonitor)::TelemetrySample
     gpu = (NaN, NaN, NaN, NaN, NaN)
     if mon.gpu_probe
         gpu = try
-            _query_nvidia_smi()
+            _query_nvidia_smi(mon.gpu_list)
         catch e
             e isa Union{ProcessFailedException,Base.IOError,ArgumentError} || rethrow()
             @warn "GPU telemetry disabled: nvidia-smi query failed" exception = e
@@ -307,12 +320,13 @@ function _sleep_until(mon::TelemetryMonitor, deadline::Float64)
 end
 
 """
-    _start_telemetry(run_dir, pid, t_start; interval, gpu_probe, csv_name = "telemetry.csv",
-                     interrupt_to = nothing) -> TelemetryMonitor
+    _start_telemetry(run_dir, pid, t_start; interval, gpu_probe, gpu_list = Int[],
+                     csv_name = "telemetry.csv", interrupt_to = nothing) -> TelemetryMonitor
 
 Start the asynchronous sampler for the process tree rooted at `pid`,
 appending one row per `interval` seconds to `<run_dir>/telemetry.csv`
-(header = the [`TelemetrySample`](@ref) field names). An existing CSV is
+(header = the [`TelemetrySample`](@ref) field names). The GPU columns cover
+the devices of `gpu_list`, or every device when it is empty. An existing CSV is
 backed up, never overwritten. The task shares the
 main thread and yields between samples, so it interleaves with the process
 wait and the live monitor without extra threads. An `InterruptException`
@@ -325,6 +339,7 @@ function _start_telemetry(
     t_start::Float64;
     interval::Float64,
     gpu_probe::Bool,
+    gpu_list::AbstractVector{<:Integer} = Int[],
     csv_name::AbstractString = "telemetry.csv",
     interrupt_to::Union{Nothing,Task} = nothing,
 )::TelemetryMonitor
@@ -337,6 +352,7 @@ function _start_telemetry(
         csv_path,
         TelemetrySample[],
         _clock_ticks_per_second(),
+        Int.(collect(gpu_list)),
         gpu_probe,
         false,
         nothing,

@@ -19,6 +19,33 @@
     @test all(isnan, Nbody6Dynamics._parse_nvidia_smi(""))
     @test_throws ArgumentError Nbody6Dynamics._parse_nvidia_smi("1, 2, 3\n")
 
+    # The query names the run's devices; a stand-in nvidia-smi with an idle
+    # and a busy device shows what each selection reports
+    @test !any(startswith("--id"), Nbody6Dynamics._nvidia_smi_cmd().exec)
+    @test Nbody6Dynamics._nvidia_smi_cmd([1]).exec[end] == "--id=1"
+    @test Nbody6Dynamics._nvidia_smi_cmd([0, 2]).exec[end] == "--id=0,2"
+    smi_dir = mktempdir()
+    smi = joinpath(smi_dir, "nvidia-smi")
+    write(
+        smi,
+        """
+        #!/bin/bash
+        rows=("3, 1, 120, 60.0, 35" "97, 40, 30000, 520.0, 71")
+        ids="0 1"
+        for a in "\$@"; do
+            case "\$a" in --id=*) ids=\$(printf '%s' "\${a#--id=}" | tr ',' ' ') ;; esac
+        done
+        for i in \$ids; do printf '%s\\n' "\${rows[\$i]}"; done
+        """,
+    )
+    chmod(smi, 0o755)
+    withenv("PATH" => smi_dir * ":" * get(ENV, "PATH", "")) do
+        @test Nbody6Dynamics._query_nvidia_smi() == (50.0, 20.5, 30120.0, 580.0, 71.0)
+        @test Nbody6Dynamics._query_nvidia_smi([1]) == (97.0, 40.0, 30000.0, 520.0, 71.0)
+        @test Nbody6Dynamics._query_nvidia_smi([0]) == (3.0, 1.0, 120.0, 60.0, 35.0)
+        @test Nbody6Dynamics._query_nvidia_smi([0, 1]) == (50.0, 20.5, 30120.0, 580.0, 71.0)
+    end
+
     # Exact child accounting is monotone across a child launch
     cpu0 = Nbody6Dynamics._children_cpu_times()
     wait(run(`sleep 0.1`; wait = false))
@@ -48,6 +75,7 @@
         t0;
         interval = 0.2,
         gpu_probe = false,
+        gpu_list = [0],
     )
     wait(child)
     summary = Nbody6Dynamics._finish_telemetry(
@@ -60,6 +88,7 @@
     @test summary["samples"] == length(mon.samples) ≥ 3
     @test summary["sampling_interval_s"] == 0.2
     @test summary["threads_total"] == 2
+    @test mon.gpu_list == [0]
     csv_lines = readlines(joinpath(tele_dir, "telemetry.csv"))
     @test csv_lines[1] == join(string.(fieldnames(Nbody6Dynamics.TelemetrySample)), ",")
     @test length(csv_lines) == summary["samples"] + 1

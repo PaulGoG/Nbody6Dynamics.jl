@@ -113,6 +113,12 @@ entries say so.
   tree before the build (`deps/engine/amendments.toml`) and records the
   amendments in effect as `source_amendments` in `BUILD_INFO.toml`; an
   engine built earlier needs a rebuild.
+- GPU telemetry follows `simulation.gpu_list`. The sampler queried every
+  device of the host, so a run on one of two cards recorded half its
+  utilisation and the power of both; it now names the run's devices to
+  `nvidia-smi`. With a device list the launch script also exports
+  `CUDA_DEVICE_ORDER=PCI_BUS_ID`, so that an index means the same device
+  for the engine and for `nvidia-smi`.
 
 ## [0.4.0] — 2026-09-26
 

@@ -409,6 +409,7 @@ function _execute_simulation(
                 t_start;
                 interval = sim.telemetry_interval,
                 gpu_probe = cfg.build.enable_gpu,
+                gpu_list = sim.gpu_list,
                 csv_name = segment == 1 ? "telemetry.csv" : "telemetry_$(segment).csv",
                 interrupt_to = waiting,
             )
@@ -648,8 +649,12 @@ function _write_launch_script(
         # OMP_NUM_THREADS or every logical CPU).
         sim.omp_threads > 0 && println(io, "export OMP_NUM_THREADS=$(sim.omp_threads)")
         # CUDA devices the engine may use (its own GPU_LIST variable; unset = all).
-        isempty(sim.gpu_list) ||
+        if !isempty(sim.gpu_list)
             println(io, "export GPU_LIST=$(_sh_quote(join(sim.gpu_list, ' ')))")
+            # The CUDA runtime orders devices fastest first; with PCI-bus order an
+            # index names the same device for the engine and for nvidia-smi.
+            println(io, "export CUDA_DEVICE_ORDER=PCI_BUS_ID")
+        end
 
         # CUDA environment
         if build.enable_gpu

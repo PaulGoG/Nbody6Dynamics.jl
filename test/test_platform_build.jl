@@ -402,8 +402,10 @@ end
     args = (joinpath(dir, "nbody6++"), "in.inp", "out1000", "err1000")
     s_gpu = read(Nbody6Dynamics._write_launch_script(dir, args..., cfg_gpu), String)
     @test occursin("export GPU_LIST='0 1'\n", s_gpu)
+    @test occursin("export CUDA_DEVICE_ORDER=PCI_BUS_ID\n", s_gpu)
     s_cpu = read(Nbody6Dynamics._write_launch_script(dir, args..., cfg_cpu), String)
     @test !occursin("GPU_LIST", s_cpu)
+    @test !occursin("CUDA_DEVICE_ORDER", s_cpu)
 
     # Devices and kernel label the engine reports on stderr
     err = joinpath(dir, "err1000")
