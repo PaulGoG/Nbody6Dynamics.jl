@@ -741,6 +741,197 @@ end
 
 # =====================================================================
 
+@testset "Segment status and record" begin
+    # Engine stdout as printed at a normal end, an energy halt and a stop request
+    S_END =
+        "         END RUN    TIME[Myr] =  261.31  TOFF/TIME/TTOT=      0.00000000" *
+        "     40.00000000     40.00000000  CPUTOT =    1.0  ERRTOT =-4.70618D-03" *
+        "  DETOT = 7.54813D-03\n"
+    S_HALT = "\n         CALCULATIONS HALTED * * *\n"
+    S_STOP =
+        "         TERMINATION BY MANUAL INTERVENTION\n" *
+        "  MYDUMP    13.390625000000000      13.4                         228 comm.1_13.4" *
+        "                \n" *
+        "  W MYDUMP J,II,NPARTMP=         228           1     1572864      524288" *
+        "         600        2048          22         600         200          10" *
+        "          10       100\n" *
+        "  NA-NS=          85         168         530        1203          24         132" *
+        "          99          60         216      320000       63488       90112\n" *
+        "\n" *
+        "\n" *
+        "         COMMON SAVED AT TOFF/TIME/TTOT =  0.00000000E+00  TCOMP =  1.33906250E+01" *
+        "  CPUTOT =  1.33906250E+01  ERRTOT =   169.68931  DETOT =     5.57674\n"
+    S_ADJ(t) =
+        " ADJUST:  TIME    $(t)  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00" *
+        " DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n"
+    P1 =
+        "  MYDUMP    10.000000000000000      10.0                         221 comm.2_10.0" *
+        "                \n"
+    P2 =
+        "  MYDUMP    10.500000000000000      10.5                         222 comm.2_10.5" *
+        "                \n"
+    dir = mktempdir()
+    f = joinpath(dir, "out1000")
+    absent = joinpath(dir, "absent")
+
+    # Tail window and offset bound
+    tail = Nbody6Dynamics._stdout_tail
+    @test tail(absent) == ""
+    big = joinpath(dir, "big")
+    write(big, "x"^100_000 * "END")
+    @test tail(big; offset = filesize(big)) == ""
+    @test tail(big; offset = filesize(big) + 10) == ""
+    t_big = tail(big)
+    @test length(t_big) == 65536 && endswith(t_big, "END")
+    @test tail(big; offset = filesize(big) - 2) == "ND"
+
+    # Classification of a finished segment
+    status_of(text; kw...) = (write(f, text); Nbody6Dynamics._segment_status(f; kw...))
+    adj1 = S_ADJ("1.00000E+00")
+    @test status_of(adj1 * S_END) == "completed"
+    @test status_of(adj1 * S_HALT) == "halted"
+    @test status_of(adj1 * S_STOP) == "stopped"
+    @test status_of(adj1; exit_status = -9) == "killed"
+    @test status_of(adj1; exit_status = 2) == "failed"
+    @test status_of(adj1; exit_status = 0) == "failed"
+    @test status_of(adj1; exit_status = nothing) == "killed"
+    @test status_of(adj1 * S_END; watchdog = true) == "watchdog"
+    common_saved = last(split(S_STOP, "\n"; keepempty = false)) * "\n"
+    @test startswith(lstrip(common_saved), "COMMON SAVED AT")
+    @test status_of(common_saved) == "stopped"
+    # An END RUN of an earlier segment does not count
+    write(f, adj1 * S_END * S_ADJ("2.00000E+00"))
+    off = sizeof(adj1 * S_END)
+    @test Nbody6Dynamics._segment_status(f; offset = off, exit_status = -15) == "killed"
+    @test !Nbody6Dynamics._run_completed(f; offset = off)
+    @test Nbody6Dynamics._run_completed(f)
+
+    # Start-up progress from the offset on
+    write(f, S_ADJ("0.00000E+00"))
+    @test !Nbody6Dynamics._adjust_advanced(f)
+    write(f, adj1 * S_ADJ("0.00000E+00"))
+    @test !Nbody6Dynamics._adjust_advanced(f; offset = sizeof(adj1))
+    @test Nbody6Dynamics._adjust_advanced(f)
+
+    # Dump lines: exact time, file name, end of line
+    write(f, S_ADJ("1.30000E+01") * S_STOP)
+    mk = Nbody6Dynamics._dump_markers(f)
+    @test length(mk) == 1                     # the W MYDUMP line is not a dump
+    @test mk[1].file == "comm.1_13.4" && mk[1].time_nb == 13.390625
+    @test endswith(read(f, String)[1:mk[1].line_end], "comm.1_13.4                \n")
+    write(f, P1 * P2)
+    mk2 = Nbody6Dynamics._dump_markers(f)
+    @test [m.file for m in mk2] == ["comm.2_10.0", "comm.2_10.5"]
+    @test [m.time_nb for m in mk2] == [10.0, 10.5]
+    mk3 = Nbody6Dynamics._dump_markers(f; offset = sizeof(P1))
+    @test length(mk3) == 1 && mk3[1].line_end == filesize(f)
+    @test isempty(Nbody6Dynamics._dump_markers(absent))
+
+    # Dump written at a stop request
+    write(f, S_STOP)
+    @test Nbody6Dynamics._stop_dump(f) == "comm.1_13.4"
+    write(f, P1 * P2)
+    @test Nbody6Dynamics._stop_dump(f) == ""
+    write(f, P1 * P2 * "\n         TERMINATION BY MANUAL INTERVENTION\n" * common_saved)
+    @test Nbody6Dynamics._stop_dump(f) == ""
+
+    # Time of the last adjustment
+    write(f, S_ADJ("1.30000E+01") * S_STOP)
+    @test Nbody6Dynamics._last_adjust_time(f) == 13.0
+    write(f, "")
+    @test isnan(Nbody6Dynamics._last_adjust_time(f))
+
+    # Record life cycle: opened at launch, completed or closed at exit
+    run_dir = mktempdir()
+    out_dir = joinpath(run_dir, "output")
+    mkpath(out_dir)
+    stdout_path = joinpath(out_dir, "out1000")
+    write(stdout_path, "x\n")
+    cfg_r = Nbody6Config(
+        InstallConfig(),
+        BuildConfig(),
+        SimulationConfig(),
+        PostprocessConfig(),
+        VisualizationConfig(),
+        MergerPipelineConfig(),
+    )
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    parse_info() = Nbody6Dynamics.TOML.parsefile(info_path)
+    Nbody6Dynamics._open_segment(
+        run_dir,
+        "r1",
+        Dict{String,Any}("index" => 1, "kind" => "initial", "status" => "running", "pid" => 1);
+        input_file = "merger.inp",
+    )
+    @test isfile(info_path)
+    info = parse_info()
+    @test info["run"]["status"] == "running" && info["run"]["segments"] == 1
+    @test info["run"]["input_file"] == "merger.inp"
+    @test info["segments"][1]["status"] == "running"
+    Nbody6Dynamics._write_run_summary(
+        cfg_r,
+        run_dir,
+        "r1",
+        stdout_path,
+        out_dir,
+        10.0;
+        input_file = "merger.inp",
+        segment = Dict{String,Any}(
+            "index" => 1,
+            "kind" => "initial",
+            "status" => "stopped",
+            "elapsed_seconds" => 10.0,
+        ),
+    )
+    info = parse_info()
+    @test length(info["segments"]) == 1 && info["segments"][1]["status"] == "stopped"
+    @test info["run"]["status"] == "stopped"
+    Nbody6Dynamics._open_segment(
+        run_dir,
+        "r1",
+        Dict{String,Any}("index" => 2, "kind" => "restart", "status" => "running");
+        input_file = "restart.inp",
+    )
+    info = parse_info()
+    @test length(info["segments"]) == 2
+    @test info["run"]["input_file"] == "merger.inp" && info["run"]["status"] == "running"
+    first_segment = info["segments"][1]
+    @test Nbody6Dynamics._close_segment(
+        run_dir,
+        2;
+        status = "killed",
+        exit_status = -9,
+        elapsed = 3.21,
+        t_end = 7.5,
+    )
+    info = parse_info()
+    s2 = info["segments"][2]
+    @test s2["status"] == "killed" && s2["completed"] == false && s2["exit_status"] == -9
+    @test s2["elapsed_seconds"] == 3.2 && s2["t_end"] == 7.5
+    @test info["run"]["status"] == "killed"
+    @test info["segments"][1] == first_segment
+    @test !Nbody6Dynamics._close_segment(run_dir, 9; status = "killed")
+    @test !Nbody6Dynamics._close_segment(mktempdir(), 1; status = "killed")
+
+    # Watchdog and completion monitor read only the segment's own stdout
+    mon_file = joinpath(mktempdir(), "out1000")
+    write(mon_file, adj1 * S_END)
+    p = run(`sleep 30`; wait = false)
+    mon = Nbody6Dynamics._start_completion_monitor(mon_file, p, 1.0; offset = filesize(mon_file))
+    sleep(3)
+    @test process_running(p) && !mon.fired[]
+    mon.stop[] = true
+    kill(p)
+    wait(p)
+    w = run(`sleep 30`; wait = false)
+    wd = Nbody6Dynamics._start_startup_watchdog(mon_file, w, 1.0; offset = filesize(mon_file))
+    wait(w)
+    wait(wd.task)
+    @test wd.fired[] && !process_running(w)
+end
+
+# =====================================================================
+
 @testset "Live diagnostics panel" begin
     fixture = joinpath(@__DIR__, "fixtures", "out1000")
     panel = Nbody6Dynamics._live_diagnostics_panel(fixture)

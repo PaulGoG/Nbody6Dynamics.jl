@@ -275,6 +275,8 @@ function _execute_simulation(
     # --- Build launch script ---
     stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
     stderr_path = joinpath(out_dir, "err1000")
+    # A restart appends to the capture: this segment's stdout starts here.
+    stdout_offset = is_restart && isfile(stdout_path) ? filesize(stdout_path) : 0
     launch_script = _write_launch_script(
         out_dir,
         local_binary,
@@ -295,8 +297,21 @@ function _execute_simulation(
         end
         @info "Backend threads: $omp_threads OpenMP × $(sim.mpi_ranks) MPI rank(s)"
 
+        # Segment index: 1 for the initial launch, one more per restart.
+        segment = 1 + _segment_count(joinpath(run_dir, "RUN_INFO.toml"))
+        # N-body time the segment starts from: the dump's exact time when
+        # the caller knows it, else the rounded one of the file name.
+        t_start_nb = if !is_restart
+            0.0
+        elseif haskey(restart, :t_start)
+            Float64(restart.t_start)
+        else
+            _dump_time(restart.dump)
+        end
+
         cpu_before = _children_cpu_times()
         t_start = time()
+        launch_date = Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")
         @info "Starting $label..."
         # Own session (detach): the hangup of a terminal closing above the
         # pipeline never reaches the engine. An operator interrupt is turned
@@ -305,8 +320,26 @@ function _execute_simulation(
             run(detach(`bash $launch_script`); wait = false)
         end
 
-        # Segment index: 1 for the initial launch, one more per restart.
-        segment = 1 + _segment_count(joinpath(run_dir, "RUN_INFO.toml"))
+        # The record of the segment exists while the engine runs, so a
+        # pipeline killed before the engine exits leaves it on file.
+        opening = Dict{String,Any}(
+            "index" => segment,
+            "kind" => is_restart ? "restart" : "initial",
+            "status" => "running",
+            "date" => launch_date,
+            "input" => basename(input_copy),
+            "dump" => is_restart ? restart.dump : "",
+            "tcrit_extra" => is_restart ? restart.tcrit_extra : 0.0,
+            "t_start" => t_start_nb,
+            "host" => gethostname(),
+            "pid" => Int(getpid(process)),
+            "package_commit" => provenance["package_commit"],
+            "stdout_offset" => stdout_offset,
+        )
+        isempty(sim.gpu_list) || (opening["gpu_list"] = copy(sim.gpu_list))
+        slurm_job_id = get(ENV, "SLURM_JOB_ID", "")
+        isempty(slurm_job_id) || (opening["slurm_job_id"] = slurm_job_id)
+        _open_segment(run_dir, run_id, opening; input_file = basename(input_copy))
 
         # The helper tasks below hand an operator interrupt to this task, the
         # one waiting on the engine: SIGINT lands in whichever task is current.
@@ -336,6 +369,7 @@ function _execute_simulation(
                 process,
                 sim.startup_timeout;
                 interrupt_to = waiting,
+                offset = stdout_offset,
             ) : nothing
         # Completion monitor: an engine that printed END RUN but never exits
         # is terminated after the grace period and recorded as completed.
@@ -346,6 +380,7 @@ function _execute_simulation(
                 process,
                 sim.exit_grace;
                 interrupt_to = waiting,
+                offset = stdout_offset,
             ) : nothing
 
         # Live ticker is opt-in and interactive-only; the Fortran stdout is
@@ -367,6 +402,13 @@ function _execute_simulation(
             # sent the interrupt, and a report that fails must not leave the
             # engine running.
             _terminate(process)
+            _close_segment(
+                run_dir,
+                segment;
+                status = "killed",
+                exit_status = _exit_status(process),
+                elapsed = time() - t_start,
+            )
             watchdog === nothing || (watchdog.stop[] = true)
             completion === nothing || (completion.stop[] = true)
             monitor === nothing || (monitor.stop_requested = true)
@@ -382,8 +424,23 @@ function _execute_simulation(
         merge!(telemetry, _backend_performance(stdout_path, stderr_path))
 
         hung = watchdog !== nothing && watchdog.fired[]
-        completed = _run_completed(stdout_path)
+        completed = _run_completed(stdout_path; offset = stdout_offset)
         killed_after_completion = completion !== nothing && completion.fired[]
+        status =
+            killed_after_completion ? "completed" :
+            _segment_status(
+                stdout_path;
+                offset = stdout_offset,
+                exit_status = _exit_status(process),
+                watchdog = hung,
+            )
+        stop_dump = _stop_dump(stdout_path; offset = stdout_offset)
+        t_end = if status == "stopped" && !isempty(stop_dump)
+            last(_dump_markers(stdout_path; offset = stdout_offset)).time_nb
+        else
+            t_adjust = _last_adjust_time(stdout_path; offset = stdout_offset)
+            isnan(t_adjust) ? t_start_nb : t_adjust
+        end
         if killed_after_completion
             @warn "The engine printed END RUN but had not exited $(sim.exit_grace) s later; " *
                   "terminated and recorded as completed (exit status $(_exit_status(process)))"
@@ -403,18 +460,18 @@ function _execute_simulation(
             input_file = basename(input_copy),
             src_dir = src_dir,
             provenance = provenance,
-            segment = Dict{String,Any}(
-                "index" => segment,
-                "kind" => is_restart ? "restart" : "initial",
-                "date" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
-                "elapsed_seconds" => round(elapsed; digits = 1),
-                "exit_status" => _exit_status(process),
-                "completed" => completed,
-                "watchdog" => hung,
-                "terminated_after_completion" => killed_after_completion,
-                "input" => basename(input_copy),
-                "dump" => is_restart ? restart.dump : "",
-                "tcrit_extra" => is_restart ? restart.tcrit_extra : 0.0,
+            segment = merge(
+                opening,
+                Dict{String,Any}(
+                    "status" => status,
+                    "elapsed_seconds" => round(elapsed; digits = 1),
+                    "exit_status" => _exit_status(process),
+                    "completed" => status == "completed",
+                    "watchdog" => hung,
+                    "terminated_after_completion" => killed_after_completion,
+                    "stop_dump" => stop_dump,
+                    "t_end" => t_end,
+                ),
             ),
         )
         if hung
@@ -437,9 +494,24 @@ function _execute_simulation(
 
         if completed
             @info "Simulation complete. Run: $run_id  ($(_format_elapsed(elapsed)))"
-        else
-            @warn "Simulation ended without END RUN (exit status $(_exit_status(process))). " *
-                  "Run: $run_id  ($(_format_elapsed(elapsed))); the output is partial"
+        elseif status == "stopped"
+            if isempty(stop_dump)
+                @warn "Simulation stopped on a stop request without writing a dump; a resume " *
+                      "starts from the last periodic dump. Run: $run_id  " *
+                      "($(_format_elapsed(elapsed)))"
+            else
+                @info "Simulation stopped at t = $(t_end) N-body units on a stop request " *
+                      "(dump $(stop_dump)); the run can be resumed. Run: $run_id  " *
+                      "($(_format_elapsed(elapsed)))"
+            end
+        elseif status == "halted"
+            @warn "Simulation halted by the engine's energy check at t = $(t_end) N-body units " *
+                  "(exit status $(_exit_status(process))). Run: $run_id  " *
+                  "($(_format_elapsed(elapsed))); the output is partial"
+        elseif status == "killed" || status == "failed"
+            @warn "Simulation ended without END RUN (status $(status), exit status " *
+                  "$(_exit_status(process))). Run: $run_id  ($(_format_elapsed(elapsed))); " *
+                  "the output is partial"
         end
     end
     return run_dir
@@ -520,20 +592,25 @@ function _write_launch_script(
 end
 
 """
-    _adjust_advanced(stdout_path) -> Bool
+    _adjust_advanced(stdout_path; offset = 0) -> Bool
 
 Whether the captured stdout carries an `ADJUST:` line with `TIME > 0`, the
-sign that the integration has advanced past initialisation.
+sign that the integration has advanced past initialisation. Only the lines
+from byte `offset` on are read; `false` when the file is shorter.
 """
-function _adjust_advanced(stdout_path::AbstractString)::Bool
+function _adjust_advanced(stdout_path::AbstractString; offset::Integer = 0)::Bool
     isfile(stdout_path) || return false
-    for line in eachline(stdout_path)
-        m = match(r"^\s*ADJUST:\s+TIME\s+([0-9.E+-]+)", line)
-        m === nothing && continue
-        t = tryparse(Float64, m.captures[1])
-        t !== nothing && t > 0 && return true
+    filesize(stdout_path) < offset && return false
+    return open(stdout_path) do io
+        seek(io, offset)
+        for line in eachline(io)
+            m = match(r"^\s*ADJUST:\s+TIME\s+([0-9.E+-]+)", line)
+            m === nothing && continue
+            t = tryparse(Float64, m.captures[1])
+            t !== nothing && t > 0 && return true
+        end
+        return false
     end
-    return false
 end
 
 """Seconds a terminated engine gets to exit after SIGTERM before SIGKILL."""
@@ -584,10 +661,11 @@ function _forwarding_interrupts(body::Function, target::Union{Nothing,Task})
 end
 
 """
-    _start_startup_watchdog(stdout_path, process, timeout; interrupt_to = nothing)
-        -> (; stop, fired, task)
+    _start_startup_watchdog(stdout_path, process, timeout; interrupt_to = nothing,
+                            offset = 0) -> (; stop, fired, task)
 
-Asynchronous watchdog: unless the stdout shows an adjustment beyond t = 0
+Asynchronous watchdog: unless the stdout from byte `offset` on (the
+segment's own part of an appended capture) shows an adjustment beyond t = 0
 within `timeout` seconds, the process is terminated (SIGTERM, then SIGKILL
 after `_KILL_GRACE_SECONDS`) and `fired` is set. The kill precedes the log
 record of it: on 2026-09-25 an orphaned pipeline's watchdog fired, its
@@ -601,6 +679,7 @@ function _start_startup_watchdog(
     process::Base.Process,
     timeout::Real;
     interrupt_to::Union{Nothing,Task} = nothing,
+    offset::Integer = 0,
 )
     stop = Ref(false)
     fired = Ref(false)
@@ -608,7 +687,7 @@ function _start_startup_watchdog(
         _forwarding_interrupts(interrupt_to) do
             deadline = time() + timeout
             while !stop[] && process_running(process)
-                _adjust_advanced(stdout_path) && return nothing
+                _adjust_advanced(stdout_path; offset = offset) && return nothing
                 if time() > deadline
                     fired[] = true
                     _terminate(process)
@@ -623,20 +702,228 @@ function _start_startup_watchdog(
 end
 
 """
-    _run_completed(stdout_path) -> Bool
+    _run_completed(stdout_path; offset = 0) -> Bool
 
 Whether the captured stdout carries the engine's `END RUN` line
 (`adjust.F`, printed when the termination criterion is met). Only the last
-64 KiB are scanned, so the check stays cheap on long runs.
+64 KiB are scanned, so the check stays cheap on long runs. Nothing before
+byte `offset` is read, so a restart does not see the `END RUN` of an
+earlier segment.
 """
-function _run_completed(stdout_path::AbstractString)::Bool
-    isfile(stdout_path) || return false
-    tail = open(stdout_path) do io
-        size = filesize(stdout_path)
-        seek(io, max(0, size - 65536))
+function _run_completed(stdout_path::AbstractString; offset::Integer = 0)::Bool
+    return occursin("END RUN", _stdout_tail(stdout_path; offset = offset))
+end
+
+"""
+    _stdout_tail(stdout_path; offset = 0, window = 65536) -> String
+
+Text of the stdout capture from byte `max(offset, filesize - window)` to the
+end; `""` when the file is absent or `offset` is not below its size. The
+lower bound keeps every check of a segment off what earlier segments of an
+appended capture wrote.
+"""
+function _stdout_tail(
+    stdout_path::AbstractString;
+    offset::Integer = 0,
+    window::Integer = 65536,
+)::String
+    isfile(stdout_path) || return ""
+    size = filesize(stdout_path)
+    offset ≥ size && return ""
+    return open(stdout_path) do io
+        seek(io, max(offset, size - window, 0))
         read(io, String)
     end
-    return occursin("END RUN", tail)
+end
+
+"""Element type of [`_dump_markers`](@ref)."""
+const _DumpMarker = @NamedTuple{file::String, time_nb::Float64, line_end::Int}
+
+"""
+    _dump_markers(stdout_path; offset = 0) -> Vector{@NamedTuple{file, time_nb, line_end}}
+
+One entry per restart dump the engine reports from byte `offset` on, in file
+order: the dump's file name (`comm.1_<t>` / `comm.2_<t>`), its exact time
+`TTOT` from the ` MYDUMP` line (the file name carries a rounded one), and the
+byte position just after that line. The ` W MYDUMP` and ` R MYDUMP` lines do
+not match. The whole file from `offset` on is read, not a tail window. Empty
+when the file is absent.
+"""
+function _dump_markers(stdout_path::AbstractString; offset::Integer = 0)::Vector{_DumpMarker}
+    markers = _DumpMarker[]
+    isfile(stdout_path) || return markers
+    filesize(stdout_path) ≤ offset && return markers
+    open(stdout_path) do io
+        seek(io, offset)
+        while !eof(io)
+            line = readline(io)
+            m = match(r"^\s*MYDUMP\s+(\S+)\s+\S+\s+\d+\s+(comm\.[12]_\S+)\s*$", line)
+            m === nothing && continue
+            t = tryparse(Float64, m.captures[1])
+            t === nothing && continue
+            push!(
+                markers,
+                (file = String(m.captures[2]), time_nb = t, line_end = Int(position(io))),
+            )
+        end
+    end
+    return markers
+end
+
+"""
+    _last_adjust_time(stdout_path; offset = 0) -> Float64
+
+`TIME` of the last `ADJUST:` line from byte `offset` on, in N-body units;
+`NaN` when there is none.
+"""
+function _last_adjust_time(stdout_path::AbstractString; offset::Integer = 0)::Float64
+    isfile(stdout_path) || return NaN
+    filesize(stdout_path) < offset && return NaN
+    return open(stdout_path) do io
+        seek(io, offset)
+        t_last = NaN
+        for line in eachline(io)
+            m = match(r"^\s*ADJUST:\s+TIME\s+([0-9.E+-]+)", line)
+            m === nothing && continue
+            t = tryparse(Float64, m.captures[1])
+            t === nothing || (t_last = t)
+        end
+        return t_last
+    end
+end
+
+"""
+    _segment_status(stdout_path; offset = 0, exit_status = nothing, watchdog = false)
+        -> String
+
+Status of a finished segment from the stdout it wrote (from byte `offset`
+on), its exit status ([`_exit_status`](@ref)) and whether the start-up
+watchdog fired. A segment record carries one of seven values:
+
+  - `running`: the engine has been launched and has not exited;
+  - `completed`: `END RUN` printed;
+  - `halted`: the engine's energy check stopped the run;
+  - `stopped`: the engine ended at a stop request and can be resumed;
+  - `watchdog`: terminated by the start-up watchdog;
+  - `killed`: ended by a signal, or its end was not witnessed;
+  - `failed`: exited by itself without any of the above (runtime error).
+
+This function returns one of the last six; the first matching of
+`watchdog`, `completed`, `halted`, `stopped`, `killed`, `failed` wins.
+"""
+function _segment_status(
+    stdout_path::AbstractString;
+    offset::Integer = 0,
+    exit_status::Union{Nothing,Integer} = nothing,
+    watchdog::Bool = false,
+)::String
+    watchdog && return "watchdog"
+    tail = _stdout_tail(stdout_path; offset = offset)
+    occursin("END RUN", tail) && return "completed"
+    occursin("CALCULATIONS HALTED", tail) && return "halted"
+    if occursin("TERMINATION BY MANUAL INTERVENTION", tail) || occursin("COMMON SAVED AT", tail)
+        return "stopped"
+    end
+    (exit_status === nothing || exit_status < 0) && return "killed"
+    return "failed"
+end
+
+"""
+    _stop_dump(stdout_path; offset = 0) -> String
+
+File name of the `comm.1_<t>` dump the engine wrote at a stop request: the
+last dump line from byte `offset` on that follows the last
+`TERMINATION BY MANUAL INTERVENTION` line. `""` when there is no stop line,
+or no such dump line after it (some inputs stop without writing a dump).
+"""
+function _stop_dump(stdout_path::AbstractString; offset::Integer = 0)::String
+    isfile(stdout_path) || return ""
+    filesize(stdout_path) ≤ offset && return ""
+    return open(stdout_path) do io
+        seek(io, offset)
+        stopped = false
+        name = ""
+        for line in eachline(io)
+            if occursin("TERMINATION BY MANUAL INTERVENTION", line)
+                stopped = true
+                name = ""
+            elseif stopped
+                m = match(r"^\s*MYDUMP\s+(\S+)\s+\S+\s+\d+\s+(comm\.[12]_\S+)\s*$", line)
+                m === nothing && continue
+                tryparse(Float64, m.captures[1]) === nothing && continue
+                startswith(m.captures[2], "comm.1_") && (name = String(m.captures[2]))
+            end
+        end
+        return name
+    end
+end
+
+"""
+    _open_segment(run_dir, run_id, segment; input_file = "")
+
+Append the record of a segment that is starting to the `segments` list of
+`run_dir/RUN_INFO.toml` (created when absent) and set `run.id`,
+`run.segments` and `run.status = "running"`; `run.input_file` is set only
+when not yet recorded, so a restart keeps the original input. Every other
+key of the file is kept. Written before the engine's exit so that a run
+whose pipeline dies leaves a record of the segment.
+"""
+function _open_segment(
+    run_dir::AbstractString,
+    run_id::AbstractString,
+    segment::AbstractDict;
+    input_file::AbstractString = "",
+)
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    d = isfile(info_path) ? TOML.parsefile(info_path) : Dict{String,Any}()
+    segments = Vector{Any}(get(d, "segments", Any[]))
+    push!(segments, Dict{String,Any}(segment))
+    d["segments"] = segments
+    run_table = get!(d, "run", Dict{String,Any}())
+    run_table["id"] = String(run_id)
+    run_table["segments"] = length(segments)
+    run_table["status"] = "running"
+    if isempty(get(run_table, "input_file", "")) && !isempty(input_file)
+        run_table["input_file"] = String(input_file)
+    end
+    _atomic_write_toml(info_path, d)
+    return nothing
+end
+
+"""
+    _close_segment(run_dir, index; status, exit_status = nothing, elapsed = nothing,
+                   t_end = nothing) -> Bool
+
+Close the open record of segment `index` in `run_dir/RUN_INFO.toml`: set its
+`status` and `completed`, and `exit_status`, `elapsed_seconds` and `t_end`
+when given; set `run.status`. No other key is touched. Returns `false`
+without writing when the file or the entry is missing. Uses only TOML
+parsing and file writes, since it also runs from a process-exit hook.
+"""
+function _close_segment(
+    run_dir::AbstractString,
+    index::Integer;
+    status::AbstractString,
+    exit_status::Union{Nothing,Integer} = nothing,
+    elapsed::Union{Nothing,Real} = nothing,
+    t_end::Union{Nothing,Real} = nothing,
+)::Bool
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(info_path) || return false
+    d = TOML.parsefile(info_path)
+    segments = get(d, "segments", Any[])
+    k = findfirst(s -> s isa AbstractDict && get(s, "index", nothing) == index, segments)
+    k === nothing && return false
+    entry = segments[k]
+    entry["status"] = String(status)
+    entry["completed"] = status == "completed"
+    exit_status === nothing || (entry["exit_status"] = Int(exit_status))
+    elapsed === nothing || (entry["elapsed_seconds"] = round(Float64(elapsed); digits = 1))
+    t_end === nothing || (entry["t_end"] = Float64(t_end))
+    run_table = get!(d, "run", Dict{String,Any}())
+    run_table["status"] = String(status)
+    _atomic_write_toml(info_path, d)
+    return true
 end
 
 """
@@ -655,9 +942,11 @@ function _latest_mtime(dir::AbstractString)::Float64
 end
 
 """
-    _start_completion_monitor(stdout_path, process, grace) -> (; stop, fired, task)
+    _start_completion_monitor(stdout_path, process, grace; interrupt_to = nothing,
+                              offset = 0) -> (; stop, fired, task)
 
-Asynchronous monitor: once the stdout shows `END RUN`, the process is
+Asynchronous monitor: once the stdout from byte `offset` on (the segment's
+own part of an appended capture) shows `END RUN`, the process is
 terminated (SIGTERM, then SIGKILL after `_KILL_GRACE_SECONDS`) and `fired`
 is set as soon as no file in the output
 directory (the one holding `stdout_path`) has been modified for `grace`
@@ -676,6 +965,7 @@ function _start_completion_monitor(
     process::Base.Process,
     grace::Real;
     interrupt_to::Union{Nothing,Task} = nothing,
+    offset::Integer = 0,
 )
     out_dir = dirname(abspath(stdout_path))
     stop = Ref(false)
@@ -684,7 +974,7 @@ function _start_completion_monitor(
         _forwarding_interrupts(interrupt_to) do
             completed = false
             while !stop[] && process_running(process)
-                completed || (completed = _run_completed(stdout_path))
+                completed || (completed = _run_completed(stdout_path; offset = offset))
                 if completed && time() - _latest_mtime(out_dir) ≥ grace
                     fired[] = true
                     _terminate(process)
@@ -997,7 +1287,9 @@ the hardware fingerprint ([`_hardware_fingerprint`](@ref)); the
 output file inventory; and the `segments` list, one entry per launch
 (initial run and restarts). On a restart the previous segments are kept,
 `run.elapsed_seconds` accumulates, and the latest telemetry replaces the
-table (per-segment CSVs remain).
+table (per-segment CSVs remain). A last entry still `running` with the index
+of `segment` (the record opened at launch) is replaced by `segment`, and
+`run.status` takes the status of `segment`, or keeps the recorded one.
 """
 function _write_run_summary(
     cfg::Nbody6Config,
@@ -1015,7 +1307,18 @@ function _write_run_summary(
     info_path = joinpath(run_dir, "RUN_INFO.toml")
     previous = isfile(info_path) ? TOML.parsefile(info_path) : Dict{String,Any}()
     segments = Vector{Any}(get(previous, "segments", Any[]))
-    segment === nothing || push!(segments, segment)
+    if segment !== nothing
+        # The record opened at launch (`_open_segment`) is completed in place.
+        open_entry = isempty(segments) ? nothing : last(segments)
+        if open_entry isa AbstractDict &&
+           get(open_entry, "status", "") == "running" &&
+           haskey(segment, "index") &&
+           get(open_entry, "index", nothing) == segment["index"]
+            segments[end] = segment
+        else
+            push!(segments, segment)
+        end
+    end
     elapsed_total =
         elapsed + sum(
             Float64(get(s, "elapsed_seconds", 0.0)) for
@@ -1031,8 +1334,14 @@ function _write_run_summary(
         "mpi_ranks" => cfg.simulation.mpi_ranks,
         "segments" => length(segments),
     )
+    previous_run = get(previous, "run", Dict{String,Any}())
+    if segment !== nothing && haskey(segment, "status")
+        run_table["status"] = segment["status"]
+    elseif haskey(previous_run, "status")
+        run_table["status"] = previous_run["status"]
+    end
     # The original input is recorded once; restarts must not replace it.
-    previous_input = get(get(previous, "run", Dict{String,Any}()), "input_file", "")
+    previous_input = get(previous_run, "input_file", "")
     recorded_input = isempty(previous_input) ? String(input_file) : String(previous_input)
     isempty(recorded_input) || (run_table["input_file"] = recorded_input)
     isfile(stdout_path) && (run_table["stdout_lines"] = countlines(stdout_path))
