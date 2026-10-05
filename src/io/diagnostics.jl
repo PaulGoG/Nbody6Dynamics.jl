@@ -3,7 +3,7 @@
 # =============================================================================
 #
 # Key patterns extracted (three related lines per epoch):
-#   ADJUST:  TIME val  T[Myr] val  Q val  DE val  … ETOT val …
+#   ADJUST:  TIME val  T[Myr] val  Q val  DE val  DELTA val  DETOT val  … ETOT val …
 #   RMIN = …  RSCALE = …
 #   TIME[NB]  val  N  val  NPAIRS  val  …
 #
@@ -38,6 +38,8 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     pending_n = 0
     pending_npairs = 0
     pending_rscale = 0.0
+    pending_de_abs = NaN
+    pending_detot = NaN
     have_adjust = false   # true once we've seen ADJUST: for this epoch
 
     for line in eachline(path)
@@ -58,6 +60,8 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
                         pending_n,
                         pending_npairs,
                         pending_rscale,
+                        pending_de_abs,
+                        pending_detot,
                     ),
                 )
             end
@@ -71,6 +75,8 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
             pending_n = vals.n
             pending_npairs = vals.npairs
             pending_rscale = vals.rscale
+            pending_de_abs = vals.de_abs
+            pending_detot = vals.detot
             have_adjust = true
             continue
         end
@@ -113,6 +119,8 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
                 pending_n,
                 pending_npairs,
                 pending_rscale,
+                pending_de_abs,
+                pending_detot,
             ),
         )
     end
@@ -139,6 +147,8 @@ struct _AdjustFields
     n::Int
     npairs::Int
     rscale::Float64
+    de_abs::Float64
+    detot::Float64
 end
 
 """
@@ -149,7 +159,7 @@ Parse a single ADJUST line.  Supports two formats:
 function _parse_adjust_fields(line::AbstractString)::_AdjustFields
     body = replace(line, r"^ADJUST:\s*" => "")
     tokens = split(body)
-    length(tokens) < 4 && return _AdjustFields(0, 0, 0, 0, 0, 0, 0, 0)
+    length(tokens) < 4 && return _AdjustFields(0, 0, 0, 0, 0, 0, 0, 0, NaN, NaN)
 
     try
         if uppercase(tokens[1]) == "TIME"
@@ -159,7 +169,7 @@ function _parse_adjust_fields(line::AbstractString)::_AdjustFields
         end
     catch e
         @debug "Skipping unparseable ADJUST line" line exception = e
-        return _AdjustFields(0, 0, 0, 0, 0, 0, 0, 0)
+        return _AdjustFields(0, 0, 0, 0, 0, 0, 0, 0, NaN, NaN)
     end
 end
 
@@ -175,6 +185,8 @@ function _parse_adjust_positional(tokens)::_AdjustFields
         parse(Int, tokens[6]),
         parse(Int, tokens[7]),
         parse(Float64, tokens[8]),
+        NaN,
+        NaN,
     )
 end
 
@@ -200,8 +212,10 @@ function _parse_adjust_kv(tokens)::_AdjustFields
     n = round(Int, parse(Float64, get(kv, "N", "0")))
     npairs = round(Int, parse(Float64, get(kv, "NPAIRS", "0")))
     rscale = parse(Float64, get(kv, "RSCALE", get(kv, "RSCL", "0")))
+    de_abs = parse(Float64, get(kv, "DELTA", "NaN"))
+    detot = parse(Float64, get(kv, "DETOT", "NaN"))
 
-    return _AdjustFields(time_nb, time_myr, qvir, de_rel, e_tot, n, npairs, rscale)
+    return _AdjustFields(time_nb, time_myr, qvir, de_rel, e_tot, n, npairs, rscale, de_abs, detot)
 end
 
 """
@@ -264,6 +278,8 @@ function _forward_fill_particle_counts!(records::Vector{AdjustRecord})
                 last_n,
                 last_np,
                 r.rscale,
+                r.de_abs,
+                r.detot,
             )
         end
     end
@@ -283,4 +299,71 @@ factor at startup, and `units.f` converts masses as `ZMBAR*M`.
 function extract_scaling(diag::DiagnosticsData)::UnitScaling
     s = diag.physical_scaling
     UnitScaling(get(s, "R*", 1.0), get(s, "M*", 1.0), get(s, "T*", 1.0), get(s, "V*", 1.0))
+end
+
+"""
+    cumulative_energy_error(diag::DiagnosticsData)
+        -> (; time_nb::Vector{Float64}, errtot::Vector{Float64}, detot::Vector{Float64})
+
+Cumulative energy-conservation record of a run, one entry per adjustment.
+`errtot` is the running sum of the relative interval errors `de_rel` (the
+engine's `ERRTOT`, dimensionless); `detot` is the running sum of the
+interval energy changes in N-body energy units (the engine's `DETOT`),
+taken from the ADJUST records when every record carries it, otherwise
+accumulated from `de_abs`, and `NaN` throughout when neither is available.
+The ADJUST line prints four significant digits, so `errtot` agrees with the
+END RUN total of [`read_energy_totals`](@ref) only to that precision.
+"""
+function cumulative_energy_error(diag::DiagnosticsData)
+    isempty(diag.adjust) && return (; time_nb = Float64[], errtot = Float64[], detot = Float64[])
+
+    n = length(diag.adjust)
+    time_nb = [r.time_nb for r in diag.adjust]
+    de_rel_vals = [r.de_rel for r in diag.adjust]
+    errtot = cumsum(de_rel_vals)
+
+    detot_vals = [r.detot for r in diag.adjust]
+    de_abs_vals = [r.de_abs for r in diag.adjust]
+
+    detot = if all(isfinite, detot_vals)
+        detot_vals
+    elseif all(isfinite, de_abs_vals)
+        cumsum(de_abs_vals)
+    else
+        fill(NaN, n)
+    end
+
+    return (; time_nb, errtot, detot)
+end
+
+"""Parse a Fortran real with an `E` or `D` exponent."""
+_parse_fortran_float(s::AbstractString)::Float64 = parse(Float64, replace(s, r"[dD]" => "E"))
+
+"""
+    read_energy_totals(path::AbstractString)
+        -> Union{Nothing,@NamedTuple{time_nb::Float64,errtot::Float64,detot::Float64}}
+
+Totals the engine prints on its `END RUN` line: the final time in N-body
+units, `ERRTOT` (sum of the relative interval errors) and `DETOT` (sum of
+the interval energy changes, N-body energy units). The last `END RUN` line
+of the stdout capture is used, so a restarted run reports its final
+segment; `nothing` when the capture has no such line.
+"""
+function read_energy_totals(path::AbstractString)
+    isfile(path) || error("Diagnostics file not found: $path")
+
+    re = r"TOFF/TIME/TTOT=\s*(\S+)\s+(\S+)\s+(\S+).*?ERRTOT\s*=\s*(\S+)\s+DETOT\s*=\s*(\S+)"
+    last_totals = nothing
+
+    for line in eachline(path)
+        occursin("END RUN", line) || continue
+        m = match(re, line)
+        isnothing(m) && continue
+        ttot = _parse_fortran_float(m.captures[3])
+        errtot = _parse_fortran_float(m.captures[4])
+        detot = _parse_fortran_float(m.captures[5])
+        last_totals = (; time_nb = ttot, errtot = errtot, detot = detot)
+    end
+
+    return last_totals
 end

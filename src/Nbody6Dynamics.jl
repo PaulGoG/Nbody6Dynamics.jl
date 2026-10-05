@@ -526,6 +526,7 @@ export Snapshot, SnapshotHeader, DiagnosticsData, AdjustRecord, LagrangianData, 
 export EscaperRecord, StellarRecord, StellarEvolutionSnapshot, STELLAR_TYPE_LABELS
 export BinaryRecord, BinaryEvolutionSnapshot, TelemetrySample
 export read_conf3, read_all_conf3, read_diagnostics, extract_scaling, read_lagr, read_escapers
+export cumulative_energy_error, read_energy_totals
 export read_stellar_evolution, read_all_stellar_evolution
 export read_binary_evolution, read_all_binary_evolution
 export read_telemetry, read_run_telemetry

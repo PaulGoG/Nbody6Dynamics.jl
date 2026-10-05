@@ -335,17 +335,21 @@ nparticles(s::Snapshot) = length(s.name)
 """
     AdjustRecord
 
-Single ADJUST output line from the simulation log.
+Single ADJUST output line from the simulation log, recording the relative energy error
+`de_rel` (ΔE / max(T, |E|)), the interval energy change `de_abs` (engine DELTA, NB),
+and the engine running sum of ΔE `detot` (DETOT, NB).
 """
 struct AdjustRecord
     time_nb::Float64
     time_myr::Float64
     qvir::Float64            # virial ratio Q = T/|W| (equilibrium at 0.5)
-    de_rel::Float64          # relative energy error
+    de_rel::Float64          # relative energy error of the adjustment interval, ΔE / max(T, |E|)
     e_tot::Float64           # total energy
     n::Int
     npairs::Int
     rscale::Float64          # half-mass radius (NB)
+    de_abs::Float64          # energy change of the adjustment interval ΔE (engine DELTA, NB); NaN when not printed
+    detot::Float64           # engine running sum of ΔE (DETOT, NB); NaN when not printed
 end
 
 """

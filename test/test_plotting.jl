@@ -97,9 +97,9 @@ end
 
     # --- Energy plot ---
     adj = [
-        AdjustRecord(0.0, 0.0, 1.0, 0.0, -0.25, 100, 10, 1.0),
-        AdjustRecord(0.5, 50.0, 0.98, 1e-6, -0.249, 99, 9, 1.1),
-        AdjustRecord(1.0, 100.0, 0.99, 2e-6, -0.248, 98, 8, 1.2),
+        AdjustRecord(0.0, 0.0, 1.0, 0.0, -0.25, 100, 10, 1.0, NaN, NaN),
+        AdjustRecord(0.5, 50.0, 0.98, 1e-6, -0.249, 99, 9, 1.1, NaN, NaN),
+        AdjustRecord(1.0, 100.0, 0.99, 2e-6, -0.248, 98, 8, 1.2, NaN, NaN),
     ]
     diag = DiagnosticsData(adj, Dict{String,Float64}())
     plot_energy(diag, vis; filename = "test_energy")

@@ -463,6 +463,65 @@ end
         @test a0.time_nb == 0.0
         @test a0.qvir ≈ 0.321 atol = 1e-3           # Q = T/|W|
         @test a0.e_tot ≈ -0.5408 atol = 1e-4
+
+        # Energy bookkeeping fields of the seven fixture adjustments
+        adj = diag.adjust[1:7]
+        @test [a.de_rel for a in adj] == [0.0, 2.644e-6, -1.163e-6, -2.627e-6, -2.978e-5, -2.715e-5, 3.858e-4]
+        @test [a.de_abs for a in adj] == [0.0, 1.424e-6, -6.220e-7, -1.388e-6, -2.251e-5, -3.203e-5, 1.821e-4]
+        @test [a.detot for a in adj] == [0.0, 1.424e-6, 8.018e-7, -5.860e-7, -2.310e-5, -5.512e-5, 1.269e-4]
+        cum = cumulative_energy_error(diag)
+        @test cum.time_nb[1:7] == [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+        @test cum.errtot[7] ≈ 3.27724e-4 rtol = 1e-12
+        @test cum.detot[1:7] == [a.detot for a in adj]
+        # DETOT is the running sum of DELTA to the printed precision
+        @test maximum(abs, cumsum([a.de_abs for a in adj]) .- cum.detot[1:7]) < 1e-7
+        # Records without DELTA/DETOT: accumulated from de_abs, else NaN
+        strip_detot(a) = AdjustRecord(
+            a.time_nb,
+            a.time_myr,
+            a.qvir,
+            a.de_rel,
+            a.e_tot,
+            a.n,
+            a.npairs,
+            a.rscale,
+            a.de_abs,
+            NaN,
+        )
+        from_abs =
+            cumulative_energy_error(DiagnosticsData(strip_detot.(adj), diag.physical_scaling))
+        @test from_abs.detot ≈ cumsum([a.de_abs for a in adj]) rtol = 1e-12
+        bare(a) = AdjustRecord(
+            a.time_nb,
+            a.time_myr,
+            a.qvir,
+            a.de_rel,
+            a.e_tot,
+            a.n,
+            a.npairs,
+            a.rscale,
+            NaN,
+            NaN,
+        )
+        @test all(
+            isnan,
+            cumulative_energy_error(DiagnosticsData(bare.(adj), diag.physical_scaling)).detot,
+        )
+        empty_cum = cumulative_energy_error(DiagnosticsData(AdjustRecord[], diag.physical_scaling))
+        @test isempty(empty_cum.time_nb) && isempty(empty_cum.errtot) && isempty(empty_cum.detot)
+
+        # END RUN totals: absent in the fixture excerpt, parsed from the engine's line format
+        @test read_energy_totals(joinpath(FIXDIR, "out1000")) === nothing
+        with_end = joinpath(mktempdir(), "out1000")
+        write(
+            with_end,
+            read(joinpath(FIXDIR, "out1000"), String) *
+            "\n         END RUN    TIME[Myr] =   10.00  TOFF/TIME/TTOT=      0.00000000      8.00000000      8.00000000  CPUTOT =    0.2  ERRTOT = 1.25000D-04  DETOT = 3.00000D-05\n" *
+            "\n         END RUN    TIME[Myr] =  261.31  TOFF/TIME/TTOT=      0.00000000     40.00000000     40.00000000  CPUTOT =    1.0  ERRTOT =-4.70618D-03  DETOT = 7.54813D-03\n",
+        )
+        tot = read_energy_totals(with_end)
+        @test tot == (time_nb = 40.0, errtot = -4.70618e-3, detot = 7.54813e-3)
+        @test_throws ErrorException read_energy_totals(joinpath(mktempdir(), "absent"))
     end
 
     @testset "lagr.7" begin

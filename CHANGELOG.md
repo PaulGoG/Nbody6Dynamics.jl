@@ -18,6 +18,14 @@ entries say so.
   density panel enclose that mass fraction, so escapers no longer set the
   scale.
 
+- Energy bookkeeping of the engine in the diagnostics reader. `AdjustRecord`
+  gains `de_abs` (the engine's `DELTA`, the energy change of one adjustment
+  interval) and `detot` (`DETOT`, its running sum, an absolute energy);
+  `cumulative_energy_error` returns the cumulative relative and absolute
+  series per adjustment and `read_energy_totals` the totals of the `END RUN`
+  line. Code that constructs `AdjustRecord` positionally passes two more
+  arguments.
+
 ### Changed
 
 - With the default `snapshot_render = "auto"`, snapshots of 20 000 particles

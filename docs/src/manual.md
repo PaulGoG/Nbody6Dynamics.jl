@@ -469,13 +469,17 @@ The reader auto-detects the bulk-array format (one record with AS params + all p
 
 ```julia
 diag = read_diagnostics("out1000")
-diag.adjust              # Vector{AdjustRecord}: time, Q, ΔE/E, E_tot, N, N_pairs, R_scale
+diag.adjust              # Vector{AdjustRecord}: time, Q, ΔE/E, ΔE, ΣΔE, E_tot, N, N_pairs, R_scale
 diag.physical_scaling    # Dict with R*, M*, V*, T*, <M>, …
 
 units = extract_scaling(diag)   # → UnitScaling
+cum = cumulative_energy_error(diag)       # time_nb, errtot = Σ ΔE/E, detot = Σ ΔE
+tot = read_energy_totals("out1000")       # END RUN line: time_nb, errtot, detot (or nothing)
 ```
 
 Each ADJUST epoch is merged from up to three stdout lines (`ADJUST:`, `RMIN/RSCALE`, `TIME[NB]`); both positional and key-value ADJUST formats are handled, and particle counts are forward-filled across epochs where `TIME[NB]` lines are sparse.
+
+Three energy fields are kept per adjustment. `de_rel` is the engine's `DE`, the energy change of the interval divided by max(T, |E|); `de_abs` is `DELTA`, the same change in N-body energy units; `detot` is `DETOT`, the engine's running sum of those changes, an absolute energy and not a relative error. The running sum of `de_rel` is what the engine calls `ERRTOT` and prints only at `END RUN`; `cumulative_energy_error` rebuilds it per adjustment, and `read_energy_totals` returns the engine's own totals for comparison.
 
 ### Lagrangian radii
 

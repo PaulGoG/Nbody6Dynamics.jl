@@ -90,6 +90,8 @@ read_telemetry
 read_run_telemetry
 read_diagnostics
 extract_scaling
+cumulative_energy_error
+read_energy_totals
 read_lagr
 read_escapers
 read_stellar_evolution
