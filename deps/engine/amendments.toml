@@ -1,0 +1,10 @@
+# Corrections applied to the engine source tree before it is built.
+# file: path under the engine root; search: text that must occur exactly once;
+# replace: its replacement.
+
+[[amendment]]
+id = "escape-summary-format"
+file = "src/Main/escape.F"
+search = "    4E13.5,I10,' JLIST: ',1000I10)"
+replace = "    4E13.5,I10,' JLIST: ',1000(I10))"
+description = "escaper summary: name list in a repeatable format group, so a step with more than 1000 escapers no longer ends the run with a format error"

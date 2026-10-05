@@ -245,6 +245,75 @@ poll_interval = 1.0
         @test isfile(joinpath(sdir, "sweep_summary.csv"))
         sfigs = sweep_figures(sdir, sweep_visualization(scfg, sdir))
         @test all(isfile, sfigs)
+
+        # 5. Escaper flood. A bound Plummer core of 300 stars carries 95 % of
+        # the mass; 1100 light stars on a shell of radius 2 move outwards at
+        # 2.5 times the local escape speed and cross the escape radius
+        # (20 RSCALE ≈ 7.4) at t ≈ 2.3 to 2.8, depending on the realised core:
+        # inside one adjustment interval of unit length. More than 1000
+        # escapers in one step ended the unamended engine with a format error.
+        build_record = Nbody6Dynamics.TOML.parsefile(joinpath(run_dir, "output", "BUILD_INFO.toml"))
+        @test "escape-summary-format" in get(build_record, "source_amendments", String[])
+        n_core, n_shell, m_core = 300, 1100, 0.95
+        n_flood = n_core + n_shell
+        fmass = vcat(fill(m_core / n_core, n_core), fill((1 - m_core) / n_shell, n_shell))
+        fpos = zeros(3, n_flood)
+        fvel = zeros(3, n_flood)
+        core_pos, core_vel = sample_plummer(n_core, 0.2; rng = StableRNG(7))
+        fpos[:, 1:n_core] .= core_pos
+        fvel[:, 1:n_core] .= core_vel .* sqrt(m_core)
+        for k in 0:(n_shell - 1)   # Fibonacci lattice: a uniform shell without random numbers
+            z = 1 - (2k + 1) / n_shell
+            ϱ = sqrt(1 - z^2)
+            φ = k * π * (3 - sqrt(5))
+            n̂ = [ϱ * cos(φ), ϱ * sin(φ), z]
+            fpos[:, n_core + k + 1] .= 2.0 .* n̂
+            fvel[:, n_core + k + 1] .= 2.5 .* n̂
+        end
+        for q in (fpos, fvel)      # centre of mass at rest at the origin
+            q .-= (q * fmass) ./ sum(fmass)
+        end
+        frun = joinpath(runs_dir, "escaper_flood")
+        fout = joinpath(frun, "output")
+        mkpath(fout)
+        write_dat10(joinpath(fout, "dat.10"), fmass, fpos, fvel)
+        generate_merger_inp(
+            joinpath(fout, "merger.inp"),
+            n_flood,
+            1.0,
+            0.5;
+            nbody6 = Nbody6ParameterSpec(;
+                nnbopt = 30,
+                rs0 = 0.1,
+                rmin = 1.0e-3,
+                dtmin = 1.0e-5,
+                qe = 1.0,
+            ),
+            stellar = StellarSpec(; kz19 = 0),
+            tcrit = 4.0,
+            dtadj = 1.0,
+            deltat = 1.0,
+        )
+        Nbody6Dynamics._execute_simulation(
+            cfg_m,
+            frun,
+            fout,
+            joinpath(fout, "merger.inp");
+            base_dir = base,
+        )
+        flood_info = Nbody6Dynamics.TOML.parsefile(joinpath(frun, "RUN_INFO.toml"))
+        @test flood_info["segments"][1]["exit_status"] == 0
+        @test flood_info["segments"][1]["completed"]
+        escapers_per_step = [
+            parse(Int, m.captures[1]) for m in (
+                match(r"ESCAPE T,NESC =\s*\S+\s+(\d+)", l) for
+                l in eachline(joinpath(fout, "out1000"))
+            ) if m !== nothing
+        ]
+        @test maximum(escapers_per_step) > 1000
+        @test sum(escapers_per_step) == n_shell
+        @test length(read_escapers(joinpath(fout, "esc.11"))) == n_shell
+        _keep(frun, "escaper_flood")
     end
 end
 

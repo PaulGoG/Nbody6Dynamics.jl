@@ -223,6 +223,16 @@ The upstream `./configure --enable-hdf5` flag is broken. Nbody6Dynamics patches 
 
 This survives `./configure` re-runs: the flags file persists and only the one-line include needs reapplication. (This affects only what the *binary* can write — the Julia post-processing side reads `conf.3` snapshots, not HDF5; see the note in [Configuration Reference](#4-configuration-reference).)
 
+### Source amendments
+
+Before `configure`, the install phase applies the corrections listed in the package's `deps/engine/amendments.toml` to the engine source tree. Each is an exact text substitution in one file, for a defect met in production runs and reported upstream:
+
+| Identifier | File | Correction |
+|---|---|---|
+| `escape-summary-format` | `src/Main/escape.F` | The escaper summary writes its name list in a repeatable format group (`1000(I10)` for `1000I10`). A step that removed more than 1000 escapers ended the run with a format error; up to 1000 the output is unchanged |
+
+The step is idempotent, and the identifiers in effect are recorded as `source_amendments` in `BUILD_INFO.toml`, hence in the `[build]` table of every run. An amendment whose text does not occur exactly once in the tree, as with another engine revision, is skipped with a warning and listed under `source_amendments_skipped`; the build then proceeds on the unamended source. The engine checkout shows the substitution as a local modification (`backend_commit` carries `-dirty`).
+
 ### CUDA auto-detection
 
 When `enable_gpu = true` and `cuda_path` is empty, the build searches in order:
@@ -763,7 +773,7 @@ Fortran code requires a large stack. The launch script sets `ulimit -s unlimited
 
 ### Simulation exits with status 2 after a burst of escapers
 
-`err1000` ends with `Fortran runtime error: Expected REAL for item ... in formatted transfer` at `escape.F`. The engine's escaper summary `WRITE` has a fixed item list, and a single adjustment interval that flags on the order of a thousand escapers overflows it. This happens in isolated multi-cluster runs, where the escape radius is `2 × 10 RSCALE` about the global density centre and ejecta from an early collapse cross it together many crossing times later. Shorten `DTADJ`, run in an external tidal field, or treat escapers in post-processing from the snapshots; the output written before the failure is intact.
+`err1000` ends with `Fortran runtime error: Expected REAL for item ... in formatted transfer` at `escape.F`. The engine's escaper summary writes the names of the escapers of one adjustment interval with a format that holds a thousand of them, and the 1001st name restarts the format at a real-number descriptor. This happens in isolated multi-cluster runs, where the escape radius is `2 × 10 RSCALE` about the global density centre and ejecta from an early collapse cross it together many crossing times later. The build corrects the format ([Source amendments](#source-amendments)), so the failure means the binary predates that step or the amendment did not fit the engine revision: check `source_amendments` in the `[build]` table of `RUN_INFO.toml` and rebuild with `install.enabled = true`. The output written before the failure is intact.
 
 ### "CUDA not found" during build
 

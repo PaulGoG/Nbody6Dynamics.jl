@@ -57,6 +57,14 @@ entries say so.
   configuration is loaded, naming the key, instead of failing inside the
   sampler; large initial conditions raise it deliberately.
 - `[postprocess] pair_sum_max_n` (default 100 000): the largest snapshot
+- A step that removes more than 1000 escapers no longer ends a run. The
+  engine writes the escaper names of one adjustment interval with a format
+  holding a thousand of them and aborted on the next (`Expected REAL … in
+  formatted transfer`, exit status 2), as a 27-cluster cold collapse did at
+  1442 escapers. The install phase now corrects that format in the engine
+  tree before the build (`deps/engine/amendments.toml`) and records the
+  amendments in effect as `source_amendments` in `BUILD_INFO.toml`; an
+  engine built earlier needs a rebuild.
   particle count for which the O(N²) pair-sum diagnostics run (remnant
   diagnostics, per-cluster virial ratio and structure, bound-member
   profiles). Above it they are skipped with a warning naming the key; the

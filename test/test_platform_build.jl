@@ -311,6 +311,64 @@ end
     @test cpu_info["enable_gpu"] == false && !haskey(cpu_info, "cuda_arch")
     @test Nbody6Dynamics.TOML.parsefile(info_path)["cuda_arch"] == ["sm_90"]
 
+    # Source amendments: the shipped list on a tree carrying the engine's lines
+    shipped = Nbody6Dynamics.TOML.parsefile(Nbody6Dynamics._ENGINE_AMENDMENTS_FILE)["amendment"]
+    @test all(
+        a -> all(k -> haskey(a, k), ("id", "file", "search", "replace", "description")),
+        shipped,
+    )
+    # idempotence rests on the replacement not containing the text it replaces
+    @test all(a -> !occursin(a["search"], a["replace"]), shipped)
+    @test allunique(a["id"] for a in shipped)
+    tree = joinpath(dir, "engine_tree")
+    escape_f = joinpath(tree, "src", "Main", "escape.F")
+    mkpath(dirname(escape_f))
+    escape_lines =
+        "   18 FORMAT (/,' ESCAPE T,NESC =',1P,E13.5,I6,' total N,NSESC,NBESC =',\n" *
+        "     & I10,I8,I6,' M* ',1P,E13.5,' total E, RCM, RESC, <m*>, NCRIT1 =',\n" *
+        "     &    4E13.5,I10,' JLIST: ',1000I10)\n"
+    write(escape_f, escape_lines)
+    first_pass = Nbody6Dynamics._apply_engine_amendments(tree)
+    @test "escape-summary-format" in first_pass.applied && isempty(first_pass.skipped)
+    amended = read(escape_f, String)
+    @test occursin("' JLIST: ',1000(I10))", amended) && !occursin("1000I10)", amended)
+    @test count(==('\n'), amended) == 3 && !isfile(escape_f * ".tmp")
+    @test Nbody6Dynamics._apply_engine_amendments(tree) == first_pass   # idempotent
+    @test read(escape_f, String) == amended
+    # A tree the amendment does not fit: skipped with a warning, file untouched
+    write(escape_f, escape_lines * escape_lines)
+    ambiguous =
+        @test_logs (:warn, r"escape-summary-format skipped") Nbody6Dynamics._apply_engine_amendments(
+            tree,
+        )
+    @test ambiguous.skipped == ["escape-summary-format"] && isempty(ambiguous.applied)
+    @test read(escape_f, String) == escape_lines * escape_lines
+    rm(escape_f)
+    missing_file =
+        @test_logs (:warn, r"not in the source tree") Nbody6Dynamics._apply_engine_amendments(tree)
+    @test missing_file.skipped == ["escape-summary-format"]
+    none = Nbody6Dynamics._apply_engine_amendments(tree; file = joinpath(dir, "no_amendments.toml"))
+    @test isempty(none.applied) && isempty(none.skipped)
+    # The build record names them
+    @test !haskey(binfo, "source_amendments")
+    with_amendments(a) = Nbody6Dynamics.TOML.parsefile(
+        Nbody6Dynamics._write_build_info(
+            dirname(bdir_cpu),
+            cfg_cpu,
+            String[],
+            "",
+            String[],
+            joinpath(bdir_cpu, "nbody6++.avx");
+            amendments = a,
+        ),
+    )
+    rec = with_amendments((applied = ["escape-summary-format"], skipped = String[]))
+    @test rec["source_amendments"] == ["escape-summary-format"]
+    @test !haskey(rec, "source_amendments_skipped")
+    rec_skipped = with_amendments((applied = String[], skipped = ["escape-summary-format"]))
+    @test isempty(rec_skipped["source_amendments"])
+    @test rec_skipped["source_amendments_skipped"] == ["escape-summary-format"]
+
     # Launch script: GPU_LIST exported only when configured
     args = (joinpath(dir, "nbody6++"), "in.inp", "out1000", "err1000")
     s_gpu = read(Nbody6Dynamics._write_launch_script(dir, args..., cfg_gpu), String)

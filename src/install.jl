@@ -6,7 +6,7 @@
     setup_nbody6(cfg::Nbody6Config; base_dir = cfg.config_dir)
 
 Orchestrate the full install pipeline:
-  clone → configure → HDF5 patch → CUDA setup → build.
+  clone → source amendments → configure → HDF5 patch → CUDA setup → build.
 
 All paths are resolved relative to `base_dir` (defaults to the package root).
 """
@@ -77,6 +77,9 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = cfg.config_d
     end
 
     _ensure_source_tree(src_dir, install)
+    amendments = _apply_engine_amendments(src_dir)
+    isempty(amendments.applied) ||
+        @info "Engine source amendments in effect: $(join(amendments.applied, ", "))"
 
     # ------------------------------------------------------------------
     # 5. Configure (output suppressed — only errors shown)
@@ -147,9 +150,67 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = cfg.config_d
         cuda_archs,
         binary;
         nvcc_flags = nvcc_flags,
+        amendments = amendments,
     )
     @info "Build complete. Binary: $binary"
     return binary
+end
+
+"""
+Corrections of the engine source that the package applies before a build
+(`deps/engine/amendments.toml`): defects established in production runs and
+reported upstream, each an exact text substitution in one file.
+"""
+const _ENGINE_AMENDMENTS_FILE = joinpath(_PACKAGE_ROOT, "deps", "engine", "amendments.toml")
+
+"""
+    _apply_engine_amendments(src_dir; file = _ENGINE_AMENDMENTS_FILE)
+        -> (; applied::Vector{String}, skipped::Vector{String})
+
+Apply the source amendments listed in `file` to the engine tree at `src_dir`
+and return their identifiers: `applied` for those in effect after the call
+(substituted now or found already substituted), `skipped` for those that do
+not fit the tree. An amendment names a file under `src_dir`, a `search` text
+and its `replace` text. It is applied when `search` occurs exactly once;
+it counts as applied without a write when `replace` is already there; it is
+skipped with a warning when the file is missing or `search` is absent or
+ambiguous, which is what an engine revision other than the validated one
+looks like — the build then proceeds on the unamended source and the build
+record says so. The call is idempotent, and a substitution goes through a
+sibling temporary file and a rename.
+"""
+function _apply_engine_amendments(
+    src_dir::AbstractString;
+    file::AbstractString = _ENGINE_AMENDMENTS_FILE,
+)::@NamedTuple{applied::Vector{String}, skipped::Vector{String}}
+    applied = String[]
+    skipped = String[]
+    isfile(file) || return (; applied, skipped)
+    for a in get(TOML.parsefile(file), "amendment", Any[])
+        id = String(a["id"])
+        search = String(a["search"])
+        replacement = String(a["replace"])
+        target = joinpath(src_dir, String(a["file"]))
+        if !isfile(target)
+            @warn "Engine source amendment $id skipped: $(a["file"]) is not in the source tree"
+            push!(skipped, id)
+            continue
+        end
+        text = read(target, String)
+        if occursin(replacement, text)
+            push!(applied, id)
+        elseif length(findall(search, text)) == 1
+            tmp = target * ".tmp"
+            write(tmp, replace(text, search => replacement))
+            mv(tmp, target; force = true)
+            push!(applied, id)
+        else
+            @warn "Engine source amendment $id skipped: the text it replaces does not occur exactly " *
+                  "once in $(a["file"]) (another engine revision?); building the unamended source"
+            push!(skipped, id)
+        end
+    end
+    return (; applied, skipped)
 end
 
 """
@@ -199,11 +260,13 @@ end
 
 """
     _write_build_info(src_dir, cfg, configure_args, cuda_path, cuda_archs, binary;
-                      nvcc_flags = cfg.build.nvcc_flags) -> String
+                      nvcc_flags = cfg.build.nvcc_flags, amendments = nothing) -> String
 
 Write `BUILD_INFO.toml` next to the binary: date, host, backend commit,
-configure arguments, the MPI/GPU/HDF5 switches, the binary name and, for
-GPU builds, the CUDA path, the compiled architectures, the `nvcc` release,
+configure arguments, the MPI/GPU/HDF5 switches, the binary name, the source
+amendments in effect (`source_amendments`, and `source_amendments_skipped`
+when some did not fit the tree; see [`_apply_engine_amendments`](@ref)) and,
+for GPU builds, the CUDA path, the compiled architectures, the `nvcc` release,
 the `nvcc` options in effect (`nvcc_flags`: the configured ones plus any
 host-compiler override the build added) and the helper-header directory.
 The launcher copies the file into every run directory and merges it into
@@ -218,6 +281,7 @@ function _write_build_info(
     cuda_archs::AbstractVector{<:AbstractString},
     binary::AbstractString;
     nvcc_flags::AbstractVector{<:AbstractString} = cfg.build.nvcc_flags,
+    amendments::Union{Nothing,NamedTuple} = nothing,
 )::String
     build = cfg.build
     d = Dict{String,Any}(
@@ -230,6 +294,10 @@ function _write_build_info(
         "enable_hdf5" => build.enable_hdf5,
         "binary" => basename(binary),
     )
+    if amendments !== nothing
+        d["source_amendments"] = copy(amendments.applied)
+        isempty(amendments.skipped) || (d["source_amendments_skipped"] = copy(amendments.skipped))
+    end
     if build.enable_gpu
         d["cuda_path"] = String(cuda_path)
         d["cuda_arch"] = String.(cuda_archs)

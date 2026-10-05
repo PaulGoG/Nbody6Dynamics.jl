@@ -37,6 +37,7 @@ Nbody6Dynamics/
 ├── bench/            # Benchmarks and scaling scripts
 ├── docs/             # Documenter.jl site sources
 ├── deps/cuda/        # NVIDIA samples headers used by the CUDA build
+├── deps/engine/      # Corrections applied to the engine source before the build
 ├── backend/          # (gitignored) engine checkout and build
 └── runs/             # (gitignored) run outputs
 ```
@@ -156,7 +157,7 @@ The directory of the configuration file is the project directory: relative paths
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Install / build | Working | Clone, `configure`, HDF5 Makefile patch, parallel make; CUDA path auto-detection; GPU builds compiled for the visible devices' compute capabilities or an explicit `cuda_arch` list (the upstream configure emits no architecture flag), `BUILD_INFO.toml` next to the binary, CPU/GPU/MPI binary variants selected by suffix. Validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3); see the manual, section Validated hardware |
+| Install / build | Working | Clone, source amendments (`deps/engine/amendments.toml`: the escaper summary format that aborted a run at more than 1000 escapers in one step), `configure`, HDF5 Makefile patch, parallel make; CUDA path auto-detection; GPU builds compiled for the visible devices' compute capabilities or an explicit `cuda_arch` list (the upstream configure emits no architecture flag), `BUILD_INFO.toml` next to the binary, CPU/GPU/MPI binary variants selected by suffix. Validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3); see the manual, section Validated hardware |
 | Merger IC generator | Working | Plummer + King samplers (King c(W0) validated against published concentrations); Kroupa (2001) IMF; Kepler two-body and explicit N-cluster orbit modes; primordial binaries (Kroupa 1995 periods, thermal eccentricities, written in the engine's pair convention); Jacobi truncation; seeded reproducibility — the TOML `seed` drives the sampler RNG and propagates to Nbody6's `NRAND`; the output intervals are written as dyadic rationals with exact decimals, because the engine's digit counter never terminates on other values. The engine itself has no multi-centre diagnostics: cluster-level results before coalescence come from the snapshot-based per-cluster tools, not from `lagr.7`/`esc.11`; see "Feasibility and limitations" in the merger documentation |
 | Remnant diagnostics | Working | Bound remnant of the whole system per snapshot: Casertano–Hut core radius (engine densities or sixth-neighbour estimate), half-mass radius, rotation (λ_R, Peebles λ_P, spin alignment with the orbital angular momentum, v_rot/σ profile), Allison et al. (2009) Λ_MSR mass segregation with segregation time, union-find coalescence time; `remnant_diagnostics.csv` and four figures per merger run |
 | Stellar population | Working | `STELLAR_CLASSES` (engine grouping of K* = −1…15), `hr_population` (single stars and members of KS pairs together), `stellar_census` per epoch and class, written as `stellar_census.csv`; HR figures with a run-level legend and a census strip |
@@ -244,6 +245,7 @@ Nbody6Dynamics/
 ├── activate.jl                      # Activates and instantiates the package environment
 ├── config.toml                      # Main pipeline configuration (edit this)
 ├── deps/cuda/                       # helper_cuda.h, helper_string.h from NVIDIA cuda-samples v13.0 (CUDA 13 build of the engine)
+├── deps/engine/amendments.toml      # Source corrections applied to the engine tree before configure (escaper summary format)
 ├── src/
 │   ├── Nbody6Dynamics.jl               # Module root; run_pipeline orchestrator; exports
 │   ├── types.jl                     # Config structs (incl. PlotStyle), Snapshot, records, UnitScaling
