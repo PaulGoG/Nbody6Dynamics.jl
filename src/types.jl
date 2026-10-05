@@ -75,6 +75,14 @@ run ID generation, and runtime telemetry.
   (the engine has been seen to finish its integration and never exit). A
   final COMMON dump in progress keeps the directory changing and is never
   interrupted. `0` disables
+- `wall_budget`: wall-clock budget of one engine segment [s]; `0` = none.
+  At `wall_budget − stop_margin` the engine is asked to stop (a `STOP` file
+  in its working directory: it writes a restart dump and exits, and the
+  segment is recorded as `stopped`); an engine still running at
+  `wall_budget` is terminated
+- `stop_margin`: wall-clock seconds the engine is given to act on a stop
+  request, both before the wall budget and when the driver process itself
+  is terminated (SIGTERM); must be smaller than a non-zero `wall_budget`
 - `live_diagnostics`: with `monitor`, print in-terminal sparklines of the
   virial ratio and energy error every `live_interval` seconds (opt-in;
   interactive terminals only, never in the log file)
@@ -94,6 +102,8 @@ Base.@kwdef struct SimulationConfig
     telemetry_interval::Float64 = 5.0
     startup_timeout::Float64 = 0.0
     exit_grace::Float64 = 120.0
+    wall_budget::Float64 = 0.0
+    stop_margin::Float64 = 120.0
 end
 
 """

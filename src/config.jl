@@ -269,6 +269,17 @@ function _validate(cfg::Nbody6Config)
         _config_error("simulation.startup_timeout", "must be ≥ 0 [s]; got $(sim.startup_timeout)")
     sim.exit_grace ≥ 0 ||
         _config_error("simulation.exit_grace", "must be ≥ 0 [s]; got $(sim.exit_grace)")
+    sim.wall_budget ≥ 0 ||
+        _config_error("simulation.wall_budget", "must be ≥ 0 [s]; got $(sim.wall_budget)")
+    sim.stop_margin ≥ 0 ||
+        _config_error("simulation.stop_margin", "must be ≥ 0 [s]; got $(sim.stop_margin)")
+    if sim.wall_budget > 0
+        sim.stop_margin < sim.wall_budget || _config_error(
+            "simulation.stop_margin",
+            "must be smaller than simulation.wall_budget = $(sim.wall_budget) s; " *
+            "got $(sim.stop_margin)",
+        )
+    end
     sim.live_interval ≥ 1 ||
         _config_error("simulation.live_interval", "must be ≥ 1 [s]; got $(sim.live_interval)")
     isempty(sim.runs_dir) && _config_error("simulation.runs_dir", "must be nonempty")

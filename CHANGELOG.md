@@ -33,6 +33,13 @@ entries say so.
   `run.status` repeats the last segment's. A halt by the engine's energy
   check and a stop on request are told apart from a crash.
 
+- Wall budget and stop requests. `simulation.wall_budget` asks the engine to
+  stop `stop_margin` seconds before the budget expires, through the `STOP`
+  file it polls for; it writes a restart dump and exits, and the segment is
+  recorded as `stopped`. A driver that receives SIGTERM makes the same
+  request for its running engines, waits for them and closes their records,
+  so a job ended by a scheduler leaves a dump and no engine behind.
+
 ### Changed
 
 - With the default `snapshot_render = "auto"`, snapshots of 20 000 particles

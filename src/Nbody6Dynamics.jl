@@ -497,6 +497,7 @@ end
 
 function __init__()
     Base.Experimental.register_error_hint(_plotting_error_hint, MethodError)
+    atexit(_stop_engines_at_exit)
     return nothing
 end
 

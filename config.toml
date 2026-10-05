@@ -33,6 +33,8 @@ live_interval    = 30.0         # s; ≥ 1; period of the sparkline panel
 telemetry_interval = 5.0        # s; ≥ 0; 0 disables the process/GPU sampler
 startup_timeout    = 0.0        # s; ≥ 0; 0 disables the start-up watchdog
 exit_grace         = 120.0      # s; ≥ 0; 0 disables the completion monitor (END RUN printed, no exit)
+wall_budget        = 0.0        # s; ≥ 0; wall-clock budget of one engine segment; 0 = none
+stop_margin        = 120.0      # s; ≥ 0 and < wall_budget; time the engine has to act on a stop request
 
 [postprocess]
 enabled              = true

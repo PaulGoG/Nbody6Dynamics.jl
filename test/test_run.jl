@@ -932,6 +932,215 @@ end
 
 # =====================================================================
 
+@testset "Wall budget, stop request and exit hook" begin
+    # Stand-in for the engine: one ADJUST line per step, STOP honoured as the
+    # engine does (termination line, dump line, dump file, exit 0), END RUN
+    # at FAKE_TCRIT.
+    fake_engine = raw"""
+    #!/bin/bash
+    tcrit=${FAKE_TCRIT:-1000}
+    t=0
+    while [ "$t" -le "$tcrit" ]; do
+        printf ' ADJUST:  TIME    %d.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n' "$t"
+        if [ -z "$FAKE_IGNORE_STOP" ] && [ -f STOP ]; then
+            printf '\n         TERMINATION BY MANUAL INTERVENTION\n'
+            printf '  MYDUMP    %d.0000000000000000      %d.0                         201 comm.1_%d.0                \n' "$t" "$t" "$t"
+            : > "comm.1_$t.0"
+            printf '\n\n         COMMON SAVED AT TOFF/TIME/TTOT =  0.00000000E+00  TCOMP =  0.0\n'
+            exit 0
+        fi
+        sleep 0.2
+        t=$((t + 1))
+    done
+    printf '\n         END RUN    TIME[Myr] =    1.00  TOFF/TIME/TTOT=      0.00000000      %d.00000000      %d.00000000  CPUTOT =    0.0  ERRTOT = 0.00000D+00  DETOT = 0.00000D+00\n' "$tcrit" "$tcrit"
+    """
+    base = mktempdir()
+    engine_path = joinpath(base, "engine", "build", "nbody6++")
+    mkpath(dirname(engine_path))
+    # `#!/bin/bash` at column 1, whether or not the literal was dedented.
+    write(engine_path, replace(fake_engine, r"^ {4}"m => ""))
+    chmod(engine_path, 0o755)
+    write(joinpath(base, "in.inp"), "x\n")
+    cfg_path = joinpath(base, "c.toml")
+    function fake_cfg(; wall_budget = 0.0, stop_margin = 120.0)
+        write(
+            cfg_path,
+            """
+            [install]
+            enabled = false
+            install_dir = "engine"
+
+            [build]
+            enable_mpi = false
+            enable_gpu = false
+            enable_hdf5 = false
+
+            [simulation]
+            input_file = "in.inp"
+            runs_dir = "runs"
+            binary_name = "nbody6++"
+            omp_threads = 1
+            monitor = false
+            telemetry_interval = 0.0
+            startup_timeout = 0.0
+            exit_grace = 0.0
+            wall_budget = $(Float64(wall_budget))
+            stop_margin = $(Float64(stop_margin))
+
+            [postprocess]
+            enabled = false
+
+            [visualization]
+            enabled = false
+            """,
+        )
+        return load_config(cfg_path)
+    end
+    last_segment(run_dir) =
+        Nbody6Dynamics.TOML.parsefile(joinpath(run_dir, "RUN_INFO.toml"))["segments"][end]
+    has_adjust(path) = isfile(path) && occursin("ADJUST", read(path, String))
+
+    # Config keys
+    @test SimulationConfig().wall_budget == 0.0
+    @test SimulationConfig().stop_margin == 120.0
+    vpath = joinpath(base, "v.toml")
+    write(vpath, "[simulation]\nwall_budget = -1\n")
+    @test_throws ArgumentError load_config(vpath)
+    write(vpath, "[simulation]\nstop_margin = -1\n")
+    @test_throws ArgumentError load_config(vpath)
+    write(vpath, "[simulation]\nwall_budget = 60\nstop_margin = 60\n")
+    @test_throws ArgumentError load_config(vpath)
+    write(vpath, "[simulation]\nwall_budget = 60\nstop_margin = 30\n")
+    v = load_config(vpath)
+    @test v.simulation.wall_budget == 60.0 && v.simulation.stop_margin == 30.0
+
+    # Stop request
+    sd = mktempdir()
+    @test Nbody6Dynamics._request_stop(sd) == joinpath(sd, "STOP")
+    @test isfile(joinpath(sd, "STOP"))
+
+    # Budget stop: the engine honours the request, writes its dump and exits
+    budget_dir = withenv("FAKE_TCRIT" => "1000", "FAKE_IGNORE_STOP" => nothing) do
+        run_simulation(
+            fake_cfg(; wall_budget = 4.0, stop_margin = 3.0);
+            base_dir = base,
+            run_id = "budget",
+        )
+    end
+    seg = last_segment(budget_dir)
+    @test seg["status"] == "stopped"
+    @test seg["stop_requested"] == "wall_budget"
+    @test startswith(seg["stop_dump"], "comm.1_")
+    @test seg["exit_status"] == 0
+    @test seg["t_end"] ≥ 1
+    @test seg["elapsed_seconds"] < 4.0
+    @test isfile(joinpath(budget_dir, "output", seg["stop_dump"]))
+    @test isfile(joinpath(budget_dir, "output", "STOP"))
+    budget_info = Nbody6Dynamics.TOML.parsefile(joinpath(budget_dir, "RUN_INFO.toml"))
+    @test budget_info["run"]["status"] == "stopped"
+
+    # A stop request left by the previous segment is removed before launch
+    withenv("FAKE_TCRIT" => "3", "FAKE_IGNORE_STOP" => nothing) do
+        run_simulation(fake_cfg(); base_dir = base, run_id = "budget")
+    end
+    seg = last_segment(budget_dir)
+    @test seg["status"] == "completed"
+    @test seg["stop_requested"] == ""
+    @test !isfile(joinpath(budget_dir, "output", "STOP"))
+
+    # Budget kill: an engine that ignores the request is terminated at the budget
+    kill_dir = withenv("FAKE_TCRIT" => "1000", "FAKE_IGNORE_STOP" => "1") do
+        run_simulation(
+            fake_cfg(; wall_budget = 2.0, stop_margin = 1.0);
+            base_dir = base,
+            run_id = "kill",
+        )
+    end
+    seg = last_segment(kill_dir)
+    @test seg["status"] == "killed"
+    @test seg["exit_status"] == -15
+    @test seg["stop_requested"] == "wall_budget"
+
+    # Registry of running engines
+    saved = Nbody6Dynamics._ACTIVE_ENGINES[]
+    Nbody6Dynamics._ACTIVE_ENGINES[] = Nbody6Dynamics._ActiveEngine[]
+    e1 = Nbody6Dynamics._ActiveEngine(Int32(101), "r", "o", "s", 0, 1, 0.0, 1.0)
+    e2 = Nbody6Dynamics._ActiveEngine(Int32(102), "r", "o", "s", 0, 1, 0.0, 1.0)
+    Nbody6Dynamics._register_engine(e1)
+    @test length(Nbody6Dynamics._ACTIVE_ENGINES[]) == 1
+    Nbody6Dynamics._register_engine(e2)
+    @test length(Nbody6Dynamics._ACTIVE_ENGINES[]) == 2
+    Nbody6Dynamics._deregister_engine(101)
+    @test length(Nbody6Dynamics._ACTIVE_ENGINES[]) == 1
+    Nbody6Dynamics._deregister_engine(102)
+    @test length(Nbody6Dynamics._ACTIVE_ENGINES[]) == 0
+    Nbody6Dynamics._ACTIVE_ENGINES[] = saved
+
+    # Exit hook, called directly on an engine of this process
+    hd = mktempdir()
+    out = joinpath(hd, "output")
+    mkpath(out)
+    hook_out = joinpath(out, "out1000")
+    p = withenv("FAKE_TCRIT" => "1000", "FAKE_IGNORE_STOP" => nothing) do
+        run(pipeline(detach(Cmd(`bash $(engine_path)`; dir = out)); stdout = hook_out); wait = false)
+    end
+    Nbody6Dynamics._open_segment(
+        hd,
+        "hook",
+        Dict{String,Any}("index" => 1, "kind" => "initial", "status" => "running"),
+    )
+    Nbody6Dynamics._register_engine(
+        Nbody6Dynamics._ActiveEngine(Int32(getpid(p)), hd, out, hook_out, 0, 1, time(), 10.0),
+    )
+    t_wait = time()
+    while !has_adjust(hook_out) && time() - t_wait < 10
+        sleep(0.1)
+    end
+    t_hook = time()
+    Nbody6Dynamics._stop_engines_at_exit()
+    @test time() - t_hook < 10
+    @test isempty(Nbody6Dynamics._ACTIVE_ENGINES[])
+    hook_seg = last_segment(hd)
+    @test hook_seg["status"] == "stopped"
+    @test hook_seg["stop_requested"] == "signal"
+    @test startswith(hook_seg["stop_dump"], "comm.1_")
+    @test isfile(joinpath(out, "STOP"))
+    # The hook reaps the engine itself, so the event loop never learns of the
+    # exit and `process_running(p)` stays true: ask the kernel instead.
+    hook_pid = getpid(p)
+    @test ccall(:kill, Cint, (Cint, Cint), hook_pid, 0) == -1
+
+    # SIGTERM to a driver process: the engine is stopped and its record closed
+    fake_cfg(; stop_margin = 20.0)
+    script = """
+        using Nbody6Dynamics
+        run_simulation(load_config($(repr(cfg_path))); base_dir = $(repr(base)), run_id = "term")
+        """
+    cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $script`
+    child = withenv("FAKE_TCRIT" => "1000", "FAKE_IGNORE_STOP" => nothing) do
+        run(pipeline(cmd; stdout = devnull, stderr = devnull); wait = false)
+    end
+    term_dir = joinpath(base, "runs", "term")
+    term_out = joinpath(term_dir, "output", "out1000")
+    t_wait = time()
+    while !has_adjust(term_out) && time() - t_wait < 180
+        sleep(0.5)
+    end
+    @test has_adjust(term_out)
+    kill(child, Base.SIGTERM)
+    timedwait(() -> !process_running(child), 60.0)
+    @test !process_running(child)
+    term_seg = last_segment(term_dir)
+    @test term_seg["status"] == "stopped"
+    @test term_seg["stop_requested"] == "signal"
+    @test startswith(term_seg["stop_dump"], "comm.1_")
+    @test isempty(
+        read(ignorestatus(`pgrep -f $(joinpath(base, "runs", "term", "output"))`), String),
+    )
+end
+
+# =====================================================================
+
 @testset "Live diagnostics panel" begin
     fixture = joinpath(@__DIR__, "fixtures", "out1000")
     panel = Nbody6Dynamics._live_diagnostics_panel(fixture)

@@ -272,6 +272,13 @@ function _execute_simulation(
     input_copy = joinpath(out_dir, basename(input_path))
     abspath(input_path) == abspath(input_copy) || cp(input_path, input_copy; force = true)
 
+    # --- A stop request of an earlier segment would end this one at once ---
+    stale_stop = joinpath(out_dir, _STOP_FILE)
+    if isfile(stale_stop)
+        rm(stale_stop)
+        @info "Removed a stop request left in $(out_dir) by an earlier segment"
+    end
+
     # --- Build launch script ---
     stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
     stderr_path = joinpath(out_dir, "err1000")
@@ -335,11 +342,26 @@ function _execute_simulation(
             "pid" => Int(getpid(process)),
             "package_commit" => provenance["package_commit"],
             "stdout_offset" => stdout_offset,
+            "stop_requested" => "",
         )
         isempty(sim.gpu_list) || (opening["gpu_list"] = copy(sim.gpu_list))
         slurm_job_id = get(ENV, "SLURM_JOB_ID", "")
         isempty(slurm_job_id) || (opening["slurm_job_id"] = slurm_job_id)
         _open_segment(run_dir, run_id, opening; input_file = basename(input_copy))
+        # Known to the exit hook until reaped, so a terminated driver stops it.
+        engine_pid = Int32(getpid(process))
+        _register_engine(
+            _ActiveEngine(
+                engine_pid,
+                String(run_dir),
+                String(out_dir),
+                String(stdout_path),
+                stdout_offset,
+                segment,
+                t_start,
+                sim.stop_margin,
+            ),
+        )
 
         # The helper tasks below hand an operator interrupt to this task, the
         # one waiting on the engine: SIGINT lands in whichever task is current.
@@ -382,6 +404,17 @@ function _execute_simulation(
                 interrupt_to = waiting,
                 offset = stdout_offset,
             ) : nothing
+        # Wall budget: a stop request `stop_margin` seconds before it expires,
+        # termination at the budget.
+        stopper =
+            sim.wall_budget > 0 ?
+            _start_stop_timer(
+                out_dir,
+                process,
+                sim.wall_budget,
+                sim.stop_margin;
+                interrupt_to = waiting,
+            ) : nothing
 
         # Live ticker is opt-in and interactive-only; the Fortran stdout is
         # captured to out1000 regardless.
@@ -411,12 +444,16 @@ function _execute_simulation(
             )
             watchdog === nothing || (watchdog.stop[] = true)
             completion === nothing || (completion.stop[] = true)
+            stopper === nothing || (stopper.stop[] = true)
             monitor === nothing || (monitor.stop_requested = true)
             @warn "Interrupted; the engine was terminated (SIGTERM, SIGKILL after $(_KILL_GRACE_SECONDS) s if needed)"
             rethrow()
+        finally
+            _deregister_engine(engine_pid)
         end
         watchdog === nothing || (watchdog.stop[] = true)
         completion === nothing || (completion.stop[] = true)
+        stopper === nothing || (stopper.stop[] = true)
 
         elapsed = time() - t_start
         telemetry =
@@ -471,6 +508,8 @@ function _execute_simulation(
                     "terminated_after_completion" => killed_after_completion,
                     "stop_dump" => stop_dump,
                     "t_end" => t_end,
+                    "stop_requested" =>
+                        (stopper !== nothing && stopper.requested[]) ? "wall_budget" : "",
                 ),
             ),
         )
@@ -701,6 +740,65 @@ function _start_startup_watchdog(
     return (stop = stop, fired = fired, task = task)
 end
 
+"""Name of the file whose presence in the engine's working directory makes it save its state and exit (`intgrt.F`)."""
+const _STOP_FILE = "STOP"
+
+"""
+    _request_stop(out_dir) -> String
+
+Ask the engine running in `out_dir` to stop: create the `STOP` file it polls
+for. Synchronous, so it can be called from a process-exit hook. Returns the
+path.
+"""
+_request_stop(out_dir::AbstractString)::String = touch(joinpath(out_dir, _STOP_FILE))
+
+"""
+    _start_stop_timer(out_dir, process, budget, margin; interrupt_to = nothing)
+        -> (; stop, requested, fired, task)
+
+Asynchronous wall-budget timer, counted from the call: `budget − margin`
+seconds on, the engine running in `out_dir` is asked to stop
+([`_request_stop`](@ref)) and `requested` is set; an engine still running
+`budget` seconds on is terminated (SIGTERM, then SIGKILL after
+`_KILL_GRACE_SECONDS`) and `fired` is set. Each signal precedes its log
+record, as in [`_start_startup_watchdog`](@ref). Setting `stop` ends the
+timer quietly; an `InterruptException` landing in the task goes to
+`interrupt_to` ([`_forwarding_interrupts`](@ref)).
+"""
+function _start_stop_timer(
+    out_dir::AbstractString,
+    process::Base.Process,
+    budget::Real,
+    margin::Real;
+    interrupt_to::Union{Nothing,Task} = nothing,
+)
+    t0 = time()
+    stop = Ref(false)
+    requested = Ref(false)
+    fired = Ref(false)
+    task = errormonitor(
+        _forwarding_interrupts(interrupt_to) do
+            while !stop[] && process_running(process)
+                if !requested[] && time() - t0 ≥ budget - margin
+                    _request_stop(out_dir)
+                    requested[] = true
+                    @info "Wall budget: stop requested after $(round(time() - t0; digits = 1)) s " *
+                          "(budget $(budget) s, margin $(margin) s)"
+                end
+                if time() - t0 ≥ budget
+                    fired[] = true
+                    _terminate(process)
+                    @warn "Wall budget of $(budget) s reached with the engine still running; " *
+                          "it was terminated"
+                    return nothing
+                end
+                sleep(0.2)
+            end
+        end,
+    )
+    return (stop = stop, requested = requested, fired = fired, task = task)
+end
+
 """
     _run_completed(stdout_path; offset = 0) -> Bool
 
@@ -892,13 +990,14 @@ end
 
 """
     _close_segment(run_dir, index; status, exit_status = nothing, elapsed = nothing,
-                   t_end = nothing) -> Bool
+                   t_end = nothing, fields = Dict{String,Any}()) -> Bool
 
 Close the open record of segment `index` in `run_dir/RUN_INFO.toml`: set its
 `status` and `completed`, and `exit_status`, `elapsed_seconds` and `t_end`
-when given; set `run.status`. No other key is touched. Returns `false`
-without writing when the file or the entry is missing. Uses only TOML
-parsing and file writes, since it also runs from a process-exit hook.
+when given, then the entries of `fields`; set `run.status`. No other key is
+touched. Returns `false` without writing when the file or the entry is
+missing. Uses only TOML parsing and file writes, since it also runs from a
+process-exit hook.
 """
 function _close_segment(
     run_dir::AbstractString,
@@ -907,6 +1006,7 @@ function _close_segment(
     exit_status::Union{Nothing,Integer} = nothing,
     elapsed::Union{Nothing,Real} = nothing,
     t_end::Union{Nothing,Real} = nothing,
+    fields::AbstractDict = Dict{String,Any}(),
 )::Bool
     info_path = joinpath(run_dir, "RUN_INFO.toml")
     isfile(info_path) || return false
@@ -920,10 +1020,152 @@ function _close_segment(
     exit_status === nothing || (entry["exit_status"] = Int(exit_status))
     elapsed === nothing || (entry["elapsed_seconds"] = round(Float64(elapsed); digits = 1))
     t_end === nothing || (entry["t_end"] = Float64(t_end))
+    for (key, value) in fields
+        entry[String(key)] = value
+    end
     run_table = get!(d, "run", Dict{String,Any}())
     run_table["status"] = String(status)
     _atomic_write_toml(info_path, d)
     return true
+end
+
+"""
+An engine process of this session, as the exit hook needs it: where it runs,
+which segment record is open for it, and how long it may take to stop.
+"""
+struct _ActiveEngine
+    pid::Int32
+    run_dir::String
+    out_dir::String
+    stdout_path::String
+    stdout_offset::Int
+    segment::Int
+    t_launch::Float64
+    stop_margin::Float64
+end
+
+"""
+Engines launched by this process and not yet reaped. The vector is replaced,
+never mutated: the exit hook may interrupt any task, and must not find a
+half-updated container.
+"""
+const _ACTIVE_ENGINES = Ref{Vector{_ActiveEngine}}(_ActiveEngine[])
+
+"""Add an engine to [`_ACTIVE_ENGINES`](@ref) (by replacing the vector)."""
+_register_engine(e::_ActiveEngine) = (_ACTIVE_ENGINES[] = vcat(_ACTIVE_ENGINES[], [e]); nothing)
+
+"""Remove the engine `pid` from [`_ACTIVE_ENGINES`](@ref) (by replacing the vector)."""
+_deregister_engine(pid::Integer) =
+    (_ACTIVE_ENGINES[] = filter(e -> e.pid != pid, _ACTIVE_ENGINES[]); nothing)
+
+"""
+    _child_state(pid) -> Tuple{Bool,Union{Nothing,Int}}
+
+State of the child process `pid` by a non-blocking `waitpid`: `(true,
+nothing)` while it runs; `(false, code)` once it has exited, with `code` its
+exit code or the negated number of the signal that ended it; `(false,
+nothing)` when `pid` is not (or no longer) a child of this process. A call
+that finds the child exited reaps it. For the exit hook only
+([`_stop_engines_at_exit`](@ref)); elsewhere the event loop reaps children.
+"""
+function _child_state(pid::Integer)::Tuple{Bool,Union{Nothing,Int}}
+    status = Ref{Cint}(0)
+    r = ccall(:waitpid, Cint, (Cint, Ptr{Cint}, Cint), pid, status, 1)   # 1 = WNOHANG
+    r == 0 && return (true, nothing)
+    if r == pid
+        sig = status[] & 0x7f
+        code = sig == 0 ? Int((status[] >> 8) & 0xff) : -Int(sig)
+        return (false, code)
+    end
+    return (false, nothing)
+end
+
+"""
+    _stop_engines_at_exit()
+
+Process-exit hook: ask every engine of [`_ACTIVE_ENGINES`](@ref) still
+running to stop ([`_request_stop`](@ref)), wait up to the largest
+`stop_margin` for them to exit, terminate the rest (SIGTERM, SIGKILL after
+`_KILL_GRACE_SECONDS`), and close their segment records with the status the
+stdout shows and `stop_requested = "signal"`. A batch scheduler ends a job
+with SIGTERM; the engine runs in its own session, so without the hook it
+would outlive the driver, or die with it without writing a dump. Julia runs
+the hook outside the event loop: only synchronous operations are used (file
+writes, `waitpid` and `kill` by `ccall`, `Libc.systemsleep`), no `sleep`,
+`wait`, `run`, tasks or logging macros.
+"""
+function _stop_engines_at_exit()
+    engines = _ACTIVE_ENGINES[]
+    isempty(engines) && return nothing
+    t0 = time()
+    alive = Dict{Int32,Bool}()
+    codes = Dict{Int32,Union{Nothing,Int}}()
+    for e in engines
+        running, code = _child_state(e.pid)
+        alive[e.pid] = running
+        codes[e.pid] = code
+        running && _request_stop(e.out_dir)
+    end
+    # Poll the engines still marked alive until none is or `deadline` passes.
+    function poll(deadline::Float64)
+        while any(e -> alive[e.pid], engines) && time() ≤ deadline
+            Libc.systemsleep(0.2)
+            for e in engines
+                alive[e.pid] || continue
+                running, code = _child_state(e.pid)
+                running && continue
+                alive[e.pid] = false
+                codes[e.pid] = code
+            end
+        end
+        return nothing
+    end
+    poll(t0 + maximum(e.stop_margin for e in engines))
+    if any(e -> alive[e.pid], engines)
+        for e in engines
+            alive[e.pid] && ccall(:kill, Cint, (Cint, Cint), e.pid, 15)
+        end
+        poll(time() + _KILL_GRACE_SECONDS)
+        for e in engines
+            alive[e.pid] && ccall(:kill, Cint, (Cint, Cint), e.pid, 9)
+        end
+        Libc.systemsleep(0.2)
+        for e in engines
+            alive[e.pid] || continue
+            running, code = _child_state(e.pid)
+            running && continue
+            alive[e.pid] = false
+            codes[e.pid] = code
+        end
+    end
+    for e in engines
+        # One record that cannot be closed must not keep the others open.
+        try
+            status =
+                _segment_status(e.stdout_path; offset = e.stdout_offset, exit_status = codes[e.pid])
+            stop_dump = _stop_dump(e.stdout_path; offset = e.stdout_offset)
+            markers = _dump_markers(e.stdout_path; offset = e.stdout_offset)
+            t_end = if status == "stopped" && !isempty(stop_dump)
+                last(markers).time_nb
+            else
+                t_adjust = _last_adjust_time(e.stdout_path; offset = e.stdout_offset)
+                isnan(t_adjust) ? nothing : t_adjust
+            end
+            _close_segment(
+                e.run_dir,
+                e.segment;
+                status = status,
+                exit_status = codes[e.pid],
+                elapsed = time() - e.t_launch,
+                t_end = t_end,
+                fields = Dict{String,Any}("stop_requested" => "signal", "stop_dump" => stop_dump),
+            )
+        catch err
+            err isa Union{SystemError,Base.IOError,TOML.ParserError,ArgumentError} || rethrow()
+        end
+    end
+    _ACTIVE_ENGINES[] = _ActiveEngine[]
+    return nothing
 end
 
 """
