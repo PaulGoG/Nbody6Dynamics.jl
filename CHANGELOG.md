@@ -52,6 +52,10 @@ entries say so.
   adjustment (`KZ(2) = 1`); the generator logs the size of one dump and of
   the whole series.
 
+- Retention of periodic restart dumps. `simulation.checkpoint_keep = k`
+  keeps the newest `k` dumps of a checkpointed run and deletes older ones
+  while the engine runs; `0`, the default, keeps all.
+
 ### Changed
 
 - With the default `snapshot_render = "auto"`, snapshots of 20 000 particles

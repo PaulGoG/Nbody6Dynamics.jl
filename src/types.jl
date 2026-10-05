@@ -83,6 +83,12 @@ run ID generation, and runtime telemetry.
 - `stop_margin`: wall-clock seconds the engine is given to act on a stop
   request, both before the wall budget and when the driver process itself
   is terminated (SIGTERM); must be smaller than a non-zero `wall_budget`
+- `checkpoint_keep`: number of periodic restart dumps (`comm.2_<t>`) kept
+  while the engine runs; older ones are deleted as new ones appear. `0`
+  keeps every dump; otherwise at least 2, because the newest may be
+  incomplete when the engine dies. Dumps written at the end of a run or at
+  a stop request (`comm.1_<t>`) and the dump a restart started from are
+  never deleted
 - `live_diagnostics`: with `monitor`, print in-terminal sparklines of the
   virial ratio and energy error every `live_interval` seconds (opt-in;
   interactive terminals only, never in the log file)
@@ -104,6 +110,7 @@ Base.@kwdef struct SimulationConfig
     exit_grace::Float64 = 120.0
     wall_budget::Float64 = 0.0
     stop_margin::Float64 = 120.0
+    checkpoint_keep::Int = 0
 end
 
 """

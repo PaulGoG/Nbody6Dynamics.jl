@@ -280,6 +280,11 @@ function _validate(cfg::Nbody6Config)
             "got $(sim.stop_margin)",
         )
     end
+    (sim.checkpoint_keep == 0 || sim.checkpoint_keep ≥ 2) || _config_error(
+        "simulation.checkpoint_keep",
+        "must be 0 (keep every dump) or ≥ 2 (the newest dump may be incomplete); " *
+        "got $(sim.checkpoint_keep)",
+    )
     sim.live_interval ≥ 1 ||
         _config_error("simulation.live_interval", "must be ≥ 1 [s]; got $(sim.live_interval)")
     isempty(sim.runs_dir) && _config_error("simulation.runs_dir", "must be nonempty")

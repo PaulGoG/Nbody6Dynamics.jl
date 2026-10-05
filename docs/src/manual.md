@@ -110,6 +110,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `exit_grace` | Float | `120.0` | Completion monitor [s]; must be ≥ 0. Once the stdout shows the engine's `END RUN` line, a process whose output directory has not changed for this long is terminated and the segment is recorded as `completed` with `terminated_after_completion = true`; a final COMMON dump still being written keeps it alive. `0` disables |
 | `wall_budget` | Float | `0.0` | Wall-clock budget of one engine segment [s]; must be ≥ 0, `0` = none. At `wall_budget − stop_margin` the engine is asked to stop through a `STOP` file in its working directory; it writes a restart dump and exits, and the segment is recorded as `stopped`. An engine still running at `wall_budget` is terminated (`killed`) |
 | `stop_margin` | Float | `120.0` | Seconds the engine is given to act on a stop request [s]; must be ≥ 0 and smaller than a non-zero `wall_budget`. Also the time a terminated driver (SIGTERM) waits for its engine before it ends it |
+| `checkpoint_keep` | Int | `0` | Periodic restart dumps (`comm.2_<t>`) kept while the engine runs; must be `0` (keep all) or ≥ 2. Older ones are deleted as new ones appear; the dumps written at the end of a run or at a stop request (`comm.1_<t>`) and the dump a restart started from are never deleted |
 
 ### `[postprocess]`
 
@@ -405,11 +406,11 @@ A queue with a time limit ends a job whether or not the integration has reached 
 
 The same request is made when the driver process is terminated. On SIGTERM, which is what a batch scheduler sends at the time limit and on cancellation, an exit hook writes `STOP` for every engine the process has running, waits up to `stop_margin` seconds for them to exit, terminates those that have not, and closes their segment records (`stop_requested = "signal"`). The engine runs in its own session, so without the hook it would outlive the driver. A stop request left in the output directory is removed when the next segment starts. An operator interrupt (Ctrl-C) still ends the engine at once.
 
-### Live sparklines
 The wall budget is the dependable of the two. The hook relies on Julia's handling of SIGTERM, which serves the signal wherever the main thread happens to be: with the driver waiting on the engine, its state for all but moments of a run, the stop is orderly; a signal that interrupts it in the first seconds after start-up, while code is still being compiled, can block the exit instead, and the engine then runs on until it is killed. Such a run is left with a `running` record and is continued from its last periodic dump like one that crashed. A scheduler that signals every process of a job, the engine included, ends the engine without a dump for the same reason; set `wall_budget` below the time limit so that the limit is never reached.
 
 With `checkpoint = true` in `[merger.nbody6]` the engine also writes a dump at every adjustment, which is what a run that was killed resumes from. Each is of the order of 1 kB per body (642 MB at 6×10⁵ bodies) and the engine never removes one, so a long run accumulates as many as it has adjustments; the generator prints the total. `simulation.checkpoint_keep = k` deletes all but the newest `k` while the engine runs. Two is the minimum because a dump being written when the engine dies is incomplete.
 
+### Live sparklines
 
 With `simulation.live_diagnostics = true` (and `monitor = true` on an interactive terminal) the monitor prints, every `live_interval` seconds, two in-terminal sparklines built with UnicodePlots from the ADJUST records so far: the virial ratio `Q = T/|W|` and `log10 |ΔE/E|` against time (Myr when the scaling is known). The panel is written to stderr below the log lines, the spinner resumes underneath, and nothing of it reaches `nbody6dynamics.log`. Runs that print fewer than two adjustments show no panel.
 

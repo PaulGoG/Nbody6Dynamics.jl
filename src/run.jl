@@ -418,6 +418,16 @@ function _execute_simulation(
                 sim.stop_margin;
                 interrupt_to = waiting,
             ) : nothing
+        # Checkpoint retention: only the newest periodic dumps are kept.
+        pruner =
+            sim.checkpoint_keep > 0 ?
+            _start_dump_pruner(
+                out_dir,
+                process,
+                sim.checkpoint_keep;
+                protect = is_restart ? String[restart.dump] : String[],
+                interrupt_to = waiting,
+            ) : nothing
 
         # Live ticker is opt-in and interactive-only; the Fortran stdout is
         # captured to out1000 regardless.
@@ -448,6 +458,7 @@ function _execute_simulation(
             watchdog === nothing || (watchdog.stop[] = true)
             completion === nothing || (completion.stop[] = true)
             stopper === nothing || (stopper.stop[] = true)
+            pruner === nothing || (pruner.stop[] = true)
             monitor === nothing || (monitor.stop_requested = true)
             @warn "Interrupted; the engine was terminated (SIGTERM, SIGKILL after $(_KILL_GRACE_SECONDS) s if needed)"
             rethrow()
@@ -457,6 +468,8 @@ function _execute_simulation(
         watchdog === nothing || (watchdog.stop[] = true)
         completion === nothing || (completion.stop[] = true)
         stopper === nothing || (stopper.stop[] = true)
+        pruner === nothing || (pruner.stop[] = true)
+        pruner === nothing || wait(pruner.task)
 
         elapsed = time() - t_start
         telemetry =
@@ -513,9 +526,14 @@ function _execute_simulation(
                     "t_end" => t_end,
                     "stop_requested" =>
                         (stopper !== nothing && stopper.requested[]) ? "wall_budget" : "",
+                    "dumps_pruned" => pruner === nothing ? 0 : pruner.removed[],
                 ),
             ),
         )
+        if pruner !== nothing && pruner.removed[] > 0
+            @info "Checkpoint retention: $(pruner.removed[]) periodic dump(s) removed " *
+                  "($(Base.format_bytes(pruner.bytes[]))); the newest $(sim.checkpoint_keep) kept"
+        end
         if hung
             error(
                 "Simulation terminated by the start-up watchdog: no adjustment beyond t = 0 within " *
@@ -868,6 +886,86 @@ function _start_stop_timer(
         end,
     )
     return (stop = stop, requested = requested, fired = fired, task = task)
+end
+
+"""
+    _prune_dumps(out_dir, keep; protect = String[]) -> @NamedTuple{removed::Int,bytes::Int}
+
+Delete all but the newest `keep` periodic restart dumps (`comm.2_<t>`, regular
+files) in `out_dir`, ordered by the time in the name ([`_dump_time`](@ref)),
+not lexicographically. Names in `protect` are never deleted, nor are the
+`comm.1_<t>` dumps or any other file. Returns the number of files removed
+and their total size in bytes; `(removed = 0, bytes = 0)` without touching
+anything for `keep ≤ 0` or a missing directory.
+"""
+function _prune_dumps(
+    out_dir::AbstractString,
+    keep::Integer;
+    protect::AbstractVector{<:AbstractString} = String[],
+)::@NamedTuple{removed::Int, bytes::Int}
+    (keep ≤ 0 || !isdir(out_dir)) && return (removed = 0, bytes = 0)
+    candidates = Tuple{Float64,String}[]
+    for f in readdir(out_dir)
+        startswith(f, "comm.2_") || continue
+        t = _dump_time(f)
+        isnan(t) && continue
+        isfile(joinpath(out_dir, f)) && push!(candidates, (t, f))
+    end
+    # Newest first; equal times by name.
+    sort!(candidates; rev = true)
+    removed = 0
+    bytes = 0
+    for (_, f) in Iterators.drop(candidates, keep)
+        f in protect && continue
+        path = joinpath(out_dir, f)
+        isfile(path) || continue
+        nbytes = filesize(path)
+        rm(path)
+        removed += 1
+        bytes += nbytes
+    end
+    return (removed = removed, bytes = bytes)
+end
+
+"""
+    _start_dump_pruner(out_dir, process, keep; protect = String[], interval = 10.0,
+                       interrupt_to = nothing) -> (; stop, removed, bytes, task)
+
+Asynchronous retention of the periodic restart dumps in `out_dir`: every
+`interval` seconds while `process` runs, all but the newest `keep` are
+deleted ([`_prune_dumps`](@ref), names in `protect` excepted); one more
+pass follows the end of the loop, for the dumps written since the last.
+`removed` and `bytes` count the files deleted and their size. Setting
+`stop` ends the pruner within half a second; an `InterruptException`
+landing in the task goes to `interrupt_to` ([`_forwarding_interrupts`](@ref)).
+"""
+function _start_dump_pruner(
+    out_dir::AbstractString,
+    process::Base.Process,
+    keep::Integer;
+    protect::AbstractVector{<:AbstractString} = String[],
+    interval::Real = 10.0,
+    interrupt_to::Union{Nothing,Task} = nothing,
+)
+    stop = Ref(false)
+    removed = Ref(0)
+    bytes = Ref(0)
+    task = errormonitor(_forwarding_interrupts(interrupt_to) do
+        while !stop[] && process_running(process)
+            r = _prune_dumps(out_dir, keep; protect = protect)
+            removed[] += r.removed
+            bytes[] += r.bytes
+            t_next = time() + interval
+            while !stop[] && process_running(process) && time() < t_next
+                sleep(min(0.5, interval))
+            end
+        end
+        r = _prune_dumps(out_dir, keep; protect = protect)
+        removed[] += r.removed
+        bytes[] += r.bytes
+        return nothing
+    end)
+    return (stop = stop, removed = removed, bytes = bytes, task = task)
 end
 
 """

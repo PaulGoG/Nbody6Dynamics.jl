@@ -1203,6 +1203,79 @@ end
 
 # =====================================================================
 
+@testset "Dump retention" begin
+    # Config key
+    @test SimulationConfig().checkpoint_keep == 0
+    vdir = mktempdir()
+    vpath = joinpath(vdir, "v.toml")
+    write(vpath, "[simulation]\ncheckpoint_keep = 1\n")
+    @test_throws ArgumentError load_config(vpath)
+    write(vpath, "[simulation]\ncheckpoint_keep = -1\n")
+    @test_throws ArgumentError load_config(vpath)
+    write(vpath, "[simulation]\ncheckpoint_keep = 0\n")
+    @test load_config(vpath).simulation.checkpoint_keep == 0
+    write(vpath, "[simulation]\ncheckpoint_keep = 2\n")
+    @test load_config(vpath).simulation.checkpoint_keep == 2
+
+    # Pruning by the time in the name; nothing but periodic dumps is touched
+    d = mktempdir()
+    timed = ["comm.2_0.0", "comm.2_0.5", "comm.2_1.0", "comm.2_9.5", "comm.2_10.0"]
+    oldest = timed[1:3]
+    others = ["comm.1_10.0", "conf.3_1", "comm.2_notatime"]
+    for f in timed
+        write(joinpath(d, f), "0123456789")
+    end
+    for f in others
+        write(joinpath(d, f), "")
+    end
+    mkdir(joinpath(d, "comm.2_3.0"))
+
+    @test Nbody6Dynamics._prune_dumps(d, 0) == (removed = 0, bytes = 0)
+    @test all(f -> isfile(joinpath(d, f)), vcat(timed, others))
+
+    @test Nbody6Dynamics._prune_dumps(d, 2) == (removed = 3, bytes = 30)
+    # 10.0 is newer than 9.5, although it sorts first as a string.
+    @test isfile(joinpath(d, "comm.2_10.0")) && isfile(joinpath(d, "comm.2_9.5"))
+    @test all(f -> isfile(joinpath(d, f)), others)
+    @test isdir(joinpath(d, "comm.2_3.0"))
+    @test !any(f -> ispath(joinpath(d, f)), oldest)
+
+    for f in oldest
+        write(joinpath(d, f), "0123456789")
+    end
+    r = Nbody6Dynamics._prune_dumps(d, 2; protect = ["comm.2_0.5"])
+    @test r.removed == 2
+    @test isfile(joinpath(d, "comm.2_0.5"))
+    @test Nbody6Dynamics._prune_dumps(d, 2; protect = ["comm.2_0.5"]).removed == 0
+
+    @test Nbody6Dynamics._prune_dumps(joinpath(d, "absent"), 2) == (removed = 0, bytes = 0)
+
+    # Pruner next to a running process: dumps appear every 0.2 s
+    pd = mktempdir()
+    p = run(`sleep 3`; wait = false)
+    pr = Nbody6Dynamics._start_dump_pruner(pd, p, 2; interval = 0.2)
+    writer = @async for k in 0:9
+        write(joinpath(pd, "comm.2_$(k).0"), "")
+        sleep(0.2)
+    end
+    wait(p)
+    wait(writer)
+    pr.stop[] = true
+    wait(pr.task)
+    @test sort(filter(f -> startswith(f, "comm.2_"), readdir(pd))) == ["comm.2_8.0", "comm.2_9.0"]
+    @test pr.removed[] == 8
+
+    # The pruner ends when asked, with the process still running
+    q = run(`sleep 30`; wait = false)
+    pr = Nbody6Dynamics._start_dump_pruner(mktempdir(), q, 2; interval = 10.0)
+    sleep(0.3)
+    pr.stop[] = true
+    @test timedwait(() -> istaskdone(pr.task), 3.0) === :ok
+    kill(q)
+end
+
+# =====================================================================
+
 @testset "Live diagnostics panel" begin
     fixture = joinpath(@__DIR__, "fixtures", "out1000")
     panel = Nbody6Dynamics._live_diagnostics_panel(fixture)
