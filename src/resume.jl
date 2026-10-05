@@ -542,3 +542,23 @@ function resume_run(
         discarded = isempty(discarded["moved"]) ? nothing : discarded,
     )
 end
+
+"""
+    _run_status(run_dir) -> String
+
+`run.status` of `run_dir/RUN_INFO.toml`, the status of the last engine
+segment; `""` for an empty path, a missing or unreadable record, or one
+written before segments carried a status.
+"""
+function _run_status(run_dir::AbstractString)::String
+    isempty(run_dir) && return ""
+    path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(path) || return ""
+    d = try
+        TOML.parsefile(path)
+    catch e
+        e isa TOML.ParserError || rethrow()
+        return ""
+    end
+    return String(get(get(d, "run", Dict{String,Any}()), "status", ""))
+end

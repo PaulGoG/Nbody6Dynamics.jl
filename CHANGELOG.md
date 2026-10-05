@@ -63,6 +63,11 @@ entries say so.
   of the series the package reads, later snapshots and dumps) to
   `output/discarded/`, so the series stay single-valued; nothing is deleted.
 
+- `resume_pipeline(run_dir)` and `scripts/run_resume.jl` continue an
+  interrupted run from the configuration frozen in its directory and, once
+  it has reached its end time, perform post-processing and figures. The
+  call can be repeated, one per queue segment.
+
 ### Changed
 
 - With the default `snapshot_render = "auto"`, snapshots of 20 000 particles
@@ -81,6 +86,10 @@ entries say so.
 - A restart no longer keeps backups of `output/comm.1`: it is a working
   copy of a dump that stays under its own name, and it is removed when the
   engine exits. The restart input carries the time increment unrounded.
+
+- `run_pipeline` ends after a simulation phase that stopped on request
+  (`wall_budget`, or a signal): post-processing and figures are left to
+  the completed run instead of being made from every segment.
 
 ### Fixed
 

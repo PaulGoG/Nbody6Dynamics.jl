@@ -11,6 +11,7 @@ Names listed here without a `Nbody6Dynamics.` prefix are either exported or `pub
 ```@docs
 example_input
 run_pipeline
+resume_pipeline
 run_gpu_validation
 postprocess
 generate_plots

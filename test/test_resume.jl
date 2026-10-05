@@ -584,4 +584,36 @@ end
     @test rinfo["segments"][end]["dump"] == "comm.1_12.0"
     @test !haskey(rinfo["segments"][end], "discarded")
     @test !isfile(joinpath(kout, "comm.1"))
+
+    # 8. Pipeline: a stop request ends it without a stamp; resume_pipeline finishes it
+    @test Nbody6Dynamics._run_status(mktempdir()) == ""
+    @test Nbody6Dynamics._run_status("") == ""
+    pipe_results = withenv("FAKE_CHECKPOINT" => nothing, "FAKE_DIE_AT" => nothing) do
+        @test_logs (:info, r"stopped on request before its end time") match_mode = :any run_pipeline(
+            cfg(; wall_budget = 0.9, stop_margin = 0.5);
+            base_dir = base,
+            run_id = "pipe",
+        )
+    end
+    piped = joinpath(base, "runs", "pipe")
+    @test isempty(pipe_results)
+    @test Nbody6Dynamics._run_status(piped) == "stopped"
+    @test !Nbody6Dynamics._pipeline_completed(piped)
+    n_calls = 0
+    withenv("FAKE_CHECKPOINT" => nothing, "FAKE_DIE_AT" => nothing) do
+        while !Nbody6Dynamics._pipeline_completed(piped) && n_calls < 12
+            resume_pipeline(piped)
+            n_calls += 1
+        end
+    end
+    @test n_calls ≥ 2
+    pinfo = info(piped)
+    @test pinfo["run"]["status"] == "completed"
+    @test pinfo["pipeline"]["completed"] == true
+    @test pinfo["pipeline"]["phases"] == ["simulation"]
+    @test pinfo["pipeline"]["engine_completed"] == true
+    @test adjust_times(joinpath(piped, "output", "out1000")) == collect(0.0:12.0)
+    n_segments = length(pinfo["segments"])
+    @test isempty(resume_pipeline(piped))
+    @test length(info(piped)["segments"]) == n_segments
 end

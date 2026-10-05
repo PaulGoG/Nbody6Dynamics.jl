@@ -99,6 +99,7 @@ One invocation each; details in the sections below.
 | Instantiate the package environment | `julia activate.jl` |
 | Instantiate the script environment (figures) | `julia scripts/activate.jl` |
 | Run the main pipeline | `julia scripts/run_setup.jl [config.toml]` |
+| Continue a stopped or interrupted run | `julia scripts/run_resume.jl <run_dir>` (one more segment; post-processing and figures once the run is complete) |
 | Run a parameter sweep | `julia scripts/run_sweep.jl input_files/sweeps/sweep_demo.toml [--dry-run]` |
 | Run a showcase case | `julia scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (also `binary_`, `tidal_`, `flagship_`; the sweep via `scripts/run_sweep.jl input_files/showcase/sweep.toml`; the cases, their reference runs and figures: docs, Showcase Cases) |
 | Run the verification suite | `julia scripts/run_verif_suite.jl` |
@@ -305,6 +306,7 @@ Nbody6Dynamics/
 │       └── telemetry.jl             # Run telemetry figure
 ├── scripts/
 │   ├── run_setup.jl                 # CLI wrapper: load config → run_pipeline
+│   ├── run_resume.jl                # CLI wrapper: resume_pipeline on a run directory
 │   ├── run_sweep.jl                 # CLI wrapper: sweep TOML → run_sweep → comparison figures
 │   ├── run_verif_suite.jl           # Three-target verification suite
 │   ├── run_gpu_validation.jl        # CLI wrapper: logged validation stages of a CUDA host

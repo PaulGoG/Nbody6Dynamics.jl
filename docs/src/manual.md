@@ -207,6 +207,8 @@ Common configurations (also listed in the `config.toml` header):
 5. **Merger ICs:** `merger.enabled=true`, `merger.config_file="input_files/..."` (with `run_test=false` to only generate)
 6. **Merger + simulate:** `merger.enabled=true`, `simulation.run_test=true` — the binary runs inside the merger output directory so `dat.10` is found in its working directory
 
+A simulation phase that ends on a stop request (`simulation.wall_budget`, or a signal to the driver) ends the pipeline there: phases 3 and 4 belong to the completed run, and post-processing a large run once per segment would cost more than the segment's margin. `resume_pipeline(run_dir)`, or `julia scripts/run_resume.jl <run_dir>` from a shell, starts the next segment from the configuration frozen in the run directory and, once the run has reached its end time, performs the remaining phases and stamps the pipeline as complete. It can be called any number of times: a job per queue segment needs no knowledge of how many segments the run will take, and a call on a finished run does nothing.
+
 For output produced entirely outside this project there is also the config-free path:
 
 ```julia

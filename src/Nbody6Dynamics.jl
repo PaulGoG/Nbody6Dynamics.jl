@@ -316,6 +316,10 @@ to `cfg.config_dir`, the directory of the file `load_config` read, so
 `julia scripts/run_setup.jl path/to/config.toml` keeps its engine and its
 runs next to that file, never inside the package.
 
+A simulation phase that ends on a stop request (`simulation.wall_budget`, or
+a signal) ends the pipeline there, with an empty result and no completion
+stamp; [`resume_pipeline`](@ref) continues it.
+
 # Returns
 A `Dict{Symbol,Any}` with keys `:snapshots`, `:diagnostics`, `:lagr`,
 `:escapers`, `:stellar_evo`, `:binary_evo`, `:stellar_census`, `:remnant`
@@ -391,6 +395,34 @@ function run_pipeline(
         end
     end
 
+    # A run stopped on request is continued by `resume_pipeline`; the phases
+    # below belong to the completed run.
+    if cfg.simulation.run_test && _run_status(run_dir) == "stopped"
+        @info "The simulation stopped on request before its end time; post-processing and " *
+              "figures are left to the resumed run (resume_pipeline, scripts/run_resume.jl)"
+        return Dict{Symbol,Any}()
+    end
+    return _finish_pipeline(cfg, run_dir, base_dir, merger_result, phases, t_pipeline)
+end
+
+"""
+    _finish_pipeline(cfg, run_dir, base_dir, merger_result, phases, t_pipeline)
+        -> Dict{Symbol,Any}
+
+Phases 3 and 4 of the pipeline for the data of `run_dir`: post-processing,
+the data products, the figures, and the completion stamp. `phases` lists
+the phases already performed and is extended; `t_pipeline` is the start
+time the stamp's elapsed time is counted from. Shared by
+[`run_pipeline`](@ref) and [`resume_pipeline`](@ref).
+"""
+function _finish_pipeline(
+    cfg::Nbody6Config,
+    run_dir::AbstractString,
+    base_dir::AbstractString,
+    merger_result,
+    phases::Vector{String},
+    t_pipeline::Real,
+)::Dict{Symbol,Any}
     # ── Phase 3: Post-processing ──
     results = Dict{Symbol,Any}()
     if cfg.postprocess.enabled
@@ -441,6 +473,49 @@ function run_pipeline(
 
     _stamp_pipeline_completion(run_dir, phases, time() - t_pipeline)
     return results
+end
+
+"""
+    resume_pipeline(run_dir; base_dir = nothing) -> Dict{Symbol,Any}
+
+Continue the pipeline of an interrupted run from the configuration frozen
+in `run_dir`: one more engine segment through [`resume_run`](@ref), and,
+once the run has reached its end time, the post-processing and figure
+phases with the completion stamp. The call can be repeated: a run that is
+still short of its end time returns an empty result and waits for the next
+call, and a run whose pipeline has finished is left alone, so one queue job
+per segment needs no knowledge of how many segments the run takes.
+"""
+function resume_pipeline(
+    run_dir::AbstractString;
+    base_dir::Union{Nothing,AbstractString} = nothing,
+)::Dict{Symbol,Any}
+    run_dir = abspath(run_dir)
+    cfg = load_config(joinpath(run_dir, "config.toml"))
+    base = base_dir === nothing ? cfg.config_dir : String(base_dir)
+    cfg.visualization.enabled && _require_plotting(
+        :resume_pipeline,
+        "Set `[visualization] enabled = false` in the run's config.toml to finish without figures.",
+    )
+    if _pipeline_completed(run_dir) && _run_status(run_dir) == "completed"
+        @info "Run $(basename(run_dir)) is complete and its pipeline has finished; nothing to do"
+        return Dict{Symbol,Any}()
+    end
+
+    t_pipeline = time()
+    resume_run(run_dir; base_dir = base)
+    status = _run_status(run_dir)
+    if status != "completed"
+        @info "Run $(basename(run_dir)) is not at its end time yet (status $(status)); the " *
+              "remaining phases are left to a later call"
+        return Dict{Symbol,Any}()
+    end
+
+    out_dir = joinpath(run_dir, "output")
+    merger_result =
+        isfile(joinpath(out_dir, "merger_ic.toml")) && isfile(joinpath(out_dir, "dat.10")) ?
+        load_merger_ic_result(out_dir) : nothing
+    return _finish_pipeline(cfg, run_dir, base, merger_result, String["simulation"], t_pipeline)
 end
 
 """
@@ -521,7 +596,8 @@ export Nbody6Config,
     MergerPipelineConfig,
     PlotStyle
 export load_config, save_config, example_input
-export setup_nbody6, run_simulation, restart_simulation, resume_run, postprocess, run_pipeline
+export setup_nbody6,
+    run_simulation, restart_simulation, resume_run, postprocess, run_pipeline, resume_pipeline
 export generate_plots, generate_run_id, export_for_paper, run_gpu_validation
 export scan_output, postprocess_external, OutputScan
 export Snapshot, SnapshotHeader, DiagnosticsData, AdjustRecord, LagrangianData, UnitScaling
