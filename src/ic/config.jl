@@ -279,7 +279,7 @@ end
                           eclose = 1.0, gmin = 1.0e-6, gmax = 0.01, smax = 1.0,
                           kz16 = 0, tcomp = 1.0e8, tcrtp0 = 3600.0,
                           isernb = 40, iserreg = 40, iserks = 0,
-                          nfix = 1, ncrit = 10, nrun = 1, ncomm = 10,
+                          nfix = 1, ncrit = 10, nrun = 1, ncomm = 1, checkpoint = false,
                           kz = Dict{Int,Int}())
 
 Every numerical field of the `&INNBODY6` and `&ININPUT` namelists that the
@@ -311,7 +311,14 @@ input manual.
 - `nfix`: multiplier of `DELTAT` for `conf.3` and binary output; ≥ 1
 - `ncrit`: minimum particle number, alternative termination criterion; ≥ 1
 - `nrun`: run identification index; ≥ 1
-- `ncomm`: multiplier of `DELTAT` for the restart (`COMMON`) dump interval; ≥ 1
+- `ncomm`: the engine writes a restart (`COMMON`) dump on every `ncomm`-th
+  dump call, counting the periodic and the terminating calls together; ≥ 1.
+  Keep 1: with a larger value the dump of an `END RUN`, of a stop request
+  or of an energy halt is written only when the count happens to fit
+- `checkpoint`: `true` writes a restart dump at every adjustment
+  (`KZ(2) = 1`), from which an interrupted run resumes; requires
+  `ncomm = 1`. `false` (`KZ(2) = −1`) leaves the dump at the end of the run
+  or at a stop request as the only one
 - `kz`: explicit `KZ(i) = v` overrides applied last (`[merger.nbody6.kz]`,
   keys 1–50); an override of an index that also has a named key (14, 16,
   19) warns
@@ -338,7 +345,8 @@ Base.@kwdef struct Nbody6ParameterSpec
     nfix::Int = 1
     ncrit::Int = 10
     nrun::Int = 1
-    ncomm::Int = 10
+    ncomm::Int = 1
+    checkpoint::Bool = false
     kz::Dict{Int,Int} = Dict{Int,Int}()
 end
 
@@ -840,6 +848,17 @@ function _validate_nbody6(p::Nbody6ParameterSpec)
     end
     for (i, v) in p.kz
         1 ≤ i ≤ 50 || _config_error("merger.nbody6.kz", "index must be within 1–50; got $i")
+    end
+    if p.checkpoint
+        p.ncomm == 1 || _config_error(
+            "merger.nbody6.ncomm",
+            "must be 1 with checkpoint = true: the engine counts every dump call and writes " *
+            "one in ncomm, the dump of a stop request included; got $(p.ncomm)",
+        )
+        haskey(p.kz, 2) && _config_error(
+            "merger.nbody6.kz",
+            "must not set index 2 with checkpoint = true, which sets KZ(2) = 1; got KZ(2) = $(p.kz[2])",
+        )
     end
     return nothing
 end

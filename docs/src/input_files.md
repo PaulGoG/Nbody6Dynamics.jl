@@ -187,7 +187,8 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 | `nfix` | Int | `1` | Multiplier of `deltat` for `conf.3` and binary output; must be ≥ 1 |
 | `ncrit` | Int | `10` | Minimum particle number, alternative termination criterion; must be ≥ 1 |
 | `nrun` | Int | `1` | Run identification index; must be ≥ 1 |
-| `ncomm` | Int | `10` | Multiplier of `deltat` for the restart (`COMMON`) dump interval; must be ≥ 1 |
+| `ncomm` | Int | `1` | The engine writes a restart (`COMMON`) dump on every `ncomm`-th dump call, counting the periodic and the terminating calls together; must be ≥ 1. Keep `1`: with a larger value the dump of an `END RUN`, of a stop request or of an energy halt is written only when the count happens to fit |
+| `checkpoint` | Bool | `false` | `true` writes a restart dump at every adjustment (`KZ(2) = 1`, one `comm.2_<t>` per `dtadj`), from which an interrupted run resumes; requires `ncomm = 1` and must not be combined with a `kz` override of index 2. The generator logs the size of one dump and of all of them. `false` (`KZ(2) = −1`) leaves the dump at the end of the run or at a stop request as the only one |
 
 Runs with stellar evolution need the relaxed tolerance `qe ≈ 1e-2`: supernova kicks change the energy budget between adjustments, and the default tolerance halts the run.
 

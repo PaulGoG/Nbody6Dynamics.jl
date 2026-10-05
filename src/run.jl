@@ -102,8 +102,9 @@ end
     _latest_dump(out_dir) -> Union{Nothing,String}
 
 File name of the COMMON dump with the largest time suffix in `out_dir`
-(`comm.1_<t>` / `comm.2_<t>`, written every `NCOMM × DELTAT`), or
-`nothing` when none exists.
+(`comm.1_<t>` at the end of a run or at a stop request, `comm.2_<t>` at
+every adjustment in checkpoint mode), or `nothing` when none exists. The
+time in a name is rounded to the digits of `DTADJ`.
 """
 function _latest_dump(out_dir::AbstractString)::Union{Nothing,String}
     isdir(out_dir) || return nothing

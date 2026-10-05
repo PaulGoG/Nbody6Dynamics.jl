@@ -123,7 +123,7 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         @test haskey(results, :diagnostics) && length(results[:diagnostics].adjust) ≥ 2
         _keep(run_dir, "single")
 
-        # 2. Merger demo with frequent dumps, then a restart
+        # 2. Merger demo with a dump at every adjustment, then a restart
         mtoml = read(
             joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"),
             String,
@@ -132,7 +132,7 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         mtoml = replace(mtoml, r"tcrit = [0-9.]+" => "tcrit = 2.0")
         mtoml =
             replace(mtoml, "[merger]\n" => "[merger]\nseed = 11\n"; count = 1) *
-            "\n[merger.nbody6]\nncomm = 2\n"
+            "\n[merger.nbody6]\ncheckpoint = true\n"
         mpath = joinpath(work, "merger_demo.toml")
         write(mpath, mtoml)
         cfg_m_path = joinpath(work, "merger.toml")
@@ -157,6 +157,9 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         t_first = adjust_times(joinpath(out, "out1000"))
         @test maximum(t_first) ≈ 2.0
         @test Nbody6Dynamics._latest_dump(out) !== nothing
+        # tcrit = 2 with dtadj = 0.5: periodic dumps at t = 0, 0.5, …, 2 and the END RUN one
+        @test count(startswith("comm.2_"), readdir(out)) == 5
+        @test count(startswith("comm.1_"), readdir(out)) == 1
         restart_simulation(mrun; tcrit_extra = 1.0, base_dir = base)
         t_all = adjust_times(joinpath(out, "out1000"))
         @test maximum(t_all) ≈ 3.0 && length(t_all) > length(t_first)
@@ -170,7 +173,7 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         # 3. Point-mass tidal field
         ttoml = replace(
             mtoml,
-            "[merger.nbody6]\nncomm = 2\n" => "[merger.nbody6]\nqe = 0.05\n\n[merger.tidal]\nkz14 = 2\ngmg = 1.0e11\nrg0 = 8.5\n",
+            "[merger.nbody6]\ncheckpoint = true\n" => "[merger.nbody6]\nqe = 0.05\n\n[merger.tidal]\nkz14 = 2\ngmg = 1.0e11\nrg0 = 8.5\n",
         )
         ttoml = replace(ttoml, r"tcrit = [0-9.]+" => "tcrit = 1.0")
         tpath = joinpath(work, "merger_tidal.toml")

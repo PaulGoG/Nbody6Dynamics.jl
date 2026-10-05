@@ -322,6 +322,19 @@ function _check_multicluster_regime(
 end
 
 """
+    _checkpoint_dump_bytes(n, nnbopt) -> Int
+
+Upper estimate of the size of one restart dump of `n` bodies with target
+neighbour number `nnbopt`, in bytes: 576 per body (the per-body records of
+the engine's `mydump.F`), 4 per neighbour-list entry with `nnbopt + 1`
+entries per body, and 2 MB for the header blocks. The realised mean
+neighbour number stays below `nnbopt` (642 MB measured at 6×10⁵ bodies with
+`nnbopt = 300`, against 1.07 GB here).
+"""
+_checkpoint_dump_bytes(n::Integer, nnbopt::Integer)::Int =
+    2_000_000 + Int(n) * (576 + 4 * (Int(nnbopt) + 1))
+
+"""
     generate_merger_inp(path, N_total, rbar, zmbar; nbody6, stellar = StellarSpec(),
                         kz14 = 0, tcrit, dtadj, deltat, nrand, mass_bounds = (0.08, 100.0))
 
@@ -336,7 +349,9 @@ Follows the Fortran NAMELIST read order expected by `nbody6.F → start.F`:
 # Key settings
 - `nbody6`: resolved [`Nbody6ParameterSpec`](@ref); obtain it from
   [`resolve_nbody6_parameters`](@ref) — unresolved zeros are refused. Its
-  `kz` overrides are applied last.
+  `kz` overrides are applied last. `checkpoint = true` sets `KZ(2) = 1` (a
+  restart dump at every adjustment) and logs the disk space the dumps can
+  take.
 - `stellar`: [`StellarSpec`](@ref) (`KZ(19)`, `Level`, `ZMET`, `EPOCH0`,
   `DTPLOT`); `KZ(12)` HR diagnostics are switched off with `kz19 = 0`
 - `tidal`: [`TidalSpec`](@ref) (`KZ(14)` and the `&INXTRNL0` namelist for
@@ -365,7 +380,7 @@ function generate_merger_inp(
     kz14 = tidal.kz14
     kz = zeros(Int, 50)
     kz[1] = 1
-    kz[2] = -1
+    kz[2] = nbody6.checkpoint ? 1 : -1
     kz[3] = 2
     kz[7] = 3
     kz[8] = nbin0 > 0 ? 2 : 0   # 2: primordial pairs are the first 2·NBIN0 bodies of dat.10
@@ -505,6 +520,13 @@ function generate_merger_inp(
     end
 
     @info "Wrote .inp file: $path (N=$N_total, NBIN0=$nbin0, KZ(22)=2, KZ(14)=$kz14, RBAR=$rbar, ZMBAR=$zmbar)"
+    if nbody6.checkpoint
+        n_dumps = floor(Int, tcrit / dtadj) + 1
+        dump_bytes = _checkpoint_dump_bytes(N_total, nbody6.nnbopt)
+        @info "Checkpoint: a restart dump of at most $(Base.format_bytes(dump_bytes)) at every " *
+              "adjustment, $(n_dumps) to TCRIT; at most $(Base.format_bytes(n_dumps * dump_bytes)) " *
+              "if none is pruned"
+    end
     return nothing
 end
 

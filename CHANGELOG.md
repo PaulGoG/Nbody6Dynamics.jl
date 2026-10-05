@@ -47,6 +47,11 @@ entries say so.
   start-up; an input that does not fit is refused with the limit and the
   remedy. `BUILD_INFO.toml` records the limits as `engine_limits`.
 
+- Checkpoint mode of the generated merger input. `checkpoint = true` in
+  `[merger.nbody6]` makes the engine write a restart dump at every
+  adjustment (`KZ(2) = 1`); the generator logs the size of one dump and of
+  the whole series.
+
 ### Changed
 
 - With the default `snapshot_render = "auto"`, snapshots of 20 000 particles
@@ -56,6 +61,11 @@ entries say so.
 - The start-up watchdog and the completion monitor of a restart read only
   the part of the stdout capture written by that segment; an `END RUN` or
   an adjustment line of an earlier segment no longer counts.
+
+- `merger.nbody6.ncomm` defaults to 1 (was 10). The engine counts every
+  dump call and writes one in `ncomm`, so a larger value could skip the
+  dump of a stop request or of an energy halt; inputs without periodic
+  dumps are unaffected.
 
 ### Fixed
 

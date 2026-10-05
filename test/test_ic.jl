@@ -735,7 +735,7 @@ dtplot = 2.0
         txt2 = read(inp2, String)
         @test occursin("KSTART=1,TCOMP=7200,TCRTP0=500,isernb=20,iserreg=40,iserks=0 /", txt2)
         @test occursin("N=220,NFIX=1,NCRIT=5,", txt2) &&
-              occursin(",NNBOPT=30,NRUN=1,NCOMM=10,", txt2)
+              occursin(",NNBOPT=30,NRUN=1,NCOMM=1,", txt2)
         @test occursin("SMAX=0.5,", txt2) && occursin("Level='0' /", txt2)
         @test occursin("KZ(11:20)=0 0 0 0 0 1 0 0 4 0", txt2)   # KZ(12) off with kz19 = 0; override 19 → 4
         @test occursin("KZ(31:40)=0 0 0 0 0 0 0 0 0 2", txt2)
@@ -781,6 +781,50 @@ dtplot = 2.0
         @test crossing_time(1.0, -0.25) ≈ 2.0^1.5
         @test isnan(crossing_time(1.0, 0.1))
         @test Nbody6Dynamics._nbody_time_myr(1.0, 1.0) ≈ 14.91 rtol = 0.01
+
+        # Checkpoint mode: KZ(2) and the dump counter
+        ck_dir = mktempdir()
+        ck_spec(; kw...) =
+            Nbody6ParameterSpec(; nnbopt = 30, rs0 = 0.2, rmin = 1.0e-3, dtmin = 1.0e-5, kw...)
+        plain_inp = joinpath(ck_dir, "plain.inp")
+        generate_merger_inp(plain_inp, 220, 4.0, 0.6; nbody6 = ck_spec(), tcrit = 10.0, dtadj = 0.5)
+        plain_txt = read(plain_inp, String)
+        @test occursin("NCOMM=1,", plain_txt) && occursin("KZ(1:10)=1 -1 ", plain_txt)
+        ck_inp = joinpath(ck_dir, "ck.inp")
+        @test_logs (:info, r"Checkpoint: a restart dump of at most .* 21 to TCRIT") match_mode =
+            :any generate_merger_inp(
+            ck_inp,
+            220,
+            4.0,
+            0.6;
+            nbody6 = ck_spec(; checkpoint = true),
+            tcrit = 10.0,
+            dtadj = 0.5,
+        )
+        ck_txt = read(ck_inp, String)
+        @test occursin("NCOMM=1,", ck_txt) && occursin("KZ(1:10)=1 1 ", ck_txt)
+        # Dump-size estimate: the formula, and an upper bound of two measured dumps
+        @test Nbody6Dynamics._checkpoint_dump_bytes(2000, 44) == 2_000_000 + 2000 * (576 + 4 * 45)
+        @test Nbody6Dynamics._checkpoint_dump_bytes(600_000, 300) ≥ 642_000_000
+        @test Nbody6Dynamics._checkpoint_dump_bytes(1960, 44) ≥ 3_260_000
+        # Config: checkpoint needs ncomm = 1 and owns KZ(2)
+        ck_toml(extra) = begin
+            base = read(
+                joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"),
+                String,
+            )
+            path = joinpath(ck_dir, "m.toml")
+            write(path, base * "\n[merger.nbody6]\n" * extra)
+            path
+        end
+        @test load_merger_config(ck_toml("checkpoint = true\n")).nbody6.checkpoint
+        @test load_merger_config(ck_toml("")).nbody6.checkpoint == false
+        @test load_merger_config(ck_toml("")).nbody6.ncomm == 1
+        @test_throws ArgumentError load_merger_config(ck_toml("checkpoint = true\nncomm = 2\n"))
+        @test_throws ArgumentError load_merger_config(
+            ck_toml("checkpoint = true\n\n[merger.nbody6.kz]\n2 = 2\n"),
+        )
+        @test load_merger_config(ck_toml("ncomm = 5\n")).nbody6.ncomm == 5
     end
 
     # --- Full pipeline — kepler mode (small N) ---
