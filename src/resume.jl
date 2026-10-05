@@ -183,10 +183,11 @@ segment writes again. Moved to `discarded/segment_<segment>/` in `out_dir`:
   - the time-stamped files ([`_timestamped_time`](@ref)) with a time beyond
     the dump time, whole, except the dump itself.
 
-A segment with `last_status == "stopped"` restarted from the last dump it
-reported is left as it is: a stop writes its dump last, so nothing follows
-it. Nothing is deleted: tails are written before a file is truncated, and an
-earlier file of the same name in the destination is kept as a `#k` sibling.
+A segment with `last_status` `"stopped"` or `"completed"` restarted from the
+last dump it reported is left as it is: a segment that ended by itself
+wrote its dump last, and the lines that close it stay. Nothing is deleted:
+tails are written before a file is truncated, and an earlier file of the
+same name in the destination is kept as a `#k` sibling.
 
 The returned record holds `dir` (the destination relative to `out_dir`, or
 `""` when nothing was moved), `moved` (sorted names under it), `t_from` (dump
@@ -211,7 +212,7 @@ function _discard_after(
         "t_from" => t_d,
         "t_to" => isnan(t_to) ? t_d : t_to,
     )
-    if last_status == "stopped"
+    if last_status in ("stopped", "completed")
         markers = _dump_markers(stdout_path)
         if !isempty(markers) &&
            last(markers).file == marker.file &&
@@ -295,4 +296,249 @@ function _tcrit_of(inp_path::AbstractString)::Float64
     end
     tcrit === nothing && error("no TCRIT entry in $inp_path")
     return tcrit
+end
+
+"""
+    _segment_alive(segment, out_dir) -> Bool
+
+Whether the engine of the segment record `segment` is still running on this
+host: its `pid` exists and the command line of that process names `out_dir`,
+from which the engine binary is launched. A record from another host cannot
+be checked and counts as not alive, as does a process that ends while its
+command line is read.
+"""
+function _segment_alive(segment::AbstractDict, out_dir::AbstractString)::Bool
+    get(segment, "host", "") == gethostname() || return false
+    pid = get(segment, "pid", 0)
+    (pid isa Integer && pid > 0) || return false
+    cmdline_path = "/proc/$(pid)/cmdline"
+    isfile(cmdline_path) || return false
+    return try
+        occursin(abspath(out_dir), read(cmdline_path, String))
+    catch e
+        e isa Union{SystemError,Base.IOError} || rethrow()
+        false
+    end
+end
+
+"""
+    _last_status(segment, stdout_path) -> String
+
+Status of the segment record `segment`: its `status` entry when present and
+not empty. A record written before that entry existed gives `completed` when
+its `completed` flag is set, and otherwise the status
+[`_segment_status`](@ref) reads from the stdout capture `stdout_path`, from
+the record's `stdout_offset` on and with its `exit_status`.
+"""
+function _last_status(segment::AbstractDict, stdout_path::AbstractString)::String
+    status = get(segment, "status", "")
+    isempty(status) || return String(status)
+    get(segment, "completed", false) === true && return "completed"
+    return _segment_status(
+        stdout_path;
+        offset = Int(get(segment, "stdout_offset", 0)),
+        exit_status = get(segment, "exit_status", nothing),
+    )
+end
+
+"""
+    _launch_restart(cfg, run_dir, out_dir, original_inp, dump, tcrit_extra;
+                    t_start, base_dir, tcrtp0 = nothing, discarded = nothing) -> String
+
+Launch a restart segment of the run in `run_dir` from the dump `dump` (file
+name in `out_dir`) for `tcrit_extra` N-body time units. The dump is copied to
+`comm.1`, the file `KSTART = 2` reads; the engine rewrites the dump it
+started from under that dump's own name, so the copy is a working copy and
+not a link, and it is removed when the engine exits, whatever the outcome.
+The restart input `restart.inp` is written from `original_inp`
+([`_write_restart_inp`](@ref)), an earlier one kept as a `#k` sibling. The
+segment record carries `t_start` and, when given, the record `discarded`
+of [`_discard_after`](@ref). Returns `run_dir`.
+"""
+function _launch_restart(
+    cfg::Nbody6Config,
+    run_dir::AbstractString,
+    out_dir::AbstractString,
+    original_inp::AbstractString,
+    dump::AbstractString,
+    tcrit_extra::Real;
+    t_start::Real,
+    base_dir::AbstractString,
+    tcrtp0::Union{Nothing,Real} = nothing,
+    discarded::Union{Nothing,AbstractDict} = nothing,
+)::String
+    target = joinpath(out_dir, "comm.1")
+    # No backup: the dump stays under its own name.
+    cp(joinpath(out_dir, dump), target; force = true)
+    restart_inp = joinpath(out_dir, "restart.inp")
+    _backup_existing(restart_inp)
+    _write_restart_inp(restart_inp, original_inp, tcrit_extra; tcrtp0 = tcrtp0)
+    restart =
+        discarded === nothing ?
+        (dump = String(dump), tcrit_extra = Float64(tcrit_extra), t_start = Float64(t_start)) :
+        (
+            dump = String(dump),
+            tcrit_extra = Float64(tcrit_extra),
+            t_start = Float64(t_start),
+            discarded = discarded,
+        )
+    try
+        _execute_simulation(
+            cfg,
+            run_dir,
+            out_dir,
+            restart_inp;
+            base_dir = base_dir,
+            label = "restart",
+            restart = restart,
+        )
+    finally
+        rm(target; force = true)
+    end
+    return run_dir
+end
+
+"""
+    resume_run(run_dir; base_dir = nothing) -> String
+
+Continue an interrupted run to the end time of its original input. The call
+is idempotent: a completed run is left as it is, and a run that was
+stopped at its wall budget, killed, or ended by an engine error gets one
+more segment, started from the last complete restart dump.
+
+The dump is the last one the engine reported in its stdout whose file is
+complete, at the exact time of that report. If the interrupted segment
+wrote anything after that dump (it was killed, not stopped), that part is
+moved to `output/discarded/segment_<k>/` before the launch: the tail of the
+stdout capture, the later records of `lagr.7`, `global.30`, `esc.11` and
+`event.35`, and the later snapshots and dumps. Appended files the package
+cannot cut by time are listed in the new segment's record (`discarded.uncut`).
+Nothing is deleted.
+
+A run halted by the engine's energy check or terminated by the start-up
+watchdog is refused: the first needs a decision on the accuracy parameters,
+the second would hang again. A run whose record says `running` is refused
+while its engine is alive on this host; otherwise the record is closed from
+what the stdout shows.
+
+# Arguments
+- `run_dir`: run directory of a pipeline run (`RUN_INFO.toml`, `config.toml`, `output/`)
+- `base_dir`: directory the engine tree is resolved against; default: that of the
+  run's frozen `config.toml`, which carries absolute paths
+
+# Returns
+`run_dir` as an absolute path. Raises an `ArgumentError` for a run that
+cannot be resumed, with the reason.
+"""
+function resume_run(
+    run_dir::AbstractString;
+    base_dir::Union{Nothing,AbstractString} = nothing,
+)::String
+    run_dir = abspath(run_dir)
+    out_dir = joinpath(run_dir, "output")
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(info_path) ||
+        throw(ArgumentError("resume: $info_path not found; the run has no segment record"))
+    info = TOML.parsefile(info_path)
+    segments = get(info, "segments", Any[])
+    isempty(segments) && throw(ArgumentError("resume: $info_path lists no segment"))
+
+    cfg = load_config(joinpath(run_dir, "config.toml"))
+    base_dir === nothing && (base_dir = cfg.config_dir)
+    stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
+    last = segments[end]
+    index = Int(last["index"])
+    status = _last_status(last, stdout_path)
+
+    # A record left open: refused while the engine runs, else closed from the stdout
+    if status == "running"
+        if _segment_alive(last, out_dir)
+            throw(
+                ArgumentError(
+                    "resume: segment $index of $(basename(run_dir)) is still running " *
+                    "(pid $(last["pid"]) on $(last["host"]))",
+                ),
+            )
+        end
+        offset = Int(get(last, "stdout_offset", 0))
+        status = _segment_status(stdout_path; offset = offset)
+        t_adj = _last_adjust_time(stdout_path; offset = offset)
+        _close_segment(
+            run_dir,
+            index;
+            status = status,
+            t_end = isnan(t_adj) ? nothing : t_adj,
+            fields = Dict{String,Any}("reconciled" => true),
+        )
+        @info "Segment $index was left open; closed as $(status) from the stdout capture"
+    end
+
+    if status == "completed"
+        @info "Run $(basename(run_dir)) is complete; nothing to resume"
+        return run_dir
+    end
+    if status == "halted"
+        throw(
+            ArgumentError(
+                "resume: $(basename(run_dir)) was halted by the engine's energy check; a " *
+                "restart would need changed accuracy parameters, which is a decision and not " *
+                "a resume (restart_simulation continues it explicitly)",
+            ),
+        )
+    end
+    if status == "watchdog"
+        throw(
+            ArgumentError(
+                "resume: $(basename(run_dir)) was terminated by the start-up watchdog; it " *
+                "would hang again (check the input intervals, or raise " *
+                "simulation.startup_timeout)",
+            ),
+        )
+    end
+
+    original_inp = joinpath(out_dir, get(get(info, "run", Dict{String,Any}()), "input_file", ""))
+    isfile(original_inp) || throw(
+        ArgumentError(
+            "resume: the original input recorded in RUN_INFO.toml (run.input_file) is " *
+            "missing in $out_dir",
+        ),
+    )
+    tcrit = _tcrit_of(original_inp)
+
+    marker = _resume_dump(out_dir, stdout_path)
+    marker === nothing && throw(
+        ArgumentError(
+            "resume: no complete restart dump in $out_dir; without checkpoint = true a run " *
+            "can be resumed only after a stop request",
+        ),
+    )
+    t_d = marker.time_nb
+    remaining = tcrit - t_d
+    remaining > 0 || throw(
+        ArgumentError("resume: the dump $(marker.file) is at t = $t_d, not before TCRIT = $tcrit"),
+    )
+
+    discarded = _discard_after(out_dir, stdout_path, marker; segment = index, last_status = status)
+    if !isempty(discarded["moved"])
+        @info "Resume from $(marker.file) (t = $t_d): $(length(discarded["moved"])) item(s) " *
+              "written after that dump moved to $(discarded["dir"])"
+        if !isempty(discarded["uncut"])
+            @warn "Appended files not cut at the join; they keep what the interrupted segment " *
+                  "wrote after t = $(discarded["t_from"]): $(join(discarded["uncut"], ", "))"
+        end
+    else
+        @info "Resume from $(marker.file) (t = $t_d) for $(remaining) N-body time units"
+    end
+
+    return _launch_restart(
+        cfg,
+        run_dir,
+        out_dir,
+        original_inp,
+        marker.file,
+        remaining;
+        t_start = t_d,
+        base_dir = base_dir,
+        discarded = isempty(discarded["moved"]) ? nothing : discarded,
+    )
 end

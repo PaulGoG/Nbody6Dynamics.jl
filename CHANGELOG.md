@@ -56,6 +56,13 @@ entries say so.
   keeps the newest `k` dumps of a checkpointed run and deletes older ones
   while the engine runs; `0`, the default, keeps all.
 
+- `resume_run(run_dir)` continues an interrupted run to the end time of its
+  input and can be called again safely. It starts from the last complete
+  dump at the exact time the engine reported, and after a kill it moves
+  what the dead segment wrote beyond that dump (stdout tail, later records
+  of the series the package reads, later snapshots and dumps) to
+  `output/discarded/`, so the series stay single-valued; nothing is deleted.
+
 ### Changed
 
 - With the default `snapshot_render = "auto"`, snapshots of 20 000 particles
@@ -70,6 +77,10 @@ entries say so.
   dump call and writes one in `ncomm`, so a larger value could skip the
   dump of a stop request or of an energy halt; inputs without periodic
   dumps are unaffected.
+
+- A restart no longer keeps backups of `output/comm.1`: it is a working
+  copy of a dump that stays under its own name, and it is removed when the
+  engine exits. The restart input carries the time increment unrounded.
 
 ### Fixed
 

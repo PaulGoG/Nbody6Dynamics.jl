@@ -170,6 +170,57 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         @test any(startswith("conf.3_3"), readdir(out))
         _keep(mrun, "merger_restart")
 
+        # 2b. A killed checkpointed run resumed to its end time
+        ktoml = replace(mtoml, r"tcrit = [0-9.]+" => "tcrit = 6.0")
+        kpath = joinpath(work, "merger_kill.toml")
+        write(kpath, ktoml)
+        cfg_k_path = joinpath(work, "merger_k.toml")
+        write(cfg_k_path, base_toml(runs_dir, "", "enabled = true\nconfig_file = \"$(kpath)\""))
+        cfg_k0 = load_config(cfg_k_path)
+        cfg_k = Nbody6Config(
+            InstallConfig(; enabled = false, install_dir = cfg_k0.install.install_dir),
+            cfg_k0.build,
+            cfg_k0.simulation,
+            PostprocessConfig(; enabled = false),
+            cfg_k0.visualization,
+            cfg_k0.merger,
+        )
+        killer = @async begin
+            # end the engine once it has passed t = 2
+            krun_guess = ""
+            t_k = time()
+            while time() - t_k < 300
+                dirs = filter(d -> startswith(d, "merger_"), readdir(runs_dir))
+                for d in dirs
+                    so = joinpath(runs_dir, d, "output", "out1000")
+                    kinfo = joinpath(runs_dir, d, "RUN_INFO.toml")
+                    isfile(so) && isfile(kinfo) || continue
+                    seg = Nbody6Dynamics.TOML.parsefile(kinfo)["segments"][end]
+                    get(seg, "status", "") == "running" || continue
+                    any(t -> t ≥ 2.0, adjust_times(so)) || continue
+                    run(ignorestatus(`kill -KILL $(seg["pid"])`))
+                    krun_guess = joinpath(runs_dir, d)
+                end
+                isempty(krun_guess) || break
+                sleep(0.2)
+            end
+            krun_guess
+        end
+        run_pipeline(cfg_k; base_dir = base)
+        krun = fetch(killer)
+        @test !isempty(krun)
+        kout = joinpath(krun, "output")
+        kseg = Nbody6Dynamics.TOML.parsefile(joinpath(krun, "RUN_INFO.toml"))["segments"]
+        @test kseg[end]["status"] == "killed"
+        resume_run(krun; base_dir = base)
+        kinfo_done = Nbody6Dynamics.TOML.parsefile(joinpath(krun, "RUN_INFO.toml"))
+        @test kinfo_done["run"]["status"] == "completed"
+        t_k_all = adjust_times(joinpath(kout, "out1000"))
+        @test t_k_all == collect(0.0:0.5:6.0)           # every adjustment once, in order
+        @test kinfo_done["segments"][end]["t_start"] ≥ 2.0
+        @test !isfile(joinpath(kout, "comm.1"))
+        _keep(krun, "merger_resume")
+
         # 3. Point-mass tidal field
         ttoml = replace(
             mtoml,

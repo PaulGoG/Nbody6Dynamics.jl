@@ -521,7 +521,7 @@ export Nbody6Config,
     MergerPipelineConfig,
     PlotStyle
 export load_config, save_config, example_input
-export setup_nbody6, run_simulation, restart_simulation, postprocess, run_pipeline
+export setup_nbody6, run_simulation, restart_simulation, resume_run, postprocess, run_pipeline
 export generate_plots, generate_run_id, export_for_paper, run_gpu_validation
 export scan_output, postprocess_external, OutputScan
 export Snapshot, SnapshotHeader, DiagnosticsData, AdjustRecord, LagrangianData, UnitScaling

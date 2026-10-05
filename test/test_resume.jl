@@ -318,3 +318,270 @@
         @test isfile(joinpath(disc, f)) && !isfile(joinpath(out, f))
     end
 end
+
+@testset "resume_run" begin
+    fake_engine = raw"""
+    #!/bin/bash
+    # Stand-in for the engine in resume tests. Integer time, one step per 0.1 s.
+    # Fresh start: t = 0 … TCRIT. Restart (KSTART=2 in the input): t0 from the
+    # payload of comm.1, end = t0 + TCRIT. Per step: an ADJUST line, a record in
+    # lagr.7, a snapshot conf.3_<t>, and with FAKE_CHECKPOINT a dump comm.2_<t>.0
+    # with its three stdout lines. STOP is honoured with a dump comm.1_<t>.0;
+    # END RUN is followed by a dump comm.1_<end>.0, as with KZ(1) = 1.
+    input=$(cat)
+    tcrit=$(printf '%s' "$input" | grep -o 'TCRIT=[0-9.]*' | head -n 1 | cut -d= -f2)
+    tcrit=${tcrit%.*}
+    dump() {  # dump <file> <t>: two Fortran records, the first holding the time
+        printf '\x04\x00\x00\x00%4d\x04\x00\x00\x00\x04\x00\x00\x00abcd\x04\x00\x00\x00' "$2" > "$1"
+    }
+    if printf '%s' "$input" | grep -q 'KSTART=2'; then
+        t0=$(dd if=comm.1 bs=1 skip=4 count=4 2>/dev/null | tr -d ' ')
+        dump "comm.1_$t0.0" "$t0"
+        printf '  MYDUMP    %d.0000000000000000      %d.0                         201 comm.1_%d.0                \n' "$t0" "$t0" "$t0"
+        printf '  W MYDUMP J,II,NPARTMP=         201\n  NA-NS=          85\n'
+        t=$((t0 + 1))
+        end=$((t0 + tcrit))
+    else
+        printf '## header\nTIME a\n' > lagr.7
+        t=0
+        end=$tcrit
+    fi
+    while [ "$t" -le "$end" ]; do
+        printf ' ADJUST:  TIME    %d.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n' "$t"
+        printf '%d.0 1\n' "$t" >> lagr.7
+        : > "conf.3_$t"
+        if [ -n "$FAKE_CHECKPOINT" ]; then
+            dump "comm.2_$t.0" "$t"
+            printf '  MYDUMP    %d.0000000000000000      %d.0                         202 comm.2_%d.0                \n' "$t" "$t" "$t"
+            printf '  W MYDUMP J,II,NPARTMP=         202\n  NA-NS=          85\n'
+        fi
+        # like the engine: the end time is tested in the adjustment, before a
+        # stop request is looked at
+        [ "$t" -eq "$end" ] && break
+        if [ -f STOP ]; then
+            printf '\n         TERMINATION BY MANUAL INTERVENTION\n'
+            dump "comm.1_$t.0" "$t"
+            printf '  MYDUMP    %d.0000000000000000      %d.0                         203 comm.1_%d.0                \n' "$t" "$t" "$t"
+            printf '  W MYDUMP J,II,NPARTMP=         203\n  NA-NS=          85\n'
+            printf '\n\n         COMMON SAVED AT TOFF/TIME/TTOT =  0.00000000E+00  TCOMP =  0.0\n'
+            exit 0
+        fi
+        if [ -n "$FAKE_DIE_AT" ] && [ "$t" -eq "$FAKE_DIE_AT" ] && [ ! -f died ]; then
+            : > died
+            printf ' EVENT after the dump at T= %d\n' "$t"
+            printf ' ADJUST:  TIME    %d.50000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n' "$t"
+            printf '%d.5 1\n' "$t" >> lagr.7
+            : > "conf.3_$t.5"
+            kill -KILL $$
+        fi
+        sleep 0.1
+        t=$((t + 1))
+    done
+    printf '\n         END RUN    TIME[Myr] =    1.00  TOFF/TIME/TTOT=      0.00000000      %d.00000000      %d.00000000  CPUTOT =    0.0  ERRTOT = 0.00000D+00  DETOT = 0.00000D+00\n' "$end" "$end"
+    dump "comm.1_$end.0" "$end"
+    printf '  MYDUMP    %d.0000000000000000      %d.0                         204 comm.1_%d.0                \n' "$end" "$end" "$end"
+    printf '  W MYDUMP J,II,NPARTMP=         204\n  NA-NS=          85\n'
+    """
+    base = mktempdir()
+    engine_path = joinpath(base, "engine", "build", "nbody6++")
+    mkpath(dirname(engine_path))
+    # `#!/bin/bash` at column 1, whether or not the literal was dedented.
+    write(engine_path, replace(fake_engine, r"^ {4}"m => ""))
+    chmod(engine_path, 0o755)
+    write(
+        joinpath(base, "in.inp"),
+        """
+        &INNBODY6
+        KSTART=1,TCOMP=1E+08,TCRTP0=3600 /
+
+        &ININPUT
+        N=100,NFIX=1,NCRIT=10,NRAND=1,NNBOPT=10,NRUN=1,NCOMM=1,
+        DTADJ=1,DELTAT=1,TCRIT=12.0,QE=1.0E-02
+        Level='C' /
+        """,
+    )
+    cfg_path = joinpath(base, "c.toml")
+    function cfg(; wall_budget = 0.0, stop_margin = 120.0)
+        write(
+            cfg_path,
+            """
+            [install]
+            enabled = false
+            install_dir = "engine"
+
+            [build]
+            enable_mpi = false
+            enable_gpu = false
+            enable_hdf5 = false
+
+            [simulation]
+            input_file = "in.inp"
+            runs_dir = "runs"
+            binary_name = "nbody6++"
+            omp_threads = 1
+            monitor = false
+            telemetry_interval = 0.0
+            startup_timeout = 0.0
+            exit_grace = 0.0
+            wall_budget = $(Float64(wall_budget))
+            stop_margin = $(Float64(stop_margin))
+
+            [postprocess]
+            enabled = false
+
+            [visualization]
+            enabled = false
+            """,
+        )
+        return load_config(cfg_path)
+    end
+    info(run_dir) = Nbody6Dynamics.TOML.parsefile(joinpath(run_dir, "RUN_INFO.toml"))
+    adjust_times(path) = [
+        parse(Float64, match(r"TIME\s+([0-9.E+-]+)", l).captures[1]) for
+        l in eachline(path) if startswith(lstrip(l), "ADJUST:")
+    ]
+    function lagr_times(path)
+        times = Float64[]
+        for l in eachline(path)
+            tokens = split(l)
+            isempty(tokens) && continue
+            t = tryparse(Float64, first(tokens))
+            t === nothing || push!(times, t)
+        end
+        return times
+    end
+    # Last segment of a copied run marked with `status`, and with this host
+    # and `pid` when given; `run.status` follows.
+    function mark_last!(run_dir; status, pid = nothing)
+        path = joinpath(run_dir, "RUN_INFO.toml")
+        d = Nbody6Dynamics.TOML.parsefile(path)
+        seg = d["segments"][end]
+        seg["status"] = status
+        if pid !== nothing
+            seg["host"] = gethostname()
+            seg["pid"] = pid
+        end
+        d["run"]["status"] = status
+        Nbody6Dynamics._atomic_write_toml(path, d)
+        return seg
+    end
+
+    # 1. No segment record
+    @test_throws ArgumentError resume_run(mktempdir())
+
+    # 2. Chain of segments stopped at the wall budget
+    chain = withenv("FAKE_CHECKPOINT" => nothing, "FAKE_DIE_AT" => nothing) do
+        run_simulation(cfg(; wall_budget = 0.9, stop_margin = 0.5); base_dir = base, run_id = "chain")
+    end
+    @test info(chain)["segments"][end]["status"] == "stopped"
+    n_resumes = withenv("FAKE_CHECKPOINT" => nothing, "FAKE_DIE_AT" => nothing) do
+        n = 0
+        while n < 12 && info(chain)["run"]["status"] != "completed"
+            resume_run(chain)
+            n += 1
+        end
+        n
+    end
+    out = joinpath(chain, "output")
+    @test info(chain)["run"]["status"] == "completed"
+    @test n_resumes ≥ 2
+    @test adjust_times(joinpath(out, "out1000")) == collect(0.0:12.0)   # every time once, in order
+    @test lagr_times(joinpath(out, "lagr.7")) == collect(0.0:12.0)
+    segs = info(chain)["segments"]
+    for k in 2:length(segs)
+        @test segs[k]["kind"] == "restart"
+        @test segs[k]["t_start"] == segs[k - 1]["t_end"]
+        @test !haskey(segs[k], "discarded")
+    end
+    @test !isfile(joinpath(out, "comm.1"))
+    @test !isdir(joinpath(out, "discarded"))
+    @test isfile(joinpath(out, "comm.1_12.0"))
+    n_segments = length(segs)
+    @test resume_run(chain) == abspath(chain)
+    @test length(info(chain)["segments"]) == n_segments
+
+    # 3. Killed segment of a checkpointed run
+    killed = withenv("FAKE_CHECKPOINT" => "1", "FAKE_DIE_AT" => "5") do
+        run_simulation(cfg(); base_dir = base, run_id = "kill")
+    end
+    kout = joinpath(killed, "output")
+    kseg = info(killed)["segments"][end]
+    @test kseg["status"] == "killed"
+    @test kseg["exit_status"] == -9
+    @test adjust_times(joinpath(kout, "out1000"))[(end - 1):end] == [5.0, 5.5]
+    @test lagr_times(joinpath(kout, "lagr.7"))[(end - 1):end] == [5.0, 5.5]
+    @test isfile(joinpath(kout, "conf.3_5.5"))
+    withenv("FAKE_CHECKPOINT" => "1", "FAKE_DIE_AT" => "5") do
+        resume_run(killed)
+    end
+    kinfo = info(killed)
+    @test kinfo["run"]["status"] == "completed"
+    @test adjust_times(joinpath(kout, "out1000")) == collect(0.0:12.0)
+    @test lagr_times(joinpath(kout, "lagr.7")) == collect(0.0:12.0)
+    @test !isfile(joinpath(kout, "conf.3_5.5"))
+    kseg2 = kinfo["segments"][2]
+    @test kseg2["t_start"] == 5.0
+    @test kseg2["dump"] == "comm.2_5.0"
+    @test kseg2["discarded"]["moved"] == sort(["out1000.tail", "lagr.7.tail", "conf.3_5.5"])
+    @test kseg2["discarded"]["dir"] == joinpath("discarded", "segment_1")
+    disc = joinpath(kout, "discarded", "segment_1")
+    stdout_tail = read(joinpath(disc, "out1000.tail"), String)
+    @test occursin("EVENT after the dump", stdout_tail)
+    @test occursin("5.50000E+00", stdout_tail)
+    @test read(joinpath(disc, "lagr.7.tail"), String) == "5.5 1\n"
+    @test !isfile(joinpath(kout, "comm.1"))
+
+    # 4. A record left running by a driver that died
+    stale = joinpath(base, "runs", "stale")
+    cp(chain, stale; force = true)
+    mark_last!(stale; status = "running", pid = 0)
+    @test resume_run(stale) == abspath(stale)
+    stale_segs = info(stale)["segments"]
+    @test stale_segs[end]["status"] == "completed"
+    @test stale_segs[end]["reconciled"] == true
+    @test length(stale_segs) == n_segments
+
+    # 5. A live segment is refused
+    live = joinpath(base, "runs", "live")
+    cp(chain, live; force = true)
+    live_out = joinpath(live, "output")
+    p = run(Cmd(`sleep 30`; dir = live_out); wait = false)
+    # A process with the output directory on its command line, as the engine
+    # copy launched from there has. (Not `exec -a <path> sleep`: where sleep
+    # is an applet of a multi-call binary, that name selects no applet.)
+    q = run(
+        `$(Base.julia_cmd()) --startup-file=no -e "sleep(30)" $(joinpath(live_out, "engine"))`;
+        wait = false,
+    )
+    try
+        seg = mark_last!(live; status = "running", pid = Int(getpid(p)))
+        @test Nbody6Dynamics._segment_alive(seg, live_out) == false
+        seg = mark_last!(live; status = "running", pid = Int(getpid(q)))
+        @test Nbody6Dynamics._segment_alive(seg, live_out)
+        @test_throws ArgumentError resume_run(live)
+    finally
+        kill(p)
+        kill(q)
+    end
+
+    # 6. Halted and watchdog runs are refused
+    for status in ("halted", "watchdog")
+        refused = joinpath(base, "runs", status)
+        cp(chain, refused; force = true)
+        mark_last!(refused; status = status)
+        @test_throws ArgumentError resume_run(refused)
+    end
+
+    # 7. restart_simulation beyond the original end time
+    # (on the run of case 3: the chained run keeps its wall budget of 0.9 s)
+    withenv("FAKE_CHECKPOINT" => "1", "FAKE_DIE_AT" => nothing) do
+        restart_simulation(killed; tcrit_extra = 3.0)
+    end
+    rinfo = info(killed)
+    @test rinfo["run"]["status"] == "completed"
+    @test adjust_times(joinpath(kout, "out1000")) == collect(0.0:15.0)
+    @test rinfo["segments"][end]["t_start"] == 12.0
+    @test rinfo["segments"][end]["dump"] == "comm.1_12.0"
+    @test !haskey(rinfo["segments"][end], "discarded")
+    @test !isfile(joinpath(kout, "comm.1"))
+end

@@ -24,6 +24,7 @@ save_config
 setup_nbody6
 run_simulation
 restart_simulation
+resume_run
 generate_run_id
 export_for_paper
 ```

@@ -170,15 +170,18 @@ end
 Continue a finished or interrupted run from one of the engine's COMMON
 dumps for `tcrit_extra` further N-body time units. The chosen dump
 (default: the latest `comm.[12]_<t>` in `output/`) is copied to
-`output/comm.1`, which is what `KSTART = 2` reads; a restart input is
-written from the run's original input file; the engine runs in the same
-output directory with stdout and stderr appended, so `out1000`, `lagr.7`,
-`esc.11`, and the time-stamped snapshot and stellar-evolution files
-continue. `RUN_INFO.toml` gains one entry in its `segments` list per
-launch and the telemetry of each segment goes to its own CSV. The frozen
-`config.toml` of the run carries absolute paths, so the engine tree is found
-without a `base_dir`; one may still be given to override it. Returns
-`run_dir`.
+`output/comm.1`, which is what `KSTART = 2` reads, as a working copy that is
+removed when the engine exits. A restart from a dump older than the last
+moves what was written after it to `output/discarded/segment_<k>/`, as
+[`resume_run`](@ref) does; that is the call for continuing a run to its
+original end time. A restart input is written from the run's original input
+file; the engine runs in the same output directory with stdout and stderr
+appended, so `out1000`, `lagr.7`, `esc.11`, and the time-stamped snapshot
+and stellar-evolution files continue. `RUN_INFO.toml` gains one entry in its
+`segments` list per launch and the telemetry of each segment goes to its own
+CSV. The frozen `config.toml` of the run carries absolute paths, so the
+engine tree is found without a `base_dir`; one may still be given to
+override it. Returns `run_dir`.
 """
 function restart_simulation(
     run_dir::AbstractString;
@@ -204,23 +207,42 @@ function restart_simulation(
     chosen === nothing && error("restart: no COMMON dump (comm.[12]_<t>) in $out_dir")
     dump_path = joinpath(out_dir, chosen)
     isfile(dump_path) || error("restart: dump not found: $dump_path")
-    target = joinpath(out_dir, "comm.1")
-    _backup_existing(target)
-    cp(dump_path, target; force = true)
-    @info "Restart from $chosen (t = $(_dump_time(chosen))) for $tcrit_extra more N-body time units"
 
-    restart_inp = joinpath(out_dir, "restart.inp")
-    _backup_existing(restart_inp)
-    _write_restart_inp(restart_inp, original_inp, tcrit_extra; tcrtp0 = tcrtp0)
+    # Exact time of the dump from its stdout line, else the rounded one of its name
+    stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
+    markers = _dump_markers(stdout_path)
+    k = findlast(m -> m.file == chosen, markers)
+    marker =
+        k === nothing ? (file = String(chosen), time_nb = _dump_time(chosen), line_end = -1) :
+        markers[k]
 
-    return _execute_simulation(
+    segments = get(info, "segments", Any[])
+    last_status = isempty(segments) ? "" : _last_status(segments[end], stdout_path)
+    index = isempty(segments) ? 0 : Int(get(segments[end], "index", length(segments)))
+    discarded =
+        _discard_after(out_dir, stdout_path, marker; segment = index, last_status = last_status)
+    if !isempty(discarded["moved"])
+        @info "Resume from $(marker.file) (t = $(marker.time_nb)): " *
+              "$(length(discarded["moved"])) item(s) written after that dump moved to " *
+              "$(discarded["dir"])"
+        if !isempty(discarded["uncut"])
+            @warn "Appended files not cut at the join; they keep what the interrupted segment " *
+                  "wrote after t = $(discarded["t_from"]): $(join(discarded["uncut"], ", "))"
+        end
+    end
+    @info "Restart from $chosen (t = $(marker.time_nb)) for $tcrit_extra more N-body time units"
+
+    return _launch_restart(
         cfg,
         run_dir,
         out_dir,
-        restart_inp;
+        original_inp,
+        chosen,
+        tcrit_extra;
+        t_start = marker.time_nb,
         base_dir = base_dir,
-        label = "restart",
-        restart = (dump = chosen, tcrit_extra = Float64(tcrit_extra)),
+        tcrtp0 = tcrtp0,
+        discarded = isempty(discarded["moved"]) ? nothing : discarded,
     )
 end
 
@@ -237,7 +259,9 @@ into `run_dir` (with its paths made absolute against `base_dir`, see
 the teed run log with the opt-in live monitor. `input_path` must be
 absolute (the launch script executes from `out_dir`). With `restart = (;
 dump, tcrit_extra)` the binary copy is reused, stdout and stderr are
-appended, and the run summary records a further segment. Returns `run_dir`.
+appended, and the run summary records a further segment; an optional
+`discarded` field (the record of [`_discard_after`](@ref)) is stored in the
+segment record. Returns `run_dir`.
 """
 function _execute_simulation(
     cfg::Nbody6Config,
@@ -355,6 +379,7 @@ function _execute_simulation(
         isempty(sim.gpu_list) || (opening["gpu_list"] = copy(sim.gpu_list))
         slurm_job_id = get(ENV, "SLURM_JOB_ID", "")
         isempty(slurm_job_id) || (opening["slurm_job_id"] = slurm_job_id)
+        is_restart && haskey(restart, :discarded) && (opening["discarded"] = restart.discarded)
         _open_segment(run_dir, run_id, opening; input_file = basename(input_copy))
         # Known to the exit hook until reaped, so a terminated driver stops it.
         engine_pid = Int32(getpid(process))
