@@ -32,7 +32,9 @@
     # Sampler on a live child process
     tele_dir = mktempdir()
     t0 = time()
-    child = run(`sleep 1.2`; wait = false)
+    # Three seconds for a 0.2 s sampler: on a loaded host a 1.2 s child was
+    # sampled only twice.
+    child = run(`sleep 3`; wait = false)
     @test_throws ArgumentError Nbody6Dynamics._start_telemetry(
         tele_dir,
         getpid(child),
