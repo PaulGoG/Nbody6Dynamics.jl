@@ -779,6 +779,10 @@ The engine prints the t = 0 adjustment, then sits at 100 % of one core forever; 
 
 Fortran code requires a large stack. The launch script sets `ulimit -s unlimited`; if running manually, set this in your shell first.
 
+### "N + NBIN0 … does not fit the engine build"
+
+The engine's arrays have compile-time sizes, written into `include/params.h` by the `--with-par` preset of `build.configure_flags`: `NMAX` bodies, `KMAX` regularised pairs, neighbour lists of `LMAX` entries. Before a launch the package reads the three numbers from the configured tree and applies the engine's own start-up conditions to the input: `N + NBIN0 < NMAX − 2`, `NBIN0 < KMAX − 2` and `NNBOPT ≤ min(N/2, LMAX − 50)`. An input that fails one is refused with the quantity and the limit, before anything is written to the run directory. Choose a larger preset (`./configure --help` in the engine tree lists them; `b1m` holds 1 572 864 bodies and 524 288 pairs) and rebuild with `install.enabled = true`, or lower `NNBOPT`. The limits of a build are recorded as `engine_limits` in `BUILD_INFO.toml`.
+
 ### Simulation exits with status 2 after a burst of escapers
 
 `err1000` ends with `Fortran runtime error: Expected REAL for item ... in formatted transfer` at `escape.F`. The engine's escaper summary writes the names of the escapers of one adjustment interval with a format that holds a thousand of them, and the 1001st name restarts the format at a real-number descriptor. This happens in isolated multi-cluster runs, where the escape radius is `2 × 10 RSCALE` about the global density centre and ejecta from an early collapse cross it together many crossing times later. The build corrects the format ([Source amendments](#source-amendments)), so the failure means the binary predates that step or the amendment did not fit the engine revision: check `source_amendments` in the `[build]` table of `RUN_INFO.toml` and rebuild with `install.enabled = true`. The output written before the failure is intact.

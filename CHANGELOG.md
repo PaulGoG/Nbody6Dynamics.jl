@@ -40,6 +40,13 @@ entries say so.
   request for its running engines, waits for them and closes their records,
   so a job ended by a scheduler leaves a dump and no engine behind.
 
+- Build-limit check before launch. The particle number, the number of
+  primordial binaries and the neighbour number of an input are compared
+  with `NMAX`, `KMAX` and `LMAX` of the configured engine tree
+  (`include/params.h`), under the conditions the engine itself applies at
+  start-up; an input that does not fit is refused with the limit and the
+  remedy. `BUILD_INFO.toml` records the limits as `engine_limits`.
+
 ### Changed
 
 - With the default `snapshot_render = "auto"`, snapshots of 20 000 particles

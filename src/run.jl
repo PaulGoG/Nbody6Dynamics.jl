@@ -249,6 +249,8 @@ function _execute_simulation(
     # --- Locate binary ---
     src_dir = _resolve_path(base_dir, cfg.install.install_dir)
     binary = _find_binary(src_dir, sim.binary_name, cfg.build)
+    # A restart takes its sizes from the dump, which the same build wrote.
+    is_restart || _check_engine_limits(input_path, _engine_limits(src_dir))
 
     # --- Provenance at launch: the record names the code that ran, not the
     # tree found when the record is written hours later (a `git pull` during
@@ -628,6 +630,74 @@ function _write_launch_script(
     end
     chmod(path, 0o755)
     return path
+end
+
+"""
+    _input_sizes(inp_path) -> Union{Nothing,@NamedTuple{n::Int,nnbopt::Int,nbin0::Int}}
+
+Particle number `N`, neighbour number `NNBOPT` and primordial-binary number
+`NBIN0` of an engine input file; `NBIN0` is 0 when the file does not set
+it. `nothing` when `N` or `NNBOPT` is not found. Comment lines (first
+non-blank character `!`) are not read: the headers of the shipped inputs
+describe the run in words such as `N = 100 000`.
+"""
+function _input_sizes(
+    inp_path::AbstractString,
+)::Union{Nothing,@NamedTuple{n::Int,nnbopt::Int,nbin0::Int}}
+    text = join((l for l in eachline(inp_path) if !startswith(lstrip(l), '!')), '\n')
+    mn = match(r"\bN\s*=\s*(\d+)", text)
+    mo = match(r"\bNNBOPT\s*=\s*(\d+)", text)
+    (mn === nothing || mo === nothing) && return nothing
+    mb = match(r"\bNBIN0\s*=\s*(\d+)", text)
+    return (
+        n = parse(Int, mn.captures[1]),
+        nnbopt = parse(Int, mo.captures[1]),
+        nbin0 = mb === nothing ? 0 : parse(Int, mb.captures[1]),
+    )
+end
+
+"""
+    _check_engine_limits(inp_path, limits)
+
+Refuse an input the engine build cannot hold, with the three conditions the
+engine tests at start-up (`data.F`, `input.F`, `verify.f`): `N + NBIN0 <
+NMAX − 2`, `NBIN0 < KMAX − 2` and `NNBOPT ≤ min(N/2, LMAX − 50)`. Throws an
+`ArgumentError` naming the quantity, the limit and the remedy; returns
+`nothing` when the input fits, or when `limits` is `nothing` or the sizes
+cannot be read from the input.
+"""
+function _check_engine_limits(inp_path::AbstractString, limits::Union{Nothing,NamedTuple})
+    limits === nothing && return nothing
+    sizes = _input_sizes(inp_path)
+    sizes === nothing && return nothing
+    name = basename(inp_path)
+    rebuild = "configure a larger --with-par preset in build.configure_flags and rebuild the engine"
+    if sizes.n + sizes.nbin0 ≥ limits.nmax - 2
+        throw(
+            ArgumentError(
+                "N + NBIN0 = $(sizes.n + sizes.nbin0) of $name does not fit the engine build: " *
+                "NMAX = $(limits.nmax), and the engine requires N + NBIN0 < NMAX − 2; $rebuild",
+            ),
+        )
+    end
+    if sizes.nbin0 ≥ limits.kmax - 2
+        throw(
+            ArgumentError(
+                "NBIN0 = $(sizes.nbin0) of $name does not fit the engine build: " *
+                "KMAX = $(limits.kmax), and the engine requires NBIN0 < KMAX − 2; $rebuild",
+            ),
+        )
+    end
+    nnbmax = min(sizes.n ÷ 2, limits.lmax - 50)
+    if sizes.nnbopt > nnbmax
+        throw(
+            ArgumentError(
+                "NNBOPT = $(sizes.nnbopt) of $name exceeds the engine's limit min(N/2, LMAX − 50) = " *
+                "$nnbmax (N = $(sizes.n), LMAX = $(limits.lmax)); lower NNBOPT (merger.nbody6.nnbopt for a generated input)",
+            ),
+        )
+    end
+    return nothing
 end
 
 """

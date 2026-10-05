@@ -932,6 +932,55 @@ end
 
 # =====================================================================
 
+@testset "Engine build limits" begin
+    dir = mktempdir()
+    inp(n, nnbopt, nbin0) = begin
+        path = joinpath(dir, "merger.inp")
+        write(
+            path,
+            "&INNBODY6\nKSTART=1,TCOMP=1E+08,TCRTP0=3600,isernb=40,iserreg=40,iserks=0 /\n\n" *
+            "&ININPUT\nN=$(n),NFIX=1,NCRIT=10,NRAND=11,NNBOPT=$(nnbopt),NRUN=1,NCOMM=1,\n" *
+            "ETAI=0.02,ETAR=0.02,RS0=0.2861,DTADJ=0.5,DELTAT=1,TCRIT=40.00,QE=2.000E-04 /\n\n" *
+            "&INSSE\nALPHAS=2.35,BODY1=50,BODYN=0.1,NBIN0=$(nbin0),NHI0=0,ZMET=0.001 /\n",
+        )
+        path
+    end
+    @test Nbody6Dynamics._input_sizes(inp(1960, 44, 0)) == (n = 1960, nnbopt = 44, nbin0 = 0)
+    @test Nbody6Dynamics._input_sizes(inp(50000, 224, 12500)) ==
+          (n = 50000, nnbopt = 224, nbin0 = 12500)
+    no_binaries = joinpath(dir, "single.inp")
+    write(no_binaries, "&ININPUT\nN=1000,NFIX=1,NNBOPT=40,NRUN=1 /\n")
+    @test Nbody6Dynamics._input_sizes(no_binaries) == (n = 1000, nnbopt = 40, nbin0 = 0)
+    # A header comment that states the particle number in words is not read
+    commented = joinpath(dir, "commented.inp")
+    write(
+        commented,
+        "!   N = 100 000, King W0 = 6, NNBOPT = 7, NBIN0 = 3\n" *
+        "&ININPUT\nN=100000,NFIX=1,NNBOPT=80,NRUN=1 /\n&INDATA\nNBIN0=2500,NHI0=0 /\n",
+    )
+    @test Nbody6Dynamics._input_sizes(commented) == (n = 100000, nnbopt = 80, nbin0 = 2500)
+    unreadable = joinpath(dir, "other.inp")
+    write(unreadable, "&ININPUT\nNFIX=1,NRUN=1 /\n")
+    @test Nbody6Dynamics._input_sizes(unreadable) === nothing
+
+    limits = (nmax = 65536, kmax = 8192, lmax = 600)
+    check = Nbody6Dynamics._check_engine_limits
+    @test check(inp(1960, 44, 0), limits) === nothing
+    @test check(inp(65533, 200, 0), limits) === nothing          # N + NBIN0 = NMAX − 3
+    @test_throws r"N \+ NBIN0 = 65534 .* NMAX = 65536" check(inp(65534, 200, 0), limits)
+    @test_throws r"N \+ NBIN0 = 70000 .* NMAX = 65536" check(inp(60000, 200, 10000), limits)
+    @test_throws r"NBIN0 = 8190 .* KMAX = 8192" check(inp(40000, 200, 8190), limits)
+    @test check(inp(40000, 200, 8189), limits) === nothing
+    @test check(inp(40000, 550, 0), limits) === nothing           # NNBOPT = LMAX − 50
+    @test_throws r"NNBOPT = 551 .* = 550 " check(inp(40000, 551, 0), limits)
+    @test_throws r"NNBOPT = 60 .* = 50 " check(inp(100, 60, 0), limits)
+    @test_throws ArgumentError check(inp(100, 60, 0), limits)
+    @test check(inp(10^7, 5000, 10^6), nothing) === nothing       # limits unknown
+    @test check(unreadable, limits) === nothing                   # sizes unknown
+end
+
+# =====================================================================
+
 @testset "Wall budget, stop request and exit hook" begin
     # Stand-in for the engine: one ADJUST line per step, STOP honoured as the
     # engine does (termination line, dump line, dump file, exit 0), END RUN

@@ -214,6 +214,34 @@ function _apply_engine_amendments(
 end
 
 """
+    _engine_limits(src_dir) -> Union{Nothing,@NamedTuple{nmax::Int,kmax::Int,lmax::Int}}
+
+Compile-time array limits of the engine tree at `src_dir`, from the
+`PARAMETER` statement of `include/params.h` that `configure` writes for the
+chosen `--with-par` preset: `NMAX` (bodies), `KMAX` (regularised pairs) and
+`LMAX` (neighbour-list length). `nothing` when the file is missing or holds
+no such statement.
+"""
+function _engine_limits(
+    src_dir::AbstractString,
+)::Union{Nothing,@NamedTuple{nmax::Int,kmax::Int,lmax::Int}}
+    path = joinpath(src_dir, "include", "params.h")
+    isfile(path) || return nothing
+    for line in eachline(path)
+        isempty(line) && continue
+        line[1] in ('*', 'C', 'c', '!') && continue
+        m = match(r"NMAX\s*=\s*(\d+)\s*,\s*KMAX\s*=\s*(\d+)\s*,\s*LMAX\s*=\s*(\d+)", line)
+        m === nothing && continue
+        return (
+            nmax = parse(Int, m.captures[1]),
+            kmax = parse(Int, m.captures[2]),
+            lmax = parse(Int, m.captures[3]),
+        )
+    end
+    return nothing
+end
+
+"""
 Directory of the CUDA helper headers shipped with the package (`helper_cuda.h`,
 `helper_string.h` from NVIDIA's cuda-samples, tag v13.0). The engine's own
 copy under `extra_inc/cuda` dates from 2012 and reads `cudaDeviceProp`
@@ -263,7 +291,7 @@ end
                       nvcc_flags = cfg.build.nvcc_flags, amendments = nothing) -> String
 
 Write `BUILD_INFO.toml` next to the binary: date, host, backend commit,
-configure arguments, the MPI/GPU/HDF5 switches, the binary name, the source
+configure arguments, the MPI/GPU/HDF5 switches, the binary name, the array limits of the build (`engine_limits`: `NMAX`, `KMAX`, `LMAX` of `include/params.h`), the source
 amendments in effect (`source_amendments`, and `source_amendments_skipped`
 when some did not fit the tree; see [`_apply_engine_amendments`](@ref)) and,
 for GPU builds, the CUDA path, the compiled architectures, the `nvcc` release,
@@ -298,6 +326,14 @@ function _write_build_info(
         d["source_amendments"] = copy(amendments.applied)
         isempty(amendments.skipped) || (d["source_amendments_skipped"] = copy(amendments.skipped))
     end
+    limits = _engine_limits(src_dir)
+    limits === nothing || (
+        d["engine_limits"] = Dict{String,Any}(
+            "NMAX" => limits.nmax,
+            "KMAX" => limits.kmax,
+            "LMAX" => limits.lmax,
+        )
+    )
     if build.enable_gpu
         d["cuda_path"] = String(cuda_path)
         d["cuda_arch"] = String.(cuda_archs)

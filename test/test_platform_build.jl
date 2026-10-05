@@ -369,6 +369,35 @@ end
     @test isempty(rec_skipped["source_amendments"])
     @test rec_skipped["source_amendments_skipped"] == ["escape-summary-format"]
 
+    # Array limits of the build, from the configured tree
+    params_h = joinpath(tree, "include", "params.h")
+    mkpath(dirname(params_h))
+    @test Nbody6Dynamics._engine_limits(tree) === nothing
+    write(params_h, "*       Choose between small or large run.\n")
+    @test Nbody6Dynamics._engine_limits(tree) === nothing
+    write(
+        params_h,
+        "*       Parameter list NMAX=1,KMAX=2,LMAX=3 (comment)\n" *
+        "      PARAMETER  (NMAX=1572864,KMAX=524288,LMAX=600,MMAX=2048,\n" *
+        "     &          MLD=22,MLR=600,MLV=200,MCL=10,NCMAX=10,NTMAX=10000)\n",
+    )
+    @test Nbody6Dynamics._engine_limits(tree) == (nmax = 1572864, kmax = 524288, lmax = 600)
+    limits_tree = joinpath(dir, "limits_tree")
+    mkpath(joinpath(limits_tree, "build"))
+    cp(dirname(params_h), joinpath(limits_tree, "include"))
+    limits_record = Nbody6Dynamics.TOML.parsefile(
+        Nbody6Dynamics._write_build_info(
+            limits_tree,
+            cfg_cpu,
+            String[],
+            "",
+            String[],
+            joinpath(limits_tree, "build", "nbody6++.avx"),
+        ),
+    )
+    @test limits_record["engine_limits"] == Dict("NMAX" => 1572864, "KMAX" => 524288, "LMAX" => 600)
+    @test !haskey(rec, "engine_limits")
+
     # Launch script: GPU_LIST exported only when configured
     args = (joinpath(dir, "nbody6++"), "in.inp", "out1000", "err1000")
     s_gpu = read(Nbody6Dynamics._write_launch_script(dir, args..., cfg_gpu), String)
