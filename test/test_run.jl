@@ -1171,21 +1171,34 @@ end
     end
     term_dir = joinpath(base, "runs", "term")
     term_out = joinpath(term_dir, "output", "out1000")
+    # The signal is sent once the driver has opened the segment record and
+    # settled into waiting on the engine. A SIGTERM that interrupts Julia
+    # while it compiles (the first seconds of a fresh process) can block in
+    # the exit hooks; a driver in that state is ended by SIGKILL, which is
+    # the crash path and not what this test is about.
+    term_running() =
+        isfile(joinpath(term_dir, "RUN_INFO.toml")) &&
+        has_adjust(term_out) &&
+        last_segment(term_dir)["status"] == "running"
     t_wait = time()
-    while !has_adjust(term_out) && time() - t_wait < 180
+    while !term_running() && time() - t_wait < 600
         sleep(0.5)
     end
-    @test has_adjust(term_out)
+    @test term_running()
+    sleep(3.0)
     kill(child, Base.SIGTERM)
     timedwait(() -> !process_running(child), 60.0)
-    @test !process_running(child)
+    child_exited = !process_running(child)
+    child_exited || kill(child, Base.SIGKILL)
+    @test child_exited
     term_seg = last_segment(term_dir)
     @test term_seg["status"] == "stopped"
     @test term_seg["stop_requested"] == "signal"
     @test startswith(term_seg["stop_dump"], "comm.1_")
-    @test isempty(
-        read(ignorestatus(`pgrep -f $(joinpath(base, "runs", "term", "output"))`), String),
-    )
+    term_engines = read(ignorestatus(`pgrep -f $(joinpath(term_dir, "output"))`), String)
+    @test isempty(term_engines)
+    # A failed run of this test must not leave its stand-in engine behind.
+    isempty(term_engines) || run(ignorestatus(`pkill -KILL -f $(joinpath(term_dir, "output"))`))
 end
 
 # =====================================================================
