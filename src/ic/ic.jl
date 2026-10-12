@@ -24,7 +24,7 @@ include("output.jl")
     run_merger_pipeline(config_path::AbstractString; rng=nothing,
                         output_dir="", make_plots=true) -> MergerICResult
 
-One-call entry point for multi-cluster merger IC generation.
+One-call entry point for the initial conditions of a single cluster or of a multi-cluster merger.
 
 1. Loads the merger TOML configuration from `config_path`
 2. Generates particle ICs (Plummer/King + Kroupa IMF + Kepler orbit)

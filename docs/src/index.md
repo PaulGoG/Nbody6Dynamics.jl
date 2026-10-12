@@ -10,7 +10,7 @@ by this package.*
 
 ## Features
 
-- **Merger IC generation** — Multi-cluster initial conditions with validated King (1966) and Plummer samplers (King concentration `c(W0)` matches published values to <1%), Kroupa (2001) IMF in natural / rescaled / equal-mass modes, per-cluster virialisation to `Q = 0.5`, Jacobi truncation, Kepler or explicit orbit placement, and `dat.10` + `merger.inp` output for `KZ(22)=2`
+- **Merger IC generation** — Multi-cluster initial conditions with validated King (1966) and Plummer samplers (King concentration `c(W0)` matches published values to <1%), Kroupa (2001) IMF in natural / rescaled / equal-mass modes, per-cluster virialisation to `Q = 0.5`, Jacobi truncation, Kepler, explicit or single-cluster placement, and `dat.10` + `merger.inp` output for `KZ(22)=2`
 - **Pipeline orchestration** — Single `run_pipeline(cfg)` entry point driven by `config.toml`: install/build → merger ICs → simulation → post-processing → plots, each phase independently switchable
 - **Install & build** — Clone, configure, patch (HDF5 build flags), and compile Nbody6++GPU with auto-detected CUDA/MPI
 - **Simulate** — Unique run IDs, frozen config snapshots, isolated `runs/<run_id>/` directories, real-time ADJUST monitoring

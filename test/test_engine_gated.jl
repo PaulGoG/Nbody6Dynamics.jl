@@ -25,7 +25,7 @@
     @test m6.orbit.apocentre == 10.0 && m6.nbody6.qe == 0.01
     s6 = load_merger_config(joinpath(gdir, "single_600k.toml"))
     @test length(s6.clusters) == 1 && s6.clusters[1].N == 600_000
-    @test s6.orbit_mode == "explicit" && s6.virial_max_n == 1_000_000
+    @test s6.orbit_mode == "single" && s6.virial_max_n == 1_000_000
     @test !s6.output.truncate_jacobi && s6.output.tcrit == m6.output.tcrit
     for (case, merger_file) in (("merger", "merger_600k.toml"), ("single", "single_600k.toml"))
         g6 = load_config(joinpath(gdir, "gpu_$(case)_600k.toml"))
@@ -337,6 +337,9 @@ poll_interval = 1.0
             1.0,
             0.5;
             nbody6 = Nbody6ParameterSpec(;
+                etai = 0.02,
+                etar = 0.02,
+                etau = 0.1,
                 nnbopt = 30,
                 rs0 = 0.1,
                 rmin = 1.0e-3,

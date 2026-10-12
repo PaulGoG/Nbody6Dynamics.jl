@@ -54,7 +54,7 @@ end
     control_merger_dict(raw::AbstractDict) -> Dict{String,Any}
 
 Derive the control configuration from a parsed merger TOML (`raw` holds the
-top-level `"merger"` table): one cluster in explicit orbit mode at the
+top-level `"merger"` table): one cluster in single orbit mode at the
 origin and at rest, `N` the sum over the merger's clusters, `rbar` their
 `N`-weighted mean, every other cluster-1 key (model, `W0`, IMF, binaries)
 and the `output`, `nbody6`, `stellar`, `tidal` and `seed` entries kept
@@ -81,8 +81,8 @@ function control_merger_dict(raw::AbstractDict)
     control = deepcopy(tables[1])
     control["N"] = N_total
     control["rbar"] = sum(Ns .* rbars) / N_total
-    control["position"] = [0.0, 0.0, 0.0]
-    control["velocity"] = [0.0, 0.0, 0.0]
+    delete!(control, "position")
+    delete!(control, "velocity")
     factor = _control_time_factor(m, Ns, rbars, control["rbar"])
     out = get!(m, "output", Dict{String,Any}())
     for key in ("tcrit", "dtadj", "deltat")
@@ -102,7 +102,7 @@ function control_merger_dict(raw::AbstractDict)
     delete!(m, "orbit")
     m["cluster1"] = control
     m["n_clusters"] = 1
-    m["orbit_mode"] = "explicit"
+    m["orbit_mode"] = "single"
     result = Dict{String,Any}(k => v for (k, v) in raw if k != "merger")
     result["merger"] = m
     return result

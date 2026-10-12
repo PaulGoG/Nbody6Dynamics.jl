@@ -293,3 +293,40 @@ function combine_clusters_explicit(
 
     return pos_out, vel_out, mass_out, cluster_ranges, kept
 end
+
+"""
+    combine_single_cluster(cluster_data::NamedTuple)
+        -> (pos, vel, mass, cluster_ranges, kept)
+
+The single-cluster counterpart of [`combine_clusters_explicit`](@ref): the
+sampled cluster is shifted to its centre of mass (position and velocity,
+mass-weighted) with no truncation. Returns copies of the arrays, the index
+range `[1:N]` and `kept = [collect(1:N)]`.
+"""
+function combine_single_cluster(cluster_data::NamedTuple)
+    pos = copy(cluster_data.pos)
+    vel = copy(cluster_data.vel)
+    mass = copy(cluster_data.mass)
+    N = length(mass)
+
+    # Shift to the centre of mass
+    M_total = sum(mass)
+    cm = zeros(3)
+    cmv = zeros(3)
+    for i in 1:N
+        for k in 1:3
+            cm[k] += mass[i] * pos[k, i]
+            cmv[k] += mass[i] * vel[k, i]
+        end
+    end
+    cm ./= M_total
+    cmv ./= M_total
+    for i in 1:N
+        for k in 1:3
+            pos[k, i] -= cm[k]
+            vel[k, i] -= cmv[k]
+        end
+    end
+
+    return pos, vel, mass, UnitRange{Int}[1:N], [collect(1:N)]
+end

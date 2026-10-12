@@ -393,7 +393,7 @@ end
         filter(isfile, readdir(root; join = true)) ∩
         filter(p -> endswith(p, ".toml") || endswith(p, ".inp"), readdir(root; join = true)),
     )
-    for sub in ("engine", "mergers", "verification", "sweeps", "showcase", "gpu")
+    for sub in ("engine", "clusters", "mergers", "verification", "sweeps", "showcase", "gpu")
         @test isdir(joinpath(root, sub))
     end
     # Every TOML parses with the loader its top-level table selects, and the
@@ -413,5 +413,32 @@ end
         n += 1
     end
     @test n ≥ 30
-    @test count(f -> endswith(f, ".inp"), readdir(joinpath(root, "engine"))) == 10
+    # The engine inputs: the size ladder with engine-generated initial
+    # conditions, every one with a dump at every adjustment and, where a
+    # point-mass field is requested, its namelist.
+    inps = filter(f -> endswith(f, ".inp"), readdir(joinpath(root, "engine")))
+    @test length(inps) == 5
+    for f in inps
+        text = read(joinpath(root, "engine", f), String)
+        @test occursin(",NCOMM=1,", text)
+        kz = Dict{Int,Int}()
+        for m in eachmatch(r"KZ\((\d+):(\d+)\)=\s*([-\d ]+)", text)
+            vals = parse.(Int, split(strip(m.captures[3])))
+            for (k, v) in zip(parse(Int, m.captures[1]):parse(Int, m.captures[2]), vals)
+                kz[k] = v
+            end
+        end
+        @test kz[2] == 1 && kz[22] in (0, 1)   # engine-generated initial conditions
+        @test kz[8] != 2                       # pairs from dat.10 need KZ(22) ≥ 2
+        @test (kz[14] == 0) == !occursin("&INXTRNL0", text)
+        nbin0 = parse(Int, match(r"NBIN0=(\d+)", text).captures[1])
+        @test (nbin0 > 0) == (kz[8] == 1)
+    end
+    # The single-cluster science cases: single mode, campaign numerics.
+    for f in readdir(joinpath(root, "clusters"))
+        m = load_merger_config(joinpath(root, "clusters", f))
+        @test m.orbit_mode == "single" && length(m.clusters) == 1
+        @test m.nbody6.preset == "campaign" && m.nbody6.checkpoint
+        @test m.output.tcrit_myr > 0 && m.output.dtadj_myr > 0 && m.output.deltat_myr > 0
+    end
 end

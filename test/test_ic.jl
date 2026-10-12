@@ -391,6 +391,105 @@ truncate_jacobi = false
         @test cfg.clusters[3].velocity == [-0.5, 0.87, 0.0]
     end
 
+    # --- TOML config loading and generation (single mode) ---
+    @testset "Merger config TOML — single" begin
+        cluster_table = """
+[merger.cluster1]
+model = "king"
+N = 80
+W0 = 5.0
+rbar = 1.0
+imf = "kroupa"
+bodyn = 0.1
+body1 = 50.0
+"""
+        output_table = """
+[merger.output]
+format = "nbody"
+"""
+        header(n) = """
+[merger]
+n_clusters = $n
+orbit_mode = "single"
+seed = 5
+"""
+        single_text = header(1) * "\n" * cluster_table * "\n" * output_table
+        path = joinpath(TESTDIR, "single.toml")
+        write(path, single_text)
+        cfg = load_merger_config(path)
+        @test cfg.orbit_mode == "single"
+        @test length(cfg.clusters) == 1
+        @test isempty(cfg.clusters[1].position)
+        @test isempty(cfg.clusters[1].velocity)
+
+        # Refused: more than one cluster, explicit position/velocity
+        bad = joinpath(TESTDIR, "single_bad.toml")
+        write(
+            bad,
+            header(2) *
+            "\n" *
+            cluster_table *
+            "\n" *
+            replace(cluster_table, "cluster1" => "cluster2") *
+            "\n" *
+            output_table,
+        )
+        @test_throws ArgumentError load_merger_config(bad)
+        write(
+            bad,
+            header(1) * "\n" * cluster_table * "position = [0.0, 0.0, 0.0]\n" * "\n" * output_table,
+        )
+        @test_throws ArgumentError load_merger_config(bad)
+        # An orbit table is ignored with a warning
+        orbit_path = joinpath(TESTDIR, "single_orbit.toml")
+        write(orbit_path, single_text * "\n[merger.orbit]\napocentre = 5.0\n")
+        @test_logs (:warn, r"ignored") load_merger_config(orbit_path)
+
+        # Generation: one member block, centre of mass at rest at the origin
+        out = mktempdir()
+        result = generate_merger_ic(cfg; rng = rng, output_dir = out)
+        @test result.orbit_mode == "single"
+        @test length(result.cluster_ranges) == 1
+        @test result.cluster_ranges[1] == collect(1:result.N_total)
+        M = sum(result.mass_physical)
+        com_pos = (result.pos_physical * result.mass_physical) ./ M
+        com_vel = (result.vel_physical * result.mass_physical) ./ M
+        @test all(abs.(com_pos) .< 1e-8)
+        @test all(abs.(com_vel) .< 1e-8)
+        summary_path = joinpath(out, "merger_summary.txt")
+        summary = read(summary_path, String)
+        @test occursin("Single-cluster IC Summary", summary)
+        @test occursin("Orbit mode: single", summary)
+        @test occursin("not applicable (single cluster)", summary)
+        @test parse_merger_summary(summary_path) == [collect(1:result.N_total)]
+        @test load_merger_ic_result(out).orbit_mode == "single"
+        meta = Nbody6Dynamics.TOML.parsefile(joinpath(out, "merger_ic.toml"))
+        # the half-mass radius is set about the origin before the shift to the centre of mass
+        @test isapprox(meta["meta"]["rbar_over_rhm_min"], 1.0; rtol = 0.05)
+        @test occursin("KZ(1:10)=1 -1 2 0 0 0 3 0 0 0", read(joinpath(out, "merger.inp"), String))
+
+        # With primordial binaries: bound pairs at the head of dat.10
+        bin_path = joinpath(TESTDIR, "single_bin.toml")
+        write(
+            bin_path,
+            single_text * "\n[merger.cluster1.binaries]\nfraction = 0.3\nperiod = \"loguniform\"\n",
+        )
+        cfg_b = load_merger_config(bin_path)
+        out_b = mktempdir()
+        result_b = generate_merger_ic(cfg_b; rng = rng, output_dir = out_b)
+        @test result_b.n_pairs[1] > 0
+        dat = [parse.(Float64, split(l)) for l in eachline(joinpath(out_b, "dat.10"))]
+        for i in 1:result_b.n_pairs[1]
+            b1, b2 = dat[2i - 1], dat[2i]
+            r_rel = b1[2:4] .- b2[2:4]
+            v_rel = b1[5:7] .- b2[5:7]
+            @test 0.5 * sum(v_rel .^ 2) - (b1[1] + b2[1]) / sqrt(sum(r_rel .^ 2)) < 0
+        end
+        inp_b = read(joinpath(out_b, "merger.inp"), String)
+        @test occursin("KZ(1:10)=1 -1 2 0 0 0 3 2 0 0", inp_b)
+        @test occursin("NBIN0=$(result_b.n_pairs[1])", inp_b)
+    end
+
     # --- Fail-fast validation of merger TOML values ---
     @testset "Merger config validation" begin
         # Template with one overridable block per constrained section
@@ -593,7 +692,12 @@ truncate_jacobi = false
     # --- [merger.nbody6] integration parameters and regime guards ---
     @testset "Nbody6 integration parameters" begin
         p0 = Nbody6ParameterSpec()
-        @test p0.qe == 2.0e-4 && p0.nnbopt == 0 && p0.rs0 == 0.0 && p0.kz16 == 0
+        @test p0.qe == 2.0e-4 &&
+              p0.nnbopt == 0 &&
+              p0.rs0 == 0.0 &&
+              p0.kz16 == 0 &&
+              p0.etai == 0.0 &&
+              p0.preset == "engine"
         ρ̂_plummer = Nbody6Dynamics._central_density_contrast(PlummerProfile())
         @test ρ̂_plummer ≈ 2 * 1.305^3 rtol = 0.01
         c6 = Nbody6Dynamics._central_density_contrast(KingProfile(W0 = 6.0))
@@ -612,6 +716,7 @@ truncate_jacobi = false
         @test r.rmin ≈ 4 * 0.25 / (100 * cbrt(ρ̂_plummer))
         @test r.dtmin ≈ 0.04 * sqrt(r.rmin^3 * 220)
         @test r.qe == 2.0e-4 && r.kz16 == 0
+        @test r.etai == 0.02 && r.etar == 0.02 && r.etau == 0.1
         user = Nbody6ParameterSpec(;
             qe = 1e-3,
             nnbopt = 50,
@@ -623,6 +728,36 @@ truncate_jacobi = false
         ru = resolve_nbody6_parameters(user, clusters, ranges, 220, 4.0)
         @test ru.nnbopt == 50 && ru.rs0 == 0.1 && ru.rmin == 1e-4 && ru.dtmin == 1e-6
         @test ru.kz16 == 2 && ru.qe == 1e-3
+        pc = Nbody6ParameterSpec(; preset = "campaign")
+        rc = resolve_nbody6_parameters(pc, clusters, ranges, 220, 4.0)
+        @test rc.etai == 0.01 && rc.etar == 0.02 && rc.etau == 0.1 && rc.nnbopt == 100
+        @test rc.rmin ≈ 12 * 0.25 / 100
+        @test rc.dtmin ≈ 0.016 * sqrt(0.5) * sqrt(rc.rmin^3 * 220)
+        @test rc.rs0 ≈ min(2 * 0.25 * cbrt(2 * 100 / 100), 0.25)
+        rco = resolve_nbody6_parameters(
+            Nbody6ParameterSpec(; preset = "campaign", etai = 0.005, nnbopt = 50),
+            clusters,
+            ranges,
+            220,
+            4.0,
+        )
+        @test rco.etai == 0.005 && rco.nnbopt == 50 && rco.rmin ≈ 12 * 0.25 / 100
+        @test rco.dtmin ≈ 0.016 * sqrt(0.25) * sqrt(rco.rmin^3 * 220)
+        @test_throws ArgumentError Nbody6Dynamics._validate_nbody6(
+            Nbody6ParameterSpec(; preset = "x"),
+        )
+        @test_throws ArgumentError Nbody6Dynamics._validate_nbody6(
+            Nbody6ParameterSpec(; preset = "campaign", kz16 = 1),
+        )
+        @test_throws ArgumentError Nbody6Dynamics._validate_nbody6(
+            Nbody6ParameterSpec(; preset = "campaign", kz = Dict(17 => 1)),
+        )
+        @test Nbody6Dynamics._validate_nbody6(
+            Nbody6ParameterSpec(; preset = "campaign", kz = Dict(16 => 0)),
+        ) === nothing
+        @test_throws ArgumentError Nbody6Dynamics._validate_nbody6(
+            Nbody6ParameterSpec(; etai = -1.0),
+        )
         @test_throws ArgumentError Nbody6Dynamics._assert_resolved(p0)
 
         # Guards: oversized RS0 refused, cold collapse and unresolved members warned
@@ -718,6 +853,22 @@ dtplot = 2.0
         @test cfg_nb.stellar.zmet == 0.02 &&
               cfg_nb.stellar.epoch0 == -1.0 &&
               cfg_nb.stellar.dtplot == 2.0
+        # Preset: "campaign" loads without KZ(16), refuses it, and the name is enumerated
+        nb_txt = read(nb_path, String)
+        nb_preset_path = joinpath(TESTDIR, "merger_nbody6_preset.toml")
+        write(nb_preset_path, replace(nb_txt, "kz16 = 1\n" => "preset = \"campaign\"\n"))
+        cfg_pc = load_merger_config(nb_preset_path)
+        @test cfg_pc.nbody6.preset == "campaign" && cfg_pc.nbody6.nnbopt == 30
+        write(
+            nb_preset_path,
+            replace(nb_txt, "[merger.nbody6]\n" => "[merger.nbody6]\npreset = \"campaign\"\n"),
+        )
+        @test_throws ArgumentError load_merger_config(nb_preset_path)
+        write(
+            nb_preset_path,
+            replace(nb_txt, "[merger.nbody6]\n" => "[merger.nbody6]\npreset = \"foo\"\n"),
+        )
+        @test_throws ArgumentError load_merger_config(nb_preset_path)
 
         # Writer: run control, stellar settings, KZ overrides (an override of a named
         # index warns), and mass bounds reach the file
@@ -784,8 +935,16 @@ dtplot = 2.0
 
         # Checkpoint mode: KZ(2) and the dump counter
         ck_dir = mktempdir()
-        ck_spec(; kw...) =
-            Nbody6ParameterSpec(; nnbopt = 30, rs0 = 0.2, rmin = 1.0e-3, dtmin = 1.0e-5, kw...)
+        ck_spec(; kw...) = Nbody6ParameterSpec(;
+            etai = 0.02,
+            etar = 0.02,
+            etau = 0.1,
+            nnbopt = 30,
+            rs0 = 0.2,
+            rmin = 1.0e-3,
+            dtmin = 1.0e-5,
+            kw...,
+        )
         plain_inp = joinpath(ck_dir, "plain.inp")
         generate_merger_inp(plain_inp, 220, 4.0, 0.6; nbody6 = ck_spec(), tcrit = 10.0, dtadj = 0.5)
         plain_txt = read(plain_inp, String)
@@ -945,6 +1104,35 @@ dtplot = 2.0
         # Total mass should sum to 1 in N-body units
         lines = readlines(joinpath(result.output_dir, "dat.10"))
         @test sum(parse(Float64, split(l)[1]) for l in lines) ≈ 1.0 atol = 1e-10
+    end
+
+    # --- Campaign preset through the full pipeline ---
+    @testset "Campaign preset in the generated input" begin
+        imf_c = RescaledKroupaIMF(
+            bodyn = 0.1,
+            body1 = 50.0,
+            target_mass = 100 * kroupa_mean_mass(0.1, 50.0),
+        )
+        cfg = MergerConfig(
+            [
+                ClusterSpec(profile = PlummerProfile(), N = 100, rbar = 1.0, imf = imf_c),
+                ClusterSpec(profile = KingProfile(W0 = 5.0), N = 100, rbar = 1.0, imf = imf_c),
+            ],
+            "kepler",
+            OrbitSpec(apocentre = 10.0, eccentricity = 0.5),
+            MergerOutputSpec(format = "nbody", truncate_jacobi = true, output_dir = mktempdir());
+            nbody6 = Nbody6ParameterSpec(; preset = "campaign"),
+        )
+        result = generate_merger_ic(cfg; rng = rng)
+        inp = read(joinpath(result.output_dir, "merger.inp"), String)
+        @test occursin("ETAI=0.01,ETAR=0.02,", inp)
+        @test occursin("NNBOPT=100,", inp)
+        @test occursin("ETAU=0.1,", inp)
+        summary_text = read(joinpath(result.output_dir, "merger_summary.txt"), String)
+        @test occursin("preset=campaign", summary_text)
+        ic_meta = Nbody6Dynamics.TOML.parsefile(joinpath(result.output_dir, "merger_ic.toml"))
+        @test ic_meta["nbody6"]["preset"] == "campaign"
+        @test ic_meta["nbody6"]["etai"] == 0.01
     end
 
     # --- Equal-mass IMF ---

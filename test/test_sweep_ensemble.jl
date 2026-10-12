@@ -383,12 +383,11 @@ end
     raw["merger"]["nbody6"] = Dict{String,Any}("qe" => 0.01)
     c = control_merger_dict(raw)
     m = c["merger"]
-    @test m["n_clusters"] == 1 && m["orbit_mode"] == "explicit"
+    @test m["n_clusters"] == 1 && m["orbit_mode"] == "single"
     @test !haskey(m, "orbit") && !haskey(m, "cluster2")
     @test m["cluster1"]["N"] == 1500                                  # 1000 + 500
     @test m["cluster1"]["rbar"] ≈ (1000 * 2.0 + 500 * 4.0) / 1500     # N-weighted r_h
-    @test m["cluster1"]["position"] == [0.0, 0.0, 0.0] &&
-          m["cluster1"]["velocity"] == [0.0, 0.0, 0.0]
+    @test !haskey(m["cluster1"], "position") && !haskey(m["cluster1"], "velocity")
     @test m["cluster1"]["model"] == "king" && m["cluster1"]["W0"] == 6.0
     @test m["cluster1"]["binaries"]["fraction"] == 0.1                # cluster 1's population kept
     @test m["nbody6"]["qe"] == 0.01 && haskey(m, "output")             # other sections verbatim
@@ -424,7 +423,7 @@ end
     dst = joinpath(work, "control.toml")
     @test write_control_merger_config(demo, dst) == dst
     ccfg = load_merger_config(dst)
-    @test length(ccfg.clusters) == 1 && ccfg.clusters[1].N == 2000 && ccfg.orbit_mode == "explicit"
+    @test length(ccfg.clusters) == 1 && ccfg.clusters[1].N == 2000 && ccfg.orbit_mode == "single"
     @test_throws ErrorException write_control_merger_config(joinpath(work, "absent.toml"), dst)
 
     # The single-cluster generator path: one member block, no truncation, at rest
@@ -474,7 +473,7 @@ end
         load_merger_config(joinpath(work, "late_nb.toml"));
         output_dir = joinpath(work, "ic_late"),
     )
-    kepler_one = replace(small, "orbit_mode = \"explicit\"" => "orbit_mode = \"kepler\"")
+    kepler_one = replace(small, "orbit_mode = \"single\"" => "orbit_mode = \"kepler\"")
     write(joinpath(work, "kepler_one.toml"), kepler_one)
     @test_throws ArgumentError load_merger_config(joinpath(work, "kepler_one.toml"))
 

@@ -6,7 +6,8 @@ name (`example_input("N1k_quick.inp")`) is looked up across the folders.
 
 ```
 input_files/
-├── engine/          # Nbody6++ NAMELIST inputs of single clusters (simulation.input_file)
+├── engine/          # Nbody6++ NAMELIST inputs of single clusters, engine-generated initial conditions (simulation.input_file)
+├── clusters/        # single-cluster generator TOMLs: the science cases (merger.config_file, run_merger_pipeline)
 ├── mergers/         # merger initial-condition TOMLs (merger.config_file, run_merger_pipeline)
 ├── verification/    # the two merger targets of scripts/run_verif_suite.jl
 ├── sweeps/          # sweep TOMLs (scripts/run_sweep.jl)
@@ -16,7 +17,8 @@ input_files/
 
 | Folder | Files | Documented in |
 |---|---|---|
-| `engine/` | `N1k_quick`, `N5k_medium`, `N10k_long`, `N25k_production`, `N100k_production` (single clusters of growing size); `gc_bh_subsystem`, `imbh_runaway`, `pop3_cluster`, `tidal_tails`, `young_massive_binaries` (science cases) | Input Files, "Engine inputs" and "Engine inputs: the science cases" |
+| `engine/` | `N1k_quick`, `N5k_medium`, `N10k_long`, `N25k_production`, `N100k_production` (single clusters of growing size) | Input Files, "Engine inputs" |
+| `clusters/` | `gc_bh_subsystem`, `imbh_runaway`, `young_massive_binaries`, `open_cluster_tails` (the science cases, `orbit_mode = "single"`) | Input Files, "Single-cluster configurations" and "Single-cluster configurations: the science cases" |
 | `mergers/` | `merger_demo_small`, `merger_equal_mass`, `merger_minor_plummer`, `merger_triple_cluster`, `merger_3cluster_small`, `merger_5cluster_small`, `merger_27cluster_cubic` | Input Files, "Merger configurations"; Cluster Mergers |
 | `verification/` | `verif_triorbit`, `verif_3d5cluster` | Input Files, "Verification configurations" |
 | `sweeps/` | `sweep_demo` (base: the root `config.toml` and `mergers/merger_demo_small.toml`) | Manual, "Parameter sweeps" |

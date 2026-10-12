@@ -133,9 +133,9 @@ Specification for a single star cluster.
 - `imf::IMFSpec`: mass-function sampler ([`KroupaIMF`](@ref),
   [`RescaledKroupaIMF`](@ref), or [`EqualMassIMF`](@ref)).
 - `position::Vector{Float64}`: centre-of-mass position [pc] (length 3). For
-  `orbit_mode = "kepler"` this is auto-computed and may be left empty.
+  `orbit_mode = "kepler"` and `"single"` this is left empty.
 - `velocity::Vector{Float64}`: centre-of-mass velocity [km s⁻¹]. For
-  `orbit_mode = "kepler"` this is auto-computed and may be left empty.
+  `orbit_mode = "kepler"` and `"single"` this is left empty.
 - `binaries::BinarySpec`: primordial binary population (none by default).
 
 The keyword constructor takes the structured (tag-typed) fields only; the
@@ -273,26 +273,29 @@ Base.@kwdef struct MergerOutputSpec
     deltat_myr::Float64 = 0.0
 end
 
+"""Integration-parameter presets of `[merger.nbody6]` (the `preset` key)."""
+const _NBODY6_PRESETS = ("engine", "campaign")
+
 """
-    Nbody6ParameterSpec(; qe = 2.0e-4, etai = 0.02, etar = 0.02, etau = 0.1,
+    Nbody6ParameterSpec(; qe = 2.0e-4, etai = 0.0, etar = 0.0, etau = 0.0,
                           nnbopt = 0, rs0 = 0.0, rmin = 0.0, dtmin = 0.0,
                           eclose = 1.0, gmin = 1.0e-6, gmax = 0.01, smax = 1.0,
                           kz16 = 0, tcomp = 1.0e8, tcrtp0 = 3600.0,
                           isernb = 40, iserreg = 40, iserks = 0,
                           nfix = 1, ncrit = 10, nrun = 1, ncomm = 1, checkpoint = false,
-                          kz = Dict{Int,Int}())
+                          preset = "engine", kz = Dict{Int,Int}())
 
 Every numerical field of the `&INNBODY6` and `&ININPUT` namelists that the
 merger input writer emits (`[merger.nbody6]`), in the N-body units of the
-combined system. A zero for `nnbopt`, `rs0`, `rmin`, or `dtmin` means
-"derive from the member clusters at generation time"
+combined system. A zero for `etai`, `etar`, `etau`, `nnbopt`, `rs0`, `rmin`,
+or `dtmin` means "the preset's value or rule, resolved at generation time"
 ([`resolve_nbody6_parameters`](@ref)). Meanings follow the Nbody6++GPU
 input manual.
 
 # Fields
 - `qe`: energy-error tolerance per adjustment interval; > 0
 - `etai`, `etar`, `etau`: irregular, regular, and regularised time-step
-  factors; > 0
+  factors; ≥ 0; 0 = preset value
 - `nnbopt`: target neighbour number; `0` = `clamp(round(√N_total), 20, 300)`
 - `rs0`: initial neighbour-sphere radius; `0` = derived; must not exceed
   the smallest member half-mass radius
@@ -319,15 +322,40 @@ input manual.
   (`KZ(2) = 1`), from which an interrupted run resumes; requires
   `ncomm = 1`. `false` (`KZ(2) = −1`) leaves the dump at the end of the run
   or at a stop request as the only one
+- `preset`: `"engine"` or `"campaign"`; the source of every zero entry.
+  `"engine"`: the rules the engine's own example inputs follow (η = 0.02,
+  neighbour number √N, `RMIN` from the engine's `adjust.F` rule for the
+  smallest member, `DTMIN` from the Aarseth close-encounter step).
+  `"campaign"`: the baseline of the calibration programme — `ETAI` 0.01,
+  `ETAR` 0.02, `ETAU` 0.1, `NNBOPT` 100, `RMIN` three times the 90°
+  deflection scale 4 r_h/N of the smallest member, `DTMIN` 0.4 of the
+  Aarseth close-encounter step at that `RMIN`; the engine's automatic
+  re-derivation of these quantities (`KZ(16)`, `KZ(17)`, `KZ(32)`) is
+  refused. Explicit nonzero keys override the preset in both cases.
 - `kz`: explicit `KZ(i) = v` overrides applied last (`[merger.nbody6.kz]`,
   keys 1–50); an override of an index that also has a named key (14, 16,
   19) warns
+
+# Presets
+| Key | `"engine"` | `"campaign"` |
+|---|---|---|
+| `etai` | 0.02 | 0.01 |
+| `etar` | 0.02 | 0.02 |
+| `etau` | 0.1 | 0.1 |
+| `nnbopt` | `clamp(round(√N_total), 20, 300)` | 100 |
+| `rs0` | `min(2 r_h (2 NNBOPT / N_min)^{1/3}, r_h)` | the same |
+| `rmin` | `4 r_h / (N_min ρ̂^{1/3})` | `12 r_h / N_min` |
+| `dtmin` | `0.04 √(ETAI/0.02) √(RMIN³ N_total)` | `0.016 √(ETAI/0.02) √(RMIN³ N_total)` |
+| `kz16`, `KZ(17)`, `KZ(32)` | free | must be 0 |
+
+`r_h` and `N_min` of the smallest member in N-body units of the combined
+system, `ρ̂` its central density contrast, `N_total` the number of bodies.
 """
 Base.@kwdef struct Nbody6ParameterSpec
     qe::Float64 = 2.0e-4
-    etai::Float64 = 0.02
-    etar::Float64 = 0.02
-    etau::Float64 = 0.1
+    etai::Float64 = 0.0
+    etar::Float64 = 0.0
+    etau::Float64 = 0.0
     nnbopt::Int = 0
     rs0::Float64 = 0.0
     rmin::Float64 = 0.0
@@ -347,6 +375,7 @@ Base.@kwdef struct Nbody6ParameterSpec
     nrun::Int = 1
     ncomm::Int = 1
     checkpoint::Bool = false
+    preset::String = "engine"
     kz::Dict{Int,Int} = Dict{Int,Int}()
 end
 
@@ -421,10 +450,13 @@ Top-level configuration for multi-cluster merger initial conditions.
 - `"explicit"` — any number of clusters (≥ 2). Each cluster must specify
   `position = [x, y, z]` and `velocity = [vx, vy, vz]` in its TOML block.
   The `orbit` section is ignored (with a warning if it appears in TOML).
+- `"single"` — one cluster at the origin, at rest (`n_clusters = 1`), without
+  truncation. `position` and `velocity` are refused; the `orbit` section is
+  ignored (with a warning if it appears in TOML).
 
 # Fields
 - `clusters::Vector{ClusterSpec}`
-- `orbit_mode::String`: `"kepler"` or `"explicit"`
+- `orbit_mode::String`: `"kepler"`, `"explicit"` or `"single"`
 - `orbit::OrbitSpec`
 - `output::MergerOutputSpec`
 - `nbody6::Nbody6ParameterSpec`: integration and run-control parameters
@@ -576,6 +608,11 @@ eccentricity = 0.7
 
 Each cluster provides `position = [x, y, z]` and `velocity = [vx, vy, vz]`.
 
+# Single mode (1 cluster)
+
+`n_clusters = 1`, `orbit_mode = "single"`: the cluster is placed at the
+origin, at rest; `position` and `velocity` must be absent.
+
 # Structured form (equivalent to flat; used by the merger_ic.toml metadata round-trip)
 
 ```toml
@@ -594,9 +631,9 @@ function load_merger_config(path::AbstractString)::MergerConfig
 
     n_clusters = _typed(get(m, "n_clusters", 2), Int, "merger.n_clusters")
     orbit_mode = _typed(get(m, "orbit_mode", "kepler"), String, "merger.orbit_mode")
-    orbit_mode in ("kepler", "explicit") || _config_error(
+    orbit_mode in ("kepler", "explicit", "single") || _config_error(
         "merger.orbit_mode",
-        "must be \"kepler\" or \"explicit\", got \"$orbit_mode\"",
+        "must be \"kepler\", \"explicit\" or \"single\", got \"$orbit_mode\"",
     )
     virial_max_n = _typed(get(m, "virial_max_n", _VIRIAL_NMAX), Int, "merger.virial_max_n")
     virial_max_n ≥ 1 || _config_error("merger.virial_max_n", "must be ≥ 1; got $virial_max_n")
@@ -638,10 +675,16 @@ function load_merger_config(path::AbstractString)::MergerConfig
             "must be exactly 2 for orbit_mode = \"kepler\", got $n_clusters",
         )
     end
+    if orbit_mode == "single"
+        n_clusters == 1 || _config_error(
+            "merger.n_clusters",
+            "must be exactly 1 for orbit_mode = \"single\", got $n_clusters",
+        )
+    end
 
     orbit_raw = get(m, "orbit", Dict{String,Any}())
-    if orbit_mode == "explicit" && !isempty(orbit_raw)
-        @warn "[merger.orbit] is defined but orbit_mode=\"explicit\" — the orbit section will be ignored."
+    if orbit_mode in ("explicit", "single") && !isempty(orbit_raw)
+        @warn "[merger.orbit] is defined but orbit_mode=\"$orbit_mode\" — the orbit section will be ignored."
     end
     orbit = _parse_section(OrbitSpec, orbit_raw, "merger.orbit")
 
@@ -818,18 +861,25 @@ function _validate_stellar(s::StellarSpec, output::MergerOutputSpec)
     return nothing
 end
 
-"""Fail-fast bounds of `[merger.nbody6]`: positive tolerances and step factors, non-negative derivable entries, `kz16` in 0–3."""
+"""Fail-fast bounds of `[merger.nbody6]`: positive tolerances, non-negative step factors and derivable entries, a known `preset` and its restrictions, `kz16` in 0–3."""
 function _validate_nbody6(p::Nbody6ParameterSpec)
     p.qe > 0 || _config_error("merger.nbody6.qe", "must be > 0; got $(p.qe)")
-    p.etai > 0 || _config_error("merger.nbody6.etai", "must be > 0; got $(p.etai)")
-    p.etar > 0 || _config_error("merger.nbody6.etar", "must be > 0; got $(p.etar)")
+    p.etai ≥ 0 ||
+        _config_error("merger.nbody6.etai", "must be ≥ 0 (0 = preset value); got $(p.etai)")
+    p.etar ≥ 0 ||
+        _config_error("merger.nbody6.etar", "must be ≥ 0 (0 = preset value); got $(p.etar)")
+    p.etau ≥ 0 ||
+        _config_error("merger.nbody6.etau", "must be ≥ 0 (0 = preset value); got $(p.etau)")
+    p.preset in _NBODY6_PRESETS || _config_error(
+        "merger.nbody6.preset",
+        "must be one of \"engine\", \"campaign\"; got \"$(p.preset)\"",
+    )
     p.nnbopt ≥ 0 ||
         _config_error("merger.nbody6.nnbopt", "must be ≥ 0 (0 = derived); got $(p.nnbopt)")
     p.rs0 ≥ 0 || _config_error("merger.nbody6.rs0", "must be ≥ 0 (0 = derived); got $(p.rs0)")
     p.rmin ≥ 0 || _config_error("merger.nbody6.rmin", "must be ≥ 0 (0 = derived); got $(p.rmin)")
     p.dtmin ≥ 0 || _config_error("merger.nbody6.dtmin", "must be ≥ 0 (0 = derived); got $(p.dtmin)")
     p.kz16 in 0:3 || _config_error("merger.nbody6.kz16", "must be one of 0, 1, 2, 3; got $(p.kz16)")
-    p.etau > 0 || _config_error("merger.nbody6.etau", "must be > 0; got $(p.etau)")
     p.eclose > 0 || _config_error("merger.nbody6.eclose", "must be > 0; got $(p.eclose)")
     (0 < p.gmin < p.gmax) || _config_error(
         "merger.nbody6",
@@ -848,6 +898,20 @@ function _validate_nbody6(p::Nbody6ParameterSpec)
     end
     for (i, v) in p.kz
         1 ≤ i ≤ 50 || _config_error("merger.nbody6.kz", "index must be within 1–50; got $i")
+    end
+    if p.preset == "campaign"
+        p.kz16 == 0 || _config_error(
+            "merger.nbody6.kz16",
+            "must be 0 with preset = \"campaign\" (RMIN, DTMIN and ECLOSE stay as written); " *
+            "got $(p.kz16)",
+        )
+        for i in (16, 17, 32)
+            (haskey(p.kz, i) && p.kz[i] != 0) && _config_error(
+                "merger.nbody6.kz",
+                "must not set KZ($i) with preset = \"campaign\" (no automatic adjustment " *
+                "of the integration parameters); got KZ($i) = $(p.kz[i])",
+            )
+        end
     end
     if p.checkpoint
         p.ncomm == 1 || _config_error(
@@ -888,6 +952,12 @@ function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractStr
 
     position = _typed(get(c, "position", Float64[]), Vector{Float64}, "$key.position")
     velocity = _typed(get(c, "velocity", Float64[]), Vector{Float64}, "$key.velocity")
+    if orbit_mode == "single" && (haskey(c, "position") || haskey(c, "velocity"))
+        _config_error(
+            "$key.position",
+            "and $key.velocity are not used in single mode (the cluster is placed at the origin, at rest); remove them",
+        )
+    end
 
     if orbit_mode == "explicit"
         length(position) == 3 ||

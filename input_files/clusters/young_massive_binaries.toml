@@ -1,0 +1,37 @@
+# Young massive cluster with a binary fraction of 0.5: 50 000 stars, solar metallicity, isolated, 50 Myr
+
+[merger]
+seed = 28471
+n_clusters = 1
+orbit_mode = "single"
+
+[merger.cluster1]
+model = "king"
+N = 50000            # number of stars (pairs included)
+W0 = 6.0
+rbar = 1.0          # half-mass radius [pc]
+imf = "kroupa"
+body1 = 150.0       # upper IMF bound [M☉]
+bodyn = 0.08        # lower IMF bound [M☉]
+
+[merger.cluster1.binaries]
+fraction = 0.5      # binary fraction by systems; 0 ≤ fraction < 1
+pairing = "random"  # one of: "random" | "uniform_q"
+period = "kroupa1995"   # one of: "kroupa1995" | "loguniform"
+eccentricity = "thermal"   # one of: "thermal" | "circular"
+
+[merger.output]
+format = "nbody"
+tcrit_myr = 50.0    # end time [Myr]
+dtadj_myr = 0.1     # adjustment interval [Myr]
+deltat_myr = 0.25   # snapshot interval [Myr]
+
+[merger.stellar]
+level = "C"         # one of: "A" | "B" | "C" | "0"
+zmet = 0.02         # metal abundance; 0.0001 ≤ zmet ≤ 0.03
+dtplot_myr = 0.25   # stellar-evolution diagnostic interval [Myr]; ≥ deltat
+
+[merger.nbody6]
+preset = "campaign"  # one of: "engine" | "campaign"
+qe = 0.01           # energy-error tolerance per adjustment interval; > 0
+checkpoint = true   # restart dump at every adjustment; bound the disk with simulation.checkpoint_keep

@@ -96,6 +96,10 @@ decomposed into centre-of-mass frame speeds `v₁ = (M₂/M) v_apo`, `v₂ = (M�
 
 Each cluster specifies its own COM `position` [pc] and `velocity` [km s⁻¹]. `combine_clusters_explicit` converts the velocities to the generator's code units, applies the offsets, and shifts the combined system to its centre-of-mass frame.
 
+### Single mode (one cluster)
+
+`orbit_mode = "single"` with `n_clusters = 1` is the single-cluster use of the generator: the sampled cluster is shifted to its centre of mass at rest (`combine_single_cluster`), without truncation, and written with the same files and the same integration-parameter derivation as a merger. The shipped science cases of `input_files/clusters/` and the isolated controls of a sweep (`control_merger_dict`) use it; the length unit `RBAR` is then the cluster's own half-mass radius.
+
 ## Jacobi truncation
 
 With `output.truncate_jacobi = true` (default), each cluster is truncated **before combining** at its instantaneous Jacobi radius with respect to its nearest neighbour at separation `d`:
@@ -113,7 +117,7 @@ Sampling and orbit placement happen in internal code units: `G = 1` with masses 
 `generate_merger_ic` writes four files (all protected by the never-overwrite `name#k.ext` backup policy):
 
 - **`dat.10`** — one line per particle, `MASS X Y Z VX VY VZ` at full precision. The arrays are converted with `to_nbody_units!` to Hénon units (`G = 1`, `M_total = 1`).
-- **`merger.inp`** — matching NAMELIST input file: `N` = post-truncation total, `KZ(22) = 2` (N-body-unit `dat.10` input, the only supported mode), `KZ(14) = 0` (isolated), `NRAND` = effective seed, `TCRIT`/`DTADJ`/`DELTAT` from `[merger.output]`, every `&INNBODY6`/`&ININPUT` numerical field from `[merger.nbody6]` (integration parameters derived from the smallest member cluster unless set, run-time limits, block thresholds, output multipliers, explicit `KZ` overrides) and the stellar-evolution settings from `[merger.stellar]` (see [Input File Reference](@ref)), and:
+- **`merger.inp`** — matching NAMELIST input file: `N` = post-truncation total, `KZ(22) = 2` (N-body-unit `dat.10` input, the only supported mode), `KZ(14)` and the `&INXTRNL0` namelist from `[merger.tidal]`, `NRAND` = effective seed, `TCRIT`/`DTADJ`/`DELTAT` from `[merger.output]`, every `&INNBODY6`/`&ININPUT` numerical field from `[merger.nbody6]` (integration parameters derived from the smallest member cluster unless set, run-time limits, block thresholds, output multipliers, explicit `KZ` overrides) and the stellar-evolution settings from `[merger.stellar]` (see [Input File Reference](@ref)), and:
   - **`RBAR` = the combined system's mass-weighted half-mass radius [pc]** — this is the NB length unit used for the `dat.10` conversion, so the physical scaling in Nbody6++ is self-consistent
   - **`ZMBAR` = mean particle mass `M_total/N_total` [M☉]**
 - **`merger_summary.txt`** — human-readable summary: per-cluster profile/IMF/N (before and after truncation)/mass/`r_hm`/`W0`/COM state, orbit parameters, combined totals, output format. Parsed later by `parse_merger_summary` to recover the per-cluster particle index ranges.

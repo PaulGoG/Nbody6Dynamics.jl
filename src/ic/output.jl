@@ -199,25 +199,36 @@ end
     resolve_nbody6_parameters(spec, clusters, cluster_ranges, N_total, rbar_pc)
         -> Nbody6ParameterSpec
 
-Fill the zero entries of `spec` from the member clusters, in N-body units of
-the combined system (length unit `rbar_pc`). With `r_h` the smallest member
-half-mass radius in those units, `N_min` the smallest post-truncation
-membership, and `ρ̂` the central density contrast of that cluster's profile
-([`_central_density_contrast`](@ref)):
+Fill the zero entries of `spec` from its `preset` and the member clusters, in
+N-body units of the combined system (length unit `rbar_pc`). With `r_h` the
+smallest member half-mass radius in those units, `N_min` the smallest
+post-truncation membership, and `ρ̂` the central density contrast of that
+cluster's profile ([`_central_density_contrast`](@ref)):
 
-- `NNBOPT = clamp(round(√N_total), 20, 300)`
-- `RS0 = 2 r_h (2 NNBOPT / N_min)^{1/3}`, twice the radius enclosing about
-  `NNBOPT` stars at the mean density of the half-mass sphere, capped at
-  `r_h`. The factor 2 matches the engine's own example inputs
-  (`RS0 ≈ 0.5 r_h` for `NNBOPT ≈ √N`). The engine regrows an empty
-  neighbour sphere itself (`fpoly0.F`), so the radius is a matter of
-  start-up cost, not of correctness; the start-up hang once attributed to
-  it was the interval digit counter ([`engine_interval`](@ref)).
-- `RMIN = 4 r_h / (N_min ρ̂^{1/3})`, the functional form of the engine's own
+| Key | `"engine"` | `"campaign"` |
+|---|---|---|
+| `ETAI` | 0.02 | 0.01 |
+| `ETAR` | 0.02 | 0.02 |
+| `ETAU` | 0.1 | 0.1 |
+| `NNBOPT` | `clamp(round(√N_total), 20, 300)` | 100 |
+| `RS0` | `min(2 r_h (2 NNBOPT / N_min)^{1/3}, r_h)` | the same |
+| `RMIN` | `4 r_h / (N_min ρ̂^{1/3})` | `12 r_h / N_min` |
+| `DTMIN` | `0.04 √(ETAI/0.02) √(RMIN³ N_total)` | `0.016 √(ETAI/0.02) √(RMIN³ N_total)` |
+
+- `RS0` is twice the radius enclosing about `NNBOPT` stars at the mean
+  density of the half-mass sphere, capped at `r_h`. The factor 2 matches the
+  engine's own example inputs (`RS0 ≈ 0.5 r_h` for `NNBOPT ≈ √N`). The
+  engine regrows an empty neighbour sphere itself (`fpoly0.F`), so the
+  radius is a matter of start-up cost, not of correctness; the start-up hang
+  once attributed to it was the interval digit counter
+  ([`engine_interval`](@ref)).
+- `RMIN` of `"engine"` is the functional form of the engine's own
   re-derivation (`adjust.F`) evaluated for the member cluster instead of the
-  whole configuration
-- `DTMIN = 0.04 √(ETAI/0.02) √(RMIN³ N_total)`, the engine's rule with the
-  mean body mass `1/N_total`
+  whole configuration; that of `"campaign"` is three times the 90°
+  deflection scale `4 r_h / N_min`.
+- `DTMIN` is the Aarseth close-encounter step with the mean body mass
+  `1/N_total` (`"engine"`), or 0.4 of it (`"campaign"`), at the resolved
+  `RMIN`; it uses the resolved `ETAI`.
 
 User-supplied (nonzero) values are kept. The result has no zero entries.
 """
@@ -237,12 +248,33 @@ function resolve_nbody6_parameters(
             "resolve_nbody6_parameters: a cluster has fewer than 2 members after truncation",
         ),
     )
-    nnbopt = spec.nnbopt > 0 ? spec.nnbopt : clamp(round(Int, sqrt(N_total)), 20, 300)
+    spec.preset in _NBODY6_PRESETS ||
+        throw(ArgumentError("resolve_nbody6_parameters: unknown preset \"$(spec.preset)\""))
+    engine = spec.preset == "engine"
+    etai = spec.etai > 0 ? spec.etai : (engine ? 0.02 : 0.01)
+    etar = spec.etar > 0 ? spec.etar : 0.02
+    etau = spec.etau > 0 ? spec.etau : 0.1
+    nnbopt = if spec.nnbopt > 0
+        spec.nnbopt
+    else
+        engine ? clamp(round(Int, sqrt(N_total)), 20, 300) : 100
+    end
     rs0 = spec.rs0 > 0 ? spec.rs0 : min(2 * r_h * cbrt(2 * nnbopt / N_min), r_h)
     ρ̂ = _central_density_contrast(clusters[i_min].profile)
-    rmin = spec.rmin > 0 ? spec.rmin : 4 * r_h / (N_min * cbrt(ρ̂))
-    dtmin = spec.dtmin > 0 ? spec.dtmin : 0.04 * sqrt(spec.etai / 0.02) * sqrt(rmin^3 * N_total)
+    rmin = if spec.rmin > 0
+        spec.rmin
+    else
+        engine ? 4 * r_h / (N_min * cbrt(ρ̂)) : 12 * r_h / N_min
+    end
+    dtmin = if spec.dtmin > 0
+        spec.dtmin
+    else
+        (engine ? 0.04 : 0.016) * sqrt(etai / 0.02) * sqrt(rmin^3 * N_total)
+    end
     kw = Dict{Symbol,Any}(k => getfield(spec, k) for k in fieldnames(Nbody6ParameterSpec))
+    kw[:etai] = etai
+    kw[:etar] = etar
+    kw[:etau] = etau
     kw[:nnbopt] = nnbopt
     kw[:rs0] = rs0
     kw[:rmin] = rmin
@@ -259,7 +291,7 @@ end
 
 """Throw unless every derivable entry of `p` has been resolved (no zeros)."""
 function _assert_resolved(p::Nbody6ParameterSpec)
-    for k in (:nnbopt, :rs0, :rmin, :dtmin)
+    for k in (:etai, :etar, :etau, :nnbopt, :rs0, :rmin, :dtmin)
         getfield(p, k) > 0 || throw(
             ArgumentError(
                 "generate_merger_inp: nbody6.$k is unresolved (0); pass the result of resolve_nbody6_parameters",
@@ -587,9 +619,10 @@ end
 Generate complete merger initial conditions from a [`MergerConfig`](@ref).
 Produces `dat.10`, `merger.inp`, and `merger_summary.txt`.
 
-Supports two orbit modes:
+Supports three orbit modes:
 - `"kepler"`: 2 clusters on a Keplerian orbit (positions/velocities auto-computed)
 - `"explicit"`: N clusters with user-specified CM positions and velocities
+- `"single"`: one cluster at the origin, at rest (no truncation)
 
 Returns a [`MergerICResult`](@ref) for downstream plotting and inspection.
 """
@@ -655,6 +688,8 @@ function generate_merger_ic(
             cfg.clusters;
             truncate_jacobi_flag = cfg.output.truncate_jacobi,
         )
+    elseif cfg.orbit_mode == "single"
+        combine_single_cluster(cluster_data[1])
     else
         error("Unknown orbit_mode: $(cfg.orbit_mode)")
     end
@@ -1054,7 +1089,11 @@ function _write_merger_summary(
     _backup_existing(path)
     open(path, "w") do io
         println(io, "=" ^ 60)
-        println(io, "  Multi-Cluster Merger IC Summary")
+        println(
+            io,
+            cfg.orbit_mode == "single" ? "  Single-cluster IC Summary" :
+            "  Multi-Cluster Merger IC Summary",
+        )
         println(io, "=" ^ 60)
         println(io)
         println(io, "Generated: ", Dates.format(now(), "yyyy-mm-dd HH:MM:SS"))
@@ -1146,7 +1185,8 @@ function _write_merger_summary(
         p = regime.nbody6
         @printf(
             io,
-            "Integration (merger.inp, N-body units): QE=%.1E ETAI=%.3g ETAR=%.3g NNBOPT=%d RS0=%.3g RMIN=%.3E DTMIN=%.3E KZ(16)=%d TCRTP0=%.4g Myr\n",
+            "Integration (merger.inp, N-body units): preset=%s QE=%.1E ETAI=%.3g ETAR=%.3g NNBOPT=%d RS0=%.3g RMIN=%.3E DTMIN=%.3E KZ(16)=%d TCRTP0=%.4g Myr\n",
+            p.preset,
             p.qe,
             p.etai,
             p.etar,
@@ -1193,7 +1233,11 @@ function _write_merger_summary(
         end
         println(io)
         println(io, "Output format: ", cfg.output.format, " (KZ(22)=2)")
-        println(io, "Jacobi truncation: ", cfg.output.truncate_jacobi)
+        if cfg.orbit_mode == "single"
+            println(io, "Jacobi truncation: not applicable (single cluster)")
+        else
+            println(io, "Jacobi truncation: ", cfg.output.truncate_jacobi)
+        end
         println(io)
         println(io, "Files:")
         println(io, "  dat.10     — particle data")

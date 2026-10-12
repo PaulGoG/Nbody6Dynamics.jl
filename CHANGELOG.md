@@ -68,7 +68,51 @@ entries say so.
   it has reached its end time, perform post-processing and figures. The
   call can be repeated, one per queue segment.
 
+- Single-cluster mode of the generator. `orbit_mode = "single"` with
+  `n_clusters = 1` samples one cluster, places it at the origin at rest
+  without truncation and writes the same files as a merger; `position`,
+  `velocity` and `[merger.orbit]` are refused or ignored. The isolated
+  controls of a sweep and `gpu/single_600k.toml` use it.
+
+- Single-cluster science cases as generator configurations under
+  `input_files/clusters/`: a globular cluster with a black-hole subsystem,
+  runaway collisions in a dense young cluster, a young massive cluster with
+  a binary fraction of 0.5, and an open cluster of Hyades-like mass with its escapers
+  kept. Each has been run through its first time units on the CPU build.
+
+- `merger.nbody6.preset`: `"engine"` (the rules of the engine's example
+  inputs, the default) or `"campaign"` (the calibration baseline: η_I 0.01,
+  η_R 0.02, NNBOPT 100, RMIN three times the 90° deflection scale of the
+  smallest member, DTMIN 0.4 of the Aarseth close-encounter step, no
+  automatic re-derivation of the integration parameters). A zero of
+  `etai`, `etar`, `etau`, `nnbopt`, `rs0`, `rmin` or `dtmin` now means the
+  preset's value or rule; explicit keys override it.
+
 ### Changed
+
+- The defaults of `Nbody6ParameterSpec` for `etai`, `etar` and `etau` are
+  `0.0` (resolved from the preset at generation time; the engine preset
+  gives the former 0.02, 0.02, 0.1). A specification passed directly to
+  `generate_merger_inp` must carry nonzero values, as it already must for
+  the derived keys.
+
+- The shipped engine inputs `N1k_quick` to `N100k_production` write a
+  restart dump at every adjustment (`NCOMM = 1`, was 10: with the larger
+  value the dump of an end, a stop or a halt was written one time in ten).
+  The 1k and 5k inputs are isolated (`KZ(14) = 0`): they requested a
+  point-mass field without its namelist, which the engine read as a galaxy
+  of zero mass. The 25k and 100k inputs generate their primordial binaries
+  with the engine's `BINPOP` (`KZ(8) = 1`): `KZ(8) = 2` with internally
+  generated initial conditions declared the first `2·NBIN0` bodies to be
+  pairs. The 10k input has no binaries and says so (`KZ(8) = 0`).
+
+- The five science inputs `gc_bh_subsystem`, `imbh_runaway`, `pop3_cluster`,
+  `tidal_tails` and `young_massive_binaries` are withdrawn: they generated
+  Plummer models where their headers said King, declared binaries the
+  engine never generated, quoted spans in Myr wrong by factors of three to
+  fifty, and the Population III case cannot start (the engine refuses
+  `ZMET` below 10⁻⁴). The configurations under `input_files/clusters/`
+  replace four of them.
 
 - With the default `snapshot_render = "auto"`, snapshots of 20 000 particles
   or more are drawn as surface density; `"scatter"` restores the former
@@ -119,6 +163,9 @@ entries say so.
   `nvidia-smi`. With a device list the launch script also exports
   `CUDA_DEVICE_ORDER=PCI_BUS_ID`, so that an index means the same device
   for the engine and for `nvidia-smi`.
+- The input-file reference described `TCRTP0` as a wall-clock limit in
+  seconds. It is the engine's termination time in Myr; the run ends at the
+  earlier of `TCRIT` and `TCRTP0`.
 
 ## [0.4.0] — 2026-09-26
 
