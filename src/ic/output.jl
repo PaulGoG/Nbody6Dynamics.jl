@@ -893,7 +893,7 @@ end
     _write_merger_ic_metadata(path, cfg, cluster_ranges, seed, external_rng,
                               N_total, M_total, rbar, zmbar, regime)
 
-Write a machine-readable TOML snapshot of the IC generation (schema v2),
+Write a machine-readable TOML snapshot of the IC generation (schema version 3),
 sufficient to reconstruct a [`MergerICResult`](@ref) from the `dat.10` file
 later (so `plot_merger_ic` can be re-run after code fixes without
 re-sampling). Cluster specs are stored in the structured form

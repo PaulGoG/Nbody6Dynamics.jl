@@ -147,7 +147,7 @@ Stylistic plotting parameters, configurable via `[visualization.style]` in
 
 # Fields
 - `marker_budget`: scatter marker size is `clamp(marker_budget/N, marker_min, marker_max)`
-- `marker_min`, `marker_max`: clamp bounds for the scatter marker size [pt]
+- `marker_min`, `marker_max`: clamp bounds for the scatter marker size [layout units]
 - `q_log_threshold`: switch virial-ratio axes to log scale when max(Q) exceeds this
 - `q_floor`: clamp floor for the virial ratio on *log-scale* axes only
 - `zoom_frac`: extent-ratio threshold below which snapshot panels and animation
@@ -584,7 +584,30 @@ struct UnitScaling
     vstar::Float64     # NB velocity → km/s (V*)
 end
 
+"""
+    to_pc(u::UnitScaling, r_nb) -> Float64
+
+Length in pc from N-body units: `r_nb * u.rbar`.
+"""
 to_pc(u::UnitScaling, r_nb) = r_nb * u.rbar
+
+"""
+    to_msun(u::UnitScaling, m_nb) -> Float64
+
+Mass in M☉ from N-body units: `m_nb * u.zmbar` (the total-mass scale factor).
+"""
 to_msun(u::UnitScaling, m_nb) = m_nb * u.zmbar
+
+"""
+    to_myr(u::UnitScaling, t_nb) -> Float64
+
+Time in Myr from N-body units: `t_nb * u.tscale`.
+"""
 to_myr(u::UnitScaling, t_nb) = t_nb * u.tscale
+
+"""
+    to_kms(u::UnitScaling, v_nb) -> Float64
+
+Velocity in km s⁻¹ from N-body units: `v_nb * u.vstar`.
+"""
 to_kms(u::UnitScaling, v_nb) = v_nb * u.vstar

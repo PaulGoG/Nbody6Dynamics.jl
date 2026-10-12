@@ -47,7 +47,7 @@ BuildConfig
 SimulationConfig
 PostprocessConfig
 VisualizationConfig
-Nbody6Dynamics.PlotStyle
+PlotStyle
 MergerPipelineConfig
 ```
 
@@ -81,6 +81,13 @@ tscale
 vstar
 rscale
 rc
+```
+
+```@docs
+Nbody6Dynamics.to_pc
+Nbody6Dynamics.to_msun
+Nbody6Dynamics.to_myr
+Nbody6Dynamics.to_kms
 ```
 
 ## I/O Readers
@@ -156,6 +163,9 @@ hardness_scale
 binary_scales
 binding_energy
 semi_major_axis_pc
+plot_binary_population
+plot_binary_orbital_elements
+plot_binary_period_distribution
 ```
 
 ## Stellar Population
@@ -183,11 +193,11 @@ write_stellar_census
 
 The figure routines below are implemented by the package extension
 `Nbody6DynamicsMakieExt` and require a Makie backend in the session
-(`using CairoMakie`); see [Visualisation](@ref "9. Visualisation").
+(`using CairoMakie`); see [Visualisation](@ref "10. Visualisation").
 
 ```@docs
 plotting_available
-Nbody6Dynamics.PlottingUnavailable
+PlottingUnavailable
 set_publication_theme!
 publication_theme
 plot_snapshot
@@ -321,9 +331,6 @@ cluster_profiles
 system_profile
 plot_density_profiles
 plot_velocity_dispersion
-plot_binary_population
-plot_binary_orbital_elements
-plot_binary_period_distribution
 plot_cluster_separation
 plot_cluster_virial
 ```

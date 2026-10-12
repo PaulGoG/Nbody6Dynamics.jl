@@ -22,7 +22,7 @@ TOMLs use the AVX engine built under `backend/Nbody6PPGPU-beijing`
 
 | Case | Clusters | Orbit | Span | Tolerance `qe` | What it shows |
 |---|---|---|---|---|---|
-| `equal` | 2 × 4000, King `W0 = 6`, `r_h = 1` pc, Kroupa 0.1–50 M☉ | apocentre 6 pc, `e = 0.9` | 20 Myr | 0.01 | an equal pair that falls together and coalesces within the run; the remnant sheds a halo of loosely bound stars (the README figure and animation) |
+| `equal` | 2 × 4000, King `W0 = 6`, `r_h = 1` pc, Kroupa 0.1–50 M☉ | apocentre 6 pc, `e = 0.9` | 20 Myr | 0.01 | an equal pair that falls together and coalesces within the run; the remnant sheds a halo of loosely bound stars |
 | `binary` | 4000 (`W0 = 6`, 1 pc) + 1000 (`W0 = 5`, 0.7 pc), `q ≈ 0.25`, 20 % primordial binaries in both | apocentre 5 pc, `e = 0.7` | 15 Myr | 0.01 | the binary suite (pair counts with the hard/soft split, `a`–`e` diagrams, period distributions) on an unequal pair, and the relaxed tolerance a binary-rich run needs |
 | `tidal` | 2 × 2500 as `equal` | apocentre 6 pc, `e = 0.9`, point-mass galaxy of 10¹¹ M☉ at 8.5 kpc (`KZ(14) = 2`) | 20 Myr | 0.05 | the same encounter inside an external field: escapers removed on the distance criterion, and an engine energy check that measures the tidal work rather than the integration error |
 | `sweep` | 2 × 500, King `W0 = 6`, `r_h = 1` pc | apocentre 5 pc, `e ∈ {0.5, 0.9}`, seeds 2, 3, 4, with an isolated control per point | 20 Myr | 0.01 | a twelve-point grid: comparison figures on common axes, seed ensembles with 68/95 % bands, and each merger against its control |
@@ -42,6 +42,11 @@ integration alone; the pipeline adds the initial conditions, the readers, the
 diagnostics and about fifty figures and five animations per run, a few
 minutes at these sizes.
 
+The numbers were produced with the package at commit `f89eb2e`; every
+integration parameter of these generated inputs is unchanged since (only the
+restart-dump frequency `NCOMM` changed), so they are indicative for the
+current generator.
+
 | Case | Run | Bodies after truncation | Engine wall | Final `DETOT` |
 |---|---|---|---|---|
 | `equal` | `merger_showcase_equal_20260911_200411_f8f6` | 7832 | 72 s | +1.7×10⁻³ |
@@ -53,11 +58,12 @@ minutes at these sizes.
 run; the merger runs evolve stars and form binaries, so it sits well above
 the 10⁻⁷ of a quiet single cluster, and inside the tolerance the
 configurations set. The documentation assets (`docs/src/assets/`) are
-rendered from the `equal` run; their provenance is recorded next to them.
+rendered from the 2 × 25 000-star validation merger `gpu/merger_50k.toml`,
+the H200 run described in `docs/src/assets/PROVENANCE.md`.
 
 The `flagship` configuration is the merger of the hardware validation
-(`gpu/merger_50k.toml` differs from `flagship_merger.toml` in its header
-comment only). Its integration over 45.8 N-body units, 50.6 Myr, at eight host
+(`gpu/merger_50k.toml` is identical in content to `flagship_merger.toml`,
+header comment and table order aside). Its integration over 45.8 N-body units, 50.6 Myr, at eight host
 threads measured in the validation chains of 2026-09-24 to 2026-09-26:
 
 | Host | CUDA build | AVX build |
@@ -70,15 +76,16 @@ threads measured in the validation chains of 2026-09-24 to 2026-09-26:
 
 At this size the device removes about half of the work, because the
 irregular force, host work in both builds, is as large as the regular force;
-the gain grows with N (see the manual, section Validated hardware).
+the gain grows with N (see the manual, [Validated hardware](@ref)).
 
 ## What a run produces
 
-`runs/<run_id>/` holds the frozen `config.toml`, `RUN_INFO.toml` (timing, the
-thread layout, the hardware fingerprint, the commits, the telemetry summary),
-`nbody6dynamics.log`, `telemetry.csv`, the engine output under `output/`
-(`conf.3_*` snapshots, `out1000`, `lagr.7`, `esc.11`, `sev.83_*`, `bev.82_*`,
-`merger.inp`, `dat.10`, `merger_summary.txt`, `merger_ic.toml`), the derived
+`runs/<run_id>/` holds the frozen `config.toml`, `environment_manifest.toml`,
+`RUN_INFO.toml` (timing, the thread layout, the hardware fingerprint, the
+commits, the telemetry summary), `nbody6dynamics.log`, `telemetry.csv`, the
+engine output under `output/` (`BUILD_INFO.toml`, `conf.3_*` snapshots,
+`out1000`, `lagr.7`, `esc.11`, `sev.83_*`, `bev.82_*`, `merger.inp`, `dat.10`,
+`merger_summary.txt`, `merger_ic.toml`), the derived
 tables (`stellar_census.csv`, `remnant_diagnostics.csv`) and `plots/`:
 
 - initial conditions: projections, overview, velocity field, sampled IMF, density profiles (`merger_ic_*`);
@@ -94,4 +101,4 @@ A sweep adds `sweep_index.toml`, `sweep_summary.csv` and, under its `plots/`,
 the comparison figures (`sweep_lagrangian`, `sweep_energy`), the ensemble
 bands (`ensemble_*`) and the merger-against-control figure
 (`control_lagrangian`). The figure routines are documented in the manual,
-section Visualisation, and in the API reference.
+[Visualisation](@ref "10. Visualisation"), and in the [API Reference](@ref).

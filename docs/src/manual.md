@@ -2,19 +2,20 @@
 
 ## Table of Contents
 
-1. [Introduction](#1-introduction)
-2. [Prerequisites](#2-prerequisites)
-3. [Installation](#3-installation)
-4. [Configuration Reference](#4-configuration-reference)
-5. [Pipeline Modes](#5-pipeline-modes)
-6. [Build Phase Details](#6-build-phase-details)
-7. [Simulation Execution](#7-simulation-execution)
-8. [Post-processing](#8-post-processing)
-9. [Visualisation](#9-visualisation)
-10. [Using the Julia API Directly](#10-using-the-julia-api-directly)
-11. [Output File Reference](#11-output-file-reference)
-12. [N-body Units and Conversions](#12-n-body-units-and-conversions)
-13. [Troubleshooting](#13-troubleshooting)
+1. [Introduction](@ref "1. Introduction")
+2. [Prerequisites](@ref "2. Prerequisites")
+3. [Installation](@ref "3. Installation")
+4. [Configuration Reference](@ref "4. Configuration Reference")
+5. [Pipeline Modes](@ref "5. Pipeline Modes")
+6. [Build Phase Details](@ref "6. Build Phase Details")
+7. [Simulation Execution](@ref "7. Simulation Execution")
+8. [Parameter sweeps](@ref "8. Parameter sweeps")
+9. [Post-processing](@ref "9. Post-processing")
+10. [Visualisation](@ref "10. Visualisation")
+11. [Using the Julia API Directly](@ref "11. Using the Julia API Directly")
+12. [Output File Reference](@ref "12. Output File Reference")
+13. [N-body Units and Conversions](@ref "13. N-body Units and Conversions")
+14. [Troubleshooting](@ref "14. Troubleshooting")
 
 ---
 
@@ -53,7 +54,7 @@ Optional, depending on config: MPI (`mpicc`, `mpif90`, `mpirun`), CUDA toolkit (
 ## 3. Installation
 
 ```bash
-cd Nbody6Dynamics
+cd Nbody6Dynamics.jl
 julia activate.jl                                   # resolves, instantiates and precompiles the package environment
 julia -e 'include("activate.jl"); Pkg.test()'
 ```
@@ -83,10 +84,10 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 |-------------------|----------|---------|-------------|
 | `configure_flags` | [String] | `["--enable-mcmodel=large", "--with-par=b1m"]` | Flags passed to `./configure` |
 | `enable_mpi`      | Bool     | `false` | Enable MPI parallelism |
-| `enable_hdf5`     | Bool     | `true`  | Patch the Makefile with HDF5 build flags |
+| `enable_hdf5`     | Bool     | `true`  | Add the HDF5 compiler and linker flags and `-DCONFIG_HDF5` to the engine Makefile; this engine version reads no `CONFIG_HDF5` symbol, so the binary writes the same output either way (see [HDF5 build patching](@ref)) |
 | `enable_gpu`      | Bool     | `false` | Enable GPU acceleration (requires CUDA) |
 | `cuda_path`       | String   | `""`    | CUDA installation path; empty = auto-detect |
-| `cuda_arch`       | [String] | `[]`    | CUDA architectures compiled into the GPU kernels, `sm_<major><minor>` (`"sm_90"` H100/H200, `"sm_120"` RTX 50 series); native code for each plus PTX for the highest. Empty = the compute capabilities `nvidia-smi` reports, or the `nvcc` default target when no device is visible (see [GPU builds](#gpu-builds-and-target-architectures)) |
+| `cuda_arch`       | [String] | `[]`    | CUDA architectures compiled into the GPU kernels, `sm_<major><minor>` (`"sm_90"` H100/H200, `"sm_120"` RTX 50 series); native code for each plus PTX for the highest. Empty = the compute capabilities `nvidia-smi` reports, or the `nvcc` default target when no device is visible (see [GPU builds](@ref "GPU builds and target architectures")) |
 | `nvcc_flags`      | [String] | `[]`    | Extra `nvcc` options appended to the GPU build flags, e.g. `["-allow-unsupported-compiler"]` or `["-ccbin", "gcc-14"]` when the host compiler is newer than the toolkit supports; entries must be nonempty. The build probes `nvcc` on a trivial kernel first: when the toolkit rejects the host compiler it tries `-allow-unsupported-compiler`, then `-ccbin` with `CUDAHOSTCXX` and the versioned `g++-15` … `g++-12`, `clang++` found on `PATH`, and records what it settled on; a configured `-ccbin` is used as is. When the host's glibc (≥ 2.42) declares `rsqrt`/`rsqrtf` with an exception specification the CUDA headers lack, the probe retries the host-compiler choice with `-U_GNU_SOURCE -D_DEFAULT_SOURCE` and keeps it. When no combination works the error quotes the `nvcc` output of every attempt |
 | `nproc`           | Int      | `0`     | Parallel `make` jobs; 0 = auto-detect; must be ≥ 0 |
 
@@ -95,7 +96,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | Key             | Type   | Default | Description |
 |-----------------|--------|---------|-------------|
 | `run_test`      | Bool   | `true`  | Run the simulation phase |
-| `input_file`    | String | `"input_files/engine/N1k_quick.inp"` | Path to the `.inp` input file, relative to the project directory (the shipped `config.toml` points at `input_files/engine/N25k_production.inp`); must be nonempty |
+| `input_file`    | String | `"input_files/engine/N1k_quick.inp"` | Path to the `.inp` input file, relative to the project directory (the shipped `config.toml` points at `input_files/engine/N1k_quick.inp`); must be nonempty |
 | `runs_dir`      | String | `"runs"` | Base directory for run output, relative to the project directory; must be nonempty |
 | `binary_name`   | String | `"nbody6++"` | Expected binary name |
 | `mpi_ranks`     | Int    | `1`     | Number of MPI ranks; must be ≥ 1, and > 1 requires `build.enable_mpi = true` |
@@ -106,7 +107,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `live_diagnostics` | Bool | `false` | With `monitor`: print in-terminal sparklines of the virial ratio and `log10 |ΔE/E|` against time every `live_interval` seconds (UnicodePlots; interactive terminals only, never in the log file) |
 | `live_interval` | Float | `30.0` | Period of the sparkline panel [s]; must be ≥ 1 |
 | `telemetry_interval` | Float | `5.0` | Sampling interval of the process-tree/GPU telemetry [s]; must be ≥ 0. `0` disables the sampler; the exact CPU accounting stays on |
-| `startup_timeout` | Float | `0.0` | Start-up watchdog [s]; must be ≥ 0. When set, a run that reports no adjustment beyond t = 0 within this wall-clock time is terminated with an error, and the kill is recorded in `RUN_INFO.toml` (`segments[].watchdog`). `0` disables; large-N runs need a generous value. The known cause of such a hang is fixed in the generator; see [Troubleshooting](#run-never-advances-past-t-0) for hand-written inputs |
+| `startup_timeout` | Float | `0.0` | Start-up watchdog [s]; must be ≥ 0. When set, a run that reports no adjustment beyond t = 0 within this wall-clock time is terminated with an error, and the kill is recorded in `RUN_INFO.toml` (`segments[].watchdog`). `0` disables; large-N runs need a generous value. The known cause of such a hang is fixed in the generator; see [Troubleshooting](@ref "Run never advances past t = 0") for hand-written inputs |
 | `exit_grace` | Float | `120.0` | Completion monitor [s]; must be ≥ 0. Once the stdout shows the engine's `END RUN` line, a process whose output directory has not changed for this long is terminated and the segment is recorded as `completed` with `terminated_after_completion = true`; a final COMMON dump still being written keeps it alive. `0` disables |
 | `wall_budget` | Float | `0.0` | Wall-clock budget of one engine segment [s]; must be ≥ 0, `0` = none. At `wall_budget − stop_margin` the engine is asked to stop through a `STOP` file in its working directory; it writes a restart dump and exits, and the segment is recorded as `stopped`. An engine still running at `wall_budget` is terminated (`killed`) |
 | `stop_margin` | Float | `120.0` | Seconds the engine is given to act on a stop request [s]; must be ≥ 0 and smaller than a non-zero `wall_budget`. Also the time a terminated driver (SIGTERM) waits for its engine before it ends it |
@@ -132,15 +133,9 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `binary_evo_pattern`  | String | `"bev.82_*"` | Glob pattern for the binary files (`bev.82_<time>`, written by `hrplot.F` alongside `sev.83`); must be nonempty when `read_binary_evo = true` |
 | `pair_sum_max_n`      | Int    | `100000` | Largest snapshot particle count for which the O(N²) pair-sum diagnostics run: the remnant diagnostics (`remnant_diagnostics.csv` and its figures), the per-cluster virial ratio and structure, and the bound-member density and velocity-dispersion profiles. Above it they are skipped with a warning naming the key; the readers and the energy, Lagrangian-radii, escaper, stellar and snapshot figures are unaffected; the binary figures' hard/soft scale is taken over the bound systems up to the same limit and over every system above it. `0` disables them |
 
-!!! note "HDF5 snapshot support was removed"
-    Setting `snapshot_format = "hdf5"` raises an error. The old HDF5 reader
-    targeted dataset names this fork never writes — the fork's `KZ(46)` writer
-    produces `snap.40_*.h5part` files with `Step#i` groups and numbered
-    datasets, a layout the removed reader could never parse. Re-adding support
-    means porting to that layout (see git history for the old reader). HDF5
-    files found in an output directory are still *detected* by `scan_output`
-    and reported with a warning, but `conf.3` is the only readable snapshot
-    source.
+!!! note "HDF5 snapshots are not read"
+    `snapshot_format = "hdf5"` is refused. `KZ(46)` H5Part files are detected
+    and reported by `scan_output`, not read.
 
 ### `[visualization]`
 
@@ -182,7 +177,7 @@ Presentation knobs collected in the `PlotStyle` struct (`cfg.visualization.style
 | `enabled`     | Bool   | `false` | Generate merger ICs before the simulation phase |
 | `config_file` | String | `""`    | Path to the merger cluster TOML (e.g. `"input_files/mergers/merger_demo_small.toml"`); relative paths resolve against the project directory; must be nonempty when `enabled = true` |
 
-The merger TOML schema itself (clusters, profiles, IMFs, orbit, output, seed) is documented in [Input File Reference](@ref) and [Multi-Cluster Merger Simulations](@ref).
+The merger TOML schema itself (clusters, profiles, IMFs, orbit, output, seed) is documented in the Input File Reference (see [Merger TOML schema](@ref)).
 
 ---
 
@@ -198,7 +193,7 @@ The merger TOML schema itself (clusters, profiles, IMFs, orbit, output, seed) is
 | 3. Post-process    | `postprocess.enabled`   | Read output data + sanity checks |
 | 4. Plots           | `visualization.enabled` | Static plots + GIF animations |
 
-Common configurations (also listed in the `config.toml` header):
+Common configurations:
 
 1. **Full pipeline:** `install.enabled=true`, `simulation.run_test=true`
 2. **Simulate only:** `install.enabled=false`, `simulation.run_test=true`
@@ -221,12 +216,7 @@ results = postprocess_external("/scratch/sim42/output")   # scan + read + plot
 
 ### HDF5 build patching
 
-The upstream `./configure --enable-hdf5` flag is broken. Nbody6Dynamics patches the build with a two-file mechanism:
-
-1. Writes `hdf5_flags.mk` in the source root with the correct `-DCONFIG_HDF5`, include paths, and library flags
-2. Appends `-include ../hdf5_flags.mk` to `build/Makefile`
-
-This survives `./configure` re-runs: the flags file persists and only the one-line include needs reapplication. (This affects only what the *binary* can write — the Julia post-processing side reads `conf.3` snapshots, not HDF5; see the note in [Configuration Reference](#4-configuration-reference).)
+With `enable_hdf5 = true` the build adds the HDF5 compiler and linker flags and `-DCONFIG_HDF5` to the engine Makefile. This engine version reads no `CONFIG_HDF5` symbol: its H5Part writer is compiled only under `H5OUTPUT`, which the package does not define, so the setting changes nothing in what the binary writes. The package reads no `.h5part` file in any case; `scan_output` reports them.
 
 ### Source amendments
 
@@ -264,7 +254,7 @@ Other facts of the GPU build:
 - `BUILD_INFO.toml` is written next to the binary (date, host, backend commit, configure arguments, switches, CUDA path, compiled architectures, `nvcc` release). Every run copies it into its output directory and merges it into `RUN_INFO.toml` as the `[build]` table.
 - One engine process drives at most four devices (`MAX_GPU` in the kernel source): with `gpu_list` empty it takes every visible device, otherwise those listed, and splits the regular-force j-range evenly across them by one OpenMP thread per device. The kernels compute in single precision on every architecture.
 - The GPU library reports the devices it initialised on stderr; the run summary records them as `run.gpu_devices`, and the kernel throughput profile carries the label `GPU Reg.F` in `telemetry.force_kernel_gflops.kernel`, so a run that silently fell back to the CPU path is visible.
-- The upstream authors advise the GPU build only above roughly 5×10⁴ bodies: below that the regular force is a minor share of the work and host–device transfers can make the run slower. `bench/gpu_scaling.jl` measures the crossover on the machine at hand.
+- The upstream advice to use the GPU build only above a few 10⁴ bodies is superseded by the measurement in Validated hardware: on every host tested the GPU binary was faster at every size, and any crossover lies below N ≈ 2×10⁴; `bench/gpu_scaling.jl` measures it on a new host.
 - HDF5 output is unnecessary for the Julia side (it reads `conf.3`), so a GPU build can use `enable_hdf5 = false`.
 
 ### Validated hardware
@@ -292,18 +282,18 @@ Measured against the AVX build of the same engine on the same host, for two King
 | 98 426 | 4 | 4.55 | 4.61 | 4.02 |
 | 98 426 | 8 | 3.26 | 3.52 | 3.77 |
 
-There is no size below which the CPU build is the better choice; any crossover lies under N ≈ 2×10⁴, where a run costs seconds either way. Beyond that, the fleet shows what actually governs the gain. Force-kernel throughput spans a factor 5.7 across these three cards at N ≈ 10⁵ — 4.2, 15.2 and 23.9 TFLOP s⁻¹ — while the end-to-end speed-up spans only 4.02 to 4.61, and the 2019 mobile card reaches 87 % of what the RTX 5090 delivers. The pipeline is bound by the irregular force, which stays on the host: it takes 47 % to 89 % of the engine's accounted time in the 50 Myr merger runs, where mean device utilisation is 6 % to 16 %; nowhere in the campaign did it exceed 22 %. Peak device memory is under 0.6 GiB at N = 10⁵, so an 8 GiB card is not the constraint either. Below N ≈ 10⁵, a faster card is not how this pipeline gets faster; more concurrent jobs per card and faster host cores are.
+There is no size below which the CPU build is the better choice; any crossover lies under N ≈ 2×10⁴, where a run costs seconds either way. Beyond that, the five hosts of the table above show what actually governs the gain. Force-kernel throughput spans a factor 5.7 across these three cards at N ≈ 10⁵ — 4.2, 15.2 and 23.9 TFLOP s⁻¹ — while the end-to-end speed-up spans only 4.02 to 4.61, and the 2019 mobile card reaches 87 % of what the RTX 5090 delivers. The pipeline is bound by the irregular force, which stays on the host: it takes 47 % to 89 % of the engine's accounted time in the 50 Myr merger runs, where mean device utilisation is 6 % to 16 %; on none of the five hosts did it exceed 22 %. Peak device memory is under 0.6 GiB at N = 10⁵, so an 8 GiB card is not the constraint either. Below N ≈ 10⁵, a faster card is not how this pipeline gets faster; more concurrent jobs per card and faster host cores are.
 
 Halving the host threads costs almost nothing on the GPU path. A four-thread CUDA job reaches 79 %, 81 % and 98 % of the corresponding eight-thread wall time on the three hosts above, and the speed-up over the AVX build is always larger at four threads. Four threads per job is the better unit for parameter sweeps.
 
-The device computes the regular force in single precision and returns it as `double`. Over a 50 Myr merger of 2 × 25 000 stars, the fleet's cumulative energy errors run from −3.4×10⁻³ to +2.5×10⁻³ and the largest per-step excursion from 4.7×10⁻⁴ to 1.6×10⁻³, all well within what `qe = 0.01` tolerates, with no systematic separation between the CUDA and AVX builds. The same case ends with 47 023 to 47 119 of 47 999 bodies bound across all hosts, a 0.20 % spread that reflects chaotic divergence under a different summation order rather than a numerical defect. Results are reproducible to the last digit for a fixed host, binary and thread count, and only statistically so across hosts, so an energy error should always be quoted with the machine that produced it. A study needing tighter energy conservation should use the CPU build or a shorter regular-force timestep.
+The device computes the regular force in single precision and returns it as `double`. Over a 50 Myr merger of 2 × 25 000 stars, the cumulative energy errors on the five hosts of the table above run from −3.4×10⁻³ to +2.5×10⁻³ and the largest per-step excursion from 4.7×10⁻⁴ to 1.6×10⁻³, all well within what `qe = 0.01` tolerates, with no systematic separation between the CUDA and AVX builds. The same case ends with 47 023 to 47 119 of 47 999 bodies bound across all hosts, a 0.20 % spread that reflects chaotic divergence under a different summation order rather than a numerical defect. Results are reproducible to the last digit for a fixed host, binary and thread count, and only statistically so across hosts, so an energy error should always be quoted with the machine that produced it. A study needing tighter energy conservation should use the CPU build or a shorter regular-force timestep.
 
 ### Recipe for a CUDA host
 
 Shipped under `input_files/gpu/`: `gpu_pipeline.toml` clones and builds the engine with CUDA into `backend/Nbody6PPGPU-beijing-gpu` (architectures from `nvidia-smi`, HDF5 off) and runs `merger_50k.toml`, two King clusters of 25 000 stars, on device 0 with eight host threads; `cpu_pipeline.toml` builds the AVX engine into the default tree and runs the same merger, so the two are comparable binary against binary. The order on a fresh host:
 
 ```bash
-git clone git@github.com:PaulGoG/Nbody6Dynamics.jl.git Nbody6Dynamics && cd Nbody6Dynamics
+git clone https://github.com/PaulGoG/Nbody6Dynamics.jl.git && cd Nbody6Dynamics.jl
 julia activate.jl
 julia scripts/run_gpu_validation.jl        # under tmux or nohup: the CPU reference of the 2 × 25k merger is the long stage
 ```
@@ -357,24 +347,30 @@ Each run gets a unique ID `{prefix}_YYYYMMDD_HHMMSS_{4hex}` (e.g. `run_20260325_
 
 ```
 runs/run_20260325_143022_a1f3/
-├── config.toml          # frozen snapshot of the configuration used, with its paths made absolute
-├── RUN_INFO.toml        # run summary: identity/timing/thread layout, commits, hardware fingerprint, telemetry summary, file inventory, pipeline completion
-├── telemetry.csv        # hardware telemetry time series (when telemetry_interval > 0)
-├── nbody6dynamics.log   # teed pipeline log
-├── output/              # all simulation artefacts
-│   ├── nbody6++         # binary copy (reproducibility)
-│   ├── _launch.sh       # generated bash launch script
-│   ├── out1000          # captured stdout
-│   ├── err1000          # captured stderr
-│   ├── conf.3_*         # particle snapshots
-│   ├── lagr.7           # Lagrangian radii
-│   ├── esc.11           # escaper events
-│   ├── sev.83_*         # stellar evolution snapshots
-│   └── bev.82_*         # regularised-binary snapshots
-└── plots/               # post-processing plots & GIF animations
+├── config.toml               # frozen snapshot of the configuration used, with its paths made absolute
+├── environment_manifest.toml # the resolved manifest of the environment the run used
+├── RUN_INFO.toml             # run summary: identity/timing/thread layout, commits, hardware fingerprint, telemetry summary, file inventory, pipeline completion
+├── telemetry.csv             # hardware telemetry time series (when telemetry_interval > 0)
+├── telemetry_<k>.csv         # telemetry of segment k of a resumed or restarted run
+├── stellar_census.csv        # stars per class and epoch (runs with sev.83 output)
+├── nbody6dynamics.log        # teed pipeline log
+├── output/                   # all simulation artefacts
+│   ├── nbody6++              # binary copy (reproducibility)
+│   ├── BUILD_INFO.toml       # build record copied from beside the binary
+│   ├── _launch.sh            # generated bash launch script
+│   ├── out1000               # captured stdout
+│   ├── err1000               # captured stderr
+│   ├── conf.3_*              # particle snapshots
+│   ├── lagr.7                # Lagrangian radii
+│   ├── esc.11                # escaper events
+│   ├── sev.83_*              # stellar evolution snapshots
+│   ├── bev.82_*              # regularised-binary snapshots
+│   ├── comm.1_<t>            # COMMON dump at the end of the run, at a stop or at a halt
+│   └── comm.2_<t>            # COMMON dump at every adjustment (checkpoint = true)
+└── plots/                    # post-processing plots & GIF animations
 ```
 
-Merger runs additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, and `merger_ic.toml` in `output/`, and `remnant_diagnostics.csv` next to `stellar_census.csv` in the run directory; both data products are written by the pipeline itself, with or without a figure backend.
+Runs from generated initial conditions additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, and `merger_ic.toml` in `output/`, and `remnant_diagnostics.csv` in the run directory. The census and the remnant diagnostics are written by the pipeline itself, with or without a figure backend.
 
 ### Launch script
 
@@ -392,17 +388,17 @@ The indices of `gpu_list` are those of `nvidia-smi`, the PCI-bus order: with a n
 
 ### Real-time monitoring
 
-During execution, ADJUST summaries are echoed live:
+During execution, ADJUST summaries are echoed live, with the elapsed wall time in the brackets:
 
 ```
-[ Info:   t_NB=0.0500  t_Myr=0.4  N=9998  |ΔE/E|=1.23e-06  Q_vir=0.987
+[3m 12s]  t_NB=0.0500  t_Myr=0.4  N=9998  |ΔE/E|=1.23e-06  Q_vir=0.987
 ```
 
 ### Completion detection
 
 The engine prints `END RUN` (with the final timing tables) when its termination criterion is met, and normally exits right after. In a tidal-field run it has been seen to print everything and then never exit, which blocked the pipeline until an external timeout. With `simulation.exit_grace > 0` a monitor watches the last 64 KiB of the stdout capture for that line and, once no file of the output directory has changed for the grace period with the process still alive, terminates it. The engine writes its final COMMON dump after `END RUN` when `KZ(1) > 0`; that write keeps the directory changing, so a dump of any size is never interrupted. The segment then carries `completed = true`, `terminated_after_completion = true` and the signal exit status, post-processing proceeds, and the sweep summary counts the point as completed (`completed` column) even though its exit status is nonzero. A run that never printed `END RUN` is never touched by this monitor.
 
-**Stopping a run.** The engine runs in its own session (`detach`), so the hangup of a terminal closing above the pipeline never reaches it; for the same reason the terminal's Ctrl-C never reaches it either, and the pipeline forwards an interrupt itself: SIGINT to a pipeline process (`kill -INT <pid>`, or Ctrl-C in the foreground) raises `InterruptException`, the handler terminates the engine (SIGTERM, SIGKILL after 15 s), writes nothing further and re-raises. The entry scripts set `Base.exit_on_sigint(false)` for that, because a Julia script exits on SIGINT at once by default; an interrupt that lands in one of the pipeline's helper tasks (telemetry sampler, watchdogs) is handed to the task waiting on the engine. The validation driver forwards SIGINT to its running stage the same way. A SIGTERM of a pipeline process asks its engines to stop and waits for them ([Wall budget and stop requests](#wall-budget-and-stop-requests)). A SIGKILL runs no handler and leaves the engine running as an orphan: to end a whole tree at once, signal the engines by name as well, for example `pkill -KILL -f 'run_gpu_validation.jl|run_setup.jl|gpu_scaling.jl|nbody6[+][+]'`, and confirm with `pgrep -af 'nbody6[+][+]'`. The start-up watchdog and the completion monitor terminate the engine before they log the fact, so a pipeline whose console has gone (its launcher died) still ends the engine it decided to end, and writes its run record and file log. The record's `package_commit` and `backend_commit` are captured at launch; a `git pull` on the host during a run does not change them.
+**Stopping a run.** The engine runs in its own session (`detach`), so the hangup of a terminal closing above the pipeline never reaches it; for the same reason the terminal's Ctrl-C never reaches it either, and the pipeline forwards an interrupt itself: SIGINT to a pipeline process (`kill -INT <pid>`, or Ctrl-C in the foreground) raises `InterruptException`, the handler terminates the engine (SIGTERM, SIGKILL after 15 s), writes nothing further and re-raises. The entry scripts set `Base.exit_on_sigint(false)` for that, because a Julia script exits on SIGINT at once by default; an interrupt that lands in one of the pipeline's helper tasks (telemetry sampler, watchdogs) is handed to the task waiting on the engine. The validation driver forwards SIGINT to its running stage the same way. A SIGTERM of a pipeline process asks its engines to stop and waits for them ([Wall budget and stop requests](@ref)). A SIGKILL runs no handler and leaves the engine running as an orphan: to end a whole tree at once, signal the engines by name as well, for example `pkill -KILL -f 'run_gpu_validation.jl|run_setup.jl|gpu_scaling.jl|nbody6[+][+]'`, and confirm with `pgrep -af 'nbody6[+][+]'`. The start-up watchdog and the completion monitor terminate the engine before they log the fact, so a pipeline whose console has gone (its launcher died) still ends the engine it decided to end, and writes its run record and file log. The record's `package_commit` and `backend_commit` are captured at launch; a `git pull` on the host during a run does not change them.
 
 ### Wall budget and stop requests
 
@@ -440,9 +436,7 @@ With `simulation.telemetry_interval > 0` (default 5 s) an asynchronous sampler a
 
 The backend's own performance report is captured as well. The last timing table it prints to stdout (one per `DTADJ`, cumulative CPU seconds per code section: regular and irregular force, prediction, KS, adjust, output, communication, …) becomes the `[telemetry.backend_timing]` sub-table with lower-case keys (`total`, `reg`, `irr`, `ks`, `reg_gpu_s`, …), and the `Perf.(Gflops)` lines of the AVX/SSE or GPU regular-force profiles on stderr are summarised as `[telemetry.force_kernel_gflops]` (`samples`, `mean`, `peak`).
 
----
-
-### Parameter sweeps
+## 8. Parameter sweeps
 
 A sweep runs the merger pipeline over a Cartesian grid of merger-TOML values times a set of seeds, one directory per point:
 
@@ -474,9 +468,9 @@ Axes address the merger TOML from its root; the parent table must exist in the b
 
 A sweep without `[sweep.grid]` is a seed ensemble of the base merger configuration (points `001_seed=11`, …). Whenever a sweep has more than one seed, `sweep_ensembles` groups the completed points by grid values and `ensemble_statistics` interpolates every member's series onto a common time grid (the interval covered by all members) and takes the median and the central 68 % and 95 % intervals per node (type-7 quantiles). `plot_sweep_ensemble` draws the median line with the two bands for `:lagrangian`, `:energy`, `:n_stars` or `:n_pairs`, one colour per value of the chosen axis with the other axes held at `fixed` values (their first value by default, annotated); `sweep_figures` adds the Lagrangian-radius and energy-error ensembles automatically.
 
-With `controls = true` every point gets a companion `<index>_…_control` whose merger TOML is the isolated equivalent of the point's configuration (`control_merger_dict`): one cluster at rest with the summed `N`, the `N`-weighted mean half-mass radius, and cluster 1's model, IMF and binary population, with the `output`, `nbody6`, `stellar` and `tidal` sections kept verbatim. The index and summary carry `kind` and `control_of`; the comparison and ensemble figures use the merger points only, and `plot_control_comparison` draws every merger (solid) against its control (dashed). `write_control_merger_config` derives a control file from any merger TOML outside a sweep; the control is a single-mode configuration (`orbit_mode = "single"`).
+With `controls = true` every point gets a companion `<index>_…_control` whose merger TOML is the isolated equivalent of the point's configuration (`control_merger_dict`): one cluster at rest with the summed `N`, the `N`-weighted mean half-mass radius, and cluster 1's model, IMF and binary population, with the `nbody6`, `stellar` and `tidal` sections kept verbatim; intervals given in Myr (`tcrit_myr`, `dtadj_myr`, `deltat_myr`, `dtplot_myr`) carry over unchanged, and intervals given in N-body units (`tcrit`, `dtadj`, `deltat`, `dtplot`) are multiplied by `(RBAR_est / r_h,control)^{3/2}` so the control spans about the merger's physical time. The index and summary carry `kind` and `control_of`; the comparison and ensemble figures use the merger points only, and `plot_control_comparison` draws every merger (solid) against its control (dashed). `write_control_merger_config` derives a control file from any merger TOML outside a sweep; the control is a single-mode configuration (`orbit_mode = "single"`).
 
-## 8. Post-processing
+## 9. Post-processing
 
 ### Snapshots (conf.3, Fortran binary)
 
@@ -492,8 +486,6 @@ snaps = read_all_conf3(run_out, "conf.3_*")              # ordered by the time s
 snaps = read_all_conf3(run_out; threaded = true)         # chunked over Threads.@spawn
 snap.rho, snap.phi # local density / potential (empty if unavailable)
 nparticles(snap)
-
-snaps = read_all_conf3(dir, "conf.3_*")   # numerically sorted by time suffix
 ```
 
 The reader auto-detects the bulk-array format (one record with AS params + all particle arrays) and the legacy per-particle record format (32- or 44-byte records; the extended form carries `rho`/`phi`). Corrupt files are skipped with a warning.
@@ -535,7 +527,7 @@ escs[1].velocity_kms     # escape velocity [km/s]
 escs[1].stellar_type     # K* type (Hurley codes, see below)
 ```
 
-The physical-unit quantities are taken from tokens 6–11 of each line (the first five columns are NB-unit diagnostics).
+The physical-unit quantities are taken from tokens 6–13 of each line (the escape-direction angles in tokens 12–13); lines with fewer than 13 tokens are skipped (the first five columns are NB-unit diagnostics).
 
 ### Stellar evolution
 
@@ -572,7 +564,7 @@ pop.n_hard, pop.n_soft, pop.binary_fraction
 
 ---
 
-## 9. Visualisation
+## 10. Visualisation
 
 ### The figure backend is an extension
 
@@ -590,7 +582,7 @@ Consequences to know:
 - Without a backend a figure routine has no methods: the call is a `MethodError` whose message names the routine and the remedy (`using CairoMakie`). The orchestration entry points below throw `PlottingUnavailable` before doing any work.
 - `run_pipeline` with `[visualization] enabled = true`, `run_merger_pipeline(...; make_plots = true)` and `postprocess_external(...; make_plots = true)` check for the backend **before** doing any work, so a missing backend costs nothing instead of costing an integration. Set the flag to `false` for a numerics-only run.
 - `plotting_available()` reports whether the extension is loaded.
-- The entry scripts under `scripts/` run in their own environment (`scripts/Project.toml`) which carries the backend, so `julia scripts/run_setup.jl config.toml` plots as before. `bench/` has no backend, by design.
+- The entry scripts under `scripts/` run in their own environment (`scripts/Project.toml`) which carries the backend, so `julia scripts/run_setup.jl config.toml` plots as before. The benchmark environment carries no backend; the figure script `bench/gpu_cells_figures.jl` borrows the scripts environment.
 - A sweep worker inherits the driver's environment and loads the backend only if the driver has one, so sweeps behave like the session that launched them.
 
 Every figure routine draws inside `with_theme(publication_theme())`: the session's theme is neither needed nor changed, and `publication_theme()` returns the theme as a value for scoping your own Makie code the same way. The theme is built at call time so that its Computer Modern faces come from MathTeXEngine's live registry: a face captured while the package precompiles carries a null FreeType pointer, and Makie would then render every plain-text label in its default sans font without warning.
@@ -617,11 +609,15 @@ Static plots take the extension from `visualization.format`; animations are alwa
 | `plot_energy(diag, vis)` | Two panels: log `\|ΔE/E\|` and virial ratio with `Q = 0.5` reference | `energy` |
 | `plot_particle_count(diag, vis)` | Two panels: bound N and KS pairs, integer ticks | `particle_count` |
 | `plot_lagrangian(lagr, vis)` | Selected mass-fraction radii vs time, log y | `lagrangian_radii` |
-| `plot_cluster_separation(snaps, ranges, vis)` | Pairwise centre-of-mass separations of the initial clusters (merger runs) | `merger_cluster_separation` |
-| `plot_cluster_virial(snaps, ranges, vis)` | Virial ratio of each initial cluster from its bound members, `Q = 0.5` reference | `merger_cluster_virial` |
+| `plot_cluster_separation(snaps, ranges, vis)` | Pairwise centre-of-mass separations of the initial clusters (merger runs); per-pair lines for ≤ 5 clusters, min/max/mean envelope with the surviving-cluster staircase and the coalescence marker otherwise | `merger_cluster_separation` |
+| `plot_cluster_virial(snaps, ranges, vis)` | Internal virial ratio `Q_i(t)` of each initial cluster from its bound members (COM-subtracted, self-gravity only), `Q = 0.5` reference; log axis when `max(Q) > q_log_threshold` | `merger_cluster_virial` |
 | `plot_cluster_structure(snaps, ranges, vis)` | Two panels: bound half-mass radius per cluster with the engine's global `r₅₀` overlaid, and bound mass fraction | `merger_cluster_structure` |
 | `plot_density_profiles(snap, ranges, vis; specs)` | Density profiles of each cluster about its own centre (log–log) with the generating King/Plummer model dashed and a `ρ/ρ_model` ratio strip with unity guide | `merger_density_profiles_{initial,final}` |
 | `plot_velocity_dispersion(snap, ranges, vis)` | Radial (solid) and tangential (dashed) velocity dispersion profiles per cluster, and the anisotropy `β(r)` with the isotropic guide | `merger_velocity_dispersion` |
+| `plot_remnant_structure(diag, vis)` | Core and half-mass radii of the bound remnant against time above the ratio `r_h/r_c`, coalescence time marked | `remnant_structure` |
+| `plot_remnant_rotation(diag, vis)` | Two panels sharing the time axis: the ordered-motion parameter `λ_R` with the Peebles spin `λ_P` on a twin axis, and the alignment `cos θ` of the spin axis with the initial orbital angular momentum; coalescence time marked | `remnant_rotation` |
+| `plot_rotation_profile(profile, vis; rbar, lambda_r)` | `v_rot/σ` against cylindrical radius in the shells of the last analysed snapshot | `remnant_rotation_profile` |
+| `plot_mass_segregation_evolution(diag, vis)` | `Λ_MSR` with its error band against time above the half-mass radius ratio of the massive subset; threshold, coalescence and segregation times marked | `remnant_mass_segregation` |
 | `plot_hr(sevs, vis; epoch, bevs)` | HR diagram of one epoch coloured by stellar class, single stars and members of KS pairs (open markers) together, above a census strip of the stars per class against time with the epoch marked. Legend and axes are those of the whole run, so the figures of different epochs match; neutron stars and black holes are counted in the strip and never drawn on the plane | `hr_diagram_{early,mid,final}` |
 | `plot_hr_evolution(sevs, vis; bevs)` | The same layout with up to 6 evenly spaced epochs on shared axes under one legend; the strip marks the panel epochs and shows the classes that fall between them | `hr_evolution` |
 | `plot_escapers(escs, vis)` | Two panels: cumulative escaped mass step curve with totals annotation, and escape velocity vs time (log y) split into luminous / compact-remnant classes | `escapers` |
@@ -629,13 +625,18 @@ Static plots take the extension from `visualization.format`; animations are alwa
 | `plot_mass_segregation(sev, vis)` | Distance from density centre RI vs stellar mass, log–log, epoch annotated | `mass_segregation` |
 | `plot_evolutionary_clock(sev, vis)` | Histogram of the MS age fraction t/T_MS (K* ≤ 1), turnoff boundary and past-turnoff fraction annotated | `evolutionary_clock` |
 | `plot_core_mass(sevs, vis)` | Core mass MC vs total mass for evolved stars (K* ≥ 2) at the last epoch, MC = M identity guide | `core_mass_growth` |
-| `plot_cluster_separation(snaps, ranges, vis)` | Pairwise COM separations of the initial clusters; per-pair lines for ≤ 5 clusters, min/max/mean envelope + surviving-cluster staircase and coalescence marker otherwise | `merger_cluster_separation` |
-| `plot_cluster_virial(snaps, ranges, vis)` | Internal virial ratio `Q_i(t)` per initial cluster (COM-subtracted, self-gravity only); log axis when `max(Q) > q_log_threshold` | `merger_cluster_virial` |
+| `plot_binary_population(pop, vis)` | Two panels sharing the time axis: regularised pair counts (total and, when classified, hard and soft) above the binary fraction and the hard fraction in per cent; net change of the pair count annotated | `binary_population` |
+| `plot_binary_orbital_elements(bev, vis; m_mean, sigma_kms)` | Semi-major axis [au] against eccentricity of every regularised pair at one epoch; with a hard/soft scale the pairs are classed by the Heggie criterion, the class fractions annotated and the boundary of a pair of mean component-mass product marked | `binary_orbital_elements_initial`, `binary_orbital_elements_final` |
+| `plot_binary_period_distribution(bevs, vis)` | Histogram of `log₁₀(P/d)` of the regularised pairs at the first epoch (filled) and the last (dashed outline), pair counts annotated | `binary_period_distribution` |
 | `plot_merger_ic(result, vis)` | IC diagnostics: projections, 3-panel overview, velocity quiver by cluster, IMF histogram with Kroupa reference slopes, per-cluster radial density | `merger_ic_{xy,xz,yz}`, `merger_ic_overview`, `merger_ic_velocity`, `merger_ic_imf`, `merger_ic_density` |
 | `animate_cluster(snaps, vis)` | Animated scatter or surface density per projection, global or adaptive limits, one colour scale for all frames | `cluster_evolution_{xy,xz,yz}.gif` |
 | `animate_lagrangian(lagr, vis)` | Progressive line draw with ghost background and time cursor | `lagrangian_anim.gif` |
 | `animate_hr(sevs, vis; bevs)` | Animated HR diagram in the layout of `plot_hr`: fixed legend and axes, the epoch guide moving along the census strip | `hr_evolution_anim.gif` |
 | `plot_telemetry(samples, vis)` | Run telemetry against wall-clock time: cores busy with the host load average on a twin axis, resident memory (RSS, high-water mark), GPU utilisation when sampled; the means and the peak RSS are legend entries. Drawn for every run directory that holds the sampler's `telemetry*.csv` (`read_run_telemetry` concatenates the segments of restarted runs) | `telemetry` |
+| `plot_sweep_lagrangian(sweep_dir, vis)` | Lagrangian radius of one mass fraction against physical time for every completed sweep point, coloured by the value of one grid axis; seeds share the colour | `sweep_lagrangian` |
+| `plot_sweep_energy(sweep_dir, vis)` | `\|ΔE/E\|` per adjustment against physical time for every completed point, log axis, coloured by the value of one grid axis | `sweep_energy` |
+| `plot_sweep_ensemble(sweep_dir, vis; quantity)` | Median with the central 68 % and 95 % bands over the seeds of each grid point for `:lagrangian`, `:energy`, `:n_stars` or `:n_pairs`, coloured by one axis with the others held at annotated fixed values | `ensemble_<quantity>` |
+| `plot_control_comparison(sweep_dir, vis; quantity)` | Every completed merger point (solid) against its isolated control (dashed), coloured by the point's value of one grid axis; seeds share the colour | `control_<quantity>` |
 
 The merger plots (`plot_cluster_separation`, `plot_cluster_virial`) are generated automatically by `generate_plots`/`postprocess_external` when a `merger_summary.txt` is found next to the snapshots; the cluster index ranges come from `parse_merger_summary`. `plot_merger_ic` runs whenever a merger IC was generated in the same pipeline invocation (or can be re-run later via `load_merger_ic_result`).
 
@@ -651,7 +652,7 @@ plot_snapshot(snap, vis; filename = "cluster_final")
 
 ---
 
-## 10. Using the Julia API Directly
+## 11. Using the Julia API Directly
 
 ```julia
 using Nbody6Dynamics
@@ -695,7 +696,7 @@ generate_plots(results, cfg; run_dir)
 
 ---
 
-## 11. Output File Reference
+## 12. Output File Reference
 
 Files produced by the Nbody6++ simulation and read by this package:
 
@@ -747,7 +748,7 @@ plotting backend.
 
 ---
 
-## 12. N-body Units and Conversions
+## 13. N-body Units and Conversions
 
 Nbody6++ works in N-body units with `G = 1` and `M_total = 1`. When the engine builds the initial model itself, or reads a King model (`KZ(22) < 2` or `KZ(22) ≥ 6`), it rescales to Hénon units [Henon1971](@cite), `E_total = -1/4`, which makes the virial radius the unit of length. Nbody6Dynamics writes `dat.10` with `KZ(22) = 2`, which the engine reads without rescaling: the unit of length `RBAR` is the half-mass radius of the whole initial configuration, and `E_total` differs from `-1/4`. An isolated King `W₀ = 6` cluster starts near `E_total = -0.20` (`r_V ≈ 1.25 r_h`); a bound pair starts lower, its orbital binding energy adding to the total. The virial ratio is `Q = T/|W|` with equilibrium at `Q = 0.5`.
 
@@ -779,16 +780,16 @@ The same factors are available per snapshot from the conf.3 header via the acces
 
 ---
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 ### Build fails with "hdf5.mod not found"
 
-**Fedora**: the `h5pfc` wrapper likely has a broken includedir; see [Build Phase Details](#6-build-phase-details).
+**Fedora**: the `h5pfc` wrapper likely has a broken includedir; see [Build Phase Details](@ref "6. Build Phase Details").
 **Ubuntu**: ensure `libhdf5-dev` (or `libhdf5-openmpi-dev` with MPI) is installed.
 
 ### Run never advances past t = 0
 
-The engine prints the t = 0 adjustment, then sits at 100 % of one core forever; the start-up watchdog ends it. The cause is the engine's `string_left.f`, which counts the decimal digits of `DELTAT`, `DTADJ` and `DTPLOT` by multiplying by ten until the value is an integer, with a default-kind `int`. A value such as `0.6302` never becomes an integer in binary arithmetic; past 2³¹ the conversion overflows and the loop never ends, inside the very first output. The generator therefore writes these three intervals as dyadic rationals with an exact decimal expansion (`engine_interval`, change below 0.4 %) and logs the rounding. For a hand-written input, choose intervals such as `0.5`, `0.25`, `0.125`, `0.0625` or any other `m/2ᵏ` with `k ≤ 9`, written out in full (exactly ten decimals trip a second defect of the same routine, an invalid `I1` format, which ends the run with a runtime error at the next output); `engine_interval(x)` gives the nearest such value. This hang was for a time attributed to a small initial neighbour radius; the neighbour radius has no part in it.
+The engine prints the t = 0 adjustment, then sits at 100 % of one core forever; the start-up watchdog ends it. The cause is the engine's `string_left.f`, which counts the decimal digits of `DELTAT`, `DTADJ` and `DTPLOT` by multiplying by ten until the value is an integer, with a default-kind `int`. A value such as `0.6302` never becomes an integer in binary arithmetic; past 2³¹ the conversion overflows and the loop never ends, inside the very first output. The generator therefore writes these three intervals as dyadic rationals with an exact decimal expansion (`engine_interval`, change below 0.4 %) and logs the rounding. For a hand-written input, choose intervals such as `0.5`, `0.25`, `0.125`, `0.0625` or any other `m/2ᵏ` with `k ≤ 9`, written out in full (exactly ten decimals trip a second defect of the same routine, an invalid `I1` format, which ends the run with a runtime error at the next output); `engine_interval(x)` gives the nearest such value.
 
 ### Simulation segfaults immediately
 
@@ -800,7 +801,7 @@ The engine's arrays have compile-time sizes, written into `include/params.h` by 
 
 ### Simulation exits with status 2 after a burst of escapers
 
-`err1000` ends with `Fortran runtime error: Expected REAL for item ... in formatted transfer` at `escape.F`. The engine's escaper summary writes the names of the escapers of one adjustment interval with a format that holds a thousand of them, and the 1001st name restarts the format at a real-number descriptor. This happens in isolated multi-cluster runs, where the escape radius is `2 × 10 RSCALE` about the global density centre and ejecta from an early collapse cross it together many crossing times later. The build corrects the format ([Source amendments](#source-amendments)), so the failure means the binary predates that step or the amendment did not fit the engine revision: check `source_amendments` in the `[build]` table of `RUN_INFO.toml` and rebuild with `install.enabled = true`. The output written before the failure is intact.
+`err1000` ends with `Fortran runtime error: Expected REAL for item ... in formatted transfer` at `escape.F`. The engine's escaper summary writes the names of the escapers of one adjustment interval with a format that holds a thousand of them, and the 1001st name restarts the format at a real-number descriptor. This happens in isolated multi-cluster runs, where the escape radius is `2 × 10 RSCALE` about the global density centre and ejecta from an early collapse cross it together many crossing times later. The build corrects the format ([Source amendments](@ref)), so the failure means the binary predates that step or the amendment did not fit the engine revision: check `source_amendments` in the `[build]` table of `RUN_INFO.toml` and rebuild with `install.enabled = true`. The output written before the failure is intact.
 
 ### "CUDA not found" during build
 
@@ -829,4 +830,4 @@ generate_plots(results, cfg; run_dir = "runs/run_20260325_143022_a1f3")
 
 ### HDF5 snapshots present but nothing is read
 
-Expected: the `KZ(46)` H5Part layout is not supported (see the note in [Configuration Reference](#4-configuration-reference)). Enable `conf.3` output in the `.inp` file (`KZ(3)` ≥ 1) and use `snapshot_format = "conf3"`.
+Expected: the `KZ(46)` H5Part layout is not supported (see the note in [Configuration Reference](@ref "4. Configuration Reference")). Enable `conf.3` output in the `.inp` file (`KZ(3)` ≥ 1) and use `snapshot_format = "conf3"`.

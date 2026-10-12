@@ -380,7 +380,8 @@ Base.@kwdef struct Nbody6ParameterSpec
 end
 
 """
-    StellarSpec(; kz19 = 3, level = "C", zmet = 0.001, epoch0 = 0.0, dtplot = 1.0)
+    StellarSpec(; kz19 = 3, level = "C", zmet = 0.001, epoch0 = 0.0, dtplot = 1.0,
+                  dtplot_myr = 0.0)
 
 Stellar-evolution settings of `merger.inp` (`[merger.stellar]`):
 
@@ -393,6 +394,8 @@ Stellar-evolution settings of `merger.inp` (`[merger.stellar]`):
   `−epoch0`)
 - `dtplot`: interval of the stellar-evolution diagnostics [NB]; > 0 and,
   per the manual, ≥ `deltat`
+- `dtplot_myr`: the same in Myr; a positive value replaces `dtplot` at
+  generation, converted with the realised time unit
 """
 Base.@kwdef struct StellarSpec
     kz19::Int = 3

@@ -1,8 +1,6 @@
 # Contributing
 
-I develop this package in the open and take issues and pull requests. This
-page says what a change needs so that it can be merged without a second
-round.
+A change is merged when it meets the points below.
 
 ## Setting up
 
@@ -22,7 +20,9 @@ julia -e 'include("activate.jl"); Pkg.test()'
 and needs no engine binary. The engine-dependent tests (build, launch,
 restart, tidal field, telemetry) run when `NBODY6_BINARY_TESTS=1` is set; they
 clone and build Nbody6++GPU in a temporary directory, or use an existing build
-under `NBODY6_BACKEND_ROOT`. Julia 1.13 or later is required; a Linux host with
+under `NBODY6_BACKEND_ROOT`. `NBODY6_GPU_TESTS=1` runs the GPU-gated set as
+well (a CUDA build in a temporary tree, N = 1000 on one device and on two); it
+needs a CUDA host. Julia 1.13 or later is required; a Linux host with
 `gfortran` and `make` is needed for the engine.
 
 ## What a pull request needs

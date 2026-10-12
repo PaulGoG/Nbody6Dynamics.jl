@@ -23,7 +23,7 @@ input_files/
 | `verification/` | `verif_triorbit`, `verif_3d5cluster` | Input Files, "Verification configurations" |
 | `sweeps/` | `sweep_demo` (base: the root `config.toml` and `mergers/merger_demo_small.toml`) | Manual, "Parameter sweeps" |
 | `showcase/` | `{equal,binary,tidal,flagship}_{merger,pipeline}.toml`, `sweep.toml` with `sweep_{merger,pipeline}.toml` | Showcase Cases |
-| `gpu/` | `gpu_pipeline`, `cpu_pipeline`, `merger_50k`, `merger_600k`, `single_600k`, `{gpu,cpu}_{merger,single}_600k` | Input Files, "The GPU-host cases"; Manual, "Recipe for a CUDA host" |
+| `gpu/` | `gpu_pipeline`, `cpu_pipeline`, `merger_50k`, `merger_600k`, `single_600k`, `{gpu,cpu}_{merger,single}_600k` | Input Files, "Showcase and GPU-host cases" and "The GPU-host and verification cases"; Manual, "Recipe for a CUDA host" |
 
 Relative paths inside a TOML resolve against the file's own directory; the
 pipeline TOMLs of `showcase/` and `gpu/` point at the checkout's `backend/`

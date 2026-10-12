@@ -12,12 +12,12 @@ by this package.*
 
 - **Merger IC generation** — Multi-cluster initial conditions with validated King (1966) and Plummer samplers (King concentration `c(W0)` matches published values to <1%), Kroupa (2001) IMF in natural / rescaled / equal-mass modes, per-cluster virialisation to `Q = 0.5`, Jacobi truncation, Kepler, explicit or single-cluster placement, and `dat.10` + `merger.inp` output for `KZ(22)=2`
 - **Pipeline orchestration** — Single `run_pipeline(cfg)` entry point driven by `config.toml`: install/build → merger ICs → simulation → post-processing → plots, each phase independently switchable
-- **Install & build** — Clone, configure, patch (HDF5 build flags), and compile Nbody6++GPU with auto-detected CUDA/MPI
+- **Install & build** — Clone, source amendments, configure, Makefile patch, and compile Nbody6++GPU with auto-detected CUDA/MPI
 - **Simulate** — Unique run IDs, frozen config snapshots, isolated `runs/<run_id>/` directories, real-time ADJUST monitoring
 - **Post-process** — Readers for `conf.3_*` snapshots (Fortran binary), stdout diagnostics (`out1000`), Lagrangian radii (`lagr.7`), escapers (`esc.11`), stellar evolution (`sev.83_*`) and regularised binaries (`bev.82_*`)
 - **Visualise** — Static figures and GIF animations with CairoMakie, including merger-specific diagnostics (inter-cluster separation, per-cluster virial ratio, IC overview plots)
 - **External post-processing** — Config-free `postprocess_external(dir)` for arbitrary Nbody6++ output directories, with automatic file discovery via `scan_output`
-- **Tests** — Unit tests against real output fixtures (`out1000`, `lagr.7`, `esc.11`, `sev.83`) plus physics validation (King concentration, Plummer `r_hm = 1.305a`, Kroupa mean mass, virialisation, Kepler/Jacobi relations)
+- **Tests** — Unit tests against real output fixtures (`out1000`, `lagr.7`, `esc.11`, `sev.83`, `bev.82`) plus physics validation (King concentration, Plummer `r_hm = 1.305a`, Kroupa mean mass, virialisation, Kepler/Jacobi relations)
 
 ## Quick Start
 
@@ -47,7 +47,7 @@ $EDITOR config.toml
 julia scripts/run_setup.jl config.toml
 ```
 
-The figure routines are a package extension (see [Visualisation](@ref "9. Visualisation")): a
+The figure routines are a package extension (see [Visualisation](@ref "10. Visualisation")): a
 session that produces figures loads a Makie backend first, a numerics-only session needs
 neither the backend nor its dependencies.
 
@@ -59,14 +59,7 @@ run_pipeline(load_config("config.toml"))
 
 ## Usage Modes
 
-| Mode                | Settings                                                        |
-|:--------------------|:----------------------------------------------------------------|
-| Full pipeline       | `install.enabled=true`, `simulation.run_test=true`              |
-| Simulate only       | `install.enabled=false`, `simulation.run_test=true`             |
-| Postprocess only    | `simulation.run_test=false`, `postprocess.data_dir="..."`       |
-| Re-plot latest run  | `simulation.run_test=false`, `postprocess.data_dir=""`          |
-| Merger ICs only     | `merger.enabled=true`, `simulation.run_test=false`              |
-| Merger + simulate   | `merger.enabled=true`, `simulation.run_test=true`               |
+The six ways of running the pipeline (full, simulate only, post-process only, re-plot, initial conditions only, initial conditions plus simulation) are listed in the manual, [Pipeline Modes](@ref "5. Pipeline Modes").
 
 ## Programmatic API
 
@@ -96,6 +89,6 @@ See the [API Reference](@ref) for the complete public interface.
 ## Contents
 
 ```@contents
-Pages = ["manual.md", "input_files.md", "showcase.md", "multi_cluster_mergers.md", "api.md"]
+Pages = ["walkthrough.md", "manual.md", "input_files.md", "showcase.md", "multi_cluster_mergers.md", "api.md", "references.md"]
 Depth = 2
 ```

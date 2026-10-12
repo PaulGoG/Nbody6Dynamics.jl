@@ -4,7 +4,7 @@
 |:-:|:-:|:-:|:-:|
 | [![Docs stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/stable/)<br>[![Docs dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/) | [![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)<br>[![Backend build](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml)<br>[![Codecov](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl) | [![Format check](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml)<br>[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)<br>[![JET](https://img.shields.io/badge/tested_with-JET.jl-233f9a.svg)](https://github.com/aviatesk/JET.jl) | [![Release](https://img.shields.io/github/v/release/PaulGoG/Nbody6Dynamics.jl?display_name=tag&sort=semver)](https://github.com/PaulGoG/Nbody6Dynamics.jl/releases)<br>[![Julia](https://img.shields.io/badge/Julia-1.13%2B-9558B2.svg?logo=julia&logoColor=white)](https://julialang.org)<br>[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)<br>[![Project Status: Active](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active) |
 
-A Julia package that automates the full lifecycle of [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations: install/build of the Fortran code, multi-cluster merger initial-condition generation, simulation execution, post-processing of all standard output files, and figures. Every phase is driven by a single TOML configuration and orchestrated through one entry point, `run_pipeline`.
+A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations end to end: it clones and builds the Fortran engine, generates initial conditions for single clusters and multi-cluster mergers, launches and supervises the integration (with restart dumps, wall budgets and resumption across queue segments), reads every standard output file, computes the cluster diagnostics and draws the figures. One TOML configuration drives every phase through a single entry point, `run_pipeline`.
 
 ![Projected surface density of two merging star clusters: the pair at release, the two cores at 4 Myr and the remnant at 50 Myr](docs/src/assets/merger_evolution.png)
 
@@ -32,7 +32,7 @@ Nbody6Dynamics/
 ├── src/              # Library: orchestration, IC generator, readers, diagnostics
 ├── ext/              # Makie extension: figures and animations
 ├── scripts/          # CLI entry points
-├── input_files/      # Shipped inputs by purpose: engine/, mergers/, verification/, sweeps/, showcase/, gpu/
+├── input_files/      # Shipped inputs by purpose: engine/, clusters/, mergers/, verification/, sweeps/, showcase/, gpu/
 ├── test/             # Unit and physics-validation suite
 ├── bench/            # Benchmarks and scaling scripts
 ├── docs/             # Documenter.jl site sources
@@ -99,17 +99,17 @@ One invocation each; details in the sections below.
 | Instantiate the package environment | `julia activate.jl` |
 | Instantiate the script environment (figures) | `julia scripts/activate.jl` |
 | Run the main pipeline | `julia scripts/run_setup.jl [config.toml]` |
-| Continue a stopped or interrupted run | `julia scripts/run_resume.jl <run_dir>` (one more segment; post-processing and figures once the run is complete) |
+| Continue a stopped or interrupted run | `julia scripts/run_resume.jl <run_dir>` (one segment per call; post-processing and figures once the run is complete) |
+| Generate a single cluster or a merger and run it | `julia scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (the showcase cases; a single-cluster case: `[merger] config_file = "input_files/clusters/imbh_runaway.toml"`) |
 | Run a parameter sweep | `julia scripts/run_sweep.jl input_files/sweeps/sweep_demo.toml [--dry-run]` |
-| Run a showcase case | `julia scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (also `binary_`, `tidal_`, `flagship_`; the sweep via `scripts/run_sweep.jl input_files/showcase/sweep.toml`; the cases, their reference runs and figures: docs, Showcase Cases) |
 | Run the verification suite | `julia scripts/run_verif_suite.jl` |
 | Execute the test suite | `julia -e 'include("activate.jl"); Pkg.test()'` |
 | Run the benchmarks | `julia bench/benchmarks.jl` |
-| Validate a CUDA host | `julia scripts/run_gpu_validation.jl` (GPU-gated suite, GPU and CPU pipelines, scaling benchmark; host record, logs and results under `runs/gpu_validation_<host>_<timestamp>/`; `--dry-run`, `--stages=`; `--stop-on-failure` and the `*_600k` probe stages make a gated one-shot campaign) |
+| Validate a CUDA host | `julia scripts/run_gpu_validation.jl` (`--dry-run`, `--stages=`, `--stop-on-failure`; results under `runs/gpu_validation_<host>_<timestamp>/`) |
 | Build and run on a CUDA host by hand | `julia scripts/run_setup.jl input_files/gpu/gpu_pipeline.toml` (CPU reference: `cpu_pipeline.toml`; recipe in the manual) |
-| Measure the GPU speed-up | `julia bench/gpu_scaling.jl 20000,50000 4,8 "0;0,1" 0.25` (needs the CPU and the GPU binary); `600000,1000000 8 "0" 0.25` reaches the regime above 5 × 10⁵ bodies, as do the `*_600k.toml` pipelines under `input_files/gpu/` |
-| Measure the device's FP32 peak | `julia bench/fp32_peak_probe.jl --out=runs` (own shared environment, created on first use; `--backend=cpu` without a device) |
-| Build the documentation | `julia docs/make.jl` (also executes the walkthrough; the site lands in `docs/build/`) |
+| Measure the GPU speed-up | `julia bench/gpu_scaling.jl 20000,50000 4,8 "0;0,1" 0.25` (needs the CPU and the GPU binary) |
+| Measure the device's FP32 peak | `julia bench/fp32_peak_probe.jl --out=runs` (`--backend=cpu` without a device) |
+| Build the documentation | `julia docs/make.jl` (executes the walkthrough; the site lands in `docs/build/`) |
 
 ## Usage
 
@@ -136,11 +136,11 @@ Or via the CLI wrapper:
 julia scripts/run_setup.jl [config.toml]
 ```
 
-Standalone merger IC generation (no main config needed):
+Initial conditions alone, without a pipeline configuration (a single cluster or a merger; the file decides):
 
 ```julia
-result = run_merger_pipeline("input_files/mergers/merger_equal_mass.toml")
-# writes dat.10, merger.inp, merger_summary.txt + diagnostic plots
+result = run_merger_pipeline("input_files/clusters/gc_bh_subsystem.toml")
+# writes dat.10, merger.inp, merger_summary.txt, merger_ic.toml and the IC figures
 ```
 
 Post-process any directory containing Nbody6++ output, config-free:
@@ -150,20 +150,18 @@ scan = scan_output("/scratch/sim42/output")     # report available files
 results = postprocess_external("/scratch/sim42/output")
 ```
 
-Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, frozen `config.toml`). Run IDs come from `generate_run_id` (prefix + timestamp + 4-hex uniqueness suffix); merger runs prepend `merger_` to the configured prefix.
-
-The directory of the configuration file is the project directory: relative paths in the file (`install_dir`, `input_file`, `runs_dir`, `data_dir`, `config_file`) resolve against it, and `backend/` and `runs/` are created there, never inside the package. A project therefore needs only a `config.toml`; the shipped inputs are reachable through `example_input("N1k_quick.inp")` when the package was installed by URL rather than cloned.
+Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, frozen `config.toml`, `RUN_INFO.toml` with one entry per engine segment). Run IDs come from `generate_run_id` (prefix + timestamp + 4-hex uniqueness suffix); runs from generated initial conditions prepend `merger_` to the configured prefix.
 
 ## Status
 
 | Component | Status | Notes |
 |-----------|--------|-------|
 | Install / build | Working | Clone, source amendments (`deps/engine/amendments.toml`: the escaper summary format that aborted a run at more than 1000 escapers in one step), `configure`, HDF5 Makefile patch, parallel make; CUDA path auto-detection; GPU builds compiled for the visible devices' compute capabilities or an explicit `cuda_arch` list (the upstream configure emits no architecture flag), `BUILD_INFO.toml` next to the binary, CPU/GPU/MPI binary variants selected by suffix. Validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3); see the manual, section Validated hardware |
-| Merger IC generator | Working | Plummer + King samplers (King c(W0) validated against published concentrations); Kroupa (2001) IMF; Kepler two-body, explicit N-cluster and single-cluster modes (the shipped science cases and the sweep controls are single-mode configurations); primordial binaries (Kroupa 1995 periods, thermal eccentricities, written in the engine's pair convention); Jacobi truncation; seeded reproducibility — the TOML `seed` drives the sampler RNG and propagates to Nbody6's `NRAND`; the output intervals are written as dyadic rationals with exact decimals, because the engine's digit counter never terminates on other values. The engine itself has no multi-centre diagnostics: cluster-level results before coalescence come from the snapshot-based per-cluster tools, not from `lagr.7`/`esc.11`; see "Feasibility and limitations" in the merger documentation |
+| Initial-condition generator | Working | Plummer and King samplers (King c(W0) validated against published concentrations); Kroupa (2001) IMF; one cluster at rest, two clusters on a Kepler orbit, or N clusters on explicit orbits (the shipped science cases and the sweep controls are single-cluster configurations); primordial binaries (Kroupa 1995 periods, thermal eccentricities, written in the engine's pair convention); Jacobi truncation; integration parameters from the engine's rules or from the campaign preset; seeded reproducibility (the TOML `seed` drives the sampler and the engine's `NRAND`); output intervals written as dyadic rationals with exact decimals, which the engine's digit counter requires. The engine has no multi-centre diagnostics: cluster-level results before coalescence come from the snapshot-based per-cluster tools, not from `lagr.7` or `esc.11` (merger documentation, "Feasibility and limitations") |
 | Remnant diagnostics | Working | Bound remnant of the whole system per snapshot: Casertano–Hut core radius (engine densities or sixth-neighbour estimate), half-mass radius, rotation (λ_R, Peebles λ_P, spin alignment with the orbital angular momentum, v_rot/σ profile), Allison et al. (2009) Λ_MSR mass segregation with segregation time, union-find coalescence time; `remnant_diagnostics.csv` and four figures per merger run |
 | Stellar population | Working | `STELLAR_CLASSES` (engine grouping of K* = −1…15), `hr_population` (single stars and members of KS pairs together), `stellar_census` per epoch and class, written as `stellar_census.csv`; HR figures with a run-level legend and a census strip |
 | Parameter sweeps | Working | Sweep TOML → Cartesian grid over dotted merger-TOML keys × seeds; one directory per point with derived configs validated before launch; points run as concurrent worker processes (`omp_threads` per job from the cost model); `sweep_index.toml` kept current, `sweep_summary.csv` with final N, pairs, energy error and virial ratio; comparison figures on common axes coloured by one grid axis; seeded ensembles (a sweep without axes, or the seeds of every grid point) summarised by median and central 68/95 % bands on a common time grid; `controls = true` adds the isolated single-cluster equivalent of every point and a paired merger-versus-control figure |
-| Simulation runner | Working | Launch script with `OMP_NUM_THREADS` and `GPU_LIST` control, live stdout monitoring, start-up watchdog and completion monitor (`exit_grace`: an engine that printed `END RUN` but never exits is terminated and recorded as completed), opt-in in-terminal sparklines of the diagnostics (`live_diagnostics`), run summary with exact CPU accounting, sampled CPU/memory/GPU telemetry (`telemetry.csv`), the devices the engine initialised and the build record; `resume_run` continues an interrupted run to its end time from the last complete COMMON dump and moves aside what a killed segment wrote after it (`restart_simulation` for a chosen dump or a longer span), with per-segment bookkeeping: each launch is recorded when it starts and closed with a status (`completed`, `stopped`, `halted`, `watchdog`, `killed`, `failed`); a wall budget per segment (`wall_budget`, `stop_margin`) that stops the engine through its `STOP` file with a restart dump, and the same stop when the driver receives SIGTERM; merger runs execute inside the IC output dir so `dat.10` is found; an operator interrupt terminates the engine (own session), and the run record carries the commits captured at launch |
+| Simulation runner | Working | Launch script with `OMP_NUM_THREADS` and `GPU_LIST` control, live stdout monitoring, start-up watchdog and completion monitor (`exit_grace`: an engine that printed `END RUN` but never exits is terminated and recorded as completed), opt-in in-terminal sparklines of the diagnostics (`live_diagnostics`), run summary with exact CPU accounting, sampled CPU/memory/GPU telemetry (`telemetry.csv`), the devices the engine initialised and the build record. Long runs: a wall budget per segment (`wall_budget`, `stop_margin`) stops the engine through its `STOP` file with a restart dump, as does SIGTERM to the driver; `resume_run` continues an interrupted run from its last complete dump and moves aside what a killed segment wrote after it; every launch is recorded in `RUN_INFO.toml` and closed with a status (`completed`, `stopped`, `halted`, `watchdog`, `killed`, `failed`). Generated runs execute inside their IC output directory so the engine finds `dat.10`; an operator interrupt terminates the engine, and the run record carries the commits captured at launch |
 | I/O readers | Working | `conf.3` (standard + extended; `read_all_conf3` reads in threaded chunks when Julia has more than one thread), `out1000` diagnostics (ADJUST + physical scaling; virial ratio Q = T/\|W\|, equilibrium at 0.5), `lagr.7`, and `esc.11` (incl. the ANGLE PHI / ANGLE THETA escape-direction columns) / `sev.83_*` / `bev.82_*` in the fork's real formats; `STELLAR_TYPE_LABELS` follow the Hurley convention (13 = NS, 14 = BH); `UnitScaling.zmbar` is the total-mass scale factor M*, not the mean stellar mass. `.h5part` files are detected and reported as unsupported |
 | Plotting / animation | Working | Publication theme: no titles, no minor ticks, Computer Modern fonts, dashed grey low-opacity grid on line plots; presentation knobs config-driven via `[visualization.style]` (`PlotStyle`); escaper suite (cumulative mass loss, velocity classes, escape anisotropy) and SSE-quantity plots (mass segregation, t/T_MS evolutionary clock, core-mass growth); binary suite (pair counts with the Heggie hard/soft split, binary fraction, `a`–`e` diagrams, period histograms); existing figures are never overwritten (safesave-style `#1`, `#2`, … backups) |
 | Load latency | Working | PrecompileTools workload over the configuration, diagnostics-reader and merger-IC paths; the first `load_config` of a session runs compiled |
@@ -276,20 +274,20 @@ Nbody6Dynamics/
 │   │   └── binary_evolution.jl      # bev.82_* regularised-binary reader
 │   ├── ic/
 │   │   ├── ic.jl                    # run_merger_pipeline / generate_merger_ic entry points
-│   │   ├── config.jl                # Merger TOML parser: ClusterSpec, OrbitSpec, seed
+│   │   ├── config.jl                # IC TOML parser: ClusterSpec, OrbitSpec, Nbody6ParameterSpec (presets), stellar and tidal specs
 │   │   ├── control.jl               # Isolated single-cluster control derived from a merger TOML
 │   │   ├── models.jl                # Plummer & King (ODE-solved) density samplers
 │   │   ├── imf.jl                   # Kroupa (2001) IMF, rescaled & equal-mass variants
-│   │   ├── orbits.jl                # Kepler two-body + explicit N-cluster orbits, Jacobi radius, virialise!
+│   │   ├── orbits.jl                # Kepler two-body, explicit N-cluster and single-cluster placement, Jacobi radius, virialise!
 │   │   ├── binaries.jl              # Primordial binary populations
-│   │   └── output.jl                # dat.10 writer, merger.inp generator (seed → NRAND)
+│   │   └── output.jl                # dat.10 writer, merger.inp generator, integration-parameter resolution per preset
 │   └── plotting_api.jl              # Figure interface: the public routines, implemented by the Makie extension
 ├── ext/
 │   ├── Nbody6DynamicsMakieExt.jl    # Extension module, loaded by `using CairoMakie`
 │   └── plotting/
 │       ├── common.jl                # Publication theme (Computer Modern fonts), figure sizing, axis helpers
 │       ├── dispatch.jl              # generate_plots: the single figure dispatcher
-│       ├── snapshots.jl             # Projection scatter plots, cluster separation & per-cluster virial
+│       ├── snapshots.jl             # Projection figures (surface density or scatter), cluster separation & per-cluster virial
 │       ├── energy.jl                # Energy error & particle count from diagnostics
 │       ├── lagrangian.jl            # Lagrangian radii evolution
 │       ├── hr.jl                    # HR figures: run-level legend, panels, census strip; HR animation
