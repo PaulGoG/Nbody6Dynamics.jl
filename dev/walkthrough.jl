@@ -1,10 +1,8 @@
 # # Walkthrough: a two-cluster merger from configuration to initial conditions
 #
-# This page is generated from `docs/src/walkthrough.jl` with Literate.jl and
-# executed when the documentation is built. It covers what a merger study
-# needs before the engine runs: the configuration, the generated initial
-# conditions, the derived integration parameters, and the initial-condition
-# figures. The engine itself is not executed here; the
+# What a merger study needs before the engine runs: the configuration, the
+# generated initial conditions, the derived integration parameters, and the
+# initial-condition figures. The engine itself is not executed here; the
 # [user manual](@ref "Nbody6Dynamics.jl — User Manual") covers `run_pipeline`
 # and the post-processing of a finished run.
 
