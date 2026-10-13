@@ -89,6 +89,7 @@ end
     include("test_run.jl")
     include("test_resume.jl")
     include("test_cost.jl")
+    include("test_cluster.jl")
     include("test_io.jl")
     include("test_diagnostics.jl")
     include("test_sweep_ensemble.jl")
