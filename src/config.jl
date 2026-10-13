@@ -82,6 +82,14 @@ function _typed(value, ::Type{Vector{Float64}}, key::AbstractString)
     return Float64[Float64(v) for v in value]
 end
 
+function _typed(value, ::Type{Vector{Vector{Float64}}}, key::AbstractString)
+    (
+        value isa AbstractVector &&
+        all(row -> row isa AbstractVector && all(v -> v isa Real && !(v isa Bool), row), value)
+    ) || _typed_error(key, "array of arrays of numbers", value)
+    return Vector{Float64}[Float64[Float64(v) for v in row] for row in value]
+end
+
 """
     _parse_section(T, table, section; skip = ()) -> T
 
@@ -108,7 +116,7 @@ function _parse_section(
 end
 
 const _CONFIG_SECTIONS =
-    ("install", "build", "simulation", "postprocess", "visualization", "merger")
+    ("install", "build", "simulation", "postprocess", "visualization", "merger", "cluster", "cost")
 
 """
     load_config(path::AbstractString) -> Nbody6Config
@@ -138,6 +146,8 @@ function load_config(path::AbstractString)::Nbody6Config
         _parse_postprocess(get(raw, "postprocess", Dict{String,Any}())),
         _parse_visualization(get(raw, "visualization", Dict{String,Any}())),
         _parse_merger_pipeline(get(raw, "merger", Dict{String,Any}())),
+        _parse_cluster(get(raw, "cluster", Dict{String,Any}())),
+        _parse_cost(get(raw, "cost", Dict{String,Any}())),
         dirname(abspath(path)),
     )
     _validate(cfg)
@@ -159,6 +169,8 @@ function save_config(cfg::Nbody6Config, path::AbstractString)
         "postprocess" => _struct_to_dict(cfg.postprocess),
         "visualization" => _struct_to_dict(cfg.visualization),
         "merger" => _struct_to_dict(cfg.merger),
+        "cluster" => _struct_to_dict(cfg.cluster),
+        "cost" => _struct_to_dict(cfg.cost),
     )
     # TOML cannot serialize nested structs — convert explicitly
     d["visualization"]["style"] = _struct_to_dict(cfg.visualization.style)
@@ -180,6 +192,10 @@ _parse_simulation(d::Dict) = _parse_section(SimulationConfig, d, "simulation")
 _parse_postprocess(d::Dict) = _parse_section(PostprocessConfig, d, "postprocess")
 
 _parse_merger_pipeline(d::Dict) = _parse_section(MergerPipelineConfig, d, "merger")
+
+_parse_cluster(d::Dict) = _parse_section(ClusterConfig, d, "cluster")
+
+_parse_cost(d::Dict) = _parse_section(CostConfig, d, "cost")
 
 function _parse_visualization(d::Dict)
     st = get(d, "style", Dict{String,Any}())
@@ -404,6 +420,177 @@ function _validate(cfg::Nbody6Config)
         isempty(cfg.merger.config_file) &&
         _config_error("merger.config_file", "must be nonempty when merger.enabled = true")
 
+    # [cluster] / [cost]
+    _validate_cluster(cfg)
+    _validate_cost(cfg)
+
+    return nothing
+end
+
+"""
+    _slurm_seconds(s) -> Int
+
+Seconds of a Slurm time specification: `minutes`, `minutes:seconds`,
+`hours:minutes:seconds`, `days-hours`, `days-hours:minutes` or
+`days-hours:minutes:seconds` (the forms `sbatch --time` accepts). Raises an
+`ArgumentError` naming the string for anything else.
+"""
+function _slurm_seconds(s::AbstractString)::Int
+    text = strip(s)
+    bad() = throw(
+        ArgumentError(
+            "\"$s\" is not a Slurm time (minutes, mm:ss, hh:mm:ss, d-hh, d-hh:mm, d-hh:mm:ss)",
+        ),
+    )
+    field(x) = occursin(r"^\d+$", x) ? parse(Int, x) : bad()
+    if occursin('-', text)
+        days_s, rest = split(text, '-'; limit = 2)
+        days = field(days_s)
+        parts = split(rest, ':')
+        1 ≤ length(parts) ≤ 3 || bad()
+        hours = field(parts[1])
+        minutes = length(parts) ≥ 2 ? field(parts[2]) : 0
+        seconds = length(parts) == 3 ? field(parts[3]) : 0
+        return ((days * 24 + hours) * 60 + minutes) * 60 + seconds
+    end
+    parts = split(text, ':')
+    length(parts) == 1 && return field(parts[1]) * 60
+    length(parts) == 2 && return field(parts[1]) * 60 + field(parts[2])
+    length(parts) == 3 && return (field(parts[1]) * 60 + field(parts[2])) * 60 + field(parts[3])
+    return bad()
+end
+
+"""
+    _slurm_time(seconds) -> String
+
+A duration in Slurm's `days-hh:mm:ss` form (`hh:mm:ss` below one day), the
+inverse of [`_slurm_seconds`](@ref) for messages. `seconds` must be ≥ 0.
+"""
+function _slurm_time(seconds::Integer)::String
+    seconds ≥ 0 || throw(ArgumentError("a duration cannot be negative; got $seconds s"))
+    days, rem_d = divrem(seconds, 86_400)
+    h, rem_h = divrem(rem_d, 3600)
+    m, s = divrem(rem_h, 60)
+    hms = @sprintf("%02d:%02d:%02d", h, m, s)
+    return days == 0 ? hms : "$(days)-$(hms)"
+end
+
+const _SLURM_MEM_PATTERN = r"^\d+[KMGT]?$"
+
+"""
+    _validate_cluster(cfg::Nbody6Config)
+
+The `[cluster]` checks of [`_validate`](@ref), applied only when
+`cluster.enabled`: the scheduler, the time formats, the counts, the chain
+mode, and the fit of one segment — `simulation.wall_budget` must be set and
+`wall_budget + stop_margin + overhead` must not exceed `time_limit`, which in
+turn must not exceed `partition_limit` when that is given. Raises an
+`ArgumentError` naming the offending `cluster.<key>`.
+"""
+function _validate_cluster(cfg::Nbody6Config)
+    cl = cfg.cluster
+    cl.enabled || return nothing
+    sim = cfg.simulation
+    cl.scheduler == "slurm" ||
+        _config_error("cluster.scheduler", "must be \"slurm\"; got \"$(cl.scheduler)\"")
+    limit = try
+        _slurm_seconds(cl.time_limit)
+    catch e
+        e isa ArgumentError || rethrow()
+        _config_error("cluster.time_limit", e.msg)
+    end
+    if !isempty(cl.partition_limit)
+        plimit = try
+            _slurm_seconds(cl.partition_limit)
+        catch e
+            e isa ArgumentError || rethrow()
+            _config_error("cluster.partition_limit", e.msg)
+        end
+        limit ≤ plimit || _config_error(
+            "cluster.time_limit",
+            "= $(cl.time_limit) exceeds the partition limit $(cl.partition_limit)",
+        )
+    end
+    cl.nodes ≥ 1 || _config_error("cluster.nodes", "must be ≥ 1; got $(cl.nodes)")
+    cl.ntasks ≥ 1 || _config_error("cluster.ntasks", "must be ≥ 1; got $(cl.ntasks)")
+    cl.cpus_per_task ≥ 1 ||
+        _config_error("cluster.cpus_per_task", "must be ≥ 1; got $(cl.cpus_per_task)")
+    cl.julia_threads ≥ 0 ||
+        _config_error("cluster.julia_threads", "must be ≥ 0; got $(cl.julia_threads)")
+    cl.overhead ≥ 0 || _config_error("cluster.overhead", "must be ≥ 0; got $(cl.overhead)")
+    cl.max_segments ≥ 0 ||
+        _config_error("cluster.max_segments", "must be ≥ 0; got $(cl.max_segments)")
+    cl.chain in ("resubmit", "dependency") || _config_error(
+        "cluster.chain",
+        "must be one of \"resubmit\", \"dependency\"; got \"$(cl.chain)\"",
+    )
+    cl.chain == "dependency" &&
+        cl.max_segments < 1 &&
+        _config_error(
+            "cluster.max_segments",
+            "must be ≥ 1 with chain = \"dependency\" (the chain length is fixed at submission)",
+        )
+    isempty(cl.mem) ||
+        occursin(_SLURM_MEM_PATTERN, cl.mem) ||
+        _config_error(
+            "cluster.mem",
+            "must be a size with an optional K, M, G or T suffix (e.g. \"64G\"); got \"$(cl.mem)\"",
+        )
+    for opt in cl.sbatch_options
+        isempty(strip(opt)) && _config_error("cluster.sbatch_options", "entries must be nonempty")
+        startswith(strip(opt), '#') && _config_error(
+            "cluster.sbatch_options",
+            "entries are sbatch options without the \"#SBATCH\" prefix; got \"$opt\"",
+        )
+    end
+    isempty(cl.sbatch) && _config_error("cluster.sbatch", "must be nonempty")
+    sim.wall_budget > 0 || _config_error(
+        "cluster.enabled",
+        "requires simulation.wall_budget > 0: a cluster job stops its engine segment through the " *
+        "wall budget, below the job's time limit",
+    )
+    need = sim.wall_budget + sim.stop_margin + cl.overhead
+    need ≤ limit || _config_error(
+        "cluster.time_limit",
+        "= $(cl.time_limit) ($(limit) s) is too short for one segment: wall_budget " *
+        "$(sim.wall_budget) s + stop_margin $(sim.stop_margin) s + overhead $(cl.overhead) s = " *
+        "$(need) s; lower simulation.wall_budget or raise the limit",
+    )
+    return nothing
+end
+
+"""
+    _validate_cost(cfg::Nbody6Config)
+
+The `[cost]` checks of [`_validate`](@ref): a replacement table of ≥ 2 rows
+`[N, s_per_nb]` with strictly increasing `N` and positive values, a positive
+`merger_factor`, a non-negative `budget_hours` and an `on_exceed` of
+`"warn"` or `"refuse"`. Raises an `ArgumentError` naming the offending
+`cost.<key>`.
+"""
+function _validate_cost(cfg::Nbody6Config)
+    c = cfg.cost
+    if !isempty(c.table)
+        length(c.table) ≥ 2 || _config_error(
+            "cost.table",
+            "needs at least two rows [N, s_per_nb] to interpolate; got $(length(c.table))",
+        )
+        for row in c.table
+            length(row) == 2 ||
+                _config_error("cost.table", "rows must be [N, s_per_nb] pairs; got $row")
+            all(>(0), row) || _config_error("cost.table", "entries must be > 0; got $row")
+        end
+        ns = first.(c.table)
+        all(diff(ns) .> 0) ||
+            _config_error("cost.table", "rows must be in strictly increasing N; got N = $ns")
+    end
+    c.merger_factor > 0 ||
+        _config_error("cost.merger_factor", "must be > 0; got $(c.merger_factor)")
+    c.budget_hours ≥ 0 || _config_error("cost.budget_hours", "must be ≥ 0; got $(c.budget_hours)")
+    c.on_exceed in ("warn", "refuse") || _config_error(
+        "cost.on_exceed",
+        "must be one of \"warn\", \"refuse\"; got \"$(c.on_exceed)\"",
+    )
     return nothing
 end
 
@@ -449,6 +636,8 @@ function _with_absolute_paths(cfg::Nbody6Config, base_dir::AbstractString)::Nbod
         rebuild(cfg.postprocess; data_dir = _resolve_path(base_dir, cfg.postprocess.data_dir)),
         cfg.visualization,
         rebuild(cfg.merger; config_file = _resolve_path(base_dir, cfg.merger.config_file)),
+        cfg.cluster,
+        cfg.cost,
         String(abspath(base_dir)),
     )
 end

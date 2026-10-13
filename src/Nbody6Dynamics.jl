@@ -594,6 +594,8 @@ export Nbody6Config,
     PostprocessConfig,
     VisualizationConfig,
     MergerPipelineConfig,
+    ClusterConfig,
+    CostConfig,
     PlotStyle
 export load_config, save_config, example_input
 export setup_nbody6,

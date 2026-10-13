@@ -442,3 +442,130 @@ end
         @test m.output.tcrit_myr > 0 && m.output.dtadj_myr > 0 && m.output.deltat_myr > 0
     end
 end
+
+# =====================================================================
+
+@testset "Cluster and cost sections" begin
+    # Field-wise equality: `==` on these structs compares their vectors by identity.
+    same(a, b) = all(getfield(a, k) == getfield(b, k) for k in fieldnames(typeof(a)))
+    # Defaults and round trip
+    cfg0 = load_config(joinpath(TESTDIR, "empty_sections.toml") |> p -> (write(p, ""); p))
+    @test same(cfg0.cluster, ClusterConfig()) && same(cfg0.cost, CostConfig())
+    @test !cfg0.cluster.enabled && cfg0.cost.enabled
+    rt = joinpath(TESTDIR, "sections_rt.toml")
+    write(
+        rt,
+        """
+        [simulation]
+        wall_budget = 7200.0
+        stop_margin = 300.0
+
+        [cluster]
+        enabled = true
+        partition = "GPU"
+        gres = "gpu:1"
+        mem = "64G"
+        time_limit = "1-12:00:00"
+        partition_limit = "1-12:00:00"
+        cpus_per_task = 16
+        sbatch_options = ["--hint=nomultithread"]
+        prologue = ["module load cuda", "export JULIA_DEPOT_PATH=/data/depot:"]
+        chain = "dependency"
+        max_segments = 3
+        overhead = 600.0
+
+        [cost]
+        table = [[1.0e5, 64.0], [5.0e5, 281.0], [1.0e6, 1087.0]]
+        budget_hours = 100.0
+        on_exceed = "refuse"
+        """,
+    )
+    cfg = load_config(rt)
+    @test cfg.cluster.partition == "GPU" && cfg.cluster.gres == "gpu:1"
+    @test cfg.cluster.prologue == ["module load cuda", "export JULIA_DEPOT_PATH=/data/depot:"]
+    @test cfg.cost.table == [[1.0e5, 64.0], [5.0e5, 281.0], [1.0e6, 1087.0]]
+    rt2 = joinpath(TESTDIR, "sections_rt2.toml")
+    save_config(cfg, rt2)
+    cfg2 = load_config(rt2)
+    @test same(cfg2.cluster, cfg.cluster) && same(cfg2.cost, cfg.cost)
+    # Absolute-path form keeps both sections
+    abs_cfg = Nbody6Dynamics._with_absolute_paths(cfg, TESTDIR)
+    @test same(abs_cfg.cluster, cfg.cluster) && same(abs_cfg.cost, cfg.cost)
+    # Positional constructors
+    six = Nbody6Config(
+        cfg.install,
+        cfg.build,
+        cfg.simulation,
+        cfg.postprocess,
+        cfg.visualization,
+        cfg.merger,
+    )
+    @test same(six.cluster, ClusterConfig()) && six.config_dir == pwd()
+    seven = Nbody6Config(
+        cfg.install,
+        cfg.build,
+        cfg.simulation,
+        cfg.postprocess,
+        cfg.visualization,
+        cfg.merger,
+        "/x",
+    )
+    @test same(seven.cost, CostConfig()) && seven.config_dir == "/x"
+
+    # Slurm time formats
+    sec = Nbody6Dynamics._slurm_seconds
+    @test sec("90") == 5400
+    @test sec("1:30") == 90
+    @test sec("1:30:00") == 5400
+    @test sec("2-12") == 2 * 86400 + 12 * 3600
+    @test sec("2-12:30") == 2 * 86400 + 12 * 3600 + 1800
+    @test sec("2-12:30:15") == 2 * 86400 + 12 * 3600 + 1815
+    @test sec("36:00:00") == 129600
+    for bad in ("", "1:2:3:4", "12h", "1-", "a-1", "1:xx")
+        @test_throws ArgumentError sec(bad)
+    end
+    @test Nbody6Dynamics._slurm_time(129600) == "1-12:00:00"
+    @test Nbody6Dynamics._slurm_time(5400) == "01:30:00"
+    @test Nbody6Dynamics._slurm_time(sec("2-12:30:15")) == "2-12:30:15"
+    @test_throws ArgumentError Nbody6Dynamics._slurm_time(-1)
+
+    # Refusals name the key; a disabled section is not checked
+    refused(body, key) = begin
+        p = joinpath(TESTDIR, "sections_bad.toml")
+        write(p, body)
+        err = try
+            load_config(p)
+            nothing
+        catch e
+            e
+        end
+        err isa ArgumentError && occursin(key, err.msg)
+    end
+    base = "[simulation]\nwall_budget = 7200.0\nstop_margin = 300.0\n\n[cluster]\nenabled = true\n"
+    @test refused(base * "scheduler = \"pbs\"\n", "cluster.scheduler")
+    @test refused(base * "time_limit = \"12h\"\n", "cluster.time_limit")
+    @test refused(
+        base * "time_limit = \"2-00:00:00\"\npartition_limit = \"1-12:00:00\"\n",
+        "cluster.time_limit",
+    )
+    @test refused(base * "partition_limit = \"soon\"\n", "cluster.partition_limit")
+    @test refused(base * "chain = \"array\"\n", "cluster.chain")
+    @test refused(base * "chain = \"dependency\"\n", "cluster.max_segments")
+    @test refused(base * "mem = \"64 GB\"\n", "cluster.mem")
+    @test refused(base * "sbatch_options = [\"#SBATCH --exclusive\"]\n", "cluster.sbatch_options")
+    @test refused(base * "cpus_per_task = 0\n", "cluster.cpus_per_task")
+    @test refused(base * "sbatch = \"\"\n", "cluster.sbatch")
+    @test refused("[cluster]\nenabled = true\n", "cluster.enabled")               # no wall budget
+    @test refused(base * "time_limit = \"2:00:00\"\n", "cluster.time_limit")     # 7200 + 300 + 1800 > 7200
+    @test !refused(base * "time_limit = \"2:35:00\"\n", "cluster")              # 9300 ≤ 9300
+    @test !refused("[cluster]\nscheduler = \"pbs\"\nchain = \"array\"\nmem = \"x\"\n", "cluster")
+    @test refused("[cost]\ntable = [[1.0e5, 64.0]]\n", "cost.table")
+    @test refused("[cost]\ntable = [[1.0e5, 64.0, 1.0], [5.0e5, 281.0]]\n", "cost.table")
+    @test refused("[cost]\ntable = [[1.0e5, -64.0], [5.0e5, 281.0]]\n", "cost.table")
+    @test refused("[cost]\ntable = [[5.0e5, 281.0], [1.0e5, 64.0]]\n", "cost.table")
+    @test refused("[cost]\ntable = [1.0e5, 64.0]\n", "cost.table")
+    @test refused("[cost]\nmerger_factor = 0.0\n", "cost.merger_factor")
+    @test refused("[cost]\nbudget_hours = -1.0\n", "cost.budget_hours")
+    @test refused("[cost]\non_exceed = \"stop\"\n", "cost.on_exceed")
+    @test refused("[cluster]\nenable = true\n", "cluster.enable")
+end

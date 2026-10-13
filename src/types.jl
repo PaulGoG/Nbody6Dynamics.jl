@@ -223,6 +223,98 @@ Base.@kwdef struct MergerPipelineConfig
 end
 
 """
+    ClusterConfig
+
+Batch-scheduler layer of a run (`[cluster]`): one queue job per engine
+segment, chained until the run reaches its end time. The job script is
+generated into `<run_dir>/cluster/` at submission; nothing here is read
+unless `enabled`.
+
+# Fields
+- `enabled`: submit runs as scheduler jobs (`submit_run`) instead of
+  running them in the calling process
+- `scheduler`: `"slurm"` (the only scheduler supported)
+- `partition`, `account`, `qos`: the corresponding `sbatch` options; empty
+  = not passed
+- `job_name`: `--job-name`; empty = the run id
+- `time_limit`: `--time`, in Slurm's time format (`minutes`,
+  `minutes:seconds`, `hours:minutes:seconds`, `days-hours`,
+  `days-hours:minutes`, `days-hours:minutes:seconds`)
+- `partition_limit`: the partition's maximum time limit, same format; when
+  nonempty, `time_limit` must not exceed it
+- `nodes`, `ntasks`, `cpus_per_task`: the corresponding `sbatch` options
+  (each ≥ 1)
+- `mem`: `--mem`, e.g. `"64G"`; empty = the scheduler's default
+- `gres`: `--gres`, e.g. `"gpu:1"`; empty = none
+- `exclusive`: pass `--exclusive`
+- `sbatch_options`: further `#SBATCH` options, verbatim without the
+  `#SBATCH` prefix (e.g. `["--hint=nomultithread"]`)
+- `prologue`: shell lines run in the job before Julia starts (module
+  loads, depot paths)
+- `julia`: the Julia executable the job runs; empty = the one that submits
+- `julia_threads`: `JULIA_NUM_THREADS` of the job; `0` = `cpus_per_task`
+- `chain`: `"resubmit"` (each job submits its successor while the run is
+  short of its end time) or `"dependency"` (`max_segments` jobs submitted
+  at once, each `--dependency=afterok` on the one before)
+- `max_segments`: number of segments the chain may run; `0` = until the
+  run completes (`resubmit` only); `dependency` requires ≥ 1
+- `overhead`: wall-clock seconds of the job outside the engine's wall
+  budget (start-up, initial-condition generation, post-processing);
+  `wall_budget + stop_margin + overhead` must fit `time_limit`
+- `sbatch`: the submission executable
+"""
+Base.@kwdef struct ClusterConfig
+    enabled::Bool = false
+    scheduler::String = "slurm"
+    partition::String = ""
+    account::String = ""
+    qos::String = ""
+    job_name::String = ""
+    time_limit::String = "36:00:00"
+    partition_limit::String = ""
+    nodes::Int = 1
+    ntasks::Int = 1
+    cpus_per_task::Int = 8
+    mem::String = ""
+    gres::String = ""
+    exclusive::Bool = false
+    sbatch_options::Vector{String} = String[]
+    prologue::Vector{String} = String[]
+    julia::String = ""
+    julia_threads::Int = 0
+    chain::String = "resubmit"
+    max_segments::Int = 0
+    overhead::Float64 = 1800.0
+    sbatch::String = "sbatch"
+end
+
+"""
+    CostConfig
+
+Cost model of a run (`[cost]`): the wall time, the number of segments and
+the disk of an engine launch are estimated from a table of seconds per
+N-body time unit against particle number (`estimate_cost`), logged, written
+into the segment record, and compared with a budget.
+
+# Fields
+- `enabled`: estimate at every launch
+- `table`: rows `[N, s_per_nb]` (≥ 2 rows, strictly increasing `N`,
+  positive rates) replacing the built-in table measured on one H200 NVL
+  device; empty = the built-in table
+- `merger_factor`: factor applied to the rate of a two-cluster (merger)
+  configuration, whose time unit is set by the whole configuration; > 0
+- `budget_hours`: wall-time budget of one run [h]; ≥ 0, `0` = no check
+- `on_exceed`: `"warn"` or `"refuse"` when the estimate exceeds the budget
+"""
+Base.@kwdef struct CostConfig
+    enabled::Bool = true
+    table::Vector{Vector{Float64}} = Vector{Float64}[]
+    merger_factor::Float64 = 2.0
+    budget_hours::Float64 = 0.0
+    on_exceed::String = "warn"
+end
+
+"""
     Nbody6Config
 
 Top-level configuration aggregating all subsections.
@@ -234,6 +326,10 @@ the default `base_dir` of the pipeline entry points. [`load_config`](@ref)
 sets it to the directory of the file it read; a configuration built in memory
 takes the working directory. It is not a configuration key and is not
 written by [`save_config`](@ref).
+
+The positional constructor takes the eight sections and `config_dir`; the
+`cluster` and `cost` sections and `config_dir` may be omitted (defaults and
+the working directory).
 """
 struct Nbody6Config
     install::InstallConfig
@@ -242,6 +338,8 @@ struct Nbody6Config
     postprocess::PostprocessConfig
     visualization::VisualizationConfig
     merger::MergerPipelineConfig
+    cluster::ClusterConfig
+    cost::CostConfig
     config_dir::String
 end
 
@@ -252,7 +350,39 @@ Nbody6Config(
     postprocess::PostprocessConfig,
     visualization::VisualizationConfig,
     merger::MergerPipelineConfig,
-) = Nbody6Config(install, build, simulation, postprocess, visualization, merger, pwd())
+    cluster::ClusterConfig = ClusterConfig(),
+    cost::CostConfig = CostConfig(),
+) = Nbody6Config(
+    install,
+    build,
+    simulation,
+    postprocess,
+    visualization,
+    merger,
+    cluster,
+    cost,
+    pwd(),
+)
+
+Nbody6Config(
+    install::InstallConfig,
+    build::BuildConfig,
+    simulation::SimulationConfig,
+    postprocess::PostprocessConfig,
+    visualization::VisualizationConfig,
+    merger::MergerPipelineConfig,
+    config_dir::AbstractString,
+) = Nbody6Config(
+    install,
+    build,
+    simulation,
+    postprocess,
+    visualization,
+    merger,
+    ClusterConfig(),
+    CostConfig(),
+    String(config_dir),
+)
 
 # ---------------------------------------------------------------------------
 # Snapshot header — maps to conf.3 AS(1:20) array
