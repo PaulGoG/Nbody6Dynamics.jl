@@ -30,6 +30,23 @@ generate_run_id
 export_for_paper
 ```
 
+## Cluster Jobs
+
+```@docs
+submit_run
+cluster_segment
+job_script
+read_job_ledger
+```
+
+## Cost Model
+
+```@docs
+CostEstimate
+estimate_cost
+cost_rate
+```
+
 ## External Post-Processing
 
 ```@docs
@@ -49,6 +66,8 @@ PostprocessConfig
 VisualizationConfig
 PlotStyle
 MergerPipelineConfig
+ClusterConfig
+CostConfig
 ```
 
 ## Data Types

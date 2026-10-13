@@ -82,3 +82,34 @@ density_mass_frac   = 0.99      # mass fraction whose extent sets the panel limi
 [merger]
 enabled     = true
 config_file = "input_files/mergers/merger_demo_small.toml"   # nonempty when enabled = true
+
+[cluster]
+enabled         = false         # submit the run as a chain of scheduler jobs; requires simulation.wall_budget > 0
+scheduler       = "slurm"       # one of: "slurm"
+partition       = ""            # "" = not passed; same for account, qos
+account         = ""
+qos             = ""
+job_name        = ""            # "" = the run id
+time_limit      = "36:00:00"    # Slurm time format; wall_budget + stop_margin + overhead must fit
+partition_limit = ""            # "" = unchecked; else time_limit ≤ partition_limit
+nodes           = 1             # ≥ 1
+ntasks          = 1             # ≥ 1
+cpus_per_task   = 8             # ≥ 1
+mem             = ""            # e.g. "64G"; "" = scheduler default
+gres            = ""            # e.g. "gpu:1"; "" = none
+exclusive       = false
+sbatch_options  = []            # extra sbatch options without the "#SBATCH" prefix, e.g. ["--hint=nomultithread"]
+prologue        = []            # shell lines run in the job before Julia (module loads, depot paths)
+julia           = ""            # "" = the Julia that submits
+julia_threads   = 0             # 0 = cpus_per_task
+chain           = "resubmit"    # one of: "resubmit" | "dependency"
+max_segments    = 0             # ≥ 0; 0 = until the run completes (resubmit only); dependency requires ≥ 1
+overhead        = 1800.0        # s; ≥ 0; job time outside the engine's wall budget
+sbatch          = "sbatch"      # nonempty
+
+[cost]
+enabled       = true            # estimate wall time, segments and disk at every engine launch
+table         = []              # rows [N, s_per_nb]; [] = built-in table (one H200 NVL device, 8 host threads); ≥ 2 rows, increasing N
+merger_factor = 2.0             # > 0; rate factor of a two-cluster configuration
+budget_hours  = 0.0             # h; ≥ 0; 0 = no check
+on_exceed     = "warn"          # one of: "warn" | "refuse"

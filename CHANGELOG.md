@@ -25,6 +25,34 @@ entries say so.
 
 ### Added
 
+- Slurm job layer (`[cluster]`, `ClusterConfig`). `submit_run` and
+  `scripts/run_cluster.jl` turn a run into a chain of queue jobs, one per
+  engine segment: the job script is generated into `<run_dir>/cluster/`
+  from the section's keys (partition, account, qos, counts, memory, gres,
+  time limit, extra options, prologue lines) with `--signal=B:TERM` before
+  the limit, and `cluster_segment` runs a segment inside the job (the
+  pipeline on the first, a resume afterwards), resubmitting its successor
+  (`chain = "resubmit"`) or relying on a chain submitted at once
+  (`chain = "dependency"`). Job events are appended to `cluster/jobs.csv`
+  and `<runs_dir>/cluster_jobs.csv` (`read_job_ledger`). A configuration
+  whose segment does not fit the time limit, or whose time limit exceeds
+  the partition's, is refused at load. `--dry-run` renders the script and
+  the submission commands.
+
+- Cost model (`[cost]`, `CostConfig`). `estimate_cost` derives the wall
+  time, the number of wall-budget segments and the disk of a run from a
+  table of seconds per N-body time unit against particle number
+  (`cost_rate`; built-in rows measured on one H200 NVL device, replaceable
+  through `table`), with a factor for two-cluster configurations. Every
+  engine launch logs the estimate, writes it into the segment record
+  (`cost_*` keys) and warns or refuses against `budget_hours`.
+
+- Engines per device in sweeps. `[sweep] devices` and `engines_per_device`
+  assign a CUDA device to each point when it starts (the least-loaded one)
+  and admit at most that many engines per device, in addition to
+  `concurrency`; the point's frozen `config.toml`, the index and the
+  summary (`device` column) record the assignment.
+
 - Surface-density rendering of particle projections. `plot_snapshot`,
   `plot_snapshot_evolution` and `animate_cluster` draw the projected surface
   mass density (log₁₀ Σ in M☉ pc⁻², one colour scale per figure or

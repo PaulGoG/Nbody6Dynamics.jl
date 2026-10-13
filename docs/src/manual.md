@@ -179,6 +179,43 @@ Presentation knobs collected in the `PlotStyle` struct (`cfg.visualization.style
 
 The merger TOML schema itself (clusters, profiles, IMFs, orbit, output, seed) is documented in the Input File Reference (see [Merger TOML schema](@ref)).
 
+### `[cluster]`
+
+The batch-scheduler layer: one queue job per engine segment, chained until the run reaches its end time ([Batch jobs under Slurm](@ref)). Nothing in this section is read unless `enabled = true`.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | Bool | `false` | Submit runs as scheduler jobs (`submit_run`, `scripts/run_cluster.jl`) instead of running them in the calling process. Requires `simulation.wall_budget > 0` |
+| `scheduler` | String | `"slurm"` | The scheduler; `"slurm"` is the only value |
+| `partition`, `account`, `qos` | String | `""` | The corresponding `sbatch` options; empty = not passed |
+| `job_name` | String | `""` | `--job-name`; empty = the run id |
+| `time_limit` | String | `"36:00:00"` | `--time`, in Slurm's time format (`minutes`, `mm:ss`, `hh:mm:ss`, `d-hh`, `d-hh:mm`, `d-hh:mm:ss`). One segment must fit: `wall_budget + stop_margin + overhead ≤ time_limit` |
+| `partition_limit` | String | `""` | The partition's maximum time limit, same format; when nonempty, `time_limit` must not exceed it |
+| `nodes`, `ntasks`, `cpus_per_task` | Int | `1`, `1`, `8` | The corresponding `sbatch` options; each ≥ 1 |
+| `mem` | String | `""` | `--mem`, a size with an optional K, M, G or T suffix (`"64G"`); empty = the scheduler's default |
+| `gres` | String | `""` | `--gres`, e.g. `"gpu:1"`; empty = none |
+| `exclusive` | Bool | `false` | Pass `--exclusive` |
+| `sbatch_options` | [String] | `[]` | Further `#SBATCH` options, verbatim without the `#SBATCH` prefix (`["--hint=nomultithread"]`); entries nonempty, no leading `#` |
+| `prologue` | [String] | `[]` | Shell lines run in the job before Julia starts (module loads, depot paths) |
+| `julia` | String | `""` | The Julia executable the job runs; empty = the one that submits |
+| `julia_threads` | Int | `0` | `JULIA_NUM_THREADS` of the job; `0` = `cpus_per_task` |
+| `chain` | String | `"resubmit"` | `"resubmit"`: each job submits its successor while the run is short of its end time. `"dependency"`: `max_segments` jobs submitted at once, each `--dependency=afterok` on the one before |
+| `max_segments` | Int | `0` | Segments the chain may run; `0` = until the run completes (`resubmit` only); `dependency` requires ≥ 1 |
+| `overhead` | Float | `1800.0` | Wall-clock seconds of the job outside the engine's wall budget (Julia start-up, initial-condition generation, post-processing); ≥ 0 |
+| `sbatch` | String | `"sbatch"` | The submission executable; nonempty |
+
+### `[cost]`
+
+The cost model ([Cost estimate at launch](@ref)): at every engine launch the wall time, the number of segments and the disk are estimated from a table of seconds per N-body time unit against particle number, logged, written into the segment record and compared with a budget.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | Bool | `true` | Estimate at every launch |
+| `table` | [[Float]] | `[]` | Rows `[N, s_per_nb]` replacing the built-in table (one H200 NVL device, 8 host threads, GPU build, single cluster; `cost_rate`); at least two rows, strictly increasing `N`, positive entries. Empty = the built-in table |
+| `merger_factor` | Float | `2.0` | Factor applied to the rate of a two-cluster (merger) configuration, whose time unit is set by the whole configuration; > 0 |
+| `budget_hours` | Float | `0.0` | Wall-time budget of one run [h]; ≥ 0, `0` = no check |
+| `on_exceed` | String | `"warn"` | `"warn"` or `"refuse"` when the estimate exceeds the budget; a refusal is an `ArgumentError` before anything is launched |
+
 ---
 
 ## 5. Pipeline Modes
@@ -436,6 +473,29 @@ With `simulation.telemetry_interval > 0` (default 5 s) an asynchronous sampler a
 
 The backend's own performance report is captured as well. The last timing table it prints to stdout (one per `DTADJ`, cumulative CPU seconds per code section: regular and irregular force, prediction, KS, adjust, output, communication, …) becomes the `[telemetry.backend_timing]` sub-table with lower-case keys (`total`, `reg`, `irr`, `ks`, `reg_gpu_s`, …), and the `Perf.(Gflops)` lines of the AVX/SSE or GPU regular-force profiles on stderr are summarised as `[telemetry.force_kernel_gflops]` (`samples`, `mean`, `peak`).
 
+### Cost estimate at launch
+
+With `[cost] enabled = true` (the default) every engine launch, first segment or restart, is preceded by an estimate: `estimate_cost` reads `N`, `NNBOPT`, `TCRIT`, `DTADJ` and `DELTAT` from the input file (a restart passes the remaining span), takes the rate in seconds per N-body time unit from the table at that `N` (`cost_rate`: log–log interpolation between the rows, extrapolation with the exponent of the nearest segment; a two-cluster configuration is multiplied by `merger_factor`), and derives the wall time, the number of segments the wall budget implies (`wall_s / (wall_budget − stop_margin)`, rounded up) and the disk the run will take: the restart dumps (one per adjustment unless `checkpoint_keep` bounds them, at the size `_checkpoint_dump_bytes` gives), the `conf.3` snapshots (40 bytes per body per output) and the stellar and binary text outputs (about 130 bytes per star per output). The estimate is logged and written into the segment record (`cost_wall_s`, `cost_segments`, `cost_disk_bytes`, `cost_rate_s_per_nb`, `cost_basis`). When `budget_hours > 0` and the wall time exceeds it, the launch warns or, with `on_exceed = "refuse"`, raises an `ArgumentError` before anything is written.
+
+The built-in table is the September 2026 measurement of the GPU build on one NVIDIA H200 NVL with 8 host threads, single King cluster at rest (`bench/gpu_cells.jl`, `bench/gpu_scaling.jl`): 64 s per unit at N = 10⁵ (over 0.25 units, start-up included: an upper bound), 281 s at 5×10⁵ and 1087 s at 10⁶ (2.0 units each). The two-cluster cells cost 1.85–1.99 times the single cell at equal N, hence the merger factor. Thread count changes the rate by less than 15 % and is not modelled. Replace the rows through `[cost] table` once your own device has been measured; a one-row table is refused because nothing can be interpolated from it.
+
+### Batch jobs under Slurm
+
+A run longer than the queue's time limit is a chain of engine segments, one job each: the first job starts the pipeline, every later one resumes it ([Resuming and restarting a run](@ref)), and the job that reaches the end time post-processes and draws the figures. With `[cluster] enabled = true`:
+
+```bash
+julia scripts/run_cluster.jl config.toml                # submit the chain
+julia scripts/run_cluster.jl config.toml --dry-run      # render the job script and the submission commands only
+```
+
+`submit_run` fixes the run id (`--run-id=<id>` or generated as `run_pipeline` would), creates `<runs_dir>/<run_id>/cluster/` with the frozen configuration (`config.toml`, absolute paths) and the generated job script `job.sbatch`, and submits. The script is generated at submission from the `[cluster]` keys: the `#SBATCH` lines (job name, partition, account, qos, nodes, tasks, CPUs, memory, gres, exclusive, time limit, the extra options), `--signal=B:TERM@<stop_margin>`, `--output=<run_dir>/cluster/slurm_%j.out`, the prologue lines, `JULIA_NUM_THREADS`, and `exec julia scripts/run_cluster_segment.jl <run_dir>`. The `exec` makes the Julia driver the batch-step process, so the scheduler's signal before the limit reaches the driver, whose exit hook stops the engine with a dump; a job-wide SIGTERM (`scancel`) is answered by the launch script ([Wall budget and stop requests](@ref)). The wall budget stays the normal path: `simulation.wall_budget` is required, and `wall_budget + stop_margin + overhead` must fit `time_limit`, which in turn must not exceed `partition_limit` when that is given; a configuration that does not fit is refused by `load_config`.
+
+Two chain modes. `chain = "resubmit"` submits one job; at the end of its segment the job submits its successor with `--dependency=afterany` on itself while the run is short of its end time and below `max_segments` (`0` = no cap), so the chain grows as needed and a run that completes early submits nothing further. `chain = "dependency"` submits `max_segments` jobs at once, each `--dependency=afterok` on the one before (`--kill-on-invalid-dep=yes`); a run that completes earlier leaves the remaining jobs to exit at once with nothing to do. A run halted by the engine's energy check or terminated by the start-up watchdog ends the chain in both modes, since a resume would refuse it.
+
+Inside the job, `cluster_segment(run_dir)` runs the segment (`run_pipeline` on the first job, `resume_pipeline` afterwards), keeps `scontrol show jobid -dd` of the job in `cluster/job_<id>.txt`, and appends to the ledgers: `cluster/jobs.csv` in the run directory and `cluster_jobs.csv` in `runs_dir`, one row per event (`submitted`, `started`, `ended`) with the time, run id, job id, the job it depends on, the segment count, the run status, the host and a note (the submission command). `read_job_ledger` reads either as a `DataFrame`. The segment records of `RUN_INFO.toml` carry the job id as well (`slurm_job_id`). A dry run writes the script and prints the submission commands with placeholders for the job ids, and writes no ledger row.
+
+The September job scripts of the H200 node fix the conventions the keys carry: `partition = "GPU"`, `gres = "gpu:1"`, `cpus_per_task = 8`, `mem = "64G"`, `sbatch_options = ["--hint=nomultithread"]`, and a prologue that exports the Julia depot on the data volume and puts the CUDA toolkit on the path; `input_files/gpu/gpu_single_600k.toml` carries them as a disabled example.
+
 ## 8. Parameter sweeps
 
 A sweep runs the merger pipeline over a Cartesian grid of merger-TOML values times a set of seeds, one directory per point:
@@ -451,6 +511,8 @@ omp_threads = 4                            # OpenMP threads per job; ≥ 1
 runs_dir = "../runs"                       # sweep root: runs_dir/sweep_<name>_<timestamp>/
 poll_interval = 2.0                        # seconds between job checks; > 0
 controls = false                           # isolated single-cluster control companion per point
+devices = []                               # CUDA devices the points are distributed over; [] = none; requires build.enable_gpu
+engines_per_device = 1                     # engines admitted on one device at a time; ≥ 1
 
 [sweep.grid]                               # dotted merger-TOML keys → arrays; Cartesian product
 "merger.orbit.eccentricity" = [0.0, 0.6]
@@ -465,6 +527,8 @@ julia scripts/run_sweep.jl input_files/sweeps/sweep_demo.toml --dry-run  # prepa
 Axes address the merger TOML from its root; the parent table must exist in the base file (add `[merger.tidal]` with `kz14 = 0` to sweep the tidal field), and `merger.seed` is reserved for `seeds`. Axes are processed in key order with the first varying fastest; point directories read `<index>_<axis>=<value>_…_seed=<seed>`.
 
 `prepare_sweep` writes each point's `merger.toml` and `config.toml` (the base pipeline config with the install phase disabled, an absolute backend path, the point directory as run root, the derived merger file and the sweep's `omp_threads`) and loads both back through the regular parsers, so an invalid point fails before anything runs. `run_sweep` then executes the points as separate worker processes (`run_sweep_point`, at most `concurrency` at a time, each logging to `<point>/sweep_point.log`, the run itself in `<point>/run/`), rewrites `sweep_index.toml` on every state change (`pending`, `running`, `done`, `failed` with exit status and elapsed time), and writes `sweep_summary.csv`: index, id, seed, the axis values, status, elapsed time, exit status, and the final time, star count, pair count, energy error and virial ratio from the last ADJUST record. `sweep_figures` draws the half-mass Lagrangian radius and |ΔE/E| of every completed run on common physical axes, coloured by the value of one grid axis (the first by default; seeds share the colour), into `<sweep>/plots` with the base config's `[visualization]` settings. Four threads per job saturate the backend for N ≲ 2×10⁴ on the reference workstation, so five concurrent four-thread jobs use it fully.
+
+On a GPU node the engine is host-bound (device utilisation of 14–33 % at the largest N measured), so several engines share one device. With `devices = [0, 1]` and `engines_per_device = k` the launcher assigns each point, when it starts, the device with the fewest engines running (ties to the lowest index), writes `simulation.gpu_list = [device]` into the point's frozen `config.toml`, and admits at most `k` engines per device in addition to the `concurrency` cap; the index statuses and the summary carry the `device` column (`-1` without device assignment). The base pipeline config must set `build.enable_gpu = true`, since the CPU binary ignores `GPU_LIST`. The device indices are those of `nvidia-smi` ([Choosing the GPU devices](@ref)).
 
 A sweep without `[sweep.grid]` is a seed ensemble of the base merger configuration (points `001_seed=11`, …). Whenever a sweep has more than one seed, `sweep_ensembles` groups the completed points by grid values and `ensemble_statistics` interpolates every member's series onto a common time grid (the interval covered by all members) and takes the median and the central 68 % and 95 % intervals per node (type-7 quantiles). `plot_sweep_ensemble` draws the median line with the two bands for `:lagrangian`, `:energy`, `:n_stars` or `:n_pairs`, one colour per value of the chosen axis with the other axes held at `fixed` values (their first value by default, annotated); `sweep_figures` adds the Lagrangian-radius and energy-error ensembles automatically.
 
