@@ -1038,7 +1038,8 @@ function _start_stop_timer(
                     fired[] = true
                     _terminate(process)
                     @warn "Wall budget of $(budget) s reached with the engine still running; " *
-                          "it was terminated"
+                          "its termination was requested (SIGTERM, a stop request; SIGKILL of " *
+                          "its process group after $(_KILL_GRACE_SECONDS) s)"
                     return nothing
                 end
                 sleep(0.2)
