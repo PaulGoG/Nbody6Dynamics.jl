@@ -1017,7 +1017,11 @@ end
     # `#!/bin/bash` at column 1, whether or not the literal was dedented.
     write(engine_path, replace(fake_engine, r"^ {4}"m => ""))
     chmod(engine_path, 0o755)
-    write(joinpath(base, "in.inp"), "x\n")
+    # A readable input: the stand-in ignores it, the launch-time cost estimate reads it.
+    write(
+        joinpath(base, "in.inp"),
+        "&ININPUT\nN=1000,NNBOPT=50,DTADJ=1.0,DELTAT=1.0,TCRIT=1000.0 /\n",
+    )
     cfg_path = joinpath(base, "c.toml")
     function fake_cfg(; wall_budget = 0.0, stop_margin = 120.0)
         write(

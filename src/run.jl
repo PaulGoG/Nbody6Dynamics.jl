@@ -281,6 +281,8 @@ function _execute_simulation(
     binary = _find_binary(src_dir, sim.binary_name, cfg.build)
     # A restart takes its sizes from the dump, which the same build wrote.
     is_restart || _check_engine_limits(input_path, _engine_limits(src_dir))
+    # --- Cost estimate against the configured budget (roadmap 1.9) ---
+    estimate = _launch_cost_estimate(cfg, input_path, is_restart ? restart.tcrit_extra : nothing)
 
     # --- Provenance at launch: the record names the code that ran, not the
     # tree found when the record is written hours later (a `git pull` during
@@ -381,6 +383,7 @@ function _execute_simulation(
             "stop_requested" => "",
         )
         isempty(sim.gpu_list) || (opening["gpu_list"] = copy(sim.gpu_list))
+        estimate === nothing || merge!(opening, _cost_fields(estimate))
         # `pid` is the launch script, the engine's parent and the process a
         # stop request (SIGTERM) is addressed to; `engine_pid` is the engine.
         launched_engine = _engine_pid(out_dir; process = process)
