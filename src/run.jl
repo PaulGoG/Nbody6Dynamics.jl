@@ -310,6 +310,8 @@ function _execute_simulation(
         rm(stale_stop)
         @info "Removed a stop request left in $(out_dir) by an earlier segment"
     end
+    # A pid file survives a segment whose script was killed with its group.
+    rm(joinpath(out_dir, _ENGINE_PID_FILE); force = true)
 
     # --- Build launch script ---
     stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
@@ -358,6 +360,8 @@ function _execute_simulation(
         process = cd(out_dir) do
             run(detach(`bash $launch_script`); wait = false)
         end
+        # Taken once: `getpid` throws for a process that has already exited.
+        script_pid = Int(getpid(process))
 
         # The record of the segment exists while the engine runs, so a
         # pipeline killed before the engine exits leaves it on file.
@@ -371,18 +375,22 @@ function _execute_simulation(
             "tcrit_extra" => is_restart ? restart.tcrit_extra : 0.0,
             "t_start" => t_start_nb,
             "host" => gethostname(),
-            "pid" => Int(getpid(process)),
+            "pid" => script_pid,
             "package_commit" => provenance["package_commit"],
             "stdout_offset" => stdout_offset,
             "stop_requested" => "",
         )
         isempty(sim.gpu_list) || (opening["gpu_list"] = copy(sim.gpu_list))
+        # `pid` is the launch script, the engine's parent and the process a
+        # stop request (SIGTERM) is addressed to; `engine_pid` is the engine.
+        launched_engine = _engine_pid(out_dir; process = process)
+        launched_engine === nothing || (opening["engine_pid"] = launched_engine)
         slurm_job_id = get(ENV, "SLURM_JOB_ID", "")
         isempty(slurm_job_id) || (opening["slurm_job_id"] = slurm_job_id)
         is_restart && haskey(restart, :discarded) && (opening["discarded"] = restart.discarded)
         _open_segment(run_dir, run_id, opening; input_file = basename(input_copy))
         # Known to the exit hook until reaped, so a terminated driver stops it.
-        engine_pid = Int32(getpid(process))
+        engine_pid = Int32(script_pid)
         _register_engine(
             _ActiveEngine(
                 engine_pid,
@@ -400,12 +408,12 @@ function _execute_simulation(
         # one waiting on the engine: SIGINT lands in whichever task is current.
         waiting = current_task()
 
-        # The launch script execs the binary, so its PID is the process PID;
-        # an mpirun launcher is handled through the process-tree scan.
+        # The launch script is the engine's parent: the sampler follows the
+        # process tree below it (the engine, or an mpirun launcher and its ranks).
         monitor = if sim.telemetry_interval > 0
             _start_telemetry(
                 run_dir,
-                getpid(process),
+                script_pid,
                 t_start;
                 interval = sim.telemetry_interval,
                 gpu_probe = cfg.build.enable_gpu,
@@ -475,26 +483,50 @@ function _execute_simulation(
             wait(process)
         catch e
             e isa InterruptException || rethrow()
-            # Kill first, report after: the console may be gone with whoever
+            # Stop first, report after: the console may be gone with whoever
             # sent the interrupt, and a report that fails must not leave the
-            # engine running.
+            # engine running. The SIGTERM is a stop request the engine may
+            # honour with a dump within the grace; the record says which.
             _terminate(process)
+            int_status = _segment_status(
+                stdout_path;
+                offset = stdout_offset,
+                exit_status = _exit_status(process),
+            )
+            int_dump = _stop_dump(stdout_path; offset = stdout_offset)
+            int_t_end = if int_status == "stopped" && !isempty(int_dump)
+                last(_dump_markers(stdout_path; offset = stdout_offset)).time_nb
+            else
+                t_adj = _last_adjust_time(stdout_path; offset = stdout_offset)
+                isnan(t_adj) ? nothing : t_adj
+            end
             _close_segment(
                 run_dir,
                 segment;
-                status = "killed",
+                status = int_status,
                 exit_status = _exit_status(process),
                 elapsed = time() - t_start,
+                t_end = int_t_end,
+                fields = Dict{String,Any}("stop_requested" => "interrupt", "stop_dump" => int_dump),
             )
             watchdog === nothing || (watchdog.stop[] = true)
             completion === nothing || (completion.stop[] = true)
             stopper === nothing || (stopper.stop[] = true)
             pruner === nothing || (pruner.stop[] = true)
             monitor === nothing || (monitor.stop_requested = true)
-            @warn "Interrupted; the engine was terminated (SIGTERM, SIGKILL after $(_KILL_GRACE_SECONDS) s if needed)"
+            if int_status == "stopped"
+                @warn "Interrupted; the engine stopped on the request" *
+                      (isempty(int_dump) ? "" : " with the dump $(int_dump)") *
+                      " and the run can be resumed"
+            else
+                @warn "Interrupted; the engine was terminated (stop request by SIGTERM, SIGKILL " *
+                      "of its process group after $(_KILL_GRACE_SECONDS) s)"
+            end
             rethrow()
         finally
             _deregister_engine(engine_pid)
+            # The script removes the file itself unless it was killed with its group.
+            rm(joinpath(out_dir, _ENGINE_PID_FILE); force = true)
         end
         watchdog === nothing || (watchdog.stop[] = true)
         completion === nothing || (completion.stop[] = true)
@@ -615,6 +647,9 @@ end
 """`s` as one POSIX-shell word: single-quoted, embedded single quotes escaped."""
 _sh_quote(s::AbstractString) = "'" * replace(String(s), "'" => "'\\''") * "'"
 
+"""Name of the file in the output directory that holds the engine's process id while it runs."""
+const _ENGINE_PID_FILE = "engine.pid"
+
 """
 Write a self-contained bash launch script that sets `ulimit`, environment
 variables, and runs the simulation with proper I/O redirection.
@@ -623,6 +658,19 @@ A runtime-generated shell script is the one sanctioned bash use in this
 package: `ulimit -s unlimited` (mandatory for the stack-heavy Fortran) can
 only be applied to the child process from a wrapping shell — Julia's `run`
 cannot set resource limits on the spawned binary.
+
+The script stays the parent of the engine and owns the stop request. It
+starts the engine (or `mpirun`) in a subshell that ignores SIGTERM — the
+disposition survives `exec` — writes the engine's process id to
+[`_ENGINE_PID_FILE`](@ref), and waits. A SIGTERM that reaches the script,
+from the driver's [`_terminate`](@ref), from a batch scheduler at the time
+limit or on cancellation, becomes the `STOP` file that the engine honours
+at its next poll with a dump; the engine itself is never ended by SIGTERM.
+The script exits with the engine's exit status, and re-raises on itself
+the signal that ended the engine, so the driver sees the engine's end as
+if it had spawned the engine directly. SIGKILL cannot be trapped: a SIGKILL
+of the script alone orphans the engine, which is why the driver kills the
+process group ([`_kill_group`](@ref)) and the record carries both ids.
 """
 function _write_launch_script(
     run_dir::AbstractString,
@@ -676,14 +724,84 @@ function _write_launch_script(
         engine_call =
             "$(_sh_quote(binary)) < $(_sh_quote(input)) " *
             "$redir_out $(_sh_quote(stdout_file)) $redir_err $(_sh_quote(stderr_file))"
-        if build.enable_mpi && sim.mpi_ranks > 1
-            println(io, "exec mpirun --bind-to none -np $(sim.mpi_ranks) \$STDBUF " * engine_call)
-        else
-            println(io, "exec \$STDBUF " * engine_call)
-        end
+        launcher =
+            build.enable_mpi && sim.mpi_ranks > 1 ?
+            "mpirun --bind-to none -np $(sim.mpi_ranks) \$STDBUF " : "\$STDBUF "
+        stop_file = _sh_quote(joinpath(abspath(run_dir), _STOP_FILE))
+        pid_file = _sh_quote(joinpath(abspath(run_dir), _ENGINE_PID_FILE))
+        # The script stays the engine's parent: SIGTERM to the script is a
+        # stop request, the engine ignores SIGTERM (the disposition survives
+        # exec), and the script ends the way the engine did.
+        println(io, "trap 'touch $stop_file; interrupted=1' TERM")
+        println(io, "( trap '' TERM; exec " * launcher * engine_call * " ) &")
+        println(io, "pid=\$!")
+        println(io, "echo \"\$pid\" > $pid_file")
+        println(io, "rc=0")
+        println(io, "while :; do")
+        println(io, "    interrupted=0")
+        # A trapped signal returns from `wait` at once (status > 128); the
+        # engine's own end is told from it by the flag the trap sets.
+        println(io, "    wait \"\$pid\"; w=\$?")
+        println(io, "    if [ \"\$interrupted\" -eq 0 ]; then rc=\$w; break; fi")
+        println(io, "    kill -0 \"\$pid\" 2>/dev/null && continue")
+        # Cut short in the moment the engine ended: one more wait reports the
+        # saved status (127 when the status was already reported).
+        println(io, "    wait \"\$pid\"; w2=\$?")
+        println(io, "    rc=\$w; [ \"\$w2\" -ne 127 ] && rc=\$w2")
+        println(io, "    break")
+        println(io, "done")
+        println(io, "rm -f $pid_file")
+        # Ended by a signal: the script re-raises it on itself.
+        println(io, "if [ \"\$rc\" -gt 128 ] && [ \"\$rc\" -le 192 ]; then")
+        println(io, "    sig=\$((rc - 128)); trap - \"\$sig\" 2>/dev/null; kill -s \"\$sig\" \$\$")
+        println(io, "fi")
+        println(io, "exit \"\$rc\"")
     end
     chmod(path, 0o755)
     return path
+end
+
+"""
+    _engine_pid(out_dir; timeout = 2.0, process = nothing) -> Union{Nothing,Int}
+
+Process id of the engine the launch script started in `out_dir`, from
+[`_ENGINE_PID_FILE`](@ref), waited for up to `timeout` seconds (the script
+writes it within milliseconds of the launch); `nothing` when the file has
+not appeared or holds no integer. With `process`, the launch script's
+process, the wait ends as soon as that process has exited (an engine that
+ended at once, or a script that failed before the launch), after one last
+read of the file.
+"""
+function _engine_pid(
+    out_dir::AbstractString;
+    timeout::Real = 2.0,
+    process::Union{Nothing,Base.Process} = nothing,
+)::Union{Nothing,Int}
+    path = joinpath(out_dir, _ENGINE_PID_FILE)
+    deadline = time() + timeout
+    while true
+        exited = process !== nothing && !process_running(process)
+        if isfile(path)
+            pid = tryparse(Int, strip(read(path, String)))
+            pid === nothing || return pid
+        end
+        (exited || time() ≥ deadline) && return nothing
+        sleep(0.05)
+    end
+end
+
+"""
+    _kill_group(pid, signal) -> Cint
+
+Send `signal` to the process group of `pid` when `pid` leads a group of its
+own (the launch script does, under `detach`), else to `pid` alone. The
+group is never this process's own. Returns the `kill` status (0 on success).
+"""
+function _kill_group(pid::Integer, signal::Integer)::Cint
+    pgid = ccall(:getpgid, Cint, (Cint,), pid)
+    own = ccall(:getpgrp, Cint, ())
+    target = (pgid > 0 && pgid == pid && pgid != own) ? -pgid : pid
+    return ccall(:kill, Cint, (Cint, Cint), target, signal)
 end
 
 """
@@ -783,7 +901,10 @@ const _KILL_GRACE_SECONDS = 15.0
     _terminate(process; grace = _KILL_GRACE_SECONDS)
 
 Send SIGTERM to `process`, wait up to `grace` seconds for it to exit, and
-send SIGKILL if it is still running.
+send SIGKILL to its process group if it is still running. `process` is the
+launch script, which turns the SIGTERM into a stop request for the engine
+([`_write_launch_script`](@ref)); an engine that honours it within the
+grace leaves a dump, one that does not is killed with the script.
 """
 function _terminate(process::Base.Process; grace::Real = _KILL_GRACE_SECONDS)
     kill(process)
@@ -794,8 +915,9 @@ function _terminate(process::Base.Process; grace::Real = _KILL_GRACE_SECONDS)
     if process_running(process)
         # The signal goes before the report: a report may fail (closed console
         # pipe) and the kill must not depend on it.
-        kill(process, Base.SIGKILL)
-        @warn "Engine still running $(grace) s after SIGTERM; SIGKILL sent"
+        _kill_group(getpid(process), Base.SIGKILL)
+        @warn "Engine still running $(grace) s after the stop request (SIGTERM); SIGKILL sent " *
+              "to its process group"
     end
     return nothing
 end
@@ -1289,14 +1411,14 @@ end
 
 Process-exit hook: ask every engine of [`_ACTIVE_ENGINES`](@ref) still
 running to stop ([`_request_stop`](@ref)), wait up to the largest
-`stop_margin` for them to exit, terminate the rest (SIGTERM, SIGKILL after
-`_KILL_GRACE_SECONDS`), and close their segment records with the status the
-stdout shows and `stop_requested = "signal"`. A batch scheduler ends a job
-with SIGTERM; the engine runs in its own session, so without the hook it
-would outlive the driver, or die with it without writing a dump. Julia runs
-the hook outside the event loop: only synchronous operations are used (file
-writes, `waitpid` and `kill` by `ccall`, `Libc.systemsleep`), no `sleep`,
-`wait`, `run`, tasks or logging macros.
+`stop_margin` for them to exit, terminate the rest (SIGTERM to the launch
+script, SIGKILL to its process group after `_KILL_GRACE_SECONDS`), and
+close their segment records with the status the stdout shows and
+`stop_requested = "signal"`. A batch scheduler ends a job with SIGTERM; the
+engine runs in its own session, so without the hook it would outlive the
+driver. Julia runs the hook outside the event loop: only synchronous
+operations are used (file writes, `waitpid` and `kill` by `ccall`,
+`Libc.systemsleep`), no `sleep`, `wait`, `run`, tasks or logging macros.
 """
 function _stop_engines_at_exit()
     engines = _ACTIVE_ENGINES[]
@@ -1331,7 +1453,7 @@ function _stop_engines_at_exit()
         end
         poll(time() + _KILL_GRACE_SECONDS)
         for e in engines
-            alive[e.pid] && ccall(:kill, Cint, (Cint, Cint), e.pid, 9)
+            alive[e.pid] && _kill_group(e.pid, 9)
         end
         Libc.systemsleep(0.2)
         for e in engines

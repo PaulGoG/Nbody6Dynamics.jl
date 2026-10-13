@@ -6,6 +6,23 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- The launch script owns the stop request. `_launch.sh` stays the parent of
+  the engine: it starts the engine in a subshell that ignores SIGTERM, turns
+  a SIGTERM to itself into the `STOP` file, waits, and exits the way the
+  engine did (its exit status, or the signal re-raised). A scheduler's
+  job-wide SIGTERM therefore stops the engine with a dump; a termination by
+  the package is a stop request followed, 15 s later, by a SIGKILL of the
+  process group. Segment records gain `engine_pid` next to `pid` (the
+  script); `output/engine.pid` holds it while the engine runs. An engine
+  killed at its wall budget is recorded with exit status −9 (was −15); an
+  operator interrupt closes the record as `stopped` with the dump when the
+  engine honoured the request (`stop_requested = "interrupt"`), else
+  `killed`. A SIGTERM sent to the engine process by hand no longer ends it;
+  a SIGKILL of the launch script alone orphans the engine — kill
+  `engine_pid`, or the process group.
+
 ### Added
 
 - Surface-density rendering of particle projections. `plot_snapshot`,

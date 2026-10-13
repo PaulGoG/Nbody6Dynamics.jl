@@ -198,7 +198,9 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
                     seg = Nbody6Dynamics.TOML.parsefile(kinfo)["segments"][end]
                     get(seg, "status", "") == "running" || continue
                     any(t -> t ≥ 2.0, adjust_times(so)) || continue
-                    run(ignorestatus(`kill -KILL $(seg["pid"])`))
+                    # The engine, not the launch script above it: a SIGKILL of
+                    # the script would orphan the engine.
+                    run(ignorestatus(`kill -KILL $(seg["engine_pid"])`))
                     krun_guess = joinpath(runs_dir, d)
                 end
                 isempty(krun_guess) || break

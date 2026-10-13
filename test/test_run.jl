@@ -544,6 +544,14 @@ end
     @test occursin("OMP_STACKSIZE", script0)
     script4 = read(Nbody6Dynamics._write_launch_script(launch_dir, args..., make_cfg(4)), String)
     @test occursin("export OMP_NUM_THREADS=4\n", script4)
+    # The script stays the engine's parent: SIGTERM becomes a stop request,
+    # the engine ignores SIGTERM, its pid is published, the end is re-raised.
+    @test occursin("trap 'touch '$(launch_dir)/STOP'; interrupted=1' TERM", script0)
+    @test occursin("( trap '' TERM; exec \$STDBUF '$(launch_dir)/nbody6++' < 'in.inp'", script0)
+    @test occursin("echo \"\$pid\" > '$(launch_dir)/engine.pid'", script0)
+    @test occursin("kill -s \"\$sig\" \$\$", script0)
+    @test !occursin(r"^exec "m, script0)
+    @test success(`sh -n $(joinpath(launch_dir, "_launch.sh"))`)
 
     # Paths with a quote and a space survive: the script stays valid shell.
     odd_args = (joinpath(launch_dir, "it's here", "nbody6++"), "in.inp", "out1000", "err1000")
@@ -1107,8 +1115,37 @@ end
     end
     seg = last_segment(kill_dir)
     @test seg["status"] == "killed"
-    @test seg["exit_status"] == -15
+    # The SIGTERM at the budget is one more stop request; the engine that
+    # ignores it is killed with its process group after the grace.
+    @test seg["exit_status"] == -9
     @test seg["stop_requested"] == "wall_budget"
+    @test haskey(seg, "engine_pid") && seg["engine_pid"] != seg["pid"]
+    @test ccall(:kill, Cint, (Cint, Cint), seg["engine_pid"], 0) == -1
+    @test !isfile(joinpath(kill_dir, "output", "engine.pid"))
+
+    # SIGKILL of the engine itself: the launch script re-raises it, the record
+    # says killed by SIGKILL, and nothing waits for a grace.
+    ekill_task = @async withenv("FAKE_TCRIT" => "1000", "FAKE_IGNORE_STOP" => nothing) do
+        run_simulation(fake_cfg(); base_dir = base, run_id = "ekill")
+    end
+    ekill_dir = joinpath(base, "runs", "ekill")
+    ekill_running() =
+        isfile(joinpath(ekill_dir, "RUN_INFO.toml")) &&
+        haskey(last_segment(ekill_dir), "engine_pid") &&
+        has_adjust(joinpath(ekill_dir, "output", "out1000"))
+    t_wait = time()
+    while !ekill_running() && time() - t_wait < 30
+        sleep(0.1)
+    end
+    @test ekill_running()
+    t_ekill = time()
+    @test ccall(:kill, Cint, (Cint, Cint), last_segment(ekill_dir)["engine_pid"], 9) == 0
+    @test fetch(ekill_task) == ekill_dir
+    @test time() - t_ekill < 10
+    eseg = last_segment(ekill_dir)
+    @test eseg["status"] == "killed"
+    @test eseg["exit_status"] == -9
+    @test eseg["stop_requested"] == ""
 
     # Registry of running engines
     saved = Nbody6Dynamics._ACTIVE_ENGINES[]
@@ -1186,7 +1223,13 @@ end
     end
     @test term_running()
     sleep(3.0)
+    # The driver and the engine's process group are signalled at once, as a
+    # scheduler does at the time limit: the engine ignores its SIGTERM, the
+    # launch script turns its own into the stop request.
+    term_seg0 = last_segment(term_dir)
+    @test haskey(term_seg0, "engine_pid")
     kill(child, Base.SIGTERM)
+    @test ccall(:kill, Cint, (Cint, Cint), -term_seg0["pid"], 15) == 0
     timedwait(() -> !process_running(child), 60.0)
     child_exited = !process_running(child)
     child_exited || kill(child, Base.SIGKILL)
