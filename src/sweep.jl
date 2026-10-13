@@ -12,7 +12,10 @@
 # processes so a crash in one point cannot take the sweep down, and the
 # OpenMP thread count per job follows the cost model (4 threads saturate
 # the backend for N ≲ 2×10⁴; five concurrent jobs on the reference
-# workstation).
+# workstation). With `devices` set, every point is pinned to one CUDA device
+# (`simulation.gpu_list` of its config) and at most `engines_per_device`
+# engines share a device, in addition to the `concurrency` cap: the engine
+# is host-bound at large N, so several engines per device are the norm.
 
 """
     SweepConfig
@@ -34,6 +37,10 @@ Specification of a parameter sweep, parsed by [`load_sweep_config`](@ref).
 - `poll_interval`: seconds between checks of the running jobs
 - `controls`: whether every point gets an isolated single-cluster control
   companion ([`control_merger_dict`](@ref))
+- `devices`: CUDA device indices (as `nvidia-smi` numbers them) the points
+  are distributed over, one device per point; empty for no device
+  assignment (the base config's `simulation.gpu_list` is then untouched)
+- `engines_per_device`: engines admitted on one device at a time (≥ 1)
 """
 struct SweepConfig
     name::String
@@ -46,6 +53,8 @@ struct SweepConfig
     runs_dir::String
     poll_interval::Float64
     controls::Bool
+    devices::Vector{Int}
+    engines_per_device::Int
 end
 
 """
@@ -86,6 +95,8 @@ concurrency = 5       # ≥ 1
 omp_threads = 4       # ≥ 1
 runs_dir = "../runs"  # sweep root
 controls = false      # isolated single-cluster control per point
+devices = [0, 1]      # CUDA device indices, distinct, ≥ 0; [] for none
+engines_per_device = 4  # ≥ 1
 [sweep.grid]
 "merger.orbit.eccentricity" = [0.0, 0.6]
 "merger.cluster2.N" = [500, 1000]
@@ -93,7 +104,8 @@ controls = false      # isolated single-cluster control per point
 
 Axes must address the merger TOML from its root and may not be
 `merger.seed`; seeds must be distinct integers. A sweep without grid axes
-is a seed ensemble of the base merger configuration.
+is a seed ensemble of the base merger configuration. A nonempty `devices`
+requires `build.enable_gpu = true` in the base pipeline config.
 """
 function load_sweep_config(path::AbstractString)::SweepConfig
     isfile(path) || error("Sweep configuration not found: $path")
@@ -114,6 +126,8 @@ function load_sweep_config(path::AbstractString)::SweepConfig
             "poll_interval",
             "runs_dir",
             "controls",
+            "devices",
+            "engines_per_device",
         ),
         "sweep",
     )
@@ -163,6 +177,23 @@ function load_sweep_config(path::AbstractString)::SweepConfig
     runs_dir = resolve(_typed(get(s, "runs_dir", "runs"), String, "sweep.runs_dir"))
     controls = _typed(get(s, "controls", false), Bool, "sweep.controls")
 
+    devices = _typed(get(s, "devices", Any[]), Vector{Int}, "sweep.devices")
+    all(≥(0), devices) ||
+        _config_error("sweep.devices", "entries must be ≥ 0 (CUDA device indices), got $devices")
+    allunique(devices) || _config_error("sweep.devices", "must be distinct, got $devices")
+    engines_per_device = _typed(get(s, "engines_per_device", 1), Int, "sweep.engines_per_device")
+    engines_per_device ≥ 1 ||
+        _config_error("sweep.engines_per_device", "must be ≥ 1, got $engines_per_device")
+    if !isempty(devices)
+        pipeline_raw = TOML.parsefile(pipeline_config)
+        get(get(pipeline_raw, "build", Dict{String,Any}()), "enable_gpu", false) === true ||
+            _config_error(
+                "sweep.devices",
+                "requires build.enable_gpu = true in the pipeline config $pipeline_config: " *
+                "the CPU binary ignores GPU_LIST",
+            )
+    end
+
     return SweepConfig(
         name,
         pipeline_config,
@@ -174,6 +205,8 @@ function load_sweep_config(path::AbstractString)::SweepConfig
         runs_dir,
         poll_interval,
         controls,
+        devices,
+        engines_per_device,
     )
 end
 
@@ -345,8 +378,9 @@ Write `sweep_index.toml`: the sweep header (name, base configs, axes,
 seeds, job settings) and one `[[points]]` entry per point with its id,
 index, seed, axis values, directory and status (`pending`, `running`,
 `done`, `failed`; finished points carry `exit_status` and
-`elapsed_seconds`). `status` maps point indices to the fields that
-override the pending defaults.
+`elapsed_seconds`, points pinned to a CUDA device carry `device`).
+`status` maps point indices to the fields that override the pending
+defaults.
 """
 function write_sweep_index(
     sweep_dir::AbstractString,
@@ -364,6 +398,8 @@ function write_sweep_index(
         "concurrency" => cfg.concurrency,
         "omp_threads" => cfg.omp_threads,
         "controls" => cfg.controls,
+        "devices" => cfg.devices,
+        "engines_per_device" => cfg.engines_per_device,
         "n_points" => length(points),
     )
     entries = map(points) do p
@@ -440,35 +476,95 @@ function _check_sweep_binary(cfg::SweepConfig)
 end
 
 """
-    _launch_sweep(sweep_dir, cfg, points) -> Dict{Int,Dict{String,Any}}
+    _assign_device(load, devices, k) -> Union{Nothing,Int}
+
+Device for the next engine: the entry of `devices` with the fewest engines
+in `load` (device => running engines, a missing key counting as 0) among
+those with fewer than `k`; ties go to the lowest device index. Returns
+`nothing` when every device is full or `devices` is empty.
+
+```julia
+_assign_device(Dict(0 => 1), [0, 1], 1)   # 1
+```
+"""
+function _assign_device(
+    load::AbstractDict{Int,Int},
+    devices::AbstractVector{Int},
+    k::Integer,
+)::Union{Nothing,Int}
+    best = -1
+    best_load = typemax(Int)
+    for d in devices
+        n = get(load, d, 0)
+        n < k || continue
+        if n < best_load || (n == best_load && d < best)
+            best, best_load = d, n
+        end
+    end
+    return best < 0 ? nothing : best
+end
+
+"""
+    _launch_sweep(sweep_dir, cfg, points; worker_command = _sweep_worker_command)
+        -> Dict{Int,Dict{String,Any}}
 
 Run the points as worker processes, at most `cfg.concurrency` at a time,
 logging each to `<point>/sweep_point.log` and rewriting the index on every
 state change. Returns the per-point status table.
+
+With `cfg.devices` nonempty a queued point is admitted only when
+[`_assign_device`](@ref) finds a device holding fewer than
+`cfg.engines_per_device` engines; its `config.toml` then receives
+`simulation.gpu_list = [device]` before the launch, so the frozen config
+records the device that ran it, and its status carries `device`.
+`worker_command` maps a point directory to the worker `Cmd`.
 """
-function _launch_sweep(sweep_dir::AbstractString, cfg::SweepConfig, points::Vector{SweepPoint})
+function _launch_sweep(
+    sweep_dir::AbstractString,
+    cfg::SweepConfig,
+    points::Vector{SweepPoint};
+    worker_command::Function = _sweep_worker_command,
+)
     status = Dict{Int,Dict{String,Any}}()
     queue = copy(points)
-    running = Dict{Int,Tuple{Base.Process,IOStream,Float64,SweepPoint}}()
+    running = Dict{Int,Tuple{Base.Process,IOStream,Float64,SweepPoint,Int}}()
+    load = Dict{Int,Int}()
     n_done = 0
     n_failed = 0
     while !isempty(queue) || !isempty(running)
         while length(running) < cfg.concurrency && !isempty(queue)
+            device = -1
+            if !isempty(cfg.devices)
+                d = _assign_device(load, cfg.devices, cfg.engines_per_device)
+                d === nothing && break
+                device = d
+            end
             p = popfirst!(queue)
             pdir = joinpath(sweep_dir, p.id)
+            if device ≥ 0
+                config_path = joinpath(pdir, "config.toml")
+                c = TOML.parsefile(config_path)
+                _set_nested!(c, "simulation.gpu_list", [device])
+                _atomic_write_toml(config_path, c)
+            end
             log = open(joinpath(pdir, "sweep_point.log"), "w")
-            proc =
-                run(pipeline(_sweep_worker_command(pdir); stdout = log, stderr = log); wait = false)
-            running[p.index] = (proc, log, time(), p)
+            proc = run(pipeline(worker_command(pdir); stdout = log, stderr = log); wait = false)
+            running[p.index] = (proc, log, time(), p, device)
             status[p.index] = Dict{String,Any}(
                 "status" => "running",
                 "started" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
             )
+            if device ≥ 0
+                status[p.index]["device"] = device
+                load[device] = get(load, device, 0) + 1
+            end
             write_sweep_index(sweep_dir, cfg, points; status = status)
-            @info "sweep: started $(p.id) ($(length(running)) running, $(length(queue)) queued)"
+            on_device = device ≥ 0 ? " on device $device" : ""
+            @info "sweep: started $(p.id)$(on_device) " *
+                  "($(length(running)) running, $(length(queue)) queued)"
         end
         sleep(cfg.poll_interval)
-        for (i, (proc, log, t0, p)) in collect(running)
+        for (i, (proc, log, t0, p, device)) in collect(running)
             process_running(proc) && continue
             close(log)
             code = _exit_status(proc)
@@ -480,6 +576,10 @@ function _launch_sweep(sweep_dir::AbstractString, cfg::SweepConfig, points::Vect
                 "exit_status" => code,
                 "elapsed_seconds" => round(time() - t0; digits = 1),
             )
+            if device ≥ 0
+                status[i]["device"] = device
+                load[device] -= 1
+            end
             delete!(running, i)
             write_sweep_index(sweep_dir, cfg, points; status = status)
             if ok
@@ -557,8 +657,9 @@ end
 """
     sweep_summary(sweep_dir) -> (columns, rows)
 
-One row per point: index, id, kind, control id, seed, the axis values, status, and the
-outcome fields of [`_sweep_point_outcome`](@ref) for finished points.
+One row per point: index, id, kind, control id, seed, the axis values, status, the
+assigned CUDA device (`-1` when none), and the outcome fields of
+[`_sweep_point_outcome`](@ref) for finished points.
 `columns` gives the column order used by [`write_sweep_summary`](@ref).
 """
 function sweep_summary(sweep_dir::AbstractString)
@@ -569,6 +670,7 @@ function sweep_summary(sweep_dir::AbstractString)
         axes,
         [
             "status",
+            "device",
             "exit_status",
             "completed",
             "elapsed_seconds",
@@ -588,6 +690,7 @@ function sweep_summary(sweep_dir::AbstractString)
             "control_of" => get(p, "control_of", ""),
             "seed" => p["seed"],
             "status" => p["status"],
+            "device" => get(p, "device", -1),
         )
         for a in axes
             row[a] = p["values"][a]

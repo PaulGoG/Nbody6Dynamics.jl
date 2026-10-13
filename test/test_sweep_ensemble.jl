@@ -135,6 +135,121 @@ $(extra)
     scfg = load_sweep_config(spath)
     @test scfg.poll_interval == 0.5
 
+    # Device admission: parsing and validation
+    @test scfg.devices == Int[] && scfg.engines_per_device == 1     # defaults
+    gpu_pipeline = joinpath(work, "config_gpu.toml")
+    write(gpu_pipeline, read(base_pipeline, String) * "\n[build]\nenable_gpu = true\n")
+    gpu_toml(extra) = replace(
+        sweep_toml(extra),
+        "pipeline_config = \"config.toml\"" => "pipeline_config = \"config_gpu.toml\"",
+    )
+    function refusal(text)
+        write(spath, text)
+        try
+            load_sweep_config(spath)
+            return ""
+        catch e
+            return e isa ArgumentError ? e.msg : ""
+        end
+    end
+    write(spath, gpu_toml("devices = [0, 1]\nengines_per_device = 2\n"))
+    dcfg = load_sweep_config(spath)
+    @test dcfg.devices == [0, 1] && dcfg.engines_per_device == 2
+    @test occursin("sweep.devices", refusal(gpu_toml("devices = [0, 0]\n")))
+    @test occursin("sweep.devices", refusal(gpu_toml("devices = [-1]\n")))
+    @test occursin("sweep.engines_per_device", refusal(gpu_toml("engines_per_device = 0\n")))
+    msg = refusal(sweep_toml("devices = [0]\n"))     # base pipeline without enable_gpu
+    @test occursin("sweep.devices", msg) && occursin("build.enable_gpu", msg)
+    cpu_pipeline = joinpath(work, "config_cpu.toml")
+    write(cpu_pipeline, read(base_pipeline, String) * "\n[build]\nenable_gpu = false\n")
+    msg = refusal(
+        replace(
+            sweep_toml("devices = [0]\n"),
+            "pipeline_config = \"config.toml\"" => "pipeline_config = \"config_cpu.toml\"",
+        ),
+    )
+    @test occursin("sweep.devices", msg) && occursin("build.enable_gpu", msg)
+    @test refusal(gpu_toml("devices = [0]\n")) == ""
+
+    assign = Nbody6Dynamics._assign_device
+    @test assign(Dict{Int,Int}(), Int[], 1) === nothing
+    @test assign(Dict{Int,Int}(), [0, 1], 1) == 0
+    @test assign(Dict(0 => 1), [0, 1], 1) == 1
+    @test assign(Dict(0 => 1, 1 => 1), [0, 1], 1) === nothing
+    @test assign(Dict(0 => 2, 1 => 1), [0, 1], 2) == 1
+    @test assign(Dict(0 => 1, 1 => 1, 2 => 0), [0, 1, 2], 2) == 2     # fewest engines
+    @test assign(Dict(0 => 1, 1 => 1), [1, 0], 2) == 0                # tie: lowest index
+
+    # Launcher with a stub worker: start, the point's gpu_list, end, stamped
+    stub_script = raw"""
+        id=$(basename "$(pwd -P)")
+        echo "$id start $(date +%s.%N)" >> "$1"
+        echo "$id $(grep gpu_list config.toml)" >> "$1"
+        sleep 0.8
+        echo "$id end $(date +%s.%N)" >> "$1"
+        """
+    stub(log_path) = pdir -> Cmd(`bash -c $stub_script stub $log_path`; dir = pdir)
+    launch_toml(pipeline, extra) = """
+[sweep]
+name = "launch"
+pipeline_config = "$(pipeline)"
+merger_config = "merger.toml"
+seeds = [1, 2]
+concurrency = 4
+omp_threads = 1
+poll_interval = 0.2
+$(extra)
+[sweep.grid]
+"merger.cluster2.N" = [300, 400]
+"""
+    lpath = joinpath(work, "sweep_launch.toml")
+    write(lpath, launch_toml("config_gpu.toml", "devices = [0, 1]\nengines_per_device = 1\n"))
+    lcfg = load_sweep_config(lpath)
+    ldir, lpts = prepare_sweep(lcfg; sweep_dir = joinpath(work, "sweep_launch"))
+    @test length(lpts) == 4
+    stub_log = joinpath(work, "stub_gpu.log")
+    lstatus = Nbody6Dynamics._launch_sweep(ldir, lcfg, lpts; worker_command = stub(stub_log))
+    @test length(lstatus) == 4 && all(s -> s["status"] == "done", values(lstatus))
+    point_simulation(dir, p) =
+        Nbody6Dynamics.TOML.parsefile(joinpath(dir, p.id, "config.toml"))["simulation"]
+    gpu_of = Dict(p.id => point_simulation(ldir, p)["gpu_list"] for p in lpts)
+    @test all(g -> length(g) == 1 && g[1] in (0, 1), values(gpu_of))
+    @test count(==([0]), values(gpu_of)) == 2 && count(==([1]), values(gpu_of)) == 2
+    log_lines = readlines(stub_log)
+    @test count(l -> occursin("gpu_list = [", l), log_lines) == 4   # written before the launch
+    events = Tuple{Float64,Int}[]
+    for line in log_lines
+        f = split(line)
+        (length(f) == 3 && f[2] in ("start", "end")) || continue
+        push!(events, (parse(Float64, f[3]), f[2] == "start" ? 1 : -1))
+    end
+    sort!(events)                                   # equal stamps: ends before starts
+    @test count(e -> e[2] == 1, events) == 4 && count(e -> e[2] == -1, events) == 4
+    @test maximum(cumsum(last.(events))) ≤ 2        # two devices, one engine each
+    lidx = read_sweep_index(ldir)
+    @test lidx["sweep"]["devices"] == [0, 1] && lidx["sweep"]["engines_per_device"] == 1
+    @test all(p -> p["device"] == only(gpu_of[p["id"]]), lidx["points"])
+    lcsv = readlines(write_sweep_summary(ldir))
+    header = split(lcsv[1], ",")
+    dcol = findfirst(==("device"), header)
+    @test dcol !== nothing && header[dcol - 1] == "status"
+    @test [parse(Int, split(l, ",")[dcol]) for l in lcsv[2:end]] == [only(gpu_of[p.id]) for p in lpts]
+
+    # Without devices the launcher leaves gpu_list alone and records no device
+    write(lpath, launch_toml("config.toml", ""))
+    ncfg = load_sweep_config(lpath)
+    ndir, npts = prepare_sweep(ncfg; sweep_dir = joinpath(work, "sweep_launch_cpu"))
+    nstatus = Nbody6Dynamics._launch_sweep(
+        ndir,
+        ncfg,
+        npts;
+        worker_command = stub(joinpath(work, "stub_cpu.log")),
+    )
+    @test all(s -> s["status"] == "done" && !haskey(s, "device"), values(nstatus))
+    @test all(p -> !haskey(point_simulation(ndir, p), "gpu_list"), npts)
+    _, nrows = sweep_summary(ndir)
+    @test all(r -> r["device"] == -1, nrows)
+
     # Preparation (dry run): derived configs, index, summary, figures
     sdir = joinpath(work, "sweep_unit")
     @test run_sweep(scfg; dry_run = true, sweep_dir = sdir) == sdir
@@ -177,10 +292,12 @@ $(extra)
     columns, rows = sweep_summary(sdir)
     @test columns[1:5] == ["index", "id", "kind", "control_of", "seed"]
     @test columns[6:7] == idx["sweep"]["axes"]
+    @test columns[8:9] == ["status", "device"]
     @test length(rows) == 8
     @test rows[1]["status"] == "done" &&
           rows[1]["elapsed_seconds"] == 12.5 &&
           rows[1]["exit_status"] == 0
+    @test all(r -> r["device"] == -1, rows)          # no device assignment
     @test rows[1]["n_final"] > 0 && isfinite(rows[1]["de_final"]) && isfinite(rows[1]["q_final"])
     @test rows[1]["t_final_myr"] > 0
     @test rows[2]["status"] == "failed" && rows[2]["exit_status"] == 1
@@ -191,9 +308,9 @@ $(extra)
     @test lines[1] == join(columns, ",")
     @test startswith(
         lines[2],
-        "1,001_cluster2-N=300_orbit-eccentricity=0_seed=1,merger,,1,300,0,done,0,true,12.5,",
+        "1,001_cluster2-N=300_orbit-eccentricity=0_seed=1,merger,,1,300,0,done,-1,0,true,12.5,",
     )
-    @test occursin(",pending,-1,false,,,-1,-1,,", lines[5])   # NaN → empty cells
+    @test occursin(",pending,-1,-1,false,,,-1,-1,,", lines[5])   # NaN → empty cells
 
     vis_sw = sweep_visualization(scfg, sdir)
     @test vis_sw.output_dir == joinpath(sdir, "plots") &&
