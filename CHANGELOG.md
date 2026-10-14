@@ -8,6 +8,10 @@ entries say so.
 
 ### Changed
 
+- `[postprocess] pair_sum_max_n` defaults to 2 000 000 (was 100 000): the
+  pair sum is threaded and computed once per snapshot. The four 6 × 10⁵-body
+  probe pipelines set 100 000 and keep their diagnostics off.
+- New dependency: KernelAbstractions 0.9.
 - The launch script owns the stop request. `_launch.sh` stays the parent of
   the engine: it starts the engine in a subshell that ignores SIGTERM, turns
   a SIGTERM to itself into the `STOP` file, waits, and exits the way the
@@ -25,6 +29,30 @@ entries say so.
 
 ### Added
 
+- Exact potential and bound sets of snapshots. `pair_potential` is the
+  Newtonian pair sum in Float64, written as one KernelAbstractions kernel
+  and run on the CPU threads; a subset form gives the potential of given
+  sources at given points. `reduce_pairs` turns the regularised pairs into
+  their centres of mass (`SystemSet`). `bound_set` replaces the bound-member
+  selection of the remnant, per-cluster and binary diagnostics: iterative
+  energetic unbinding with the survivors' potential updated by subtraction,
+  pairs as centres of mass (with the companion's potential included, the
+  internal binding of a hard pair kept an escaping pair in the bound set),
+  and an explicit status (`converged`, `pass_limit` with a warning,
+  `dissolved`) instead of a silent stop after eight passes. Its `T` and `W`
+  feed the per-cluster virial ratio, the dispersions and the Peebles spin
+  parameter, which no longer recompute the pair sum. Configuration keys
+  `[postprocess] bound_max_passes` and `bound_min_members`.
+- Snapshot integrals (`snapshot_integrals`, `SnapshotIntegrals`,
+  `write_snapshot_integrals`): mass, centre of mass, linear and angular
+  momentum, the stars' kinetic energy, the kinetic and potential energy of
+  the reduced system (the engine's `EKIN` and `POT`), the regularised pairs'
+  internal energy (`EBIN`) and the bound set, per snapshot; written by the
+  pipeline as `snapshot_integrals.csv` (`[postprocess] snapshot_integrals`).
+- The activation scripts resolve a manifest that a change of the project, or
+  of the package an auxiliary environment takes by path, has left stale
+  (`deps/activation.jl`); the manifests are not tracked, so a pulled
+  dependency no longer fails at precompilation.
 - Slurm job layer (`[cluster]`, `ClusterConfig`). `submit_run` and
   `scripts/run_cluster.jl` turn a run into a chain of queue jobs, one per
   engine segment: the job script is generated into `<run_dir>/cluster/`

@@ -131,7 +131,10 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `stellar_evo_pattern` | String | `"sev.83_*"` | Glob pattern for stellar evolution files (matches what this fork's `hrplot.F` writes: `sev.83_<time>`); must be nonempty when `read_stellar_evo = true` |
 | `read_binary_evo`     | Bool   | `true`  | Read the regularised-binary snapshots |
 | `binary_evo_pattern`  | String | `"bev.82_*"` | Glob pattern for the binary files (`bev.82_<time>`, written by `hrplot.F` alongside `sev.83`); must be nonempty when `read_binary_evo = true` |
-| `pair_sum_max_n`      | Int    | `100000` | Largest snapshot particle count for which the O(N²) pair-sum diagnostics run: the remnant diagnostics (`remnant_diagnostics.csv` and its figures), the per-cluster virial ratio and structure, and the bound-member density and velocity-dispersion profiles. Above it they are skipped with a warning naming the key; the readers and the energy, Lagrangian-radii, escaper, stellar and snapshot figures are unaffected; the binary figures' hard/soft scale is taken over the bound systems up to the same limit and over every system above it. `0` disables them |
+| `pair_sum_max_n`      | Int    | `2000000` | Largest snapshot star count for which the diagnostics built on an exact O(N²) pair sum run: the snapshot integrals (`snapshot_integrals.csv`), the remnant diagnostics (`remnant_diagnostics.csv` and its figures), the per-cluster virial ratio and structure, and the bound-member density and velocity-dispersion profiles. Above it they are skipped with a warning naming the key and the number of pair evaluations; the readers and the energy, Lagrangian-radii, escaper, stellar and snapshot figures are unaffected; the binary figures' hard/soft scale is taken over the bound systems up to the same limit and over every system above it. `0` disables them |
+| `snapshot_integrals`  | Bool   | `true`   | Compute the integrals of motion of every snapshot and write `snapshot_integrals.csv` (see [Snapshot integrals and bound sets](@ref)) |
+| `bound_max_passes`    | Int    | `100`    | Limit on the unbinding passes of a bound-set selection; must be ≥ 1. A selection still removing systems at the limit is reported as `pass_limit` with a warning |
+| `bound_min_members`   | Int    | `10`     | Number of systems below which a bound set counts as dissolved and the iteration stops; must be ≥ 2 |
 
 !!! note "HDF5 snapshots are not read"
     `snapshot_format = "hdf5"` is refused. `KZ(46)` H5Part files are detected
@@ -350,7 +353,7 @@ julia scripts/run_setup.jl input_files/gpu/cpu_pipeline.toml
 NBODY6_GPU_BACKEND=backend/Nbody6PPGPU-beijing-gpu julia bench/gpu_scaling.jl 20000,50000,100000 4,8 "0" 0.25   # "0;0,1" with two devices
 ```
 
-Above 5 × 10⁵ bodies the same folder holds the probes that show the device's advantage at the scale a workstation cannot reach on its CPU alone: `merger_600k.toml`, two King clusters of 300 000 stars on the orbit of `merger_50k.toml`, and `single_600k.toml`, one King cluster of 600 000 stars at rest, each integrated for two N-body time units, and the four pipeline configurations that run them on the trees built above, `gpu_merger_600k.toml`, `cpu_merger_600k.toml`, `gpu_single_600k.toml` and `cpu_single_600k.toml` (device 0, eight host threads). Their install phase is off, so `gpu_pipeline.toml` and `cpu_pipeline.toml`, or the `:gpu` and `:cpu` stages of the validation driver, must have built the two trees first. The merger files raise `merger.virial_max_n`, because the generator otherwise refuses to virialise a cluster above 2 × 10⁵ stars, and the pipelines leave `postprocess.pair_sum_max_n` at its default, so the O(N²) remnant and per-cluster diagnostics are skipped with a warning and the two binaries are compared on the engine time, `run.elapsed_seconds` in `RUN_INFO.toml`. Start Julia with threads: the virialisation of 6 × 10⁵ bodies is a threaded pair sum of about 100 s on twelve threads and ten times that on one. The benchmark reaches the same regime directly, running the CPU and the GPU binary at equal N and threads for a quarter of a time unit each.
+Above 5 × 10⁵ bodies the same folder holds the probes that show the device's advantage at the scale a workstation cannot reach on its CPU alone: `merger_600k.toml`, two King clusters of 300 000 stars on the orbit of `merger_50k.toml`, and `single_600k.toml`, one King cluster of 600 000 stars at rest, each integrated for two N-body time units, and the four pipeline configurations that run them on the trees built above, `gpu_merger_600k.toml`, `cpu_merger_600k.toml`, `gpu_single_600k.toml` and `cpu_single_600k.toml` (device 0, eight host threads). Their install phase is off, so `gpu_pipeline.toml` and `cpu_pipeline.toml`, or the `:gpu` and `:cpu` stages of the validation driver, must have built the two trees first. The merger files raise `merger.virial_max_n`, because the generator otherwise refuses to virialise a cluster above 2 × 10⁵ stars, and the pipelines set `postprocess.pair_sum_max_n = 100000`, so the O(N²) integrals, remnant and per-cluster diagnostics are skipped with a warning and the two binaries are compared on the engine time, `run.elapsed_seconds` in `RUN_INFO.toml`. Start Julia with threads: the virialisation of 6 × 10⁵ bodies is a threaded pair sum of about 100 s on twelve threads and ten times that on one. The benchmark reaches the same regime directly, running the CPU and the GPU binary at equal N and threads for a quarter of a time unit each.
 
 ```bash
 julia -t auto scripts/run_setup.jl input_files/gpu/gpu_merger_600k.toml
@@ -407,7 +410,7 @@ runs/run_20260325_143022_a1f3/
 └── plots/                    # post-processing plots & GIF animations
 ```
 
-Runs from generated initial conditions additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, and `merger_ic.toml` in `output/`, and `remnant_diagnostics.csv` in the run directory. The census and the remnant diagnostics are written by the pipeline itself, with or without a figure backend.
+Runs from generated initial conditions additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, and `merger_ic.toml` in `output/`, and `remnant_diagnostics.csv` in the run directory. Every run with snapshots gets `snapshot_integrals.csv`. The census, the snapshot integrals and the remnant diagnostics are written by the pipeline itself, with or without a figure backend.
 
 ### Launch script
 
@@ -556,6 +559,23 @@ nparticles(snap)
 ```
 
 The reader auto-detects the bulk-array format (one record with AS params + all particle arrays) and the legacy per-particle record format (32- or 44-byte records; the extended form carries `rho`/`phi`). Corrupt files are skipped with a warning. The engine writes NTOT = N + NPAIRS entries: the N stars, the components of regularised pair k at positions 2k − 1 and 2k, followed by one centre-of-mass entry per pair carrying the pair's mass. The reader keeps the N stars and drops the centre-of-mass entries, so that sums over a snapshot count every star once; `snap.header.ntot` remains the engine's NTOT. The centre-of-mass body of an active chain regularisation (NAME = 0), which the engine leaves among the stars beside the chain members, is dropped as well. For a hierarchical merger (negative `pair_name`) stars 2k − 1 and 2k are an inner-binary component and the outer body, not a pair.
+
+### Snapshot integrals and bound sets
+
+Every energetic quantity of a snapshot uses the exact Newtonian potential, `pair_potential` (``Φ_i = −Σ_j m_j/r_{ij}``, `G = 1`, no softening, Float64), an O(N²) sum written as one KernelAbstractions kernel and run on the CPU threads of the session; a subset form gives the potential at given points of given sources, which updates a potential by subtraction when bodies leave a set. The engine's own `phi` column is not used: it is single precision, excludes a regularised component's companion and is zero for the ghosts of hierarchical systems.
+
+Regularised pairs enter the energetics as their centres of mass (`reduce_pairs`, `SystemSet`). With the companion's potential included, a component's internal binding outweighs the energy of the pair's centre of mass, so a hard pair that escapes would otherwise stay bound. The stars of a hierarchical merger (negative `pair_name`) stay single.
+
+`bound_set` selects the self-bound subset by iterative energetic unbinding: at every pass the reference velocity is the mass-weighted mean velocity of the current set and the systems with ``½|V − v_\mathrm{ref}|² + Φ ≥ 0`` are removed, the survivors' potential being updated by subtracting the removed systems' contribution. The iteration stops when a pass removes nothing (`status = :converged`); `bound_max_passes` and `bound_min_members` end it otherwise (`:pass_limit`, with a warning, or `:dissolved`). The result carries the bound stars, the pass count, the reference velocity and the bound set's `T` and `W`. On a subset of a snapshot (one initial cluster) a pair with one component outside the subset is left out and listed in `excluded`.
+
+```julia
+b = bound_set(snap)                      # whole snapshot, pairs reduced
+b = bound_set(snap, idx; max_passes = 200)
+s = snapshot_integrals(snap)             # SnapshotIntegrals
+write_snapshot_integrals("snapshot_integrals.csv", snapshot_integrals(snaps))
+```
+
+`snapshot_integrals` gives, per snapshot and in the engine frame: mass, centre of mass and its velocity, linear momentum, angular momentum about the origin and about the centre of mass, the stars' kinetic energy, the kinetic and potential energy of the reduced system (the engine's `EKIN` and `−POT` of the ADJUST line), the internal energy of the regularised pairs (`EBIN`), and the bound set with its mass, energies and angular momentum. `snapshot_integrals.csv` adds `L_removed = L(t₀) − L(t)`, the angular momentum carried off by escapers and stellar mass loss together. The snapshot positions are single precision, so the internal energy of the tightest pairs is resolved only to a few per cent; the centre-of-mass energetics agree with the engine's double-precision values to the four digits the ADJUST line prints.
 
 ### Diagnostics (stdout)
 

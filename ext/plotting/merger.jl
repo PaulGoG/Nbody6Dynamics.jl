@@ -207,13 +207,15 @@ coalescence (which clusters are still in virial equilibrium, which undergo
 violent relaxation). After merger the bound subset of an ID-group is
 whatever remains self-bound inside the remnant, so the curve loses its
 meaning as a cluster diagnostic; the departure from `Q ≈ 0.5` is a rough
-proxy for the time of coalescence.
+proxy for the time of coalescence. `bound` passes `max_passes` and
+`min_members` to [`bound_set`](@ref).
 """
 @publication function Nbody6Dynamics.plot_cluster_virial(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
     filename::AbstractString = "merger_cluster_virial",
+    bound::NamedTuple = (;),
 )
     n_cl = length(cluster_ranges)
     n_cl ≥ 1 || (@info "Skipping virial plot: no cluster ranges"; return nothing)
@@ -223,7 +225,7 @@ proxy for the time of coalescence.
     physical = cfg.units == "physical" && all(_has_physical_scaling(s.header) for s in snaps)
     t = physical ? [time_myr(s.header) for s in snaps] : [time_nb(s.header) for s in snaps]
     @info "Computing per-cluster virial ratios ($(n_cl) clusters × $(n_t) snapshots)..."
-    Q, _ = per_cluster_virial(snaps, cluster_ranges)
+    Q, _ = per_cluster_virial(snaps, cluster_ranges; bound...)
 
     fig = Figure(; size = _figsize_px(cfg))
 
@@ -319,7 +321,8 @@ given, the engine's global 50 % Lagrangian radius about its single density
 centre is overlaid dashed grey on the radius panel, which makes the
 difference between the configuration and its members visible. For more
 than five clusters the min–max envelope and mean are drawn. Radii in pc and
-times in Myr when `cfg.units == "physical"`.
+times in Myr when `cfg.units == "physical"`. `bound` passes `max_passes` and
+`min_members` to [`bound_set`](@ref).
 """
 @publication function Nbody6Dynamics.plot_cluster_structure(
     snaps::Vector{Snapshot},
@@ -327,6 +330,7 @@ times in Myr when `cfg.units == "physical"`.
     cfg::VisualizationConfig;
     lagr::Union{Nothing,LagrangianData} = nothing,
     filename::AbstractString = "merger_cluster_structure",
+    bound::NamedTuple = (;),
 )
     n_cl = length(cluster_ranges)
     n_cl ≥ 1 || (@info "Skipping cluster structure plot: no cluster ranges"; return nothing)
@@ -337,7 +341,7 @@ times in Myr when `cfg.units == "physical"`.
     t = physical ? [time_myr(s.header) for s in snaps] : [time_nb(s.header) for s in snaps]
     r_unit = physical ? rbar(snaps[1].header) : 1.0
     @info "Computing per-cluster structure ($(n_cl) clusters × $(n_t) snapshots)..."
-    st = cluster_structure(snaps, cluster_ranges)
+    st = cluster_structure(snaps, cluster_ranges; bound...)
     r_h = st.r_lagr[2, :, :] .* r_unit
     f_bound = st.bound_mass_fraction
 
@@ -473,6 +477,7 @@ initial half-mass radius and its bound mass at this snapshot. A ratio strip
 `ρ / ρ_model` with a labelled unity guide sits beneath the main panel. For
 more than five clusters the min–max envelope and mean of the ratio are
 drawn. Radii in pc and densities in M☉ pc⁻³ when `cfg.units == "physical"`.
+`bound` passes `max_passes` and `min_members` to [`bound_set`](@ref).
 """
 @publication function Nbody6Dynamics.plot_density_profiles(
     snap::Snapshot,
@@ -480,6 +485,7 @@ drawn. Radii in pc and densities in M☉ pc⁻³ when `cfg.units == "physical"`.
     cfg::VisualizationConfig;
     specs::Union{Nothing,AbstractVector} = nothing,   # Vector{ClusterSpec}; the type is defined later in the module
     filename::AbstractString = "merger_density_profiles",
+    bound::NamedTuple = (;),
 )
     n_cl = length(cluster_ranges)
     n_cl ≥ 1 || (@info "Skipping density profiles: no cluster ranges"; return nothing)
@@ -490,7 +496,7 @@ drawn. Radii in pc and densities in M☉ pc⁻³ when `cfg.units == "physical"`.
     physical = cfg.units == "physical" && _has_physical_scaling(h)
     r_unit = physical ? rbar(h) : 1.0
     ρ_unit = physical ? zmbar(h) / rbar(h)^3 : 1.0
-    profiles = cluster_profiles(snap, cluster_ranges)
+    profiles = cluster_profiles(snap, cluster_ranges; bound...)
     any(!isnothing, profiles) ||
         (@info "Skipping density profiles: no cluster with enough members"; return nothing)
     with_model = specs !== nothing
@@ -651,13 +657,15 @@ profiles of every initial cluster from its bound members, with the
 anisotropy `β(r) = 1 − σ_t²/σ_r²` beneath and the isotropic `β = 0` guide
 labelled. Velocities in km s⁻¹ and radii in pc when `cfg.units ==
 "physical"`. For more than five clusters the min–max envelope and mean of
-`σ_r` and `β` are drawn.
+`σ_r` and `β` are drawn. `bound` passes `max_passes` and `min_members` to
+[`bound_set`](@ref).
 """
 @publication function Nbody6Dynamics.plot_velocity_dispersion(
     snap::Snapshot,
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     cfg::VisualizationConfig;
     filename::AbstractString = "merger_velocity_dispersion",
+    bound::NamedTuple = (;),
 )
     n_cl = length(cluster_ranges)
     n_cl ≥ 1 || (@info "Skipping velocity dispersion: no cluster ranges"; return nothing)
@@ -665,7 +673,7 @@ labelled. Velocities in km s⁻¹ and radii in pc when `cfg.units ==
     physical = cfg.units == "physical" && _has_physical_scaling(h)
     r_unit = physical ? rbar(h) : 1.0
     v_unit = physical ? vstar(h) : 1.0
-    profiles = cluster_profiles(snap, cluster_ranges)
+    profiles = cluster_profiles(snap, cluster_ranges; bound...)
     any(!isnothing, profiles) ||
         (@info "Skipping velocity dispersion: no cluster with enough members"; return nothing)
 

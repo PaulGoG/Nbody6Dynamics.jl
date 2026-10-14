@@ -72,7 +72,8 @@ end
 """
     generate_plots(results::Dict{Symbol,Any}, vis::VisualizationConfig;
                    sim_dir::AbstractString = "", animations::Bool = true,
-                   pair_sum_max_n::Integer = PostprocessConfig().pair_sum_max_n)
+                   pair_sum_max_n::Integer = PostprocessConfig().pair_sum_max_n,
+                   bound::NamedTuple = (;))
 
 Generate all available plots (and, when `animations = true`, GIF
 animations) from post-processing results, saving into `vis.output_dir`.
@@ -88,7 +89,10 @@ the inter-cluster separation is drawn regardless. The bound-set selection
 behind the binary figures' hard/soft scale obeys the same limit, above
 which the scale is taken over every system. The default is that of
 `PostprocessConfig`, and the `Nbody6Config` method passes
-`cfg.postprocess.pair_sum_max_n`.
+`cfg.postprocess.pair_sum_max_n`. `bound` holds the keywords `max_passes`
+and `min_members` of the bound-set selections ([`bound_set`](@ref)); the
+`Nbody6Config` method passes `postprocess.bound_max_passes` and
+`postprocess.bound_min_members`.
 
 This is the single plot dispatcher — both the config-driven pipeline
 (via the `Nbody6Config` method) and [`postprocess_external`](@ref) route
@@ -100,6 +104,7 @@ function Nbody6Dynamics.generate_plots(
     sim_dir::AbstractString = "",
     animations::Bool = true,
     pair_sum_max_n::Integer = PostprocessConfig().pair_sum_max_n,
+    bound::NamedTuple = (;),
 )
     if haskey(results, :snapshots)
         snaps = results[:snapshots]::Vector{Snapshot}
@@ -125,13 +130,14 @@ function Nbody6Dynamics.generate_plots(
                         n_max = maximum(nparticles, snaps)
                         if n_max ≤ pair_sum_max_n
                             @info "Plotting per-cluster virial ratio..."
-                            plot_cluster_virial(snaps, ranges, vis)
+                            plot_cluster_virial(snaps, ranges, vis; bound)
                             @info "Plotting per-cluster structure..."
                             plot_cluster_structure(
                                 snaps,
                                 ranges,
                                 vis;
                                 lagr = get(results, :lagr, nothing),
+                                bound,
                             )
                             # Radial profiles against the generating models (merger_ic.toml)
                             ic_meta = joinpath(sim_dir, "merger_ic.toml")
@@ -148,6 +154,7 @@ function Nbody6Dynamics.generate_plots(
                                 vis;
                                 specs = specs,
                                 filename = "merger_density_profiles_initial",
+                                bound,
                             )
                             plot_density_profiles(
                                 snaps[end],
@@ -155,16 +162,17 @@ function Nbody6Dynamics.generate_plots(
                                 vis;
                                 specs = specs,
                                 filename = "merger_density_profiles_final",
+                                bound,
                             )
                             @info "Plotting velocity dispersion profiles (final snapshot)..."
-                            plot_velocity_dispersion(snaps[end], ranges, vis)
+                            plot_velocity_dispersion(snaps[end], ranges, vis; bound)
                             # Computed by `postprocess` for pipeline runs (and written
                             # there as remnant_diagnostics.csv); derived here only for
                             # results that did not pass through it.
                             diag = get(results, :remnant, nothing)
                             if diag === nothing
                                 @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
-                                diag = remnant_diagnostics(snaps, ranges)
+                                diag = remnant_diagnostics(snaps, ranges; bound...)
                             end
                             remnant_figures(diag::RemnantDiagnostics, vis)
                         else
@@ -330,5 +338,9 @@ function Nbody6Dynamics.generate_plots(
         vis;
         sim_dir = sim_dir,
         pair_sum_max_n = cfg.postprocess.pair_sum_max_n,
+        bound = (;
+            max_passes = cfg.postprocess.bound_max_passes,
+            min_members = cfg.postprocess.bound_min_members,
+        ),
     )
 end

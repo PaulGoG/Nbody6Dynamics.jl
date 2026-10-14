@@ -156,6 +156,19 @@ sweep_ensembles
 plot_sweep_ensemble
 ```
 
+## Potential, Bound Sets and Snapshot Integrals
+
+```@docs
+pair_potential
+SystemSet
+reduce_pairs
+BoundSet
+bound_set
+SnapshotIntegrals
+snapshot_integrals
+write_snapshot_integrals
+```
+
 ## Remnant Diagnostics
 
 ```@docs
@@ -360,7 +373,6 @@ plot_cluster_virial
 ```@docs
 Nbody6Dynamics._engine_digit_counter_terminates
 Nbody6Dynamics._validate
-Nbody6Dynamics._bound_members
 Nbody6Dynamics._kinetic_and_potential
 Nbody6Dynamics._central_density_contrast
 Nbody6Dynamics._sweep_point_outcome

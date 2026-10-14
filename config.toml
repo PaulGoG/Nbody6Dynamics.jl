@@ -52,7 +52,10 @@ read_stellar_evo     = true
 stellar_evo_pattern  = "sev.83_*"   # nonempty when read_stellar_evo = true
 read_binary_evo      = true
 binary_evo_pattern   = "bev.82_*"   # nonempty when read_binary_evo = true
-pair_sum_max_n       = 100000       # ≥ 0; largest snapshot N for the O(N²) diagnostics (remnant, per-cluster virial and structure, bound-set hardness scale); 0 disables them
+pair_sum_max_n       = 2000000      # ≥ 0; largest snapshot N for the O(N²) diagnostics (integrals, remnant, per-cluster virial and structure, bound-set hardness scale); 0 disables them
+snapshot_integrals   = true         # write snapshot_integrals.csv (momenta, energies, bound set)
+bound_max_passes     = 100          # ≥ 1; limit on bound-set unbinding passes
+bound_min_members    = 10           # ≥ 2; systems below which a bound set counts as dissolved
 
 [visualization]
 enabled    = true

@@ -156,6 +156,17 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         ]
         t_first = adjust_times(joinpath(out, "out1000"))
         @test maximum(t_first) ≈ 2.0
+        # Snapshot integrals against the engine's double-precision energies at
+        # t = 0, which the ADJUST line prints to four digits.
+        @test isfile(joinpath(mrun, "snapshot_integrals.csv"))
+        adj0 =
+            first(l for l in eachline(joinpath(out, "out1000")) if startswith(lstrip(l), "ADJUST:"))
+        engine_energy(key) = parse(Float64, match(Regex("\\b$key\\s+(\\S+)"), adj0).captures[1])
+        s0 = snapshot_integrals(first(read_all_conf3(out)))
+        @test s0.time_nb == 0.0
+        @test s0.kinetic ≈ engine_energy("EKIN") rtol = 1e-3
+        @test -s0.potential ≈ engine_energy("POT") rtol = 1e-3
+        @test s0.bound.status === :converged
         @test Nbody6Dynamics._latest_dump(out) !== nothing
         # tcrit = 2 with dtadj = 0.5: periodic dumps at t = 0, 0.5, …, 2 and the END RUN one
         @test count(startswith("comm.2_"), readdir(out)) == 5

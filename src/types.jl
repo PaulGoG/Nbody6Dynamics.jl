@@ -118,7 +118,10 @@ end
 
 Configuration for the post-processing phase.
 Controls which output files to read (snapshots, diagnostics, Lagrangian radii,
-escapers, stellar evolution) and their file patterns.
+escapers, stellar evolution) and their file patterns, the snapshot integrals
+(`snapshot_integrals`), the limits of the bound-set iteration
+(`bound_max_passes`, `bound_min_members`, see [`bound_set`](@ref)) and the
+largest snapshot on which the O(N²) diagnostics run (`pair_sum_max_n`).
 """
 Base.@kwdef struct PostprocessConfig
     enabled::Bool = true
@@ -135,7 +138,10 @@ Base.@kwdef struct PostprocessConfig
     stellar_evo_pattern::String = "sev.83_*"
     read_binary_evo::Bool = true
     binary_evo_pattern::String = "bev.82_*"
-    pair_sum_max_n::Int = 100_000
+    pair_sum_max_n::Int = 2_000_000
+    snapshot_integrals::Bool = true
+    bound_max_passes::Int = 100
+    bound_min_members::Int = 10
 end
 
 """

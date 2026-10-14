@@ -419,7 +419,7 @@ The probes above 5 × 10⁵ bodies. The merger is the case of `merger_50k.toml` 
 
 ### `gpu/gpu_merger_600k.toml`, `gpu/cpu_merger_600k.toml`, `gpu/gpu_single_600k.toml`, `gpu/cpu_single_600k.toml`
 
-The pipeline configurations of the two probes on the CUDA and the AVX binary: device 0, eight host threads, a start-up watchdog of one hour (the initial force and neighbour lists of 6 × 10⁵ bodies take minutes on the host), post-processing and figures on. Their install phase is off; they use the trees that `gpu_pipeline.toml` and `cpu_pipeline.toml` build. `postprocess.pair_sum_max_n` stays at its default, so the remnant and per-cluster diagnostics are skipped with a warning at this size and the binaries are compared on the engine time recorded in `RUN_INFO.toml`.
+The pipeline configurations of the two probes on the CUDA and the AVX binary: device 0, eight host threads, a start-up watchdog of one hour (the initial force and neighbour lists of 6 × 10⁵ bodies take minutes on the host), post-processing and figures on. Their install phase is off; they use the trees that `gpu_pipeline.toml` and `cpu_pipeline.toml` build. `postprocess.pair_sum_max_n = 100000` keeps the snapshot integrals, remnant and per-cluster diagnostics off at this size (skipped with a warning) and the binaries are compared on the engine time recorded in `RUN_INFO.toml`.
 
 ## Sources
 

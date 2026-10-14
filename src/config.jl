@@ -348,6 +348,10 @@ function _validate(cfg::Nbody6Config)
         "postprocess.pair_sum_max_n",
         "must be ≥ 0 (0 disables the pair-sum diagnostics); got $(pp.pair_sum_max_n)",
     )
+    pp.bound_max_passes ≥ 1 ||
+        _config_error("postprocess.bound_max_passes", "must be ≥ 1; got $(pp.bound_max_passes)")
+    pp.bound_min_members ≥ 2 ||
+        _config_error("postprocess.bound_min_members", "must be ≥ 2; got $(pp.bound_min_members)")
 
     # [visualization]
     vis.format in ("pdf", "svg", "png") || _config_error(

@@ -6,9 +6,8 @@
 # local source. The scripts under scripts/ include this file; on a new machine `julia scripts/activate.jl` bootstraps the
 # environment on its own (expect a few minutes the first time: the plotting
 # stack precompiles).
-using Pkg
-Pkg.activate(@__DIR__; io = devnull)
-Pkg.instantiate(; io = devnull)
+include(joinpath(@__DIR__, "..", "deps", "activation.jl"))
+activate_environment(@__DIR__)
 if abspath(PROGRAM_FILE) == @__FILE__
     println("Environment ready: ", Base.active_project(), " (Julia ", VERSION, ")")
 end

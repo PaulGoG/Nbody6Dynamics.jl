@@ -44,7 +44,7 @@ dispersion σ [km s⁻¹] of the systems in `snap`: single stars plus the centre
 of mass of the pairs listed in `bev`, matched to the snapshot by particle
 name. A pair with a component missing from the snapshot is not reduced and
 its present component counts as a single star. With `bound_only` the scale
-is taken over the self-consistently bound systems ([`_bound_members`](@ref)),
+is taken over the self-consistently bound systems ([`bound_set`](@ref)),
 which keeps escapers and kicked stellar remnants — a handful of stars at
 tens of km s⁻¹ — from dominating the mass-weighted dispersion; `n_systems`
 counts the systems used. `⟨m⟩ σ²` is the hard/soft energy scale used by
@@ -104,7 +104,7 @@ function hardness_scale(snap::Snapshot, bev::BinaryEvolutionSnapshot; bound_only
                 p_sys[k, s] = Float64(snap.pos[k, i])
             end
         end
-        sel = _bound_members(p_sys, v_sys[:, 1:n_sys], m_sys[1:n_sys])
+        sel = bound_set(m_sys[1:n_sys], p_sys, v_sys[:, 1:n_sys]).stars
         length(sel) ≥ _MIN_MEMBERS || (sel = collect(1:n_sys))
     end
     M = sum(m_sys[s] for s in sel)

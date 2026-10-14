@@ -93,6 +93,7 @@ end
     include("test_cluster.jl")
     include("test_io.jl")
     include("test_diagnostics.jl")
+    include("test_potential.jl")
     include("test_sweep_ensemble.jl")
     include("test_plotting.jl")
     include("test_external.jl")

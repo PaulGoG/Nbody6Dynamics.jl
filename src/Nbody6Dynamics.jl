@@ -12,6 +12,7 @@ using Logging
 using LoggingExtras: FormatLogger, MinLevelLogger, TeeLogger
 using LinearAlgebra: BLAS
 using InteractiveUtils: InteractiveUtils
+using KernelAbstractions: KernelAbstractions, @kernel, @index, @Const, CPU
 using UnicodePlots: UnicodePlots
 using PrecompileTools: @setup_workload, @compile_workload
 
@@ -109,6 +110,12 @@ include("gpu_validation.jl")
 include("io/io.jl")
 
 # ---------------------------------------------------------------------------
+# Potential, bound sets and integrals of snapshots
+# ---------------------------------------------------------------------------
+include("potential.jl")
+include("integrals.jl")
+
+# ---------------------------------------------------------------------------
 # Per-cluster structure from snapshots (used by the merger plots)
 # ---------------------------------------------------------------------------
 include("cluster_structure.jl")
@@ -157,11 +164,13 @@ Data directory resolution (in priority order):
 file it was loaded from).
 
 Besides the readers, the derived data products are computed here: the class
-census (`:stellar_census`) and, for a merger run — one whose output holds a
-`merger_summary.txt` and at least two snapshots — the remnant diagnostics
-(`:remnant`, a [`RemnantDiagnostics`](@ref)), provided no snapshot holds
-more than `postprocess.pair_sum_max_n` particles (the bound-set selection is
-an O(N²) pair sum).
+census (`:stellar_census`), the integrals of motion of every snapshot
+(`:integrals`, [`SnapshotIntegrals`](@ref), with `postprocess.snapshot_integrals`)
+and, for a merger run — one whose output holds a `merger_summary.txt` and at
+least two snapshots — the remnant diagnostics (`:remnant`, a
+[`RemnantDiagnostics`](@ref)), which reuse the integrals' bound sets. Both
+need an O(N²) pair sum per snapshot and run only while no snapshot holds more
+than `postprocess.pair_sum_max_n` stars.
 """
 function postprocess(
     cfg::Nbody6Config;
@@ -248,26 +257,51 @@ function postprocess(
         )
     end
 
-    # Remnant diagnostics of a merger run: a data product, so it is computed
-    # here and not in the figure layer, and a headless host gets it too. The
-    # bound-set selection is an O(N²) pair sum, so it is subject to the
-    # configured particle limit.
+    # Integrals of motion and remnant diagnostics: data products, so they are
+    # computed here and not in the figure layer, and a headless host gets them
+    # too. Each needs an O(N²) pair sum per snapshot (the bound set), so both
+    # are subject to the configured limit; the remnant diagnostics reuse the
+    # integrals' bound sets.
+    bound = (; max_passes = pp.bound_max_passes, min_members = pp.bound_min_members)
+    if haskey(results, :snapshots) && pp.snapshot_integrals
+        if _within_pair_sum_limit(results[:snapshots], pp, "Snapshot integrals")
+            @info "Snapshot integrals (momenta, energies, bound set)..."
+            results[:integrals] = snapshot_integrals(results[:snapshots]; bound...)
+        end
+    end
     summary_path = joinpath(sim_dir, "merger_summary.txt")
     if haskey(results, :snapshots) && length(results[:snapshots]) ≥ 2 && isfile(summary_path)
         ranges = parse_merger_summary(summary_path)
-        if !isempty(ranges)
-            n_max = maximum(nparticles, results[:snapshots])
-            if n_max ≤ pp.pair_sum_max_n
-                @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
-                results[:remnant] = remnant_diagnostics(results[:snapshots], ranges)
-            else
-                @warn "Remnant diagnostics skipped: snapshots of up to $n_max particles exceed " *
-                      "postprocess.pair_sum_max_n = $(pp.pair_sum_max_n) (O(N²) pair sums)"
-            end
+        if !isempty(ranges) &&
+           _within_pair_sum_limit(results[:snapshots], pp, "Remnant diagnostics")
+            @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
+            bound_sets =
+                haskey(results, :integrals) ? [s.bound for s in results[:integrals]] : nothing
+            results[:remnant] =
+                remnant_diagnostics(results[:snapshots], ranges; bound_sets, bound...)
         end
     end
 
     return results
+end
+
+"""
+    _within_pair_sum_limit(snaps, pp, what) -> Bool
+
+Whether the largest snapshot of `snaps` holds at most `pp.pair_sum_max_n`
+stars; warns, naming `what`, the key and the size of the pair sum otherwise.
+"""
+function _within_pair_sum_limit(
+    snaps::Vector{Snapshot},
+    pp::PostprocessConfig,
+    what::AbstractString,
+)::Bool
+    n_max = maximum(nparticles, snaps)
+    n_max ≤ pp.pair_sum_max_n && return true
+    @warn "$what skipped: snapshots of up to $n_max stars exceed postprocess.pair_sum_max_n = " *
+          "$(pp.pair_sum_max_n) (each snapshot costs an exact pair sum of " *
+          "$(@sprintf("%.1e", float(n_max)^2)) pair evaluations)"
+    return false
 end
 
 """
@@ -465,6 +499,12 @@ function _finish_pipeline(
             results[:remnant],
         )
     end
+    if haskey(results, :integrals) && !isempty(products_dir)
+        write_snapshot_integrals(
+            joinpath(products_dir, "snapshot_integrals.csv"),
+            results[:integrals],
+        )
+    end
 
     # ── Phase 4: Plots ──
     if cfg.visualization.enabled && !isempty(results)
@@ -618,6 +658,8 @@ export BinaryPopulation, binary_population
 export StellarClass, STELLAR_CLASSES, stellar_class
 export HRPopulation, hr_population, hr_populations
 export StellarCensus, stellar_census, write_stellar_census
+export pair_potential, SystemSet, reduce_pairs, BoundSet, bound_set
+export SnapshotIntegrals, snapshot_integrals, write_snapshot_integrals
 export ClusterStructure, cluster_structure, bound_fraction, per_cluster_virial, parse_merger_summary
 export RadialProfile, radial_profile, cluster_profiles, system_profile, model_density
 export RemnantDiagnostics, RotationProfile, remnant_diagnostics, write_remnant_diagnostics

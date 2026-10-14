@@ -37,7 +37,6 @@ end
 
 const _LAGR_FRACTIONS_MEMBER = (0.1, 0.5, 0.9)
 const _MIN_MEMBERS = 10
-const _BOUND_MAX_ITER = 8
 
 """
     _member_indices(snap, members) -> Vector{Int}
@@ -88,62 +87,31 @@ function _shrinking_sphere_centre(
 end
 
 """
-    _self_potential(pos, mass) -> Vector{Float64}
+    _virial_energies(snap, idx) -> (T, W, M)
 
-Potential of every particle from all the others, `Φ_i = −Σ_{j≠i} m_j / r_ij`
-(`G = 1`), by the O(N²) pair sum.
+Kinetic energy about the mass-weighted mean velocity, potential energy and
+mass of the systems formed by the snapshot stars `idx` (regularised pairs at
+their centres of mass, components of pairs split by `idx` left out).
 """
-function _self_potential(
-    pos::AbstractMatrix{Float64},
-    mass::AbstractVector{Float64},
-)::Vector{Float64}
-    n = length(mass)
-    Φ = zeros(Float64, n)
-    @inbounds for i in 1:(n - 1)
-        xi, yi, zi, mi = pos[1, i], pos[2, i], pos[3, i], mass[i]
-        for j in (i + 1):n
-            dx = xi - pos[1, j]
-            dy = yi - pos[2, j]
-            dz = zi - pos[3, j]
-            r = sqrt(dx * dx + dy * dy + dz * dz)
-            r > 0 || continue
-            Φ[i] -= mass[j] / r
-            Φ[j] -= mi / r
-        end
+function _virial_energies(snap::Snapshot, idx::AbstractVector{Int})
+    sys, _ = _snapshot_systems(snap, collect(idx))
+    isempty(sys.mass) && return (NaN, NaN, 0.0)
+    vref = _mean_velocity(sys, eachindex(sys.mass))
+    Φ = pair_potential(sys.pos, sys.mass)
+    T = 0.0
+    W = 0.0
+    for s in eachindex(sys.mass)
+        T +=
+            0.5 *
+            sys.mass[s] *
+            (
+                (sys.vel[1, s] - vref[1])^2 +
+                (sys.vel[2, s] - vref[2])^2 +
+                (sys.vel[3, s] - vref[3])^2
+            )
+        W += 0.5 * sys.mass[s] * Φ[s]
     end
-    return Φ
-end
-
-"""
-    _bound_members(pos, vel, mass) -> Vector{Int}
-
-Indices of the particles bound to the group they form: iterate the
-self-consistent selection `½|v − v_com|² + Φ < 0`, with the centre-of-mass
-velocity and the potential recomputed from the current bound set, until the
-set no longer changes (at most `_BOUND_MAX_ITER` passes). O(N²) per pass.
-"""
-function _bound_members(
-    pos::AbstractMatrix{Float64},
-    vel::AbstractMatrix{Float64},
-    mass::AbstractVector{Float64},
-)::Vector{Int}
-    bound = collect(1:length(mass))
-    for _ in 1:_BOUND_MAX_ITER
-        length(bound) < _MIN_MEMBERS && return bound
-        p = pos[:, bound]
-        v = vel[:, bound]
-        m = mass[bound]
-        M = sum(m)
-        vc = vec(sum(v .* m'; dims = 2)) ./ M
-        Φ = _self_potential(p, m)
-        keep = [
-            0.5 * ((v[1, i] - vc[1])^2 + (v[2, i] - vc[2])^2 + (v[3, i] - vc[3])^2) + Φ[i] < 0
-            for i in eachindex(m)
-        ]
-        all(keep) && return bound
-        bound = bound[keep]
-    end
-    return bound
+    return (T, W, sum(sys.mass))
 end
 
 """
@@ -276,14 +244,17 @@ end
         -> Vector{Union{Nothing,RadialProfile}}
 
 Radial profile of every initial cluster about its own shrinking-sphere
-centre from its bound members ([`cluster_structure`](@ref) conventions);
-`nothing` for clusters with too few members.
+centre from its bound members ([`cluster_structure`](@ref) conventions;
+`max_passes` and `min_members` go to [`bound_set`](@ref)); `nothing` for
+clusters with too few members.
 """
 function cluster_profiles(
     snap::Snapshot,
     cluster_ranges::AbstractVector{<:AbstractVector{Int}};
     bound_only::Bool = true,
     nbins::Int = 12,
+    max_passes::Integer = _BOUND_MAX_PASSES,
+    min_members::Integer = _BOUND_MIN_MEMBERS,
 )
     pos_all = Float64.(snap.pos)
     vel_all = Float64.(snap.vel)
@@ -292,14 +263,11 @@ function cluster_profiles(
     for (i, rng) in enumerate(cluster_ranges)
         idx = _member_indices(snap, rng)
         length(idx) < 2 * _MIN_MEMBERS && continue
-        pos = pos_all[:, idx]
-        vel = vel_all[:, idx]
-        mass = mass_all[idx]
-        sel = bound_only ? _bound_members(pos, vel, mass) : collect(1:length(idx))
+        sel = bound_only ? bound_set(snap, idx; max_passes, min_members).stars : idx
         length(sel) < 2 * _MIN_MEMBERS && continue
-        p = pos[:, sel]
-        c = _shrinking_sphere_centre(p, mass[sel])
-        out[i] = radial_profile(p, vel[:, sel], mass[sel], c; nbins = nbins)
+        p = pos_all[:, sel]
+        c = _shrinking_sphere_centre(p, mass_all[sel])
+        out[i] = radial_profile(p, vel_all[:, sel], mass_all[sel], c; nbins = nbins)
     end
     return out
 end
@@ -319,19 +287,21 @@ function system_profile(snap::Snapshot; nbins::Int = 12)::RadialProfile
 end
 
 """
-    bound_fraction(snap::Snapshot) -> Float64
+    bound_fraction(snap::Snapshot; max_passes = 100, min_members = 10) -> Float64
 
-Mass fraction of the particles bound to the whole system in its own frame
-(self-consistent negative-energy selection, [`_bound_members`](@ref)):
-a snapshot-based escaper measure independent of the engine's escape
-sphere. O(N²) per pass; intended for N ≲ 3×10⁴.
+Mass fraction of the stars bound to the whole system in its own frame
+(iterative energetic unbinding with regularised pairs at their centres of
+mass, [`bound_set`](@ref)): a snapshot-based escaper measure independent of
+the engine's escape sphere. One O(N²) pair sum plus O(N·N_removed) per pass.
 """
-function bound_fraction(snap::Snapshot)::Float64
-    pos = Float64.(snap.pos)
-    vel = Float64.(snap.vel)
+function bound_fraction(
+    snap::Snapshot;
+    max_passes::Integer = _BOUND_MAX_PASSES,
+    min_members::Integer = _BOUND_MIN_MEMBERS,
+)::Float64
     mass = Float64.(snap.mass)
     isempty(mass) && return NaN
-    sel = _bound_members(pos, vel, mass)
+    sel = bound_set(snap; max_passes, min_members).stars
     return sum(mass[sel]) / sum(mass)
 end
 
@@ -345,13 +315,16 @@ membership statistics). The bound selection removes tidally stripped
 stars and kicked stellar remnants, which otherwise dominate the velocity
 dispersion and the virial ratio after the first supernovae.
 
-Complexity O(Σ_i N_i²) per snapshot for the bound selection and the virial
-ratio; intended for N_i ≲ 10⁴.
+Regularised pairs enter the bound selection, `sigma_1d` and `q_virial` as
+their centres of mass; `max_passes` and `min_members` go to
+[`bound_set`](@ref). One O(N_i²) pair sum per cluster and snapshot.
 """
 function cluster_structure(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}};
     bound_only::Bool = true,
+    max_passes::Integer = _BOUND_MAX_PASSES,
+    min_members::Integer = _BOUND_MIN_MEMBERS,
 )::ClusterStructure
     n_cl = length(cluster_ranges)
     n_t = length(snaps)
@@ -365,33 +338,29 @@ function cluster_structure(
     q = fill(NaN, n_cl, n_t)
     for (k, snap) in enumerate(snaps)
         pos_all = Float64.(snap.pos)
-        vel_all = Float64.(snap.vel)
         mass_all = Float64.(snap.mass)
         for (i, rng) in enumerate(cluster_ranges)
             idx = _member_indices(snap, rng)
             n_members[i, k] = length(idx)
             length(idx) < _MIN_MEMBERS && continue
-            pos = pos_all[:, idx]
-            vel = vel_all[:, idx]
-            mass = mass_all[idx]
-            sel = bound_only ? _bound_members(pos, vel, mass) : collect(1:length(idx))
+            if bound_only
+                b = bound_set(snap, idx; max_passes, min_members)
+                sel = b.stars
+                T, W = b.kinetic, b.potential
+            else
+                sel = idx
+                T, W, _ = _virial_energies(snap, idx)
+            end
             n_bound[i, k] = length(sel)
-            fbound[i, k] = sum(mass[sel]) / sum(mass)
+            fbound[i, k] = sum(mass_all[sel]) / sum(mass_all[idx])
             length(sel) < _MIN_MEMBERS && continue
-            p = pos[:, sel]
-            v = vel[:, sel]
-            m = mass[sel]
+            p = pos_all[:, sel]
+            m = mass_all[sel]
             M = sum(m)
             c = _shrinking_sphere_centre(p, m)
             centre[:, i, k] = c
             r_lagr[:, i, k] = _lagrangian_radii(p, m, c, _LAGR_FRACTIONS_MEMBER)
-            vc = vec(sum(v .* m'; dims = 2)) ./ M
-            T = 0.0
-            for j in eachindex(m)
-                T += 0.5 * m[j] * ((v[1, j] - vc[1])^2 + (v[2, j] - vc[2])^2 + (v[3, j] - vc[3])^2)
-            end
             σ[i, k] = sqrt(2 * T / (3 * M))
-            W = 0.5 * sum(m .* _self_potential(p, m))
             q[i, k] = W < 0 ? T / abs(W) : NaN
         end
     end
@@ -443,37 +412,34 @@ function parse_merger_summary(path::AbstractString)::Vector{Vector{Int}}
 end
 
 """
-    _cluster_virial_snapshot(snap, rng; bound_only = true) -> (Q, n_mem)
+    _cluster_virial_snapshot(snap, rng; bound_only = true, max_passes, min_members) -> (Q, n_mem)
 
 Virial ratio `Q = T/|W|` of the members of an initial cluster in one
-snapshot, with the centre-of-mass velocity subtracted and only the
-self-gravity among the selected members in `W`. With `bound_only` the
-selection is the self-consistently bound subset ([`_bound_members`](@ref)),
-which removes tidally stripped stars and kicked stellar remnants; otherwise
-every present member counts. `n_mem` is the number of present members.
-Returns `(NaN, n_mem)` with fewer than 3 selected members or a
-non-negative `W`. N-body units (`G = 1`).
+snapshot, about the members' mass-weighted mean velocity and with only the
+self-gravity among the selected members in `W`; regularised pairs count as
+their centres of mass. With `bound_only` the selection is the bound subset
+([`bound_set`](@ref)), which removes tidally stripped stars and kicked stellar
+remnants; otherwise every present member counts. `n_mem` is the number of
+present members. Returns `(NaN, n_mem)` with fewer than 3 selected members or
+a non-negative `W`. N-body units (`G = 1`).
 """
-function _cluster_virial_snapshot(snap::Snapshot, rng::AbstractVector{Int}; bound_only::Bool = true)
+function _cluster_virial_snapshot(
+    snap::Snapshot,
+    rng::AbstractVector{Int};
+    bound_only::Bool = true,
+    max_passes::Integer = _BOUND_MAX_PASSES,
+    min_members::Integer = _BOUND_MIN_MEMBERS,
+)
     idx = _member_indices(snap, rng)
     n_mem = length(idx)
     n_mem < 3 && return (NaN, n_mem)
-    pos = Float64.(snap.pos[:, idx])
-    vel = Float64.(snap.vel[:, idx])
-    m = Float64.(snap.mass[idx])
-    sel = bound_only ? _bound_members(pos, vel, m) : collect(1:n_mem)
-    length(sel) < 3 && return (NaN, n_mem)
-    p = pos[:, sel]
-    v = vel[:, sel]
-    ms = m[sel]
-    M = sum(ms)
-    M > 0 || return (NaN, n_mem)
-    vc = vec(sum(v .* ms'; dims = 2)) ./ M
-    T = 0.0
-    @inbounds for i in eachindex(ms)
-        T += 0.5 * ms[i] * ((v[1, i] - vc[1])^2 + (v[2, i] - vc[2])^2 + (v[3, i] - vc[3])^2)
+    if bound_only
+        b = bound_set(snap, idx; max_passes, min_members)
+        length(b.stars) < 3 && return (NaN, n_mem)
+        T, W = b.kinetic, b.potential
+    else
+        T, W, _ = _virial_energies(snap, idx)
     end
-    W = 0.5 * sum(ms .* _self_potential(p, ms))
     W < 0 || return (NaN, n_mem)
     return (T / abs(W), n_mem)
 end
@@ -485,16 +451,17 @@ end
 Internal virial ratio of every initial cluster at every snapshot, `Q[i, k]`
 for cluster `i` at snapshot `k` (`NaN` with fewer than 3 selected members).
 By default only the members bound to the cluster enter `T` and `W`
-([`_bound_members`](@ref)); `bound_only = false` uses every present member
-and is dominated by kicked remnants after the first supernovae.
-
-Complexity: O(Σ_i N_i²) per snapshot and bound-selection pass; manageable
-for N_i ≲ 10⁴.
+([`bound_set`](@ref), which takes `max_passes` and `min_members`);
+`bound_only = false` uses every present member and is dominated by kicked
+remnants after the first supernovae. One O(N_i²) pair sum per cluster and
+snapshot.
 """
 function per_cluster_virial(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}};
     bound_only::Bool = true,
+    max_passes::Integer = _BOUND_MAX_PASSES,
+    min_members::Integer = _BOUND_MIN_MEMBERS,
 )
     n_cl = length(cluster_ranges)
     n_t = length(snaps)
@@ -503,7 +470,7 @@ function per_cluster_virial(
 
     for (k, snap) in enumerate(snaps)
         for (i, rng) in enumerate(cluster_ranges)
-            q, nm = _cluster_virial_snapshot(snap, rng; bound_only = bound_only)
+            q, nm = _cluster_virial_snapshot(snap, rng; bound_only, max_passes, min_members)
             Q[i, k] = q
             n_mem[i, k] = nm
         end

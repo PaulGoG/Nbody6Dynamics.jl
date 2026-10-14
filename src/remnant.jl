@@ -3,7 +3,7 @@
 # =============================================================================
 #
 # The "remnant" is the self-consistent bound set of the whole system at a
-# snapshot (see `_bound_members`); before coalescence it is simply the bound
+# snapshot (see `bound_set`); before coalescence it is simply the bound
 # part of the whole configuration. Cluster centre-of-mass trajectories and
 # the union-find count of spatially distinct clusters live here because the
 # coalescence time is derived from them; the merger figures reuse them.
@@ -314,7 +314,7 @@ end
 const _ROTATION_SHELLS = 8
 
 """
-    rotation_analysis(pos, vel, mass; nbins = _ROTATION_SHELLS)
+    rotation_analysis(pos, vel, mass; nbins = _ROTATION_SHELLS, energy = nothing)
         -> (; L, axis, lambda_r, lambda_peebles, profile)
 
 Rotation of a bound set about its shrinking-sphere centre and mean velocity:
@@ -323,13 +323,18 @@ motion parameter
 ``λ_R = Σ m R |v_rot| / Σ m R √(v_rot² + σ²)`` (the λ_R of Emsellem et al.
 2007 evaluated with the shell values of the [`RotationProfile`](@ref)),
 the Peebles (1969) spin parameter ``λ_P = |L| √|E| / (G M^{5/2})`` with
-`E` the total energy of the set (`G = 1`), and the profile itself.
+`E` the total energy of the set (`G = 1`), and the profile itself. `energy`
+passes `E` when it is known, as for a [`BoundSet`](@ref) (`kinetic +
+potential`, regularised pairs at their centres of mass); otherwise it is the
+star-level `T + W` of the given particles, which includes the internal
+energy of any pair among them.
 """
 function rotation_analysis(
     pos::AbstractMatrix{Float64},
     vel::AbstractMatrix{Float64},
     mass::AbstractVector{Float64};
     nbins::Int = _ROTATION_SHELLS,
+    energy::Union{Nothing,Real} = nothing,
 )
     n = length(mass)
     n ≥ _MIN_MEMBERS ||
@@ -401,12 +406,15 @@ function rotation_analysis(
     end
     lambda_r = den > 0 ? num / den : NaN
 
-    T = 0.0
-    for i in 1:n
-        T += 0.5 * mass[i] * sum((vel[k, i] - vc[k])^2 for k in 1:3)
+    E = if energy === nothing
+        T = 0.0
+        for i in 1:n
+            T += 0.5 * mass[i] * sum((vel[k, i] - vc[k])^2 for k in 1:3)
+        end
+        T + 0.5 * sum(mass .* pair_potential(pos, mass))
+    else
+        Float64(energy)
     end
-    W = 0.5 * sum(mass .* _self_potential(pos, mass))
-    E = T + W
     lambda_peebles = Lnorm * sqrt(abs(E)) / M^2.5
 
     return (; L, axis, lambda_r, lambda_peebles, profile)
@@ -545,12 +553,16 @@ const _MSR_THRESHOLD = 2.0
 """
     remnant_diagnostics(snaps, cluster_ranges; n_massive = 50, n_random = 50,
                         seed = 0, lambda_threshold = 2.0, nbins = 8,
-                        overlap_factor = 1.0) -> RemnantDiagnostics
+                        overlap_factor = 1.0, bound_sets = nothing,
+                        max_passes = 100, min_members = 10) -> RemnantDiagnostics
 
-Bound remnant of the whole system at every snapshot (the self-consistent
-bound set of all particles), its core and half-mass radii, rotation and
-mass segregation, plus the coalescence and segregation times. O(N²) per
-snapshot; intended for N ≲ 2×10⁴.
+Bound remnant of the whole system at every snapshot (the bound set of all
+stars, regularised pairs at their centres of mass, [`bound_set`](@ref) with
+`max_passes` and `min_members`), its core and half-mass radii, rotation and
+mass segregation, plus the coalescence and segregation times. `bound_sets`
+passes the bound sets when they are already known, one per snapshot (the
+`bound` of [`snapshot_integrals`](@ref)); otherwise each costs one O(N²) pair
+sum.
 """
 function remnant_diagnostics(
     snaps::Vector{Snapshot},
@@ -561,8 +573,14 @@ function remnant_diagnostics(
     lambda_threshold::Real = _MSR_THRESHOLD,
     nbins::Int = _ROTATION_SHELLS,
     overlap_factor::Real = 1.0,
+    bound_sets::Union{Nothing,AbstractVector{BoundSet}} = nothing,
+    max_passes::Integer = _BOUND_MAX_PASSES,
+    min_members::Integer = _BOUND_MIN_MEMBERS,
 )::RemnantDiagnostics
     isempty(snaps) && throw(ArgumentError("remnant_diagnostics needs at least one snapshot"))
+    bound_sets === nothing ||
+        length(bound_sets) == length(snaps) ||
+        throw(DimensionMismatch("$(length(bound_sets)) bound sets for $(length(snaps)) snapshots"))
     n_t = length(snaps)
     t = [time_nb(s.header) for s in snaps]
     t_myr = [time_myr(s.header) for s in snaps]
@@ -589,7 +607,8 @@ function remnant_diagnostics(
         vel_all = Float64.(snap.vel)
         mass_all = Float64.(snap.mass)
         length(mass_all) < _MIN_MEMBERS && continue
-        sel = _bound_members(pos_all, vel_all, mass_all)
+        b = bound_sets === nothing ? bound_set(snap; max_passes, min_members) : bound_sets[k]
+        sel = b.stars
         n_bound[k] = length(sel)
         fbound[k] = sum(mass_all[sel]) / sum(mass_all)
         length(sel) < _MIN_MEMBERS && continue
@@ -605,7 +624,7 @@ function remnant_diagnostics(
         c = _shrinking_sphere_centre(pos, mass)
         r_half[k] = _lagrangian_radii(pos, mass, c, (0.5,))[1]
 
-        rot = rotation_analysis(pos, vel, mass; nbins = nbins)
+        rot = rotation_analysis(pos, vel, mass; nbins = nbins, energy = b.kinetic + b.potential)
         λr[k] = rot.lambda_r
         λp[k] = rot.lambda_peebles
         axis[:, k] = rot.axis

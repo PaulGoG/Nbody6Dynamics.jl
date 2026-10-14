@@ -52,7 +52,10 @@ export_width = 5.0
     @test cfg.postprocess.read_binary_evo == true
     @test cfg.postprocess.binary_evo_pattern == "bev.82_*"
     @test cfg.postprocess.pair_sum_max_n == 5000
-    @test PostprocessConfig().pair_sum_max_n == 100_000
+    @test PostprocessConfig().pair_sum_max_n == 2_000_000
+    @test PostprocessConfig().snapshot_integrals
+    @test PostprocessConfig().bound_max_passes == 100
+    @test PostprocessConfig().bound_min_members == 10
     @test cfg.visualization.dpi == 150
     @test cfg.visualization.export_width == 5.0
     @test cfg.install.source_url == "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
@@ -177,6 +180,16 @@ format = "pdf"
             "postprocess.stellar_evo_pattern",
         ),
         ("pair_sum_max_n", "[postprocess]\npair_sum_max_n = -1\n", "postprocess.pair_sum_max_n"),
+        (
+            "bound_max_passes",
+            "[postprocess]\nbound_max_passes = 0\n",
+            "postprocess.bound_max_passes",
+        ),
+        (
+            "bound_min_members",
+            "[postprocess]\nbound_min_members = 1\n",
+            "postprocess.bound_min_members",
+        ),
         ("format", "[visualization]\nformat = \"gif\"\n", "visualization.format"),
         ("column", "[visualization]\ncolumn = \"triple\"\n", "visualization.column"),
         ("units", "[visualization]\nunits = \"cgs\"\n", "visualization.units"),

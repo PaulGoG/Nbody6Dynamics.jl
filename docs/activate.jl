@@ -3,9 +3,8 @@
 # so it always runs against the local source. make.jl includes
 # this file; on a new machine `julia docs/activate.jl` bootstraps the
 # environment on its own.
-using Pkg
-Pkg.activate(@__DIR__; io = devnull)
-Pkg.instantiate(; io = devnull)
+include(joinpath(@__DIR__, "..", "deps", "activation.jl"))
+activate_environment(@__DIR__)
 if abspath(PROGRAM_FILE) == @__FILE__
     println("Environment ready: ", Base.active_project(), " (Julia ", VERSION, ")")
 end
