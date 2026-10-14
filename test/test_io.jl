@@ -123,6 +123,112 @@ end
 
 # =====================================================================
 
+@testset "conf.3 reader — pair centre-of-mass entries" begin
+    using StableRNGs
+    # Engine layout: NTOT = N + NPAIRS, components of pair k at 2k − 1 and 2k,
+    # its centre of mass at N + k (output.F).
+    rng = StableRNG(11)
+    n_stars, n_pairs = 7, 2
+    ntot = n_stars + n_pairs
+    mass = Float32.(0.05 .+ rand(rng, n_stars))
+    pos = randn(rng, Float32, 3, n_stars)
+    vel = randn(rng, Float32, 3, n_stars)
+    cm_mass = [mass[2k - 1] + mass[2k] for k in 1:n_pairs]
+    cm_pos = reduce(
+        hcat,
+        [
+            (mass[2k - 1] .* pos[:, 2k - 1] .+ mass[2k] .* pos[:, 2k]) ./ cm_mass[k] for
+            k in 1:n_pairs
+        ],
+    )
+    cm_vel = reduce(
+        hcat,
+        [
+            (mass[2k - 1] .* vel[:, 2k - 1] .+ mass[2k] .* vel[:, 2k]) ./ cm_mass[k] for
+            k in 1:n_pairs
+        ],
+    )
+    names = vcat(Int32.(1:n_stars), Int32.(1000 .+ (1:n_pairs)))
+    function write_bulk(path, npairs_slot)
+        open(path, "w") do io
+            _write_fortran_record(io, Int32[ntot, 1, 1, 20])
+            params = zeros(Float32, 20)
+            params[1] = 2.0f0
+            params[2] = npairs_slot
+            body = vcat(
+                params,
+                mass,
+                cm_mass,
+                fill(1.0f0, ntot),                     # RHOS
+                zeros(Float32, ntot),                  # XNS
+                vec(hcat(pos, cm_pos)),
+                vec(hcat(vel, cm_vel)),
+                fill(-0.5f0, ntot),                    # PHI
+                reinterpret(Float32, names),
+            )
+            _write_fortran_record(io, body)
+        end
+        return path
+    end
+    snap = read_conf3(write_bulk(joinpath(TESTDIR, "conf3_pairs"), Float32(n_pairs)))
+    @test nparticles(snap) == n_stars
+    @test snap.npairs == n_pairs
+    @test snap.header.ntot == ntot
+    @test pair_indices(snap) == [(1, 2), (3, 4)]
+    @test snap.mass == mass
+    @test snap.pos == pos && snap.vel == vel
+    @test snap.name == Int32.(1:n_stars)
+    @test snap.pair_name == Int32[1001, 1002]
+    @test length(snap.rho) == n_stars && length(snap.phi) == n_stars
+    @test sum(Float64, snap.mass) ≈ sum(Float64, mass)
+
+    # An active chain's centre-of-mass body (NAME = 0) among the singles is dropped too.
+    names[6] = 0
+    chain = read_conf3(write_bulk(joinpath(TESTDIR, "conf3_chain"), Float32(n_pairs)))
+    @test nparticles(chain) == n_stars - 1
+    @test chain.name == Int32[1, 2, 3, 4, 5, 7]
+    @test chain.mass == mass[[1, 2, 3, 4, 5, 7]]
+    @test chain.pos == pos[:, [1, 2, 3, 4, 5, 7]]
+    @test pair_indices(chain) == [(1, 2), (3, 4)]
+    names[6] = 6
+
+    # Inconsistent pair counts are refused, not truncated silently.
+    @test_throws ArgumentError read_conf3(write_bulk(joinpath(TESTDIR, "conf3_pairs_bad"), 5.0f0))
+    @test_throws ArgumentError read_conf3(write_bulk(joinpath(TESTDIR, "conf3_pairs_frac"), 1.5f0))
+    @test_throws ArgumentError Snapshot(
+        snap.header,
+        snap.name,
+        snap.mass,
+        snap.pos,
+        snap.vel,
+        Float32[],
+        Float32[],
+        4,
+    )
+    @test_throws DimensionMismatch Snapshot(
+        snap.header,
+        snap.name,
+        snap.mass[1:3],
+        snap.pos,
+        snap.vel,
+        Float32[],
+        Float32[],
+    )
+    @test_throws DimensionMismatch Snapshot(
+        snap.header,
+        snap.name,
+        snap.mass,
+        snap.pos,
+        snap.vel,
+        Float32[],
+        Float32[],
+        2,
+        Int32[5],
+    )
+end
+
+# =====================================================================
+
 @testset "Diagnostics parser" begin
     diag_path = joinpath(TESTDIR, "out1000")
     write(

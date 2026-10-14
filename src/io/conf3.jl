@@ -15,13 +15,24 @@
 #   VS(1:3, 1:NTOT)     — velocities (Fortran column-major)
 #   PHI(1:NTOT)         — potentials
 #   NAME(1:NTOT)        — particle identifiers (Int32)
+#
+# NTOT = N + NPAIRS: entries 1:N are the stars, the components of regularised
+# pair k being entries 2k − 1 and 2k; entry N + k is the centre of mass of
+# pair k. NPAIRS is AS(2). While a chain regularisation is active, its
+# centre-of-mass body (NAME = 0) stays among the stars beside its members.
+# The reader keeps the stars only.
 
 """
     read_conf3(path::AbstractString) -> Snapshot
 
 Read a single conf.3 snapshot from a Fortran unformatted binary file.
 Supports both the bulk-array format (one record for all data) and the
-legacy per-particle record format.
+legacy per-particle record format. The centre-of-mass entries of regularised
+pairs, which follow the stars in the file, are dropped (their count and names
+are kept as `npairs` and `pair_name` of the returned [`Snapshot`](@ref)), and so
+is the centre-of-mass body of an active chain regularisation (NAME = 0), whose
+members the file carries individually. Throws `ArgumentError` when the header
+pair count is inconsistent with the number of entries.
 """
 function read_conf3(path::AbstractString)::Snapshot
     open(path, "r") do io
@@ -192,7 +203,7 @@ function _read_bulk_format(io::IO, ntot, model, nrun, nk, n::Int)::Snapshot
     names = Vector{Int32}(undef, n)
     read!(buf, names)
 
-    return Snapshot(header, names, mass, pos, vel, rho, phi)
+    return _star_snapshot(header, names, mass, pos, vel, rho, phi)
 end
 
 """
@@ -240,5 +251,43 @@ function _read_per_particle_format(io::IO, ntot, model, nrun, nk, n::Int)::Snaps
         end
     end
 
-    return Snapshot(header, names, mass, pos, vel, rho, phi)
+    return _star_snapshot(header, names, mass, pos, vel, rho, phi)
+end
+
+"""
+    _star_snapshot(header, name, mass, pos, vel, rho, phi) -> Snapshot
+
+Keep the stars of the engine's NTOT entries. Dropped are the centre-of-mass
+entries of regularised pairs behind the stars (`output.F` writes `J = 1, NTOT`
+with NTOT = N + NPAIRS, NPAIRS in AS(2)), whose names are kept as `pair_name`,
+and the centre-of-mass body of an active chain regularisation (NAME = 0,
+`reduce.f`), whose members `output.F` restores from `CHDATA` beside it.
+"""
+function _star_snapshot(header::SnapshotHeader, name, mass, pos, vel, rho, phi)::Snapshot
+    ntot = length(name)
+    np_raw = header.nk ≥ 2 ? header.params[2] : 0.0f0
+    (isinteger(np_raw) && np_raw ≥ 0) ||
+        throw(ArgumentError("conf.3 header NPAIRS = $np_raw is not a non-negative integer"))
+    npairs = Int(np_raw)
+    n = ntot - npairs
+    2npairs ≤ n ||
+        throw(ArgumentError("conf.3 header NPAIRS = $npairs is inconsistent with NTOT = $ntot"))
+    pair_name = name[(n + 1):ntot]
+    chain = [i for i in (2npairs + 1):n if name[i] == 0]
+    npairs == 0 &&
+        isempty(chain) &&
+        return Snapshot(header, name, mass, pos, vel, rho, phi, 0, pair_name)
+    keep = isempty(chain) ? (1:n) : setdiff(1:n, chain)
+    pick(a) = isempty(a) ? a : a[keep]
+    return Snapshot(
+        header,
+        name[keep],
+        mass[keep],
+        pos[:, keep],
+        vel[:, keep],
+        pick(rho),
+        pick(phi),
+        npairs,
+        pair_name,
+    )
 end

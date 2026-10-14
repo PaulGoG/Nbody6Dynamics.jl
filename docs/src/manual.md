@@ -545,6 +545,9 @@ snap.pos           # 3 × N matrix (Float32)
 snap.vel           # 3 × N matrix (Float32)
 snap.mass          # N-element vector (Float32)
 snap.name          # particle identifiers (Int32)
+snap.npairs        # regularised pairs; their components are stars 1:2npairs
+snap.pair_name     # names of the pairs' centre-of-mass entries (negative: hierarchy)
+pair_indices(snap) # [(1, 2), (3, 4), …], one tuple per pair
 
 snaps = read_all_conf3(run_out, "conf.3_*")              # ordered by the time suffix
 snaps = read_all_conf3(run_out; threaded = true)         # chunked over Threads.@spawn
@@ -552,7 +555,7 @@ snap.rho, snap.phi # local density / potential (empty if unavailable)
 nparticles(snap)
 ```
 
-The reader auto-detects the bulk-array format (one record with AS params + all particle arrays) and the legacy per-particle record format (32- or 44-byte records; the extended form carries `rho`/`phi`). Corrupt files are skipped with a warning.
+The reader auto-detects the bulk-array format (one record with AS params + all particle arrays) and the legacy per-particle record format (32- or 44-byte records; the extended form carries `rho`/`phi`). Corrupt files are skipped with a warning. The engine writes NTOT = N + NPAIRS entries: the N stars, the components of regularised pair k at positions 2k − 1 and 2k, followed by one centre-of-mass entry per pair carrying the pair's mass. The reader keeps the N stars and drops the centre-of-mass entries, so that sums over a snapshot count every star once; `snap.header.ntot` remains the engine's NTOT. The centre-of-mass body of an active chain regularisation (NAME = 0), which the engine leaves among the stars beside the chain members, is dropped as well. For a hierarchical merger (negative `pair_name`) stars 2k − 1 and 2k are an inner-binary component and the outer body, not a pair.
 
 ### Diagnostics (stdout)
 

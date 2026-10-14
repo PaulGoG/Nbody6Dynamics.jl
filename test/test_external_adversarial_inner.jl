@@ -20,7 +20,7 @@ function write_fake_conf3(path::String, N::Int, t::Float64)
         # Record 2: bulk array
         params = zeros(Float32, NK)
         params[1] = Float32(t)
-        params[2] = Float32(N)
+        params[2] = 0.0f0  # NPAIRS
 
         mass = ones(Float32, N) ./ N
         rho = zeros(Float32, N)

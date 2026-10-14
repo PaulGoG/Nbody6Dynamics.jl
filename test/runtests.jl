@@ -4,6 +4,7 @@ using Nbody6Dynamics
 # Public (documented, unexported) names the tests call unqualified.
 using Nbody6Dynamics:
     nparticles,
+    pair_indices,
     time_nb,
     time_myr,
     rbar,

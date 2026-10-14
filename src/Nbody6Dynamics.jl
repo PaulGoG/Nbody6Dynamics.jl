@@ -654,7 +654,7 @@ export plot_sweep_lagrangian, plot_sweep_energy, plot_sweep_ensemble, plot_contr
 export sweep_figures, plot_merger_ic, plot_telemetry
 export animate_cluster, animate_hr, animate_lagrangian
 
-public nparticles, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
+public nparticles, pair_indices, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc
 public to_pc, to_msun, to_myr, to_kms
 public detect_platform, check_dependencies, detect_cuda_path
 public detect_compute_capabilities, cuda_arch_from_compute_cap, cuda_gencode_flags

@@ -391,7 +391,9 @@ Nbody6Config(
 """
     SnapshotHeader
 
-Header metadata from a conf.3 snapshot file.  The `params` vector stores the
+Header metadata from a conf.3 snapshot file. `ntot` is the engine's NTOT, the
+number of entries in the file: the N stars followed by one centre-of-mass
+entry per regularised pair (NTOT = N + NPAIRS). The `params` vector stores the
 full AS(1:NK) Fortran array (NK = 20 by convention). Slot map (accessors
 exist for the starred entries):
 
@@ -456,10 +458,20 @@ time_myr(h::SnapshotHeader) = time_nb(h) * tscale(h)
 # ---------------------------------------------------------------------------
 
 """
-    Snapshot
+    Snapshot(header, name, mass, pos, vel, rho, phi[, npairs = 0, pair_name = Int32[]])
 
-Particle data from a single conf.3 snapshot.
-Positions and velocities are stored column-major: `pos[:, i]` gives particle i.
+Stars of a single conf.3 snapshot. Positions and velocities are stored
+column-major: `pos[:, i]` gives star i. The engine's centre-of-mass entries of
+regularised pairs are not part of the snapshot; the components of the
+`npairs` regularised pairs are the first `2npairs` stars, pair k being stars
+`2k − 1` and `2k` (see [`pair_indices`](@ref)). `pair_name[k]` is the name of
+pair k's centre-of-mass entry: negative for a hierarchical merger, whose
+stars 2k − 1 and 2k are an inner component and the outer body rather than a
+pair; empty when unknown. `rho` and `phi` are empty when the file does not
+carry them.
+
+Throws `DimensionMismatch` when the arrays disagree in length and
+`ArgumentError` when `2npairs` exceeds the number of stars.
 """
 struct Snapshot
     header::SnapshotHeader
@@ -469,11 +481,50 @@ struct Snapshot
     vel::Matrix{Float32}      # 3 × N
     rho::Vector{Float32}      # local density  (empty if unavailable)
     phi::Vector{Float32}      # potential       (empty if unavailable)
+    npairs::Int               # regularised pairs; components are stars 1:2npairs
+    pair_name::Vector{Int32}  # names of the pairs' centre-of-mass entries (empty if unknown)
+
+    function Snapshot(
+        header,
+        name,
+        mass,
+        pos,
+        vel,
+        rho,
+        phi,
+        npairs::Integer = 0,
+        pair_name = Int32[],
+    )
+        n = length(name)
+        length(mass) == n ||
+            throw(DimensionMismatch("mass has $(length(mass)) entries, name has $n"))
+        size(pos) == (3, n) || throw(DimensionMismatch("pos is $(size(pos)), expected (3, $n)"))
+        size(vel) == (3, n) || throw(DimensionMismatch("vel is $(size(vel)), expected (3, $n)"))
+        for (label, a) in (("rho", rho), ("phi", phi))
+            isempty(a) ||
+                length(a) == n ||
+                throw(DimensionMismatch("$label has $(length(a)) entries, name has $n"))
+        end
+        0 ≤ 2npairs ≤ n || throw(ArgumentError("npairs = $npairs is inconsistent with $n stars"))
+        isempty(pair_name) ||
+            length(pair_name) == npairs ||
+            throw(DimensionMismatch("pair_name has $(length(pair_name)) entries for $npairs pairs"))
+        return new(header, name, mass, pos, vel, rho, phi, Int(npairs), pair_name)
+    end
 end
 
 """    nparticles(s::Snapshot) -> Int
-Number of particles in the snapshot."""
+Number of stars in the snapshot (regularised-pair components counted
+individually, centre-of-mass entries excluded)."""
 nparticles(s::Snapshot) = length(s.name)
+
+"""
+    pair_indices(s::Snapshot) -> Vector{NTuple{2,Int}}
+
+Star indices `(2k − 1, 2k)` of the components of each regularised (KS) pair of
+the snapshot, k = 1, …, `s.npairs`.
+"""
+pair_indices(s::Snapshot) = [(2k - 1, 2k) for k in 1:s.npairs]
 
 # ---------------------------------------------------------------------------
 # Diagnostics parsed from simulation stdout

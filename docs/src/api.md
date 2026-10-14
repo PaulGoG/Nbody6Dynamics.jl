@@ -92,6 +92,7 @@ BinaryPopulation
 
 ```@docs
 nparticles
+pair_indices
 time_nb
 time_myr
 rbar

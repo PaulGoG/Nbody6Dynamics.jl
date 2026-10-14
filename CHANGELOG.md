@@ -182,6 +182,21 @@ entries say so.
 
 ### Fixed
 
+- Snapshots no longer count regularised pairs twice. The engine writes
+  NTOT = N + NPAIRS entries to `conf.3`, the N stars followed by one
+  centre-of-mass entry per KS pair carrying the pair's mass, and
+  `read_conf3` returned all of them as stars. Every sum over a snapshot
+  therefore included each regularised pair's mass twice: up to 23 % excess
+  mass in a 4920-star merger with 819 primordial pairs, 0.2 % in a
+  48 000-body merger with one dynamically formed pair. The reader now drops the
+  centre-of-mass entries, and the centre-of-mass body of an active chain
+  regularisation (NAME = 0), which the engine leaves beside the chain
+  members. `Snapshot` gains `npairs`, the components of pair k being stars
+  2k − 1 and 2k (`pair_indices`), and `pair_name`, the names of the pairs'
+  centre-of-mass entries (negative for a hierarchical merger), and validates
+  its arrays on construction. Remnant diagnostics, per-cluster structure, profiles, the
+  binary hardness scale and the snapshot figures of runs with regularised
+  pairs change accordingly.
 - `animate_cluster` fits its canvas to the square axis, as `plot_snapshot`
   does: a blank strip about a quarter of the frame wide separated the axis
   from the colourbar. Under adaptive zoom the widest tick labels of the
