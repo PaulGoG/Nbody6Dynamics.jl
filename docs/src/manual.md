@@ -135,6 +135,11 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `snapshot_integrals`  | Bool   | `true`   | Compute the integrals of motion of every snapshot and write `snapshot_integrals.csv` (see [Snapshot integrals and bound sets](@ref)) |
 | `bound_max_passes`    | Int    | `100`    | Limit on the unbinding passes of a bound-set selection; must be ≥ 1. A selection still removing systems at the limit is reported as `pass_limit` with a warning |
 | `bound_min_members`   | Int    | `10`     | Number of systems below which a bound set counts as dissolved and the iteration stops; must be ≥ 2 |
+| `events_file`         | String | `"event.35"` | Name of the engine's counters file (one row per output time, written with stellar evolution on); must be nonempty when `mass_budget = true` |
+| `energy_events`       | Bool   | `true`   | Localise the energy changes of the adjustment intervals: write `energy_intervals.csv` and `engine_events.csv` (see [Energy-jump localisation](@ref)) |
+| `energy_jump_threshold` | Float | `1.0e-4` | Floor on \|DE\| for a flagged interval; must be ≥ 0 |
+| `energy_jump_sigma`   | Float  | `5.0`    | An interval is flagged when \|DE\| ≥ max(`energy_jump_threshold`, `energy_jump_sigma` × 1.4826 × MAD of the run's DE); must be ≥ 0 |
+| `mass_budget`         | Bool   | `true`   | Write `mass_budget.csv` and `energy_budget.csv`, the mass and the energy of the snapshots against the escapers, the stellar-evolution and the collision losses and the engine's corrections (see [Mass and energy budgets](@ref)) |
 
 !!! note "HDF5 snapshots are not read"
     `snapshot_format = "hdf5"` is refused. `KZ(46)` H5Part files are detected
@@ -410,7 +415,7 @@ runs/run_20260325_143022_a1f3/
 └── plots/                    # post-processing plots & GIF animations
 ```
 
-Runs from generated initial conditions additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, and `merger_ic.toml` in `output/`, and `remnant_diagnostics.csv` in the run directory. Every run with snapshots gets `snapshot_integrals.csv`. The census, the snapshot integrals and the remnant diagnostics are written by the pipeline itself, with or without a figure backend.
+Runs from generated initial conditions additionally contain `dat.10`, `merger.inp`, `merger_summary.txt`, and `merger_ic.toml` in `output/`, and `remnant_diagnostics.csv` in the run directory. Every run with snapshots gets `snapshot_integrals.csv`. Every run with a stdout capture gets `energy_intervals.csv` and `engine_events.csv`; every run with snapshots and a stdout capture gets `mass_budget.csv` and `energy_budget.csv`. The census, the snapshot integrals and the remnant diagnostics are written by the pipeline itself, with or without a figure backend.
 
 ### Launch script
 
@@ -575,7 +580,9 @@ s = snapshot_integrals(snap)             # SnapshotIntegrals
 write_snapshot_integrals("snapshot_integrals.csv", snapshot_integrals(snaps))
 ```
 
-`snapshot_integrals` gives, per snapshot and in the engine frame: mass, centre of mass and its velocity, linear momentum, angular momentum about the origin and about the centre of mass, the stars' kinetic energy, the kinetic and potential energy of the reduced system (the engine's `EKIN` and `−POT` of the ADJUST line), the internal energy of the regularised pairs (`EBIN`), and the bound set with its mass, energies and angular momentum. `snapshot_integrals.csv` adds `L_removed = L(t₀) − L(t)`, the angular momentum carried off by escapers and stellar mass loss together. The snapshot positions are single precision, so the internal energy of the tightest pairs is resolved only to a few per cent; the centre-of-mass energetics agree with the engine's double-precision values to the four digits the ADJUST line prints.
+`snapshot_integrals` gives, per snapshot and in the engine frame: mass, centre of mass and its velocity, linear momentum, angular momentum about the origin and about the centre of mass, the stars' kinetic energy, the kinetic and potential energy of the reduced system (the engine's `EKIN` and `−POT` of the ADJUST line), the internal energy of the regularised pairs (`EBIN`), the potential energy of a linearised external field, `tidal_potential` (``−½ Σ m (T₁x² + T₃z²)`` over the stars, from the field `TIDAL(1:4)` passed as the `tidal` keyword, `diag.tidal` in the pipeline; zero without a field), and the bound set with its mass, energies and angular momentum. `snapshot_integrals.csv` adds `L_removed = L(t₀) − L(t)`, the angular momentum carried off by escapers and stellar mass loss together, and writes the tidal term as `w_tidal` and the Jacobi integral as `e_jacobi = e_total + w_tidal`, equal to `e_total` without an external field. The snapshot positions are single precision, so the internal energy of the tightest pairs is resolved only to a few per cent; the centre-of-mass energetics agree with the engine's double-precision values to the four digits the ADJUST line prints.
+
+**Tidal runs.** `tidal_mode(diag)` classifies the engine's external-field option `KZ(14)` of the options echo (`:none` when the capture lacks the echo). `:none` (0) is an isolated run. `:linearised` (1, 2) is a static field in the rotating frame whose potential energy the engine never adds to its total (the whole-system call of `xtrnlv.F` is disabled in `energy.F`): the ADJUST `DE` is then a drift, not an error, `ETIDE` prints as zero, the energy check halts a run with a tight `QE`, and the Jacobi integral `e_jacobi` of the snapshots is the conserved quantity. Under `:orbit` (3, 5) the engine accumulates the work of the field in `ETIDE` (`regcor_gpu.F`), so its `DE` is an error measure, while the snapshot energies are not comparable with the engine's total; `:external` (4) is neither. `engine_energy_valid(mode)` is true for `:none` and `:orbit`. The pipeline passes it to `energy_intervals`, so no interval is flagged under a linearised field, and logs the mode.
 
 ### Diagnostics (stdout)
 
@@ -592,6 +599,83 @@ tot = read_energy_totals("out1000")       # END RUN line: time_nb, errtot, detot
 Each ADJUST epoch is merged from up to three stdout lines (`ADJUST:`, `RMIN/RSCALE`, `TIME[NB]`); both positional and key-value ADJUST formats are handled, and particle counts are forward-filled across epochs where `TIME[NB]` lines are sparse.
 
 Three energy fields are kept per adjustment. `de_rel` is the engine's `DE`, the energy change of the interval divided by max(T, |E|); `de_abs` is `DELTA`, the same change in N-body energy units; `detot` is `DETOT`, the engine's running sum of those changes, an absolute energy and not a relative error. The running sum of `de_rel` is what the engine calls `ERRTOT` and prints only at `END RUN`; `cumulative_energy_error` rebuilds it per adjustment, and `read_energy_totals` returns the engine's own totals for comparison.
+
+The key-value ADJUST line also prints the energy terms `EKIN`, `POT` and `ETIDE` and the engine's correction channels `EBIN`, `EMERGE`, `ESUB`, `ECOLL`, `EMDOT` and `ECDOT`; `AdjustRecord` keeps them in N-body units (NaN on a positional line). The options echo gives `diag.kz`, the 50 `KZ` values (empty when the capture lacks the echo), and the `TIDAL PARAMETERS` echo gives `diag.tidal`, `TIDAL(1:4)` in N-body units, zeros without a linearised field.
+
+### Engine events
+
+```julia
+events = read_engine_events("out1000")     # Vector{EngineEvent}
+counters = read_event_counters("event.35") # Vector{EventCounters}
+```
+
+`read_engine_events(path)` returns one `EngineEvent` per stamped event line of `out1000`, in file order. The sixteen kinds (`ENGINE_EVENT_KINDS`), the prefix of their line and the engine routine that writes it:
+
+| Kind | Line prefix | Writer |
+|------|-------------|--------|
+| `:ks_rectification` | `BEG KSRECT TIME[NB]` | `ksrect.f` |
+| `:ks_new` | `NEW KSREG` | `ksinit.F` |
+| `:ks_new_compact` | `NS/BH BINARY T[NB]` | `ksinit.F` |
+| `:ks_new_mdot` | `MDNEW KSREG TIME[NB]` | `mdot.F` |
+| `:ks_end_mdot` | `MDEND KSREG TIME[NB]` | `mdot.F` |
+| `:remnant_formation` | `WD/NS/BH FORMATION T=` | `mdot.F` |
+| `:kick_full` | `FULL VELOCITY KICK:` | `kick.F` |
+| `:kick_zero` | `ZERO VELOCITY KICK:` | `kick.F` |
+| `:kick_low` | `LOW VELOCITY KICK:` | `kick.F` |
+| `:collision` | `<word> COLLISION NSYS` | `cmbody.f` |
+| `:merged_star` | `NEW STAR TIME[NB]` | `mix.f` |
+| `:coalescence` | `<word> COAL: IQCOLL` | `coal.f` |
+| `:escape` | `ESCAPE T,NESC =` | `escape.F` |
+| `:supernova_no_remnant` | `MDOT WARNING! SN KW=15` | `mdot.F` |
+| `:chain_start` | `NEW CHAIN` | `chain.f` |
+| `:chain_end` | `CHTERM:` | `chterm.f` |
+
+Lines without a stamp of their own (`ENFORCED MASS LOSS`, `MIX TYPE CHANGE`, `BINARY COAL`, `BINARY/QUAD/HIARCH ESCAPE`, …) are not read; the stamped line of the same event is. Lines that do not parse (overflowed Fortran fields, glued exponents such as `1.08726-157`) are skipped.
+
+The ADJUST routine evaluates the energy, then removes the escapers, then writes its output, so every line between two ADJUST lines belongs to the interval that ends at the second. `interval` is the index of that record in `diag.adjust`, `line` the line number in the capture; the `ESCAPE` line, printed after the earlier ADJUST line, carries the earlier adjustment's time stamp. The fields each kind carries are tabulated in the docstring of `EngineEvent`; a field the kind does not carry holds `0` (names, counts), `KSTAR_ABSENT` (stellar types) or `NaN` (energy, masses, velocity, and the time of `NEW CHAIN`, which has no stamp). Masses are in M☉, energies in N-body units, velocities in km s⁻¹.
+
+`read_event_counters(path)` reads `event.35`, the engine's counters (`events.f`), into `EventCounters`, one row per output time: the time in Myr, the interaction counters (`ncoll`, `ncoal`, `nroche`, `nce`, `nkick`, …), the energy terms in N-body units (the correction channels and the escaper energies `esesc`, `ebesc`, `emesc`), the most massive body, the stellar-evolution counters, the mass lost by stellar evolution per phase and in total, `zmdot` (M☉, cumulative), and the census of stellar types K* = 0 … 15. The file is absent when stellar evolution is off. The `TIME[Myr]` header row (absent after a restart) and short or unparseable rows are skipped.
+
+### Energy-jump localisation
+
+```julia
+a = energy_intervals(diag, events; engine_energy_valid = engine_energy_valid(tidal_mode(diag)))
+energy_events_summary(a)
+write_energy_intervals("energy_intervals.csv", a)
+write_engine_events("engine_events.csv", a.events)
+```
+
+`energy_intervals(diag, events; threshold, sigma, engine_energy_valid)` splits the run into its adjustment intervals and returns an `EnergyEventAnalysis` with one `EnergyInterval` per interval `(t_{k−1}, t_k]`, k ≥ 2: the engine's `DE` and `DELTA` of the ADJUST record that ends it, the increments of the six correction channels `EBIN`, `EMERGE`, `ESUB`, `ECOLL`, `EMDOT` and `ECDOT` over the interval (NaN when either end lacks the term), and the counts of the events the log places in it, per kind and in total. An interval is flagged when
+
+```math
+|\mathrm{DE}| \ge \max\left(\mathrm{threshold},\; \mathrm{sigma} \times 1.4826 \times \mathrm{MAD}\right),
+```
+
+the median absolute deviation taken over the finite `DE` of all intervals of the run; `score` is |DE| over the robust scale 1.4826 × MAD. Each of the two bounds covers a case the other misses: the floor keeps a run whose errors sit at round-off level unflagged, and the robust scale keeps the rule relative to the run's own noise, so a few large jumps neither inflate it nor hide each other. With `engine_energy_valid = false` no interval is flagged (see Tidal runs under [Snapshot integrals and bound sets](@ref)).
+
+Attribution is by co-occurrence: a flagged interval is set against the events and the channel increments it contains. One flagged with neither an event nor a channel increment is an integration error the log does not explain; `energy_events_summary` says how many there are, together with the number of intervals and of flagged ones, the flagging level, the robust scale, and the event counts of the flagged intervals by kind.
+
+With `[postprocess] energy_events` the pipeline runs the localisation with `threshold = energy_jump_threshold` and `sigma = energy_jump_sigma` and writes two CSV products into the run directory. `energy_intervals.csv` has one row per interval with `index, t_start, t_end, de_rel, de_abs, d_ebin … d_ecdot, score, flagged, n_events` and one `n_<kind>` column per kind; `engine_events.csv` one row per event with the fields of `EngineEvent` (a stellar type the line does not carry and non-finite values as empty cells). Existing files are backed up, never overwritten.
+
+### Mass and energy budgets
+
+```julia
+rows = mass_budget(ints, escapers, counters, events, extract_scaling(diag))
+mass_budget_summary(rows)
+write_mass_budget("mass_budget.csv", rows)
+```
+
+`mass_budget(ints, escapers, counters, events, units)` returns one `MassBudgetRow` per snapshot, in N-body mass units: `m_snapshot`, the stars' mass; `m_escaped`, the escapers removed at or before the snapshot time (`esc.11`, binary escapers as their centre of mass); `m_lost_stellar`, the stellar-evolution loss `ZMDOT` of the last `event.35` row at or before it; `m_lost_collision`, the collision and coalescence loss, the `DM` of the `NEW STAR` and `COAL` lines, which the engine takes from the cluster mass but not from `ZMDOT`; `m_engine`, the engine's own total mass after the last escape at or before the snapshot; and `residual = m0 − (m_snapshot + m_escaped + m_lost_stellar + m_lost_collision)` against the first snapshot's mass `m0`, with `residual_rel = residual / m0`. Two orderings in the engine make the identity exact: escapers are removed before the output of the same adjustment, and `event.35` is written before the snapshot of the same output.
+
+The identity misses the mass lost in Roche-lobe overflow and common-envelope evolution (`roche.f`, under `KZ(19) ≥ 3`), which the engine takes from the cluster mass without a stamped line. The counters `nroche` and `nce` of `event.35` locate such steps; in the binary showcase run the loss is 5 × 10⁻⁷ of the mass, at its one common-envelope event. The Myr stamps of `esc.11` and `event.35` are converted with `T*` and the masses with `M*`, so the budget needs the stdout capture; a Myr-stamped record enters a snapshot's budget within a relative `time_tolerance` (default 10⁻⁵), which absorbs the six-digit rounding of the stamps. `mass_budget.csv` has the columns `time_nb, time_myr, n_stars, m_snapshot, m_escaped, m_lost_stellar, m_lost_collision, m_engine, residual, residual_rel`.
+
+```julia
+erows = energy_budget(ints, escapers, counters, diag, extract_scaling(diag); bevs = bevs)
+energy_budget_summary(erows)
+write_energy_budget("energy_budget.csv", erows)
+```
+
+`energy_budget(ints, escapers, counters, diag, units; bevs)` returns one `EnergyBudgetRow` per snapshot. The Jacobi integral of the snapshot (`e_snapshot`, the `e_jacobi` of the snapshot integrals), plus the energy the engine subtracted for the removed escapers (`e_escaped`), plus the engine's `ECOLL + EMDOT + ECDOT` (`e_channels`), is the total the engine conserves, `e_total`. With a counters file both come from the last `event.35` row at or before the snapshot, at full precision: the escaper energy is `ESESC + EBESC + EMESC` (`source = counters`). Without one the escaper energy is the sum of `m × EESC` over `esc.11`, which misses the internal energy of escaping pairs, and the channels come from the last ADJUST record at or before the snapshot, whose four printed digits bound the closure once the kick energies exceed the total by orders of magnitude (`source = escapers`, or `none` without either file). `ESUB` and `EMERGE` are not added: chain members and the stars of hierarchies appear in the snapshot with their physical coordinates, so their binding energy is inside the snapshot sums. `e_pairs`, the regularised pairs' internal energy inside `e_snapshot`, is taken from `bev.82` at the snapshot times it covers (`pair_source = bev`, the engine's double-precision elements, converted with `M* V*²`) and from the single-precision snapshot otherwise (`snapshot`, where the tightest pairs are quantised). `residual` is the change of `e_total` since the first snapshot and `residual_rel` that change over `|E0|`, the magnitude of the first snapshot's total; `detot` is the engine's own cumulative energy change `DETOT` at the last ADJUST record at or before the snapshot, which the residual tracks when the reconstruction is exact. `energy_budget.csv` has the columns `time_nb, time_myr, e_snapshot, e_pairs, e_escaped, e_channels, e_total, residual, residual_rel, detot, source, pair_source`.
 
 ### Lagrangian radii
 
@@ -771,6 +855,11 @@ generate_plots(results, cfg; run_dir)
 | `Nbody6Config` | Top-level config (install, build, simulation, postprocess, visualization, merger) |
 | `Snapshot` / `SnapshotHeader` | Particle data from conf.3 + AS(1:20) header |
 | `DiagnosticsData` / `AdjustRecord` | Parsed ADJUST records + physical scaling |
+| `EngineEvent` | One stamped event line of out1000 with its adjustment interval |
+| `EventCounters` | One row of event.35: engine counters, energy terms, stellar mass loss, type census |
+| `EnergyEventAnalysis` | Adjustment intervals with energy changes, channel increments, event counts and flags |
+| `MassBudgetRow` | Mass budget of one snapshot: escapers, stellar-evolution and collision losses, residual |
+| `EnergyBudgetRow` | Energy budget of one snapshot: Jacobi integral, escaper energy, engine corrections, residual |
 | `LagrangianData` | Lagrangian radii evolution |
 | `EscaperRecord` | Single escaper event |
 | `StellarRecord` / `StellarEvolutionSnapshot` | Stellar evolution data from one sev.83 file |
@@ -790,10 +879,11 @@ Files produced by the Nbody6++ simulation and read by this package:
 | File | Description | Reader |
 |------|-------------|--------|
 | `conf.3_*` | Particle snapshots (Fortran binary) | `read_conf3` / `read_all_conf3` |
-| `out1000` | Simulation stdout (ADJUST lines, scaling) | `read_diagnostics` |
+| `out1000` | Simulation stdout (ADJUST lines, scaling, options and tidal echoes, event lines) | `read_diagnostics` / `read_engine_events` |
 | `err1000` | Simulation stderr | — |
 | `lagr.7` | Lagrangian radii (ASCII) | `read_lagr` |
 | `esc.11` | Escaper events (ASCII) | `read_escapers` |
+| `event.35` | Event counters per output time (ASCII; stellar evolution on) | `read_event_counters` |
 | `sev.83_*` | Single-star evolution snapshots (ASCII) | `read_stellar_evolution` |
 | `bev.82_*` | Regularised-binary snapshots (ASCII) | `read_binary_evolution` |
 | `snap.40_*.h5part` | HDF5 snapshots (KZ(46)) | **not readable** — detected and warned about only |

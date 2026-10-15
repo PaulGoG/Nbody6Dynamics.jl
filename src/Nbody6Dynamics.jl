@@ -330,7 +330,8 @@ function postprocess(
                 get(results, :escapers, EscaperRecord[]),
                 get(results, :event_counters, EventCounters[]),
                 results[:diagnostics],
-                extract_scaling(results[:diagnostics]),
+                extract_scaling(results[:diagnostics]);
+                bevs = get(results, :binary_evo, BinaryEvolutionSnapshot[]),
             )
             @info "Energy budget: " * energy_budget_summary(results[:energy_budget])
         else

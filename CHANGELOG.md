@@ -12,6 +12,10 @@ entries say so.
   pair sum is threaded and computed once per snapshot. The four 6 × 10⁵-body
   probe pipelines set 100 000 and keep their diagnostics off.
 - New dependency: KernelAbstractions 0.9.
+- `AdjustRecord` and `DiagnosticsData` gained fields; the previous
+  positional constructors remain. `SnapshotIntegrals` gained
+  `tidal_potential` and `snapshot_integrals.csv` the columns `w_tidal` and
+  `e_jacobi` (a minor-version API change).
 - The launch script owns the stop request. `_launch.sh` stays the parent of
   the engine: it starts the engine in a subshell that ignores SIGTERM, turns
   a SIGTERM to itself into the `STOP` file, waits, and exits the way the
@@ -49,6 +53,41 @@ entries say so.
   the reduced system (the engine's `EKIN` and `POT`), the regularised pairs'
   internal energy (`EBIN`) and the bound set, per snapshot; written by the
   pipeline as `snapshot_integrals.csv` (`[postprocess] snapshot_integrals`).
+- Readers of the engine's events. `read_engine_events` returns the stamped
+  event lines of `out1000` as `EngineEvent` records, sixteen kinds
+  (`ENGINE_EVENT_KINDS`: KS regularisations, remnant formation, kicks,
+  collisions, mergers, coalescences, escapes, supernovae without a remnant,
+  chains), and
+  `read_event_counters` the rows of `event.35` as `EventCounters`. The
+  ADJUST routine evaluates the energy, removes the escapers and then writes
+  its output, so every event line between two ADJUST lines is assigned to the
+  interval that ends at the second.
+- Energy-jump localisation and mass and energy budgets. `energy_intervals`
+  returns an `EnergyEventAnalysis` with one `EnergyInterval` per adjustment
+  interval: the engine's `DE`, the increments of its correction channels and
+  the counts of the events in it, flagged when |DE| reaches the larger of a
+  floor and a multiple of the robust scale of the run's DE;
+  `energy_events_summary` counts the flagged intervals the log does not
+  explain. The pipeline writes `energy_intervals.csv` and
+  `engine_events.csv` (`[postprocess] energy_events`,
+  `energy_jump_threshold`, `energy_jump_sigma`). `mass_budget`
+  (`MassBudgetRow`, `mass_budget_summary`) sets the mass of every snapshot
+  against the escapers, the stellar-evolution loss of `event.35` and the
+  collision and coalescence losses, `energy_budget` (`EnergyBudgetRow`,
+  `energy_budget_summary`) its Jacobi integral against the energy of the
+  removed escapers and the engine's corrections, both from `event.35` at
+  full precision when present, with the pairs' internal energy from
+  `bev.82` where it covers the snapshot time and the engine's `DETOT` for
+  comparison; written as `mass_budget.csv` and `energy_budget.csv`
+  (`[postprocess] mass_budget`, `events_file`).
+- Tidal handling. `AdjustRecord` keeps the energy terms of the ADJUST line
+  (`EKIN`, `POT`, `ETIDE` and the correction channels), `DiagnosticsData`
+  the options echo `kz` and the linearised tidal field `tidal`.
+  `snapshot_integrals` takes `tidal` and `snapshot_integrals.csv` gains
+  `w_tidal` and the Jacobi integral `e_jacobi`; `tidal_mode` and
+  `engine_energy_valid` classify `KZ(14)`. The engine never adds the
+  potential energy of a linearised field to its total, so its `DE` is a
+  drift there and the pipeline flags no interval.
 - The activation scripts resolve a manifest that a change of the project, or
   of the package an auxiliary environment takes by path, has left stale
   (`deps/activation.jl`); the manifests are not tracked, so a pulled

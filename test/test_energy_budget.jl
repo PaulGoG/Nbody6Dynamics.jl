@@ -361,7 +361,7 @@ end
         0,
         1.0,
         0.0,
-        0.0,
+        1.5e-5 * t,
         0.1,
         0.35,
         0.0,
@@ -403,8 +403,8 @@ end
             zc...,
             0.0,
             0.0,
-            0.0,
-            0.0,
+            0.2,
+            0.3,
             0.0,
             0.0,
             0.25,
@@ -424,30 +424,60 @@ end
         EscaperRecord(2.5 * tscale, 0.1 * zmbar, 1.0, 10.0, 0, 9, 0.0, 0.0),   # after the last snapshot
     ]
     rows = energy_budget(ints, escapers, counters, diag, u)
-    @test length(rows) == 2 && all(r -> r.source == :counters, rows)
+    @test length(rows) == 2 && all(r -> r.source == :counters && r.pair_source == :snapshot, rows)
     r0, r1 = rows
     @test r0.e_snapshot ≈ e0 && r0.e_escaped == 0.0 && r0.e_channels == 0.0
-    @test r0.e_total ≈ e0 && r0.residual == 0.0 && r0.residual_rel == 0.0
+    @test r0.e_total ≈ e0 && r0.residual == 0.0 && r0.residual_rel == 0.0 && r0.detot == 0.0
     @test r1.e_snapshot ≈ e1 && r1.e_pairs == 0.0
     @test r1.e_escaped == 0.25 + 0.1 + 0.05                 # ESESC + EBESC + EMESC at t = 2
-    @test r1.e_channels == 0.01 - 0.05 - 0.1                # ECOLL + EMDOT + ECDOT of the ADJUST at t = 2
-    @test r1.e_total ≈ e1 + 0.4 - 0.14
+    @test r1.e_channels == 0.5                              # ECOLL + EMDOT + ECDOT of the event.35 row at t = 2
+    @test r1.detot == 3.0e-5                                # DETOT of the ADJUST at t = 2
+    @test r1.e_total ≈ e1 + 0.4 + 0.5
     @test r1.residual ≈ r1.e_total - e0 && r1.residual_rel ≈ r1.residual / abs(e0)
-    # Without counters the escaper energies come from esc.11, cumulative to the snapshot time.
+    # Without counters the escaper energies come from esc.11, cumulative to the
+    # snapshot time, and the corrections from the ADJUST line.
     re = energy_budget(ints, escapers, EventCounters[], diag, u)
     @test all(r -> r.source == :escapers, re)
     @test re[1].e_escaped == 0.0 && re[2].e_escaped ≈ 0.2 + 0.15
+    @test re[2].e_channels == 0.01 - 0.05 - 0.1
     rn = energy_budget(ints, EscaperRecord[], EventCounters[], diag, u)
     @test all(r -> r.source == :none && r.e_escaped == 0.0, rn)
-    # No ADJUST record at or before a snapshot: the channels are NaN.
+    # Pair energies from bev.82 where a snapshot time is covered: one pair of
+    # 10 and 20 M☉ at a = 10³ R☉ has E_b = G m₁ m₂ / 2a; in N-body units over
+    # M* V*².
+    rec = BinaryRecord(
+        2.0,
+        Int32(1),
+        Int32(2),
+        Int32(1),
+        Int32(2),
+        Int32(0),
+        Int32(0),
+        Int32(0),
+        0.0,
+        0.1,
+        0.0,
+        3.0,
+        10.0,
+        20.0,
+        zeros(18)...,
+    )
+    bev = BinaryEvolutionSnapshot(round(2.0 * tscale; digits = 1), 1, [rec])   # header TPHYS rounded
+    rb = energy_budget(ints, escapers, counters, diag, u; bevs = [bev])
+    @test rb[1].pair_source == :snapshot && rb[2].pair_source == :bev
+    eb = -binding_energy(rec) / (zmbar * u.vstar^2)
+    @test rb[2].e_pairs ≈ eb && rb[2].e_snapshot ≈ e1 + eb
+    @test occursin("bev.82 at 1 snapshots", energy_budget_summary(rb))
+    # No ADJUST record at or before a snapshot: the DETOT is NaN; without
+    # counters the channels are NaN too.
     rl = energy_budget(
         ints,
         escapers,
-        counters,
+        EventCounters[],
         DiagnosticsData([adj(3.0, 0.0, 0.0, 0.0)], Dict{String,Float64}()),
         u,
     )
-    @test all(r -> isnan(r.e_channels) && isnan(r.e_total), rl)
+    @test all(r -> isnan(r.e_channels) && isnan(r.e_total) && isnan(r.detot), rl)
     @test_throws ArgumentError energy_budget(SnapshotIntegrals[], escapers, counters, diag, u)
     @test_throws ArgumentError energy_budget(
         ints,
@@ -458,13 +488,16 @@ end
         time_tolerance = -1.0,
     )
     s = energy_budget_summary(rows)
-    @test occursin("2 snapshots", s) && occursin("from counters", s)
+    @test occursin("2 snapshots", s) &&
+          occursin("from counters", s) &&
+          occursin("bev.82 at 0 snapshots", s)
     @test energy_budget_summary(EnergyBudgetRow[]) == "energy budget: no snapshots"
     path = write_energy_budget(joinpath(mktempdir(), "energy_budget.csv"), rows)
     lines = readlines(path)
-    @test split(lines[1], ",")[end] == "source" && length(lines) == 3
-    @test split(lines[3], ",")[end] == "counters"
+    @test split(lines[1], ",")[(end - 1):end] == ["source", "pair_source"] && length(lines) == 3
+    @test split(lines[3], ",")[(end - 1):end] == ["counters", "snapshot"]
     @test parse(Float64, split(lines[3], ",")[5]) == 0.4
+    @test parse(Float64, split(lines[3], ",")[10]) == 3.0e-5
 
     # Exact stamps of the event lines against the rounded Myr stamps: a
     # collision just after a snapshot is not counted into it.

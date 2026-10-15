@@ -206,18 +206,23 @@ end
     EnergyBudgetRow
 
 The energy budget of one snapshot, N-body units, from [`energy_budget`](@ref):
-`e_snapshot` the Jacobi integral of the snapshot (`T_cm + W + E_pairs +
-W_tide`, the `e_jacobi` of [`SnapshotIntegrals`](@ref)); `e_pairs` the
-regularised pairs' internal energy inside it; `e_escaped` the energy the
-engine subtracted for the escapers removed at or before the snapshot time —
-`ESESC + EBESC + EMESC` of the last `event.35` row (`source = :counters`), or
-``Σ m\\,E_\\mathrm{esc}`` over the `esc.11` records when there is no counters
-file (`:escapers`; the internal energy of escaping pairs is then missing), or
-0 (`:none`); `e_channels` the engine's `ECOLL + EMDOT + ECDOT` of the last
-ADJUST record at or before the snapshot time (NaN when there is none);
-`e_total = e_snapshot + e_escaped + e_channels`; `residual` its change since
-the first snapshot and `residual_rel` that change over `|e_total|` of the
-first snapshot.
+`e_snapshot` the Jacobi integral of the snapshot, `T_cm + W + e_pairs +
+W_tide`; `e_pairs` the regularised pairs' internal energy inside it, from
+`bev.82` at the snapshot times it covers (`pair_source = :bev`, the engine's
+double-precision elements) and from the single-precision snapshot otherwise
+(`:snapshot`, where the tightest pairs are quantised); `e_escaped` the energy
+the engine subtracted for the escapers removed at or before the snapshot time
+— `ESESC + EBESC + EMESC` of the last `event.35` row (`source = :counters`),
+or ``Σ m\\,E_\\mathrm{esc}`` over the `esc.11` records when there is no
+counters file (`:escapers`; the internal energy of escaping pairs is then
+missing), or 0 (`:none`); `e_channels` the engine's `ECOLL + EMDOT + ECDOT`,
+from the same `event.35` row with `:counters` and from the last ADJUST record
+at or before the snapshot time otherwise (four printed digits; NaN when there
+is none); `e_total = e_snapshot + e_escaped + e_channels`; `residual` its
+change since the first snapshot and `residual_rel` that change over
+`|e_total|` of the first snapshot; `detot` the engine's own cumulative energy
+change `DETOT` at the last ADJUST record at or before the snapshot, which the
+residual tracks when the reconstruction is exact.
 """
 struct EnergyBudgetRow
     time_nb::Float64
@@ -229,24 +234,30 @@ struct EnergyBudgetRow
     e_total::Float64
     residual::Float64
     residual_rel::Float64
+    detot::Float64
     source::Symbol
+    pair_source::Symbol
 end
 
 """
     energy_budget(ints::AbstractVector{SnapshotIntegrals}, escapers::AbstractVector{EscaperRecord},
                   counters::AbstractVector{EventCounters}, diag::DiagnosticsData,
-                  units::UnitScaling; time_tolerance = 1.0e-5) -> Vector{EnergyBudgetRow}
+                  units::UnitScaling; bevs = BinaryEvolutionSnapshot[], time_tolerance = 1.0e-5)
+        -> Vector{EnergyBudgetRow}
 
 Energy budget of every snapshot (see [`EnergyBudgetRow`](@ref)): the Jacobi
 integral of the snapshot plus the energy of the removed escapers plus the
 engine's collision, mass-loss and kick corrections, which together are the
-total the engine conserves. The escaper energy comes from `counters`
-(`event.35`) when given, else from `escapers` (`esc.11`, times from Myr with
-`units.tscale`, masses with `units.zmbar`); the corrections from the ADJUST
-record of `diag` at or before each snapshot (the four printed digits bound
-the closure). Time bounds as in [`mass_budget`](@ref). Throws an
-`ArgumentError` without snapshots, for non-positive `units.zmbar` or
-`units.tscale`, or a negative `time_tolerance`.
+total the engine conserves. The escaper energies and the corrections come
+from `counters` (`event.35`, full precision) when given, else from
+`escapers` (`esc.11`) and the ADJUST records of `diag` (four digits); the
+pairs' internal energy from `bevs` (`bev.82`, matched by the N-body stamp
+of its records, the header time being rounded) at the snapshot times it
+covers. Times in Myr are converted with `units.tscale`, masses with
+`units.zmbar`, the `bev.82` energies with `units.zmbar × units.vstar²`;
+time bounds as in [`mass_budget`](@ref). Throws an `ArgumentError` without
+snapshots, for non-positive `units.zmbar`, `units.tscale` or `units.vstar`,
+or a negative `time_tolerance`.
 """
 function energy_budget(
     ints::AbstractVector{SnapshotIntegrals},
@@ -254,38 +265,67 @@ function energy_budget(
     counters::AbstractVector{EventCounters},
     diag::DiagnosticsData,
     units::UnitScaling;
+    bevs::AbstractVector{BinaryEvolutionSnapshot} = BinaryEvolutionSnapshot[],
     time_tolerance::Real = 1.0e-5,
 )::Vector{EnergyBudgetRow}
     isempty(ints) && throw(ArgumentError("energy_budget needs at least one snapshot"))
     units.zmbar > 0 || throw(ArgumentError("units.zmbar must be positive, got $(units.zmbar)"))
     units.tscale > 0 || throw(ArgumentError("units.tscale must be positive, got $(units.tscale)"))
+    units.vstar > 0 || throw(ArgumentError("units.vstar must be positive, got $(units.vstar)"))
     time_tolerance >= 0 || throw(ArgumentError("time_tolerance must be ≥ 0, got $time_tolerance"))
     zmbar, tscale = units.zmbar, units.tscale
 
+    # Escaper energies and correction channels: event.35 at full precision
+    # when present (the ADJUST line prints four digits, which bound the
+    # closure once the kick energies exceed the total by orders of magnitude).
     source = !isempty(counters) ? :counters : (!isempty(escapers) ? :escapers : :none)
     if source === :counters
         p = sortperm(Float64[c.time_myr for c in counters])
         t_esc = Float64[counters[j].time_myr / tscale for j in p]
         e_esc = Float64[counters[j].esesc + counters[j].ebesc + counters[j].emesc for j in p]
+        t_chan = t_esc
+        e_chan = Float64[counters[j].ecoll + counters[j].emdot + counters[j].ecdot for j in p]
     else
         p = sortperm(Float64[e.time_myr for e in escapers])
         t_esc = Float64[escapers[j].time_myr / tscale for j in p]
         e_esc =
             cumsum(Float64[escapers[j].mass_solar / zmbar * escapers[j].escape_energy for j in p])
+        q = sortperm(Float64[a.time_nb for a in diag.adjust])
+        t_chan = Float64[diag.adjust[j].time_nb for j in q]
+        e_chan =
+            Float64[diag.adjust[j].ecoll + diag.adjust[j].emdot + diag.adjust[j].ecdot for j in q]
     end
     q = sortperm(Float64[a.time_nb for a in diag.adjust])
     t_adj = Float64[diag.adjust[j].time_nb for j in q]
-    e_chan = Float64[diag.adjust[j].ecoll + diag.adjust[j].emdot + diag.adjust[j].ecdot for j in q]
+    detot_adj = Float64[diag.adjust[j].detot for j in q]
+
+    # Pair energies from bev.82 (double precision in the engine) at the
+    # snapshot times it covers; the single-precision snapshot otherwise.
+    # The bev.82 header time is TPHYS rounded to few digits; the records carry
+    # the exact N-body stamp of the line.
+    bev_t(b) = isempty(b.records) ? b.time_myr / tscale : b.records[1].time_nb
+    pb = sortperm(Float64[bev_t(b) for b in bevs])
+    t_bev = Float64[bev_t(bevs[j]) for j in pb]
+    e_bev = Float64[
+        -sum(binding_energy(r) for r in bevs[j].records; init = 0.0) / (zmbar * units.vstar^2)
+        for j in pb
+    ]
 
     rows = Vector{EnergyBudgetRow}(undef, length(ints))
     e_ref = NaN
     for (i, s) in enumerate(ints)
         bound_myr, _ = _budget_bounds(s.time_nb, time_tolerance)
+        lower_myr = s.time_nb - (bound_myr - s.time_nb)
         j = searchsortedlast(t_esc, bound_myr)
         e_escaped = j == 0 ? 0.0 : e_esc[j]
-        j = searchsortedlast(t_adj, bound_myr)
+        j = searchsortedlast(t_chan, bound_myr)
         e_channels = j == 0 ? NaN : e_chan[j]
-        e_snapshot = s.kinetic + s.potential + s.pair_internal + s.tidal_potential
+        j = searchsortedlast(t_adj, bound_myr)
+        detot = j == 0 ? NaN : detot_adj[j]
+        j = searchsortedlast(t_bev, bound_myr)
+        pair_source = j > 0 && t_bev[j] >= lower_myr ? :bev : :snapshot
+        e_pairs = pair_source === :bev ? e_bev[j] : s.pair_internal
+        e_snapshot = s.kinetic + s.potential + e_pairs + s.tidal_potential
         e_total = e_snapshot + e_escaped + e_channels
         i == 1 && (e_ref = e_total)
         residual = e_total - e_ref
@@ -293,13 +333,15 @@ function energy_budget(
             s.time_nb,
             s.time_myr,
             e_snapshot,
-            s.pair_internal,
+            e_pairs,
             e_escaped,
             e_channels,
             e_total,
             residual,
             e_ref == 0 ? NaN : residual / abs(e_ref),
+            detot,
             source,
+            pair_source,
         )
     end
     return rows
@@ -322,8 +364,10 @@ function energy_budget_summary(rows::AbstractVector{EnergyBudgetRow})::String
         end
     end
     f(v) = @sprintf("%.3g", v)
+    n_bev = count(r -> r.pair_source === :bev, rows)
     return "energy budget over $(length(rows)) snapshots: max |residual|/|E0| = $(f(worst)) " *
-           "at t = $(f(t_worst)) NB; escaper energy from $(rows[1].source)"
+           "at t = $(f(t_worst)) NB; escaper energy and corrections from $(rows[1].source); " *
+           "pair energies from bev.82 at $n_bev snapshots"
 end
 
 """
@@ -339,7 +383,7 @@ function write_energy_budget(path::AbstractString, rows::AbstractVector{EnergyBu
         println(
             io,
             "time_nb,time_myr,e_snapshot,e_pairs,e_escaped,e_channels,e_total,residual," *
-            "residual_rel,source",
+            "residual_rel,detot,source,pair_source",
         )
         for r in rows
             cells = (
@@ -352,7 +396,9 @@ function write_energy_budget(path::AbstractString, rows::AbstractVector{EnergyBu
                 _csv_precise(r.e_total),
                 _csv_precise(r.residual),
                 _csv_precise(r.residual_rel),
+                _csv_precise(r.detot),
                 String(r.source),
+                String(r.pair_source),
             )
             println(io, join(cells, ","))
         end

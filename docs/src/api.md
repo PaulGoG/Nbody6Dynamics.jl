@@ -77,6 +77,10 @@ Snapshot
 SnapshotHeader
 DiagnosticsData
 AdjustRecord
+EngineEvent
+ENGINE_EVENT_KINDS
+KSTAR_ABSENT
+EventCounters
 LagrangianData
 UnitScaling
 EscaperRecord
@@ -121,6 +125,8 @@ read_diagnostics
 extract_scaling
 cumulative_energy_error
 read_energy_totals
+read_engine_events
+read_event_counters
 read_lagr
 read_escapers
 read_stellar_evolution
@@ -167,6 +173,27 @@ bound_set
 SnapshotIntegrals
 snapshot_integrals
 write_snapshot_integrals
+tidal_mode
+engine_energy_valid
+```
+
+## Energy-Jump Localisation and Mass Budget
+
+```@docs
+EnergyInterval
+EnergyEventAnalysis
+energy_intervals
+energy_events_summary
+write_energy_intervals
+write_engine_events
+MassBudgetRow
+mass_budget
+mass_budget_summary
+write_mass_budget
+EnergyBudgetRow
+energy_budget
+energy_budget_summary
+write_energy_budget
 ```
 
 ## Remnant Diagnostics
