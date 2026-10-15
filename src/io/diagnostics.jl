@@ -7,8 +7,14 @@
 #   RMIN = …  RSCALE = …
 #   TIME[NB]  val  N  val  NPAIRS  val  …
 #
+# The ADJUST line also carries the energy terms EKIN, POT, ETIDE, EBIN,
+# EMERGE, ESUB, ECOLL, EMDOT, ECDOT, which are kept in the record.
+#
 # Also:
 #   PHYSICAL SCALING:  R* = …  M* = …  V* = …  T* = …
+#   OPTIONS, then the row of indices 1 … 50 and the row of the 50 KZ values
+#   (written once at startup).
+#   TIDAL PARAMETERS:  TIDAL(1:4)  TSCALE = …  RTIDE = …  (written once when KZ(14) ≤ 2)
 
 """
     read_diagnostics(path::AbstractString) -> DiagnosticsData
@@ -22,6 +28,14 @@ Each ADJUST epoch in Nbody6++ output consists of up to three lines:
 3. `TIME[NB] … N … NPAIRS …` — particle counts
 
 These are merged into a single `AdjustRecord` per epoch.
+
+The energy terms the key-value ADJUST line prints after `DETOT` (`EKIN`,
+`POT`, `ETIDE`, `EBIN`, `EMERGE`, `ESUB`, `ECOLL`, `EMDOT`, `ECDOT`) are kept
+in the record, NaN when the line lacks them.
+The first `OPTIONS` echo gives `kz`, the 50 option values, left empty when
+the capture lacks the echo or its value row does not hold 50 integers.
+The `TIDAL PARAMETERS:` echo gives `tidal`, the four coefficients
+`TIDAL(1:4)` in N-body units, zeros when the capture lacks it.
 """
 function read_diagnostics(path::AbstractString)::DiagnosticsData
     isfile(path) || error("Diagnostics file not found: $path")
@@ -40,10 +54,45 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     pending_rscale = 0.0
     pending_de_abs = NaN
     pending_detot = NaN
+    pending_ekin = NaN
+    pending_pot = NaN
+    pending_etide = NaN
+    pending_ebin = NaN
+    pending_emerge = NaN
+    pending_esub = NaN
+    pending_ecoll = NaN
+    pending_emdot = NaN
+    pending_ecdot = NaN
     have_adjust = false   # true once we've seen ADJUST: for this epoch
+
+    kz = Int[]
+    tidal = (0.0, 0.0, 0.0, 0.0)
+    options_seen = false
+    options_pending = 0   # non-empty lines after OPTIONS still to read; the second holds the values
 
     for line in eachline(path)
         stripped = lstrip(line)
+
+        # ── OPTIONS echo: index row, then value row ──
+        if options_pending > 0
+            isempty(stripped) && continue
+            options_pending -= 1
+            if options_pending == 0
+                _parse_options_row!(kz, stripped)
+            end
+            continue
+        end
+        if !options_seen && strip(stripped) == "OPTIONS"
+            options_seen = true
+            options_pending = 2
+            continue
+        end
+
+        # ── TIDAL PARAMETERS echo ──
+        if occursin("TIDAL PARAMETERS:", stripped)
+            tidal = _parse_tidal_line(stripped)
+            continue
+        end
 
         # ── ADJUST line: start a new epoch ──
         if startswith(stripped, "ADJUST:")
@@ -62,6 +111,15 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
                         pending_rscale,
                         pending_de_abs,
                         pending_detot,
+                        pending_ekin,
+                        pending_pot,
+                        pending_etide,
+                        pending_ebin,
+                        pending_emerge,
+                        pending_esub,
+                        pending_ecoll,
+                        pending_emdot,
+                        pending_ecdot,
                     ),
                 )
             end
@@ -77,6 +135,15 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
             pending_rscale = vals.rscale
             pending_de_abs = vals.de_abs
             pending_detot = vals.detot
+            pending_ekin = vals.ekin
+            pending_pot = vals.pot
+            pending_etide = vals.etide
+            pending_ebin = vals.ebin
+            pending_emerge = vals.emerge
+            pending_esub = vals.esub
+            pending_ecoll = vals.ecoll
+            pending_emdot = vals.emdot
+            pending_ecdot = vals.ecdot
             have_adjust = true
             continue
         end
@@ -121,6 +188,15 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
                 pending_rscale,
                 pending_de_abs,
                 pending_detot,
+                pending_ekin,
+                pending_pot,
+                pending_etide,
+                pending_ebin,
+                pending_emerge,
+                pending_esub,
+                pending_ecoll,
+                pending_emdot,
+                pending_ecdot,
             ),
         )
     end
@@ -130,7 +206,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     # particle count so plots don't show sawtooth artefacts.
     _forward_fill_particle_counts!(adjust_records)
 
-    return DiagnosticsData(adjust_records, scaling)
+    return DiagnosticsData(adjust_records, scaling, kz, tidal)
 end
 
 # ---------------------------------------------------------------------------
@@ -149,6 +225,50 @@ struct _AdjustFields
     rscale::Float64
     de_abs::Float64
     detot::Float64
+    ekin::Float64
+    pot::Float64
+    etide::Float64
+    ebin::Float64
+    emerge::Float64
+    esub::Float64
+    ecoll::Float64
+    emdot::Float64
+    ecdot::Float64
+end
+
+function _AdjustFields(
+    time_nb::Real,
+    time_myr::Real,
+    qvir::Real,
+    de_rel::Real,
+    e_tot::Real,
+    n::Integer,
+    npairs::Integer,
+    rscale::Real,
+    de_abs::Real,
+    detot::Real,
+)
+    return _AdjustFields(
+        time_nb,
+        time_myr,
+        qvir,
+        de_rel,
+        e_tot,
+        n,
+        npairs,
+        rscale,
+        de_abs,
+        detot,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+    )
 end
 
 """
@@ -214,8 +334,86 @@ function _parse_adjust_kv(tokens)::_AdjustFields
     rscale = parse(Float64, get(kv, "RSCALE", get(kv, "RSCL", "0")))
     de_abs = parse(Float64, get(kv, "DELTA", "NaN"))
     detot = parse(Float64, get(kv, "DETOT", "NaN"))
+    ekin = parse(Float64, get(kv, "EKIN", "NaN"))
+    pot = parse(Float64, get(kv, "POT", "NaN"))
+    etide = parse(Float64, get(kv, "ETIDE", "NaN"))
+    ebin = parse(Float64, get(kv, "EBIN", "NaN"))
+    emerge = parse(Float64, get(kv, "EMERGE", "NaN"))
+    esub = parse(Float64, get(kv, "ESUB", "NaN"))
+    ecoll = parse(Float64, get(kv, "ECOLL", "NaN"))
+    emdot = parse(Float64, get(kv, "EMDOT", "NaN"))
+    ecdot = parse(Float64, get(kv, "ECDOT", "NaN"))
 
-    return _AdjustFields(time_nb, time_myr, qvir, de_rel, e_tot, n, npairs, rscale, de_abs, detot)
+    return _AdjustFields(
+        time_nb,
+        time_myr,
+        qvir,
+        de_rel,
+        e_tot,
+        n,
+        npairs,
+        rscale,
+        de_abs,
+        detot,
+        ekin,
+        pot,
+        etide,
+        ebin,
+        emerge,
+        esub,
+        ecoll,
+        emdot,
+        ecdot,
+    )
+end
+
+"""
+Fill `kz` from the value row of the `OPTIONS` echo when it holds exactly 50
+integers; leave it empty otherwise.
+"""
+function _parse_options_row!(kz::Vector{Int}, line::AbstractString)
+    tokens = split(line)
+    parsed = Int[]
+    ok = length(tokens) == 50
+    if ok
+        for t in tokens
+            v = tryparse(Int, t)
+            if isnothing(v)
+                ok = false
+                break
+            end
+            push!(parsed, v)
+        end
+    end
+    if ok
+        append!(kz, parsed)
+    else
+        @debug "Unparseable OPTIONS echo" line
+    end
+    return kz
+end
+
+"""
+Parse `TIDAL(1:4)` from the `TIDAL PARAMETERS:` echo; zeros when the line
+does not match or a value does not parse.
+"""
+function _parse_tidal_line(line::AbstractString)::NTuple{4,Float64}
+    m = match(r"TIDAL PARAMETERS:\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)", line)
+    if isnothing(m)
+        @debug "Unparseable TIDAL PARAMETERS echo" line
+        return (0.0, 0.0, 0.0, 0.0)
+    end
+    try
+        return (
+            _parse_fortran_float(something(m.captures[1])),
+            _parse_fortran_float(something(m.captures[2])),
+            _parse_fortran_float(something(m.captures[3])),
+            _parse_fortran_float(something(m.captures[4])),
+        )
+    catch e
+        @debug "Unparseable TIDAL PARAMETERS echo" line exception = e
+        return (0.0, 0.0, 0.0, 0.0)
+    end
 end
 
 """
@@ -280,6 +478,15 @@ function _forward_fill_particle_counts!(records::Vector{AdjustRecord})
                 r.rscale,
                 r.de_abs,
                 r.detot,
+                r.ekin,
+                r.pot,
+                r.etide,
+                r.ebin,
+                r.emerge,
+                r.esub,
+                r.ecoll,
+                r.emdot,
+                r.ecdot,
             )
         end
     end

@@ -628,6 +628,194 @@ end
         tot = read_energy_totals(with_end)
         @test tot == (time_nb = 40.0, errtot = -4.70618e-3, detot = 7.54813e-3)
         @test_throws ErrorException read_energy_totals(joinpath(mktempdir(), "absent"))
+
+        # Energy terms of the key-value line, the options echo, no tidal echo
+        a1 = diag.adjust[2]
+        @test all(
+            isfinite,
+            (a1.ekin, a1.pot, a1.etide, a1.ebin, a1.emerge, a1.esub, a1.ecoll, a1.emdot, a1.ecdot),
+        )
+        @test a1.ekin > 0 && a1.pot > 0 && a1.etide == 0.0
+        @test a1.ekin - a1.pot ≈
+              a1.e_tot - (a1.ebin + a1.emerge + a1.esub + a1.ecoll + a1.emdot + a1.ecdot) atol =
+            2.0e-3
+        @test length(diag.kz) == 50
+        @test diag.kz[14] == 0 && diag.kz[19] == 3 && diag.kz[30] == 1 && diag.kz[2] == -1
+        @test diag.tidal == (0.0, 0.0, 0.0, 0.0)
+        @test tidal_mode(diag) == :none
+        # A tidal echo and an options row that is not 50 integers
+        tidal_log = joinpath(mktempdir(), "out1000")
+        write(
+            tidal_log,
+            "            OPTIONS\n\n           1  2  3\n\n           1 -1  2\n\n" *
+            "             TIDAL PARAMETERS:   5.34429E-03  0.00000E+00 -1.78143E-03  8.44140E-02  TSCALE =  1.56233E+00  RTIDE =  5.71866E+00\n" *
+            " ADJUST:  TIME    0.00000E+00  T[Myr]   0.000E+00  Q   0.428E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -4.547E-01 EKIN   3.405E-01 POT   7.952E-01 ETIDE   0.000E+00 ETOT  -4.547E-01 EBIN   0.000E+00 EMERGE   0.000E+00 ESUB   0.000E+00 ECOLL   0.000E+00 EMDOT   0.000E+00 ECDOT   0.000E+00\n",
+        )
+        td = read_diagnostics(tidal_log)
+        @test isempty(td.kz)
+        @test td.tidal == (5.34429e-3, 0.0, -1.78143e-3, 8.44140e-2)
+        @test td.adjust[1].ekin == 0.3405 && td.adjust[1].pot == 0.7952
+    end
+
+    @testset "out1000 event lines" begin
+        events = read_engine_events(joinpath(FIXDIR, "out1000"))
+        kinds = [e.kind for e in events]
+        @test count(==(:ks_rectification), kinds) == 30
+        @test count(==(:kick_full), kinds) == 5
+        @test count(==(:kick_zero), kinds) == 1
+        @test count(==(:remnant_formation), kinds) == 1
+        @test count(==(:escape), kinds) == 1
+        @test count(==(:supernova_no_remnant), kinds) == 5
+        @test length(events) == 43
+        @test issorted([e.line for e in events]) && allunique([e.line for e in events])
+        @test all(1 ≤ e.interval ≤ 8 for e in events)
+        # Positions: seven ADJUST lines; the kicks of the last interval, the
+        # escape line printed after the seventh ADJUST belongs to the eighth.
+        esc = only(filter(e -> e.kind == :escape, events))
+        @test esc.interval == 8 && esc.line == 365 && esc.time_nb == 3.0
+        @test esc.count == 5 && esc.n_total == 3943
+        @test esc.mass_solar == 2.48116e4 && esc.energy_nb == -0.540706
+        @test esc.kstar1 == KSTAR_ABSENT && esc.name1 == 0 && isnan(esc.velocity_kms)
+        form = only(filter(e -> e.kind == :remnant_formation, events))
+        @test form.interval == 7 && form.line == 354
+        @test form.name1 == 1598 && form.kstar1 == 5 && form.kstar2 == 14
+        @test form.time_nb == 2.97986 && form.mass_solar > 0 && form.dmass_solar > 0
+        zk = only(filter(e -> e.kind == :kick_zero, events))
+        @test zk.line == 355 && zk.name1 == 1598 && (zk.kstar1, zk.kstar2, zk.kstar3) == (5, 14, 0)
+        @test zk.velocity_kms == 0.0 && zk.time_nb == 2.979858398
+        fk = filter(e -> e.kind == :kick_full, events)
+        @test all(e -> e.interval == 7 && e.kstar2 == 15 && e.velocity_kms > 0, fk)
+        @test [e.name1 for e in fk] == [1699, 341, 1933, 3609, 637]
+        sn = filter(e -> e.kind == :supernova_no_remnant, events)
+        @test [e.name1 for e in sn] == [1699, 341, 1933, 3609, 637]
+        @test all(
+            e -> e.kstar1 == 5 && e.kstar2 == 15 && e.mass_solar == 0.0 && e.dmass_solar > 100,
+            sn,
+        )
+        @test sn[1].time_nb == 2.85193 && sn[1].dmass_solar == 233.833
+        ks = filter(e -> e.kind == :ks_rectification, events)
+        @test all(
+            e ->
+                e.name1 > 0 &&
+                e.name2 > 0 &&
+                e.name3 > e.name2 &&
+                isfinite(e.energy_nb) &&
+                e.mass_solar > 0,
+            ks,
+        )
+        @test all(e -> e.kstar1 != KSTAR_ABSENT && e.kstar3 != KSTAR_ABSENT, ks)
+        # The remaining writers on their real line layouts
+        other = joinpath(mktempdir(), "out1000")
+        write(
+            other,
+            " ADJUST:  TIME    0.00000E+00  T[Myr]   0.000E+00  Q   0.500E+00  DE   0.000E+00\n" *
+            " NS/BH BINARY T[NB] 1.1231445312E+01 NM1,2,S=       386      3732      5306 KW1,2,S=   0  14   0 IPAIR      570 DTAU  1.148E-02 M1,2[NB]  6.718E-05  8.618E-03 R12[NB]  1.913E-04 e,a,eb[NB]=  6.7250E-01  1.1441E-04 -2.530E-03 P[d]=  1.711E+04 H -3.796E+01 GAMMA  0.000E+00 STEP(ICM)  9.766E-04 NPERT    0 NB(ICM)   82 M1,2[*]  2.017E-01  2.588E+01 RAD1,2,S[*]  2.194E-01  1.097E-04  1.385E+04 RI,VI[NB]=  1.0E+00  1.0E+00\n" *
+            " MDEND KSREG TIME[NB] 1.1231445312E+01 NM1,2,S=       386      3732      5306 KW1,2,S=   0   5   0 IPAIR      546 DTAU  1.051E-02 M1,2[NB]  6.718E-05  9.580E-03 R12[NB]  1.446E-04 e,a,eb[NB]=  6.9157E-01  1.0813E-04 -2.976E-03 P[d]=  1.492E+04 H -4.461E+01 GAMMA  6.035E-07 STEP(ICM)  9.766E-04 NPERT    0 NB(ICM)   84 M1,2[*]  2.017E-01  2.877E+01 RAD1,2,S[*]  2.194E-01  1.097E-04  1.047E+04 RI,VI[NB]=  1.0E+00  1.0E+00 DM,DMR=  1.0E-03  1.0E-01\n" *
+            " MDNEW KSREG TIME[NB] 1.1231445312E+01 NM1,2,S=       386      3732      3732 KW1,2,S=   0  14  14 IPAIR      546 DTAU  1.616E-01 M1,2[NB]  6.718E-05  8.618E-03 R12[NB]  3.210E-03 e,a,eb[NB]=  6.9157E-01  1.0813E-04 -2.976E-03 P[d]=  1.579E+04 H -9.366E-03 GAMMA  6.326E-07 STEP(ICM)  9.537E-07 NPERT   83 NB(ICM)   83 M1,2[*]  2.017E-01  2.588E+01 RAD1,2,S[*]  2.194E-01  1.097E-04  2.324E+05 RI,VI[NB]=  1.0E+00  1.0E+00\n" *
+            " ZERO VELOCITY KICK: TIME[NB]  1.123144531E+01 I,N=      1140      3732 K*0 K* K*(ICM) KMECH ICASE    5  14   0   4   1  Time[Myr]  6.37828E+00 M0[M*]  3.50983E+01 MN[M*]  2.58799E+01 ASPN,XJSPIN[NB],SPNFAC=  0.00000E+00  0.00000E+00  2.77000E+13  VI[km/s]  1.08726-157 VK[km/s]  0.00000E+00 VF[km/s]          NaN  VK0[km/s]  0.00000E+00 FBFAC FBTOT ECS   1.00000E+00  2.71555E+01   0  X(1:3)[pc] V(1:3)[km/s]  1.0E+00  1.0E+00  1.0E+00  1.0E+00  1.0E+00  1.0E+00\n" *
+            " ADJUST:  TIME    1.00000E+00  T[Myr]   0.000E+00  Q   0.500E+00  DE   0.000E+00\n" *
+            " BINARY  COLLISION    NSYS =  2 TIME[NB] 3.8146972656E-06 NM1,2,S=       747       748      6557 KW1,2,S=   0   0   0 IPAIR      233 M1,2[NB]  1.8656E-04  0.0000E+00 e,a,eb[NB],P[d]=  9.9980E-01  4.6994E-07 -8.0169E-03  3.1435E+01 STEP(ICM)  3.9062E-03 NPERT,NB(ICM)=   267   243 M1,2,3[*]  4.5593E-01  1.4905E-01  5.6026E-01 RCOLL,DP,VINF=  9.4938E-11 -1.0164E-20  0.0000E+00 RI,VI[NB]=  2.6305E+00  1.0E+00\n" *
+            " ENFORCED MASS LOSS    FAC RIJ VIJ EB KE   0.081    0.01 5796.37 -2.49E+47  3.77E+49\n" *
+            " MIX TYPE CHANGE:  NAM K* DM    747   748   1   0  0.04\n" *
+            " NEW STAR TIME[NB] 3.8146972656E-06 MIX OF NM1,2=       747       748 IQCOLL -2 K*(I1)  0 K*(I2)  0 K*(INEW)  0 M(I1)[M*]  4.5593E-01 M(I2)[M*]  1.4905E-01 M(INEW)[M*]  5.6026E-01 RS(I1)[R*]  4.0398E-01 RS(I2)[R*]  1.7041E-01 RS(INEW)[R*]  4.9591E-01 DM[M*]  4.4716E-02\n" *
+            " HYPERB  COLLISION    NSYS =  2 TIME[NB] 3.7111358643E+01 NM1,2,S=     35841     28959     85841 KW1,2,S=   1   0   0 IPAIR        1 M1,2[NB]  1.8194E-03  0.0000E+00 e,a,eb[NB],P[d]=  1.0003E+00 -1.9929E-03  1.4540E-06 -4.2260E+05 STEP(ICM)  3.0518E-05 NPERT,NB(ICM)=    83    83 M1,2,3[*]  5.2579E+01  9.2376E-02  5.2672E+01 RCOLL,DP,VINF=  5.6541E-07 -2.7105E-19  1.0641E+01 RI,VI[NB]=  2.7579E-01  1.0E+00\n" *
+            " BINARY COAL: IQCOLL  3 TIME[NB] 4.0000000000E+00 N1,2        11        12 KW1,2,S   1   1   0 M1,2[NB]  1.00000E-03  2.00000E-03 R12[NB]  1.00000E-04 e,a,eb,dp[NB]=  1.00000E-01  2.00000E-04 -5.00000E-03  1.00000E-06 P[d]=  3.00000E+02  M12S,DM[*]  1.00000E+01  2.00000E+01  2.95000E+01  5.00000E-01 RAD1,2[*]  1.00000E+00  2.00000E+00 RCOLL[R*]  3.00000E+00 VINF[km/s]  0.00000E+00 RI,VI[NB]=  1.00000E+00  1.00000E+00\n" *
+            " NEW CHAIN   NCH NP ENERGY RSUM RGRAV TCR RMAXS NAMEC(1-NM) [ALL in NB UNIT]   3  28  -0.01234  1.0E-03  2.0E-03  3.0E-02  4.0E-02       101       102       103\n" *
+            " CHTERM: TIME[NB] I3 I4 ICM1 NI3,4,CM  STEP(I3,I4,ICM1)[NB]     5.1234       201       202       203       301       302       303  1.00E-03  2.00E-03  3.00E-03\n" *
+            " NEW KSREG   TIME[NB] 2.0000000000E+00 NM1,2,S=         1         2      5001 KW1,2,S=   0   0   0 IPAIR        1 DTAU  1.000E-02 M1,2[NB]  1.000E-04  2.000E-04 R12[NB]  1.000E-03 e,a,eb[NB]=  5.0000E-01  2.0000E-03 -5.000E-06 P[d]=  1.000E+03 H -1.000E-01 GAMMA  1.000E-05 STEP(ICM)  1.000E-03 NPERT    1 NB(ICM)   10 M1,2[*]  1.000E+00  2.000E+00 RAD1,2,S[*]  1.000E+00  1.000E+00  1.000E+03 RI,VI[NB]=  1.0E+00  1.0E+00\n" *
+            " LOW VELOCITY KICK: TIME[NB]  4.771484375E+01 I,N=      5902     34667 K*0 K* K*(ICM) KMECH ICASE    8  14   0   4   1  Time[Myr]  4.21285E+00 M0[M*]  1.45478E+01 MN[M*]  1.27114E+01 ASPN,XJSPIN[NB],SPNFAC=  0.00000E+00  0.00000E+00  6.50342E+14  VI[km/s]  2.74219E+00 VK[km/s]  6.03652E+00 VF[km/s]  8.65831E+00  VK0[km/s]  6.03652E+00 FBFAC FBTOT ECS   9.86847E-01  1.27238E+01   0  X(1:3)[pc] V(1:3)[km/s]  1.0E+00  1.0E+00  1.0E+00  1.0E+00  1.0E+00  1.0E+00\n",
+        )
+        ev = read_engine_events(other)
+        @test [e.kind for e in ev] == [
+            :ks_new_compact,
+            :ks_end_mdot,
+            :ks_new_mdot,
+            :kick_zero,
+            :collision,
+            :merged_star,
+            :collision,
+            :coalescence,
+            :chain_start,
+            :chain_end,
+            :ks_new,
+            :kick_low,
+        ]
+        @test [e.interval for e in ev] == [2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3]
+        c = ev[1]
+        @test c.time_nb == 11.231445312 && (c.name1, c.name2, c.name3) == (386, 3732, 5306)
+        @test (c.kstar1, c.kstar2, c.kstar3) == (0, 14, 0) && c.energy_nb == -2.530e-3
+        @test c.mass_solar ≈ 0.2017 + 25.88
+        @test ev[2].energy_nb == -2.976e-3 && ev[2].kstar2 == 5 && ev[3].kstar2 == 14
+        k = ev[4]       # glued exponent in VI and NaN in VF leave the parsed fields intact
+        @test k.name1 == 3732 && k.mass_solar == 25.8799 && k.dmass_solar ≈ 35.0983 - 25.8799
+        @test k.velocity_kms == 0.0
+        col = ev[5]
+        @test col.count == 2 && col.energy_nb == -8.0169e-3 && col.mass_solar == 0.56026
+        @test (col.name1, col.name2, col.name3) == (747, 748, 6557) &&
+              col.time_nb == 3.8146972656e-6
+        ns = ev[6]
+        @test (ns.name1, ns.name2) == (747, 748) && (ns.kstar1, ns.kstar2, ns.kstar3) == (0, 0, 0)
+        @test ns.mass_solar == 0.56026 && ns.dmass_solar == 4.4716e-2
+        @test ev[7].count == 2 && ev[7].kstar1 == 1 && ev[7].mass_solar == 52.672
+        co = ev[8]
+        @test co.count == 3 && co.time_nb == 4.0 && (co.name1, co.name2) == (11, 12)
+        @test (co.kstar1, co.kstar2, co.kstar3) == (1, 1, 0) && co.energy_nb == -5.0e-3
+        @test co.mass_solar == 29.5 && co.dmass_solar == 0.5
+        ch = ev[9]
+        @test isnan(ch.time_nb) && ch.count == 3 && ch.energy_nb == -0.01234
+        @test (ch.name1, ch.name2, ch.name3) == (101, 102, 103)
+        ce = ev[10]
+        @test ce.time_nb == 5.1234 && (ce.name1, ce.name2, ce.name3) == (301, 302, 303)
+        nk = ev[11]
+        @test nk.time_nb == 2.0 &&
+              nk.name3 == 5001 &&
+              nk.energy_nb == -5.0e-6 &&
+              nk.mass_solar == 3.0
+        @test ev[12].velocity_kms == 6.03652 && ev[12].name1 == 34667 && ev[12].kstar2 == 14
+        @test_throws ErrorException read_engine_events(joinpath(mktempdir(), "absent"))
+        @test isempty(read_engine_events(joinpath(FIXDIR, "lagr.7")))
+    end
+
+    @testset "event.35" begin
+        row =
+            "   0.00000000000000000E+00" *
+            repeat("           0", 13) *
+            repeat("   0.00000000000000000E+00", 10) *
+            "  -0.19225963191497719E+00   0.00000000000000000E+00" *
+            repeat("           0", 9) *
+            repeat("   0.00000000000000000E+00", 6) *
+            "   0.12500000000000000E+01" *
+            "       42483        7517" *
+            repeat("           0", 14)
+        row2 =
+            "   0.44146120028899682E+00" *
+            repeat("           2", 13) *
+            repeat("  -0.10000000000000000E+00", 12) *
+            repeat("           3", 9) *
+            repeat("   0.50000000000000000E+00", 7) *
+            repeat("           1", 16)
+        path = joinpath(mktempdir(), "event.35")
+        write(
+            path,
+            "TIME[Myr] NDISS  NTIDE  NSYNC NCOLL NCOAL NDD NCIRC NROCHE NRO NCE NHYP NHYPC NKICK EBIN EMERGE ECOLL EMDOT ECDOT EKICK ESESC EBESC EMESC DEGRAV EBIND MMAX NMDOT NRG NHE NRS NNH NWD NSN NBH NBS ZMRG ZMHE ZMRS ZMNH ZMWD ZMSN ZMDOT NTYPE(1:16)\n" *
+            row *
+            "\n\n" *
+            row2 *
+            "\n   1.0  2  3\n",
+        )
+        cs = read_event_counters(path)
+        @test length(cs) == 2          # the short row is skipped
+        c0 = cs[1]
+        @test c0.time_myr == 0.0 && c0.ndiss == 0 && c0.nkick == 0
+        @test c0.ebind == -0.19225963191497719 && c0.mmax == 0.0
+        @test c0.zmdot == 1.25 && c0.zmsn == 0.0
+        @test c0.ntype[1] == 42483 && c0.ntype[2] == 7517 && c0.ntype[16] == 0
+        c1 = cs[2]
+        @test c1.time_myr ≈ 0.44146120028899682
+        @test c1.ndiss == 2 && c1.nkick == 2 && c1.ebin == -0.1 && c1.mmax == -0.1
+        @test c1.nmdot == 3 && c1.nbs == 3 && c1.zmrg == 0.5 && c1.zmdot == 0.5
+        @test all(==(1), c1.ntype)
+        @test_throws ErrorException read_event_counters(joinpath(mktempdir(), "absent"))
     end
 
     @testset "lagr.7" begin

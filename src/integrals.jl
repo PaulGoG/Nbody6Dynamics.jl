@@ -27,6 +27,9 @@ Integrals of one snapshot in N-body units (`G = 1`), engine frame, from
   system (compare `EKIN` and `−POT` of the ADJUST line)
 - `pair_internal`: ``Σ (½ μ v_\\mathrm{rel}² − m_1 m_2 / r)`` of the regularised
   pairs (compare `EBIN`)
+- `tidal_potential`: ``−½ Σ m (T₁ x² + T₃ z²)`` over the stars, the potential
+  energy of the linearised external field of `KZ(14) ≤ 2` (`xtrnlv.F`), 0
+  without a field
 - `bound`: the [`BoundSet`](@ref) of the whole snapshot;
   `bound_mass`, `bound_angular_momentum` (its stars, about the origin)
 """
@@ -46,6 +49,7 @@ struct SnapshotIntegrals
     kinetic::Float64
     potential::Float64
     pair_internal::Float64
+    tidal_potential::Float64
     bound::BoundSet
     bound_mass::Float64
     bound_angular_momentum::NTuple{3,Float64}
@@ -53,19 +57,23 @@ end
 
 """
     snapshot_integrals(snap::Snapshot; max_passes = 100, min_members = 10,
-                       backend = KernelAbstractions.CPU()) -> SnapshotIntegrals
+                       backend = KernelAbstractions.CPU(),
+                       tidal = (0.0, 0.0, 0.0, 0.0)) -> SnapshotIntegrals
     snapshot_integrals(snaps::Vector{Snapshot}; kwargs...) -> Vector{SnapshotIntegrals}
 
 Integrals of motion of a snapshot (see [`SnapshotIntegrals`](@ref)). One exact
 pair sum over the reduced system gives `potential` and seeds the bound-set
 iteration ([`bound_set`](@ref), whose keywords are passed on). O(n²) in the
-number of systems.
+number of systems. `tidal` is the linearised field `TIDAL(1:4)` of
+[`DiagnosticsData`](@ref); its `T₁` and `T₃` give `tidal_potential` (zeros:
+no external field).
 """
 function snapshot_integrals(
     snap::Snapshot;
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
     backend = CPU(),
+    tidal::NTuple{4,Float64} = (0.0, 0.0, 0.0, 0.0),
 )::SnapshotIntegrals
     n = nparticles(snap)
     m = Float64.(snap.mass)
@@ -98,6 +106,12 @@ function snapshot_integrals(
         w2 = (v[1, i] - v[1, j])^2 + (v[2, i] - v[2, j])^2 + (v[3, i] - v[3, j])^2
         Ebin += 0.5 * μ * w2 - m[i] * m[j] / r
     end
+    # Potential of the linearised field of KZ(14) ≤ 2; T₂ and T₄ do not enter it.
+    Wt = 0.0
+    @inbounds for i in 1:n
+        Wt += m[i] * (tidal[1] * x[1, i]^2 + tidal[3] * x[3, i]^2)
+    end
+    Wt *= -0.5
 
     b = bound_set(
         sys;
@@ -124,6 +138,7 @@ function snapshot_integrals(
         T,
         W,
         Ebin,
+        Wt,
         b,
         Mb,
         Lb,
@@ -159,8 +174,9 @@ end
 
 Write the integrals as CSV, one row per snapshot (N-body units plus
 `time_myr`). `l*_removed` is the angular momentum of the stars lost since the
-first row, `L(t₀) − L(t)` (escapers and stellar mass loss together). An
-existing file is backed up, never overwritten.
+first row, `L(t₀) − L(t)` (escapers and stellar mass loss together).
+`e_jacobi` is the Jacobi integral `e_total + w_tidal`, equal to `e_total`
+without an external field. An existing file is backed up, never overwritten.
 """
 function write_snapshot_integrals(
     path::AbstractString,
@@ -172,7 +188,8 @@ function write_snapshot_integrals(
         println(
             io,
             "time_nb,time_myr,n_stars,n_pairs,n_hierarchies,mass,x_cm,y_cm,z_cm,vx_cm,vy_cm,vz_cm," *
-            "px,py,pz,lx,ly,lz,lx_cm,ly_cm,lz_cm,t_stars,t_systems,w_systems,e_pairs,e_total,q_virial," *
+            "px,py,pz,lx,ly,lz,lx_cm,ly_cm,lz_cm,t_stars,t_systems,w_systems,e_pairs,w_tidal,e_total," *
+            "e_jacobi,q_virial," *
             "n_bound,mass_bound,t_bound,w_bound,lx_bound,ly_bound,lz_bound,bound_passes,bound_status," *
             "lx_removed,ly_removed,lz_removed",
         )
@@ -194,7 +211,9 @@ function write_snapshot_integrals(
                 s.kinetic,
                 s.potential,
                 s.pair_internal,
+                s.tidal_potential,
                 s.kinetic + s.potential + s.pair_internal,
+                s.kinetic + s.potential + s.pair_internal + s.tidal_potential,
                 s.potential < 0 ? s.kinetic / abs(s.potential) : NaN,
                 length(b.stars),
                 s.bound_mass,
@@ -214,3 +233,48 @@ end
 """CSV cell with 12 significant digits: conservation checks need more than the 6 of `_csv_cell`."""
 _csv_precise(v::AbstractFloat) = isfinite(v) ? @sprintf("%.12g", v) : ""
 _csv_precise(v) = _csv_cell(v)
+
+"""
+    tidal_mode(kz14::Integer) -> Symbol
+    tidal_mode(diag::DiagnosticsData) -> Symbol
+
+The class of the engine's external field option `KZ(14)`: `:none` (0),
+`:linearised` (1, 2: a static field in the rotating frame, whose potential
+energy the engine never adds to its total — the ADJUST `DE` drifts and the
+Jacobi integral `e_jacobi` of [`snapshot_integrals`](@ref) is the conserved
+quantity), `:orbit` (3, 5: the engine accumulates the work of the field in
+`ETIDE`, so its `DE` is an error measure, while snapshots cannot reconstruct
+it), `:external` (4: neither). Any other value throws an `ArgumentError`. For a
+`DiagnosticsData` without the options echo (`kz` empty) the mode is `:none`.
+"""
+function tidal_mode(kz14::Integer)::Symbol
+    kz14 == 0 && return :none
+    (kz14 == 1 || kz14 == 2) && return :linearised
+    (kz14 == 3 || kz14 == 5) && return :orbit
+    kz14 == 4 && return :external
+    throw(ArgumentError("KZ(14) must be one of 0, 1, 2, 3, 4, 5, got $kz14"))
+end
+
+function tidal_mode(diag::DiagnosticsData)::Symbol
+    isempty(diag.kz) && return :none
+    length(diag.kz) >= 14 || throw(
+        ArgumentError("options echo holds $(length(diag.kz)) KZ values, KZ(14) needs at least 14"),
+    )
+    return tidal_mode(diag.kz[14])
+end
+
+"""
+    engine_energy_valid(mode::Symbol) -> Bool
+
+Whether the engine's ADJUST `DE` measures an integration error under the
+tidal mode of [`tidal_mode`](@ref): true for `:none` and `:orbit`.
+"""
+function engine_energy_valid(mode::Symbol)::Bool
+    (mode === :none || mode === :orbit) && return true
+    (mode === :linearised || mode === :external) && return false
+    throw(
+        ArgumentError(
+            "tidal mode must be one of :none, :linearised, :orbit, :external, got :$mode",
+        ),
+    )
+end

@@ -114,6 +114,8 @@ include("io/io.jl")
 # ---------------------------------------------------------------------------
 include("potential.jl")
 include("integrals.jl")
+include("energy_events.jl")
+include("budgets.jl")
 
 # ---------------------------------------------------------------------------
 # Per-cluster structure from snapshots (used by the merger plots)
@@ -165,12 +167,21 @@ file it was loaded from).
 
 Besides the readers, the derived data products are computed here: the class
 census (`:stellar_census`), the integrals of motion of every snapshot
-(`:integrals`, [`SnapshotIntegrals`](@ref), with `postprocess.snapshot_integrals`)
-and, for a merger run — one whose output holds a `merger_summary.txt` and at
-least two snapshots — the remnant diagnostics (`:remnant`, a
+(`:integrals`, [`SnapshotIntegrals`](@ref), with `postprocess.snapshot_integrals`,
+including the Jacobi integral when the stdout capture echoes a linearised tidal
+field) and, for a merger run — one whose output holds a `merger_summary.txt` and
+at least two snapshots — the remnant diagnostics (`:remnant`, a
 [`RemnantDiagnostics`](@ref)), which reuse the integrals' bound sets. Both
 need an O(N²) pair sum per snapshot and run only while no snapshot holds more
-than `postprocess.pair_sum_max_n` stars.
+than `postprocess.pair_sum_max_n` stars. From the stdout capture the stamped
+event lines (`:engine_events`, [`EngineEvent`](@ref)) and the energy-jump
+localisation (`:energy_events`, [`EnergyEventAnalysis`](@ref), with
+`postprocess.energy_events`) follow; with the integrals, the escapers and the
+counters of `postprocess.events_file` (`:event_counters`, [`EventCounters`](@ref))
+the mass budget (`:mass_budget`, [`MassBudgetRow`](@ref), with
+`postprocess.mass_budget`). Under a linearised tidal field ([`tidal_mode`](@ref)
+`:linearised`) the engine's `DE` is not an error measure and no interval is
+flagged.
 """
 function postprocess(
     cfg::Nbody6Config;
@@ -207,13 +218,26 @@ function postprocess(
         isempty(snaps) || (results[:snapshots] = snaps)
     end
 
-    # Diagnostics from stdout
+    # Diagnostics from stdout, and its stamped event lines
     if pp.parse_stdout
         diag_path = joinpath(sim_dir, pp.stdout_file)
         if isfile(diag_path)
             results[:diagnostics] = read_diagnostics(diag_path)
+            if pp.energy_events || pp.mass_budget
+                results[:engine_events] = read_engine_events(diag_path)
+            end
         else
             @warn "Stdout file not found: $diag_path"
+        end
+    end
+
+    # Engine counters per output time (written with stellar evolution on)
+    if pp.mass_budget
+        events_path = joinpath(sim_dir, pp.events_file)
+        if isfile(events_path)
+            results[:event_counters] = read_event_counters(events_path)
+        else
+            @info "No counters file $(pp.events_file): stellar mass loss taken as zero in the mass budget"
         end
     end
 
@@ -263,10 +287,54 @@ function postprocess(
     # are subject to the configured limit; the remnant diagnostics reuse the
     # integrals' bound sets.
     bound = (; max_passes = pp.bound_max_passes, min_members = pp.bound_min_members)
+    # External field: the engine never adds the potential energy of a
+    # linearised tide to its total, so the Jacobi integral of the snapshots
+    # is the conserved quantity there and the engine's DE is not an error.
+    mode = haskey(results, :diagnostics) ? tidal_mode(results[:diagnostics]) : :none
+    tidal = haskey(results, :diagnostics) ? results[:diagnostics].tidal : (0.0, 0.0, 0.0, 0.0)
+    if mode == :linearised
+        @info "Linearised tidal field (KZ(14) = $(results[:diagnostics].kz[14])): the engine's DE " *
+              "excludes the tidal potential; e_jacobi of snapshot_integrals.csv is the conserved energy"
+    elseif mode != :none
+        @info "External field mode $mode (KZ(14) = $(results[:diagnostics].kz[14])): snapshot " *
+              "energies are not comparable with the engine's total"
+    end
     if haskey(results, :snapshots) && pp.snapshot_integrals
         if _within_pair_sum_limit(results[:snapshots], pp, "Snapshot integrals")
             @info "Snapshot integrals (momenta, energies, bound set)..."
-            results[:integrals] = snapshot_integrals(results[:snapshots]; bound...)
+            results[:integrals] = snapshot_integrals(results[:snapshots]; bound..., tidal)
+        end
+    end
+    if pp.energy_events && haskey(results, :diagnostics) && haskey(results, :engine_events)
+        results[:energy_events] = energy_intervals(
+            results[:diagnostics],
+            results[:engine_events];
+            threshold = pp.energy_jump_threshold,
+            sigma = pp.energy_jump_sigma,
+            engine_energy_valid = engine_energy_valid(mode),
+        )
+        @info "Energy-jump localisation: " * energy_events_summary(results[:energy_events])
+    end
+    if pp.mass_budget && haskey(results, :integrals)
+        if haskey(results, :diagnostics)
+            results[:mass_budget] = mass_budget(
+                results[:integrals],
+                get(results, :escapers, EscaperRecord[]),
+                get(results, :event_counters, EventCounters[]),
+                get(results, :engine_events, EngineEvent[]),
+                extract_scaling(results[:diagnostics]),
+            )
+            @info "Mass budget: " * mass_budget_summary(results[:mass_budget])
+            results[:energy_budget] = energy_budget(
+                results[:integrals],
+                get(results, :escapers, EscaperRecord[]),
+                get(results, :event_counters, EventCounters[]),
+                results[:diagnostics],
+                extract_scaling(results[:diagnostics]),
+            )
+            @info "Energy budget: " * energy_budget_summary(results[:energy_budget])
+        else
+            @warn "Mass and energy budgets skipped: the unit scaling needs the stdout capture"
         end
     end
     summary_path = joinpath(sim_dir, "merger_summary.txt")
@@ -505,6 +573,22 @@ function _finish_pipeline(
             results[:integrals],
         )
     end
+    if haskey(results, :energy_events) && !isempty(products_dir)
+        write_energy_intervals(
+            joinpath(products_dir, "energy_intervals.csv"),
+            results[:energy_events],
+        )
+        write_engine_events(
+            joinpath(products_dir, "engine_events.csv"),
+            results[:energy_events].events,
+        )
+    end
+    if haskey(results, :mass_budget) && !isempty(products_dir)
+        write_mass_budget(joinpath(products_dir, "mass_budget.csv"), results[:mass_budget])
+    end
+    if haskey(results, :energy_budget) && !isempty(products_dir)
+        write_energy_budget(joinpath(products_dir, "energy_budget.csv"), results[:energy_budget])
+    end
 
     # ── Phase 4: Plots ──
     if cfg.visualization.enabled && !isempty(results)
@@ -660,6 +744,13 @@ export HRPopulation, hr_population, hr_populations
 export StellarCensus, stellar_census, write_stellar_census
 export pair_potential, SystemSet, reduce_pairs, BoundSet, bound_set
 export SnapshotIntegrals, snapshot_integrals, write_snapshot_integrals
+export tidal_mode, engine_energy_valid
+export EngineEvent, EventCounters, ENGINE_EVENT_KINDS, KSTAR_ABSENT
+export read_engine_events, read_event_counters
+export EnergyInterval, EnergyEventAnalysis, energy_intervals, energy_events_summary
+export write_energy_intervals, write_engine_events
+export MassBudgetRow, mass_budget, mass_budget_summary, write_mass_budget
+export EnergyBudgetRow, energy_budget, energy_budget_summary, write_energy_budget
 export ClusterStructure, cluster_structure, bound_fraction, per_cluster_virial, parse_merger_summary
 export RadialProfile, radial_profile, cluster_profiles, system_profile, model_density
 export RemnantDiagnostics, RotationProfile, remnant_diagnostics, write_remnant_diagnostics

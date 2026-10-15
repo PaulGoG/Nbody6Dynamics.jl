@@ -56,6 +56,10 @@ export_width = 5.0
     @test PostprocessConfig().snapshot_integrals
     @test PostprocessConfig().bound_max_passes == 100
     @test PostprocessConfig().bound_min_members == 10
+    @test PostprocessConfig().energy_events && PostprocessConfig().mass_budget
+    @test PostprocessConfig().energy_jump_threshold == 1.0e-4
+    @test PostprocessConfig().energy_jump_sigma == 5.0
+    @test PostprocessConfig().events_file == "event.35"
     @test cfg.visualization.dpi == 150
     @test cfg.visualization.export_width == 5.0
     @test cfg.install.source_url == "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
@@ -189,6 +193,21 @@ format = "pdf"
             "bound_min_members",
             "[postprocess]\nbound_min_members = 1\n",
             "postprocess.bound_min_members",
+        ),
+        (
+            "energy_jump_threshold",
+            "[postprocess]\nenergy_jump_threshold = -1.0e-4\n",
+            "postprocess.energy_jump_threshold",
+        ),
+        (
+            "energy_jump_sigma",
+            "[postprocess]\nenergy_jump_sigma = -5.0\n",
+            "postprocess.energy_jump_sigma",
+        ),
+        (
+            "events_file",
+            "[postprocess]\nmass_budget = true\nevents_file = \"\"\n",
+            "postprocess.events_file",
         ),
         ("format", "[visualization]\nformat = \"gif\"\n", "visualization.format"),
         ("column", "[visualization]\ncolumn = \"triple\"\n", "visualization.column"),
