@@ -384,9 +384,10 @@ as a warning, never as an error: telemetry is auxiliary to the run.
 """
 function _stop_telemetry!(mon::TelemetryMonitor)::Dict{String,Any}
     mon.stop_requested = true
-    if mon.task !== nothing
+    task = mon.task
+    if task !== nothing
         try
-            wait(mon.task)
+            wait(task)
         catch e
             @warn "Telemetry sampler failed; summary uses the samples collected so far" exception =
                 (e, catch_backtrace())
@@ -537,12 +538,12 @@ function _force_kernel_gflops(stderr_path::AbstractString)::Union{Nothing,Dict{S
     for line in eachline(stderr_path)
         m = match(r"Perf\.\(Gflops\)\s+([0-9.eE+-]+)", line)
         m === nothing && continue
-        v = tryparse(Float64, m.captures[1])
+        v = tryparse(Float64, something(m.captures[1]))
         v === nothing && continue
         push!(values, v)
         k = match(r"\[R\.\d+\s+(.+?)\s*\]", line)
         k === nothing && continue
-        label = String(k.captures[1])
+        label = String(something(k.captures[1]))
         label in kernels || push!(kernels, label)
     end
     isempty(values) && return nothing
@@ -639,7 +640,8 @@ run one after another. Empty when the run directory holds no telemetry.
 function read_run_telemetry(run_dir::AbstractString)::Vector{TelemetrySample}
     isdir(run_dir) || return TelemetrySample[]
     files = filter(f -> match(r"^telemetry(_\d+)?\.csv$", f) !== nothing, readdir(run_dir))
-    segment_index(f) = f == "telemetry.csv" ? 1 : parse(Int, match(r"_(\d+)\.csv$", f).captures[1])
+    segment_index(f) =
+        f == "telemetry.csv" ? 1 : parse(Int, something(match(r"_(\d+)\.csv$", f).captures[1]))
     sort!(files; by = segment_index)
     samples = TelemetrySample[]
     offset = 0.0

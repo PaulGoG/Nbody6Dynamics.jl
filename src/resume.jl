@@ -165,7 +165,7 @@ Time in the name of a time-stamped output file `<letters>.<digits>_<time>`
 function _timestamped_time(name::AbstractString)::Float64
     m = match(r"^[A-Za-z]+\.\d+_([0-9][0-9.]*(?:[eE][+-]?\d+)?)$", name)
     m === nothing && return NaN
-    return something(tryparse(Float64, m.captures[1]), NaN)
+    return something(tryparse(Float64, something(m.captures[1])), NaN)
 end
 
 """
@@ -290,7 +290,7 @@ function _tcrit_of(inp_path::AbstractString)::Float64
         for line in eachline(io)
             startswith(lstrip(line), '!') && continue
             m = match(r"\bTCRIT\s*=\s*([0-9.eEdD+-]+)", line)
-            m === nothing || return _parse_fortran_float(m.captures[1])
+            m === nothing || return _parse_fortran_float(something(m.captures[1]))
         end
         return nothing
     end

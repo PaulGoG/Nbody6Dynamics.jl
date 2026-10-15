@@ -95,7 +95,7 @@ names that are not dumps.
 function _dump_time(name::AbstractString)::Float64
     m = match(r"^comm\.[12]_([0-9.eE+-]+)$", name)
     m === nothing && return NaN
-    return something(tryparse(Float64, m.captures[1]), NaN)
+    return something(tryparse(Float64, something(m.captures[1])), NaN)
 end
 
 """
@@ -344,7 +344,7 @@ function _execute_simulation(
         segment = 1 + _segment_count(joinpath(run_dir, "RUN_INFO.toml"))
         # N-body time the segment starts from: the dump's exact time when
         # the caller knows it, else the rounded one of the file name.
-        t_start_nb = if !is_restart
+        t_start_nb = if restart === nothing
             0.0
         elseif haskey(restart, :t_start)
             Float64(restart.t_start)
@@ -390,7 +390,9 @@ function _execute_simulation(
         launched_engine === nothing || (opening["engine_pid"] = launched_engine)
         slurm_job_id = get(ENV, "SLURM_JOB_ID", "")
         isempty(slurm_job_id) || (opening["slurm_job_id"] = slurm_job_id)
-        is_restart && haskey(restart, :discarded) && (opening["discarded"] = restart.discarded)
+        restart !== nothing &&
+            haskey(restart, :discarded) &&
+            (opening["discarded"] = restart.discarded)
         _open_segment(run_dir, run_id, opening; input_file = basename(input_copy))
         # Known to the exit hook until reaped, so a terminated driver stops it.
         engine_pid = Int32(script_pid)
@@ -825,9 +827,9 @@ function _input_sizes(
     (mn === nothing || mo === nothing) && return nothing
     mb = match(r"\bNBIN0\s*=\s*(\d+)", text)
     return (
-        n = parse(Int, mn.captures[1]),
-        nnbopt = parse(Int, mo.captures[1]),
-        nbin0 = mb === nothing ? 0 : parse(Int, mb.captures[1]),
+        n = parse(Int, something(mn.captures[1])),
+        nnbopt = parse(Int, something(mo.captures[1])),
+        nbin0 = mb === nothing ? 0 : parse(Int, something(mb.captures[1])),
     )
 end
 
@@ -890,7 +892,7 @@ function _adjust_advanced(stdout_path::AbstractString; offset::Integer = 0)::Boo
         for line in eachline(io)
             m = match(r"^\s*ADJUST:\s+TIME\s+([0-9.E+-]+)", line)
             m === nothing && continue
-            t = tryparse(Float64, m.captures[1])
+            t = tryparse(Float64, something(m.captures[1]))
             t !== nothing && t > 0 && return true
         end
         return false
@@ -1187,11 +1189,15 @@ function _dump_markers(stdout_path::AbstractString; offset::Integer = 0)::Vector
             line = readline(io)
             m = match(r"^\s*MYDUMP\s+(\S+)\s+\S+\s+\d+\s+(comm\.[12]_\S+)\s*$", line)
             m === nothing && continue
-            t = tryparse(Float64, m.captures[1])
+            t = tryparse(Float64, something(m.captures[1]))
             t === nothing && continue
             push!(
                 markers,
-                (file = String(m.captures[2]), time_nb = t, line_end = Int(position(io))),
+                (
+                    file = String(something(m.captures[2])),
+                    time_nb = t,
+                    line_end = Int(position(io)),
+                ),
             )
         end
     end
@@ -1213,7 +1219,7 @@ function _last_adjust_time(stdout_path::AbstractString; offset::Integer = 0)::Fl
         for line in eachline(io)
             m = match(r"^\s*ADJUST:\s+TIME\s+([0-9.E+-]+)", line)
             m === nothing && continue
-            t = tryparse(Float64, m.captures[1])
+            t = tryparse(Float64, something(m.captures[1]))
             t === nothing || (t_last = t)
         end
         return t_last
@@ -1278,8 +1284,9 @@ function _stop_dump(stdout_path::AbstractString; offset::Integer = 0)::String
             elseif stopped
                 m = match(r"^\s*MYDUMP\s+(\S+)\s+\S+\s+\d+\s+(comm\.[12]_\S+)\s*$", line)
                 m === nothing && continue
-                tryparse(Float64, m.captures[1]) === nothing && continue
-                startswith(m.captures[2], "comm.1_") && (name = String(m.captures[2]))
+                tryparse(Float64, something(m.captures[1])) === nothing && continue
+                c = something(m.captures[2])
+                startswith(c, "comm.1_") && (name = String(c))
             end
         end
         return name
@@ -1776,8 +1783,8 @@ function _print_monitor_line(line::AbstractString, t_start::Float64 = time())::B
         m_n = match(r"\bN\s+(\d+)", stripped)
         m_np = match(r"NPAIRS\s+(\d+)", stripped)
         if !isnothing(m_n)
-            n = parse(Int, m_n.captures[1])
-            np = isnothing(m_np) ? 0 : parse(Int, m_np.captures[1])
+            n = parse(Int, something(m_n.captures[1]))
+            np = isnothing(m_np) ? 0 : parse(Int, something(m_np.captures[1]))
             @info @sprintf("[%s]  N=%d  N_pairs=%d", elapsed_str, n, np)
             return true
         end
@@ -1810,7 +1817,7 @@ function _reported_omp_threads(stdout_path::AbstractString)::Union{Nothing,Int}
     isfile(stdout_path) || return nothing
     for line in eachline(stdout_path)
         m = match(r"OpenMP Number of Threads:\s*(\d+)", line)
-        m === nothing || return parse(Int, m.captures[1])
+        m === nothing || return parse(Int, something(m.captures[1]))
     end
     return nothing
 end
@@ -1830,7 +1837,7 @@ function _reported_gpu_devices(stderr_path::AbstractString)::Vector{String}
     for line in eachline(stderr_path)
         m = match(r"# GPU initialization - rank:\s*(\d+);.*device:\s*(\d+)\s+(.*)$", line)
         m === nothing && continue
-        entry = "rank $(m.captures[1]): device $(m.captures[2]) $(strip(m.captures[3]))"
+        entry = "rank $(m.captures[1]): device $(m.captures[2]) $(strip(something(m.captures[3])))"
         entry in devices || push!(devices, entry)
     end
     return devices

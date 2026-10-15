@@ -252,7 +252,7 @@ end
 """Release number in the banner of `nvcc --version` (`release 12.8, V12.8.93` → `"12.8"`); empty when absent."""
 function _parse_nvcc_release(output::AbstractString)::String
     m = match(r"release\s+(\d+\.\d+)", output)
-    return m === nothing ? "" : String(m.captures[1])
+    return m === nothing ? "" : String(something(m.captures[1]))
 end
 
 """
@@ -282,7 +282,7 @@ function _parse_nvcc_arch_list(output::AbstractString)::Vector{String}
     for line in eachline(IOBuffer(String(output)))
         m = match(r"^\s*compute_(\d+)\s*$", line)
         m === nothing && continue
-        arch = "sm_" * m.captures[1]
+        arch = "sm_" * something(m.captures[1])
         arch in archs || push!(archs, arch)
     end
     return archs
@@ -577,7 +577,7 @@ function check_fedora_h5pfc()
     m = match(r"includedir=\"([^\"]+)\"", content)
     isnothing(m) && return
 
-    if occursin("/openmpi-x86_64", m.captures[1])
+    if occursin("/openmpi-x86_64", something(m.captures[1]))
         @warn """
         Fedora h5pfc has a broken includedir path:
           $(m.captures[1])
@@ -612,7 +612,7 @@ julia> Nbody6Dynamics._hardware_tag("NVIDIA GeForce RTX 5090, 32607 MiB, 610.57.
 "RTX-5090"
 ```
 """
-function _hardware_tag(text::AbstractString; limit::Int = 16)::String
+function _hardware_tag(text::String; limit::Int = 16)::String
     # Only the model matters; the nvidia-smi record carries VRAM and driver too.
     model = String(first(split(text, ',')))
     isempty(strip(model)) && return ""
@@ -679,10 +679,10 @@ julia> Nbody6Dynamics._machine_id(Dict("host" => "ws", "cpu_model" => "AMD Ryzen
 ```
 """
 function _machine_id(fingerprint::AbstractDict)::String
-    host = String(get(fingerprint, "host", "unknown-host"))
+    host = String(get(fingerprint, "host", "unknown-host"))::String
     tags = filter(
         !isempty,
-        [
+        String[
             _hardware_tag(String(get(fingerprint, "cpu_model", ""))),
             _hardware_tag(String(first(split(String(get(fingerprint, "gpu", "")), ';')))),
             _machine_discriminator(fingerprint),

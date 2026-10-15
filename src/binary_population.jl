@@ -95,8 +95,7 @@ function hardness_scale(snap::Snapshot, bev::BinaryEvolutionSnapshot; bound_only
         end
     end
 
-    sel = collect(1:n_sys)
-    if bound_only && n_sys ≥ _MIN_MEMBERS
+    sel = if bound_only && n_sys ≥ _MIN_MEMBERS
         p_sys = Matrix{Float64}(undef, 3, n_sys)
         for s in 1:n_sys
             i = s ≤ n_pairs_reduced ? pair_index[s] : single_index[s - n_pairs_reduced]
@@ -104,8 +103,10 @@ function hardness_scale(snap::Snapshot, bev::BinaryEvolutionSnapshot; bound_only
                 p_sys[k, s] = Float64(snap.pos[k, i])
             end
         end
-        sel = bound_set(m_sys[1:n_sys], p_sys, v_sys[:, 1:n_sys]).stars
-        length(sel) ≥ _MIN_MEMBERS || (sel = collect(1:n_sys))
+        bound = bound_set(m_sys[1:n_sys], p_sys, v_sys[:, 1:n_sys]).stars
+        length(bound) ≥ _MIN_MEMBERS ? bound : collect(1:n_sys)
+    else
+        collect(1:n_sys)
     end
     M = sum(m_sys[s] for s in sel)
     M > 0 || throw(ArgumentError("hardness_scale: snapshot has zero total mass"))

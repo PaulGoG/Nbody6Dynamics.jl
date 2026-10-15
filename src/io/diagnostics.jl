@@ -152,7 +152,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
         if have_adjust && occursin("RSCALE", stripped) && occursin("RMIN", stripped)
             m = match(r"RSCALE\s*=\s*([\d.Ee\+\-]+)", stripped)
             if !isnothing(m)
-                val = tryparse(Float64, m.captures[1])
+                val = tryparse(Float64, something(m.captures[1]))
                 !isnothing(val) && pending_rscale == 0.0 && (pending_rscale = val)
             end
             continue
@@ -427,12 +427,12 @@ function _parse_time_nb_line(line::AbstractString)
 
     m_n = match(r"\bN\s+(\d+)", line)
     if !isnothing(m_n)
-        n = parse(Int, m_n.captures[1])
+        n = parse(Int, something(m_n.captures[1]))
     end
 
     m_np = match(r"NPAIRS\s+(\d+)", line)
     if !isnothing(m_np)
-        npairs = parse(Int, m_np.captures[1])
+        npairs = parse(Int, something(m_np.captures[1]))
     end
 
     return (; n, npairs)
@@ -566,9 +566,9 @@ function read_energy_totals(path::AbstractString)
         occursin("END RUN", line) || continue
         m = match(re, line)
         isnothing(m) && continue
-        ttot = _parse_fortran_float(m.captures[3])
-        errtot = _parse_fortran_float(m.captures[4])
-        detot = _parse_fortran_float(m.captures[5])
+        ttot = _parse_fortran_float(something(m.captures[3]))
+        errtot = _parse_fortran_float(something(m.captures[4]))
+        detot = _parse_fortran_float(something(m.captures[5]))
         last_totals = (; time_nb = ttot, errtot = errtot, detot = detot)
     end
 

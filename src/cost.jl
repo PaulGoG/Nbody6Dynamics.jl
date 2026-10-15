@@ -380,7 +380,7 @@ function _input_value(inp_path::AbstractString, name::AbstractString)::Union{Not
         for line in eachline(io)
             startswith(lstrip(line), '!') && continue
             m = match(pattern, line)
-            m === nothing || return _parse_fortran_float(m.captures[1])
+            m === nothing || return _parse_fortran_float(something(m.captures[1]))
         end
         return nothing
     end

@@ -24,11 +24,12 @@ not in `allowed`, naming it as `<section>.<key>` and listing the allowed keys
 `"merger.cluster1.imf"`). Returns `nothing`.
 """
 function _reject_unknown(table::AbstractDict, allowed, section::AbstractString)
+    sec = String(section)::String
+    names = sort!(collect(String, allowed))::Vector{String}
     for k in sort!(collect(String, keys(table)))
-        k in allowed || _config_error(
-            "$section.$k",
-            "is not a recognised key; allowed keys of [$section]: " *
-            join(sort!(collect(String, allowed)), ", "),
+        k in names || _config_error(
+            "$sec.$k",
+            "is not a recognised key; allowed keys of [$sec]: " * join(names, ", "),
         )
     end
     return nothing

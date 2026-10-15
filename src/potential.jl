@@ -49,7 +49,11 @@ O(n_t n_s), in Float64, evaluated by one KernelAbstractions kernel on
 Φ = pair_potential([0.0 1.0; 0.0 0.0; 0.0 0.0], [1.0, 2.0])   # [-2.0, -1.0]
 ```
 """
-function pair_potential(pos::AbstractMatrix{<:Real}, mass::AbstractVector{<:Real}; backend = CPU())
+function pair_potential(
+    pos::AbstractMatrix{<:Real},
+    mass::AbstractVector{<:Real};
+    backend::CPU = CPU(),
+)
     return pair_potential(pos, pos, mass; backend = backend)
 end
 
@@ -57,7 +61,7 @@ function pair_potential(
     targets::AbstractMatrix{<:Real},
     sources::AbstractMatrix{<:Real},
     source_mass::AbstractVector{<:Real};
-    backend = CPU(),
+    backend::CPU = CPU(),
 )::Vector{Float64}
     size(targets, 1) == 3 || throw(DimensionMismatch("targets must be 3 × n, got $(size(targets))"))
     size(sources, 1) == 3 || throw(DimensionMismatch("sources must be 3 × n, got $(size(sources))"))

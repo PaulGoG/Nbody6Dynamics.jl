@@ -233,9 +233,9 @@ function _engine_limits(
         m = match(r"NMAX\s*=\s*(\d+)\s*,\s*KMAX\s*=\s*(\d+)\s*,\s*LMAX\s*=\s*(\d+)", line)
         m === nothing && continue
         return (
-            nmax = parse(Int, m.captures[1]),
-            kmax = parse(Int, m.captures[2]),
-            lmax = parse(Int, m.captures[3]),
+            nmax = parse(Int, something(m.captures[1])),
+            kmax = parse(Int, something(m.captures[2])),
+            lmax = parse(Int, something(m.captures[3])),
         )
     end
     return nothing
@@ -275,7 +275,7 @@ function _cuflags_with_arch(
         for line in eachline(makefile)
             m = match(r"^CUFLAGS\s*=\s*(.*)$", line)
             m === nothing && continue
-            base = String(strip(m.captures[1]))
+            base = String(strip(something(m.captures[1])))
             break
         end
     end

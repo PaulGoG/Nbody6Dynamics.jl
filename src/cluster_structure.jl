@@ -392,8 +392,9 @@ function parse_merger_summary(path::AbstractString)::Vector{Vector{Int}}
     for line in eachline(path)
         m = match(pattern, line)
         m === nothing && continue
-        n_b = m.captures[2] === nothing ? 0 : parse(Int, m.captures[2])
-        push!(counts, (parse(Int, m.captures[1]), n_b))
+        n_b_capture = m.captures[2]
+        n_b = n_b_capture === nothing ? 0 : parse(Int, n_b_capture)
+        push!(counts, (parse(Int, something(m.captures[1])), n_b))
     end
     isempty(counts) && return Vector{Int}[]
 

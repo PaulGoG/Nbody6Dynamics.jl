@@ -177,6 +177,13 @@ entries say so.
 
 ### Changed
 
+- The static-QA dependency JET is 0.12 (was 0.9–0.10): the General registry
+  no longer offers 0.10 on Julia 1.13, which left the test environment
+  unresolvable. JET 0.12 reports a call on a regex capture group as a
+  possible error on its `Nothing` branch, so the readers and the launcher
+  narrow their captures with `something` where the group cannot be absent;
+  `pair_potential` types its `backend` keyword as a KernelAbstractions
+  backend. No behaviour changes.
 - `[postprocess] pair_sum_max_n` defaults to 2 000 000 (was 100 000): the
   pair sum is threaded and computed once per snapshot. The four 6 × 10⁵-body
   probe pipelines set 100 000 and keep their diagnostics off.

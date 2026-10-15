@@ -176,11 +176,11 @@ read). `nothing` when neither form is found.
 """
 function _parse_job_id(reply::AbstractString)::Union{Nothing,String}
     m = match(r"Submitted batch job (\d+)", reply)
-    m === nothing || return String(m.captures[1])
+    m === nothing || return String(something(m.captures[1]))
     lines = filter(!isempty, strip.(split(reply, '\n')))
     isempty(lines) && return nothing
     m = match(r"^(\d+)(?:;\S+)?$", last(lines))
-    return m === nothing ? nothing : String(m.captures[1])
+    return m === nothing ? nothing : String(something(m.captures[1]))
 end
 
 """

@@ -460,7 +460,7 @@ itself has one, so a sweep of a headless numerics-only study stays free of
 the plotting stack."""
 function _sweep_worker_command(point_dir::AbstractString)
     julia = Base.julia_cmd()
-    project = dirname(Base.active_project())
+    project = dirname(something(Base.active_project()))
     preamble = plotting_available() ? "using CairoMakie; " : ""
     return `$julia --threads=$(Threads.nthreads()) --project=$project --startup-file=no -e "$(preamble)using Nbody6Dynamics; Nbody6Dynamics.run_sweep_point(ARGS[1])" $point_dir`
 end
