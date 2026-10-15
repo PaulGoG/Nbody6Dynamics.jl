@@ -118,10 +118,14 @@ end
 
 Configuration for the post-processing phase.
 Controls which output files to read (snapshots, diagnostics, Lagrangian radii,
-escapers, stellar evolution) and their file patterns, the snapshot integrals
-(`snapshot_integrals`), the limits of the bound-set iteration
-(`bound_max_passes`, `bound_min_members`, see [`bound_set`](@ref)) and the
-largest snapshot on which the O(N²) diagnostics run (`pair_sum_max_n`).
+escapers, stellar evolution, the counters of `events_file`) and their file
+patterns, the snapshot integrals (`snapshot_integrals`), the limits of the
+bound-set iteration (`bound_max_passes`, `bound_min_members`, see
+[`bound_set`](@ref)), the largest snapshot on which the O(N²) diagnostics run
+(`pair_sum_max_n`), the energy-jump localisation (`energy_events`, flagging an
+adjustment interval whose |DE| reaches `max(energy_jump_threshold,
+energy_jump_sigma × 1.4826 × MAD)`, see [`energy_intervals`](@ref)) and the
+mass budget (`mass_budget`, see [`mass_budget`](@ref)).
 """
 Base.@kwdef struct PostprocessConfig
     enabled::Bool = true
@@ -138,10 +142,15 @@ Base.@kwdef struct PostprocessConfig
     stellar_evo_pattern::String = "sev.83_*"
     read_binary_evo::Bool = true
     binary_evo_pattern::String = "bev.82_*"
+    events_file::String = "event.35"
     pair_sum_max_n::Int = 2_000_000
     snapshot_integrals::Bool = true
     bound_max_passes::Int = 100
     bound_min_members::Int = 10
+    energy_events::Bool = true
+    energy_jump_threshold::Float64 = 1.0e-4
+    energy_jump_sigma::Float64 = 5.0
+    mass_budget::Bool = true
 end
 
 """
@@ -541,7 +550,14 @@ pair_indices(s::Snapshot) = [(2k - 1, 2k) for k in 1:s.npairs]
 
 Single ADJUST output line from the simulation log, recording the relative energy error
 `de_rel` (ΔE / max(T, |E|)), the interval energy change `de_abs` (engine DELTA, NB),
-and the engine running sum of ΔE `detot` (DETOT, NB).
+the engine running sum of ΔE `detot` (DETOT, NB), and the energy terms the line
+prints after them (N-body units; NaN when a line lacks them): `ekin` (EKIN, the
+kinetic energy of the centre-of-mass bodies), `pot` (POT, the positive potential
+energy, W = −POT), `etide` (ETIDE), and the engine's correction channels `ebin`
+(EBIN), `emerge` (EMERGE), `esub` (ESUB), `ecoll` (ECOLL), `emdot` (EMDOT),
+`ecdot` (ECDOT), whose increments between consecutive lines locate the energy
+changes the engine has accounted for. The ten-argument constructor leaves the
+energy terms NaN.
 """
 struct AdjustRecord
     time_nb::Float64
@@ -554,16 +570,215 @@ struct AdjustRecord
     rscale::Float64          # half-mass radius (NB)
     de_abs::Float64          # energy change of the adjustment interval ΔE (engine DELTA, NB); NaN when not printed
     detot::Float64           # engine running sum of ΔE (DETOT, NB); NaN when not printed
+    ekin::Float64            # EKIN (NB); NaN when not printed
+    pot::Float64             # POT, positive (NB); NaN when not printed
+    etide::Float64           # ETIDE (NB); NaN when not printed
+    ebin::Float64            # EBIN (NB); NaN when not printed
+    emerge::Float64          # EMERGE (NB); NaN when not printed
+    esub::Float64            # ESUB (NB); NaN when not printed
+    ecoll::Float64           # ECOLL (NB); NaN when not printed
+    emdot::Float64           # EMDOT (NB); NaN when not printed
+    ecdot::Float64           # ECDOT (NB); NaN when not printed
+end
+
+function AdjustRecord(
+    time_nb::Real,
+    time_myr::Real,
+    qvir::Real,
+    de_rel::Real,
+    e_tot::Real,
+    n::Integer,
+    npairs::Integer,
+    rscale::Real,
+    de_abs::Real,
+    detot::Real,
+)
+    return AdjustRecord(
+        time_nb,
+        time_myr,
+        qvir,
+        de_rel,
+        e_tot,
+        n,
+        npairs,
+        rscale,
+        de_abs,
+        detot,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+        NaN,
+    )
 end
 
 """
     DiagnosticsData
 
-Collection of parsed diagnostics from simulation stdout.
+Collection of parsed diagnostics from simulation stdout: the ADJUST records,
+the `PHYSICAL SCALING` values, the engine options `kz` (the 50 values of the
+`OPTIONS` echo; empty when the capture lacks it) and the linearised tidal
+field `tidal` (`TIDAL(1:4)` of the `TIDAL PARAMETERS` echo, N-body units;
+zeros when absent, i.e. no external field of `KZ(14) ≤ 2`). The two-argument
+constructor leaves `kz` empty and `tidal` zero.
 """
 struct DiagnosticsData
     adjust::Vector{AdjustRecord}
     physical_scaling::Dict{String,Float64}
+    kz::Vector{Int}
+    tidal::NTuple{4,Float64}
+end
+
+function DiagnosticsData(adjust::Vector{AdjustRecord}, physical_scaling::Dict{String,Float64})
+    return DiagnosticsData(adjust, physical_scaling, Int[], (0.0, 0.0, 0.0, 0.0))
+end
+
+# ---------------------------------------------------------------------------
+# Stamped event lines of the engine log and the counters of event.35
+# ---------------------------------------------------------------------------
+
+"""Stellar type value of an [`EngineEvent`](@ref) field the line does not carry."""
+const KSTAR_ABSENT = -99
+
+"""
+    ENGINE_EVENT_KINDS
+
+The kinds of [`EngineEvent`](@ref), in the order of the engine writers:
+`:ks_rectification` (`BEG KSRECT`), `:ks_new` (`NEW KSREG`), `:ks_new_compact`
+(`NS/BH BINARY`), `:ks_new_mdot` (`MDNEW KSREG`), `:ks_end_mdot` (`MDEND KSREG`),
+`:remnant_formation` (`WD/NS/BH FORMATION`), `:kick_full`, `:kick_zero`,
+`:kick_low` (`… VELOCITY KICK`), `:collision` (`… COLLISION`), `:merged_star`
+(`NEW STAR`), `:coalescence` (`…COAL:`), `:escape` (`ESCAPE T,NESC`),
+`:supernova_no_remnant` (`MDOT WARNING! SN KW=15`), `:chain_start` (`NEW CHAIN`),
+`:chain_end` (`CHTERM:`).
+"""
+const ENGINE_EVENT_KINDS = (
+    :ks_rectification,
+    :ks_new,
+    :ks_new_compact,
+    :ks_new_mdot,
+    :ks_end_mdot,
+    :remnant_formation,
+    :kick_full,
+    :kick_zero,
+    :kick_low,
+    :collision,
+    :merged_star,
+    :coalescence,
+    :escape,
+    :supernova_no_remnant,
+    :chain_start,
+    :chain_end,
+)
+
+"""
+    EngineEvent
+
+One stamped event line of the engine log, from [`read_engine_events`](@ref).
+`interval` is the index of the ADJUST record whose line follows the event
+in the log — the adjustment interval the event falls in, `(t_{k−1}, t_k]`,
+assigned by position because the engine prints every line of an interval
+between the two ADJUST lines that bound it — and `line` the line number in
+the capture. `time_nb` is the stamp of the line (NaN for the lines without
+one: `NEW CHAIN`). The remaining fields hold what the kind carries, with
+`0`, `KSTAR_ABSENT` and `NaN` where it does not:
+
+| kind | `name1,2,3` | `kstar1,2,3` | `count` | `n_total` | `energy_nb` | `mass_solar` | `dmass_solar` | `velocity_kms` |
+|---|---|---|---|---|---|---|---|---|
+| `:ks_rectification`, `:ks_new`, `:ks_new_compact`, `:ks_new_mdot`, `:ks_end_mdot` | NM1, NM2, NMS | KW1, KW2, KWS | — | — | E_b | M1 + M2 | — | — |
+| `:remnant_formation` | NAME | K* before, KW after | — | — | — | M1 after | M0 − M1 | — |
+| `:kick_*` | NAME | K*0, K*, K*(ICM) | — | — | — | MN after | M0 − MN | VK |
+| `:collision` | NM1, NM2, NMS | KW1, KW2, KWS | NSYS | — | E_b | M3 (product) | — | — |
+| `:merged_star` | NM1, NM2 | K*(I1), K*(I2), K*(INEW) | — | — | — | M(INEW) | DM lost | — |
+| `:coalescence` | N1, N2 | KW1, KW2, S | IQCOLL | — | E_b | M12S (product) | DM lost | — |
+| `:escape` | — | — | NESC | N after | total E (BE(3)) | M* total after | — | — |
+| `:supernova_no_remnant` | NM | K* before, 15 | — | — | — | M1 | — | — |
+| `:chain_start` | NAMEC(1:3) | — | NCH | — | ENERGY | — | — | — |
+| `:chain_end` | NI3, NI4, NCM | — | — | — | — | — | — | — |
+
+Masses in M☉, energies in N-body units, velocities in km s⁻¹.
+"""
+Base.@kwdef struct EngineEvent
+    time_nb::Float64
+    kind::Symbol
+    interval::Int
+    line::Int
+    name1::Int = 0
+    name2::Int = 0
+    name3::Int = 0
+    kstar1::Int = KSTAR_ABSENT
+    kstar2::Int = KSTAR_ABSENT
+    kstar3::Int = KSTAR_ABSENT
+    count::Int = 0
+    n_total::Int = 0
+    energy_nb::Float64 = NaN
+    mass_solar::Float64 = NaN
+    dmass_solar::Float64 = NaN
+    velocity_kms::Float64 = NaN
+end
+
+"""
+    EventCounters
+
+One row of `event.35`, the engine's counters at an output time (`events.f`):
+`time_myr`; the interaction counters `ndiss`, `ntide`, `nsync`, `ncoll`,
+`ncoal`, `ndd`, `ncirc`, `nroche`, `nro`, `nce`, `nhyp`, `nhypc`, `nkick`;
+the energy terms `ebin`, `emerge`, `ecoll`, `emdot`, `ecdot`, `ekick`,
+`esesc`, `ebesc`, `emesc`, `degrav`, `ebind` (N-body units) and `mmax`
+(the most massive body, M☉); the stellar-evolution counters `nmdot`, `nrg`,
+`nhe`, `nrs`, `nnh`, `nwd`, `nsn`, `nbh`, `nbs`; the mass lost by stellar
+evolution per phase `zmrg`, `zmhe`, `zmrs`, `zmnh`, `zmwd`, `zmsn` and in
+total `zmdot` (M☉, cumulative); `ntype`, the number of stars of stellar
+type K* = 0 … 15.
+"""
+struct EventCounters
+    time_myr::Float64
+    ndiss::Int
+    ntide::Int
+    nsync::Int
+    ncoll::Int
+    ncoal::Int
+    ndd::Int
+    ncirc::Int
+    nroche::Int
+    nro::Int
+    nce::Int
+    nhyp::Int
+    nhypc::Int
+    nkick::Int
+    ebin::Float64
+    emerge::Float64
+    ecoll::Float64
+    emdot::Float64
+    ecdot::Float64
+    ekick::Float64
+    esesc::Float64
+    ebesc::Float64
+    emesc::Float64
+    degrav::Float64
+    ebind::Float64
+    mmax::Float64
+    nmdot::Int
+    nrg::Int
+    nhe::Int
+    nrs::Int
+    nnh::Int
+    nwd::Int
+    nsn::Int
+    nbh::Int
+    nbs::Int
+    zmrg::Float64
+    zmhe::Float64
+    zmrs::Float64
+    zmnh::Float64
+    zmwd::Float64
+    zmsn::Float64
+    zmdot::Float64
+    ntype::NTuple{16,Int}
 end
 
 # ---------------------------------------------------------------------------

@@ -52,10 +52,15 @@ read_stellar_evo     = true
 stellar_evo_pattern  = "sev.83_*"   # nonempty when read_stellar_evo = true
 read_binary_evo      = true
 binary_evo_pattern   = "bev.82_*"   # nonempty when read_binary_evo = true
+events_file          = "event.35"   # engine counters per output time; nonempty when mass_budget = true
 pair_sum_max_n       = 2000000      # ≥ 0; largest snapshot N for the O(N²) diagnostics (integrals, remnant, per-cluster virial and structure, bound-set hardness scale); 0 disables them
 snapshot_integrals   = true         # write snapshot_integrals.csv (momenta, energies, bound set)
 bound_max_passes     = 100          # ≥ 1; limit on bound-set unbinding passes
 bound_min_members    = 10           # ≥ 2; systems below which a bound set counts as dissolved
+energy_events        = true         # write energy_intervals.csv and engine_events.csv (per-interval energy changes, engine events)
+energy_jump_threshold = 1.0e-4      # ≥ 0; |DE| floor for a flagged adjustment interval
+energy_jump_sigma    = 5.0          # ≥ 0; flagged when |DE| ≥ max(threshold, sigma × robust scale of DE)
+mass_budget          = true         # write mass_budget.csv (snapshots, escapers, stellar and collision mass loss)
 
 [visualization]
 enabled    = true

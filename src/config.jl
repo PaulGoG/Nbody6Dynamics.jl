@@ -352,6 +352,15 @@ function _validate(cfg::Nbody6Config)
         _config_error("postprocess.bound_max_passes", "must be ≥ 1; got $(pp.bound_max_passes)")
     pp.bound_min_members ≥ 2 ||
         _config_error("postprocess.bound_min_members", "must be ≥ 2; got $(pp.bound_min_members)")
+    pp.energy_jump_threshold ≥ 0 || _config_error(
+        "postprocess.energy_jump_threshold",
+        "must be ≥ 0; got $(pp.energy_jump_threshold)",
+    )
+    pp.energy_jump_sigma ≥ 0 ||
+        _config_error("postprocess.energy_jump_sigma", "must be ≥ 0; got $(pp.energy_jump_sigma)")
+    pp.mass_budget &&
+        isempty(pp.events_file) &&
+        _config_error("postprocess.events_file", "must be nonempty when mass_budget = true")
 
     # [visualization]
     vis.format in ("pdf", "svg", "png") || _config_error(
