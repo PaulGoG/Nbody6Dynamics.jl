@@ -193,6 +193,20 @@ function _shrinking_sphere_centre(
 end
 
 """
+    _centre_keywords(settings::PostprocessConfig) -> NamedTuple
+
+Stop rule and step of `shrinking_sphere_centre` from the centre keys of
+`settings` (`centre_shrink`, `centre_n_stop`, `centre_stop_fraction`,
+`centre_n_floor`), as keywords.
+"""
+_centre_keywords(settings::PostprocessConfig) = (;
+    shrink = settings.centre_shrink,
+    n_stop = settings.centre_n_stop,
+    stop_fraction = settings.centre_stop_fraction,
+    n_floor = settings.centre_n_floor,
+)
+
+"""
     _virial_energies(snap, idx) -> (T, W, M)
 
 Kinetic energy about the mass-weighted mean velocity, potential energy and
@@ -489,7 +503,7 @@ function radial_profile(
     r_min = max(ds[n_min_inner], eps())
     r_max = ds[findfirst(≥(mass_fraction_max * M), cum)]
     r_max > r_min || (r_max = r_min * 10)
-    N_used = searchsortedlast(ds, r_max)
+    N_used = searchsortedlast(ds, r_max)::Int
     vc = vec(sum(vel .* mass'; dims = 2)) ./ M
 
     # Kinematic shells: sorted positions bounds[s]+1 : bounds[s+1]
@@ -631,24 +645,30 @@ function radial_profile(
 end
 
 """
-    cluster_profiles(snap, cluster_ranges; bound_only = true, nbins = 12,
-                     n_min_sigma = 50, n_min_beta = 300, n_min_density = 100)
+    cluster_profiles(snap, cluster_ranges; settings = PostprocessConfig(), bound_only = true,
+                     nbins = settings.profile_nbins, n_min_sigma = settings.profile_n_min_sigma,
+                     n_min_beta = settings.profile_n_min_beta,
+                     n_min_density = settings.profile_n_min_density,
+                     max_passes = 100, min_members = 10)
         -> Vector{Union{Nothing,RadialProfile}}
 
 Radial profile of every initial cluster about its own shrinking-sphere
 centre from its bound members ([`cluster_structure`](@ref) conventions;
 `max_passes` and `min_members` go to [`bound_set`](@ref), the shell
 thresholds to [`radial_profile`](@ref)); `nothing` for clusters with too
-few members.
+few members. The centre takes its stop rule and step from the centre keys of
+`settings`, a [`PostprocessConfig`](@ref), whose profile keys are also the
+defaults of the shell thresholds; an explicit keyword overrides them.
 """
 function cluster_profiles(
     snap::Snapshot,
     cluster_ranges::AbstractVector{<:AbstractVector{Int}};
+    settings::PostprocessConfig = PostprocessConfig(),
     bound_only::Bool = true,
-    nbins::Int = 12,
-    n_min_sigma::Int = 50,
-    n_min_beta::Int = 300,
-    n_min_density::Int = 100,
+    nbins::Int = settings.profile_nbins,
+    n_min_sigma::Int = settings.profile_n_min_sigma,
+    n_min_beta::Int = settings.profile_n_min_beta,
+    n_min_density::Int = settings.profile_n_min_density,
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
 )
@@ -662,7 +682,7 @@ function cluster_profiles(
         sel = bound_only ? bound_set(snap, idx; max_passes, min_members).stars : idx
         length(sel) < 2 * _MIN_MEMBERS && continue
         p = pos_all[:, sel]
-        c = _shrinking_sphere_centre(p, mass_all[sel])
+        c = _shrinking_sphere_centre(p, mass_all[sel]; _centre_keywords(settings)...)
         out[i] = radial_profile(
             p,
             vel_all[:, sel],
@@ -678,23 +698,30 @@ function cluster_profiles(
 end
 
 """
-    system_profile(snap; nbins = 12, n_min_sigma = 50, n_min_beta = 300,
-                   n_min_density = 100) -> RadialProfile
+    system_profile(snap; settings = PostprocessConfig(), nbins = settings.profile_nbins,
+                   n_min_sigma = settings.profile_n_min_sigma,
+                   n_min_beta = settings.profile_n_min_beta,
+                   n_min_density = settings.profile_n_min_density) -> RadialProfile
 
 Radial profile of the whole snapshot about its shrinking-sphere centre
-(the remnant after coalescence); the keywords go to [`radial_profile`](@ref).
+(the remnant after coalescence); the shell keywords go to
+[`radial_profile`](@ref). The centre takes its stop rule and step from the
+centre keys of `settings`, a [`PostprocessConfig`](@ref), whose profile keys
+are also the defaults of the shell keywords; an explicit keyword overrides
+them.
 """
 function system_profile(
     snap::Snapshot;
-    nbins::Int = 12,
-    n_min_sigma::Int = 50,
-    n_min_beta::Int = 300,
-    n_min_density::Int = 100,
+    settings::PostprocessConfig = PostprocessConfig(),
+    nbins::Int = settings.profile_nbins,
+    n_min_sigma::Int = settings.profile_n_min_sigma,
+    n_min_beta::Int = settings.profile_n_min_beta,
+    n_min_density::Int = settings.profile_n_min_density,
 )::RadialProfile
     pos = Float64.(snap.pos)
     vel = Float64.(snap.vel)
     mass = Float64.(snap.mass)
-    c = _shrinking_sphere_centre(pos, mass)
+    c = _shrinking_sphere_centre(pos, mass; _centre_keywords(settings)...)
     return radial_profile(pos, vel, mass, c; nbins, n_min_sigma, n_min_beta, n_min_density)
 end
 
@@ -850,7 +877,8 @@ function bound_fraction(
 end
 
 """
-    cluster_structure(snaps, cluster_ranges; bound_only = true) -> ClusterStructure
+    cluster_structure(snaps, cluster_ranges; settings = PostprocessConfig(), bound_only = true,
+                      max_passes = 100, min_members = 10) -> ClusterStructure
 
 Structure of every initial cluster at every snapshot, measured about the
 cluster's own shrinking-sphere centre from the members it binds
@@ -861,11 +889,14 @@ dispersion and the virial ratio after the first supernovae.
 
 Regularised pairs enter the bound selection, `sigma_1d` and `q_virial` as
 their centres of mass; `max_passes` and `min_members` go to
-[`bound_set`](@ref). One O(N_i²) pair sum per cluster and snapshot.
+[`bound_set`](@ref). The centre takes its stop rule and step from the centre
+keys of `settings`, a [`PostprocessConfig`](@ref). One O(N_i²) pair sum per
+cluster and snapshot.
 """
 function cluster_structure(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}};
+    settings::PostprocessConfig = PostprocessConfig(),
     bound_only::Bool = true,
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
@@ -901,7 +932,7 @@ function cluster_structure(
             p = pos_all[:, sel]
             m = mass_all[sel]
             M = sum(m)
-            c = _shrinking_sphere_centre(p, m)
+            c = _shrinking_sphere_centre(p, m; _centre_keywords(settings)...)
             centre[:, i, k] = c
             r_lagr[:, i, k] = _lagrangian_radii(p, m, c, _LAGR_FRACTIONS_MEMBER)
             σ[i, k] = sqrt(2 * T / (3 * M))

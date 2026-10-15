@@ -348,8 +348,13 @@ function postprocess(
             @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
             bound_sets =
                 haskey(results, :integrals) ? [s.bound for s in results[:integrals]] : nothing
-            results[:remnant] =
-                remnant_diagnostics(results[:snapshots], ranges; bound_sets, bound...)
+            results[:remnant] = remnant_diagnostics(
+                results[:snapshots],
+                ranges;
+                settings = pp,
+                bound_sets,
+                bound...,
+            )
         end
     end
 

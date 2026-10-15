@@ -259,7 +259,11 @@ end
     L_orb = Nbody6Dynamics._orbital_angular_momentum(s0, ranges_o)
     @test abs(L_orb[3]) > 0.5 && abs(L_orb[1]) < 1e-6 && abs(L_orb[2]) < 1e-6   # orbit in the x–y plane
 
-    diag = remnant_diagnostics([s0, s1], ranges_o; n_massive = 20, n_random = 20)
+    diag = remnant_diagnostics(
+        [s0, s1],
+        ranges_o;
+        settings = PostprocessConfig(; msr_n_tracer = 20, msr_n_random = 20),
+    )
     @test diag.time == [0.0, 1.0] && diag.time_myr == [0.0, 3.0] && diag.rbar == [2.0, 2.0]
     @test diag.coalescence_time == 1.0 && diag.coalescence_time_myr == 3.0
     @test all(diag.n_bound .≥ 1100)
@@ -271,6 +275,8 @@ end
     @test all(isfinite, diag.lambda_r) && all(isfinite, diag.lambda_peebles)
     @test all(isfinite, diag.lambda_msr) && all(isfinite, diag.segregation_ratio)
     @test isnan(diag.segregation_time)
+    @test all(diag.kt .> 0) && all(diag.f_max .≥ 1) && all(diag.n_pairs_snapshot .≥ 0)
+    @test isfinite(diag.t_rc_min) && isfinite(diag.t_rho_max)
     @test !isempty(diag.profile.radius)
     @test_throws ArgumentError remnant_diagnostics(Snapshot[], ranges_o)
 
@@ -280,7 +286,7 @@ end
     @test length(lines) == 4
     @test startswith(lines[1], "# coalescence_time_nb=1.0 coalescence_time_myr=3.0")
     @test lines[2] ==
-          "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio,r_core_number,rho_core,lambda_r_floor,lambda_peebles_floor,lambda_median,gamma_msr,gamma_msr_err,v_peak,r_peak"
+          "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio,r_core_number,rho_core,lambda_r_floor,lambda_peebles_floor,lambda_median,gamma_msr,gamma_msr_err,v_peak,r_peak,n_pairs_snapshot,n_hard_pairs,hardness_max,kt,f_max"
     @test startswith(lines[4], "1,3,2,")
 
     vis_r = VisualizationConfig(; format = "png", column = "single", output_dir = mktempdir())

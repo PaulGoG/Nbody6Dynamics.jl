@@ -4,6 +4,76 @@ Notable changes to Nbody6Dynamics.jl, by version. The package follows
 semantic versioning; before 1.0 a minor version may change the API, and the
 entries say so.
 
+## [Unreleased]
+
+### Added
+
+- Static test models, each with a known answer for one estimator:
+  `sample_plummer_om` (the Osipkov–Merritt Plummer sphere,
+  `β(r) = r²/(r² + r_a²)`, `r_a ≥ 0.75 a`), `lynden_bell_flip!` (rotation
+  by sign flips, `⟨v_φ⟩ = (2p − 1)⟨|v_φ|⟩`), `stretch_positions!` (axis
+  ratios `q`, `s`) and `rank_masses_by_energy!` (energy-ranked mass
+  segregation of degree `S`).
+- Centre: `shrinking_sphere_centre` returns the centre with the radius and
+  membership of the final set and the centroid noise
+  `radius/√(5 n_eff)`.
+- Core radius from the number density next to the mass density
+  (`r_core_number`), and the core density (`rho_core`).
+- `lagrangian_grid`: the 18 engine fractions by mass or number, masked
+  where fewer than `n_min` effective particles lie on either side, with the
+  binomial noise of every radius.
+- `radial_profile` errors on the dispersions and the anisotropy, and
+  logarithmic density shells merged to a least membership (`r_log`,
+  `rho_log`, `n_log`).
+- `relaxation_times` (half-mass and core relaxation times for two
+  Coulomb-logarithm factors, crossing time) and `local_relaxation_time`.
+- Mass segregation: the median-edge ratio `Λ̃_MSR` and the geometric-mean
+  ratio `Γ_MSR` next to `Λ_MSR`, over a scan of tree sizes.
+- Rotation: sign-flip null floors of `v_rot`, `λ_R` and `λ_P`, the
+  debiased shell amplitude, the analytic floor `0.295/√N_eff` and the
+  Bianchini rotation-curve fit (`v_peak`, `r_peak`).
+- Shape, segregation and mixing (`ShapeShell`, `shape_tensor`,
+  `projected_ellipticity`, `aplus`, `two_sample_d`, `mixing`): axis ratios
+  from the iterative unweighted shape tensor, projected ellipticities, the
+  A⁺ index with a jackknife error, the two-sample D with its null floor,
+  and the mixing of two tagged populations.
+- `core_collapse_markers` (smoothed minimum of the core radius, maximum of
+  the core density) and the pair-based markers of the remnant diagnostics.
+- `local_density`, the Casertano–Hut density on a k-d tree, and the
+  snapshot binary finder (`snapshot_pairs`, `SnapshotPair`,
+  `reconcile_pairs`): mutually bound neighbours joined most bound first,
+  with a tidal filter, hardness and the comparison with the KS pairs.
+- Twenty-five `[postprocess]` keys for the thresholds of these estimators:
+  `centre_n_stop`, `centre_stop_fraction`, `centre_n_floor`,
+  `centre_shrink`, `lagr_n_min`, `profile_nbins`, `profile_n_min_sigma`,
+  `profile_n_min_beta`, `profile_n_min_density`, `density_neighbours`,
+  `msr_n_tracer`, `msr_scan`, `msr_n_random`, `msr_n_random_small`,
+  `msr_n_small`, `msr_seed`, `msr_threshold`, `rotation_n_min`,
+  `rotation_nbins_max`, `rotation_n_null`, `shape_n_min_shell`,
+  `shape_n_min_enclosed`, `pair_k`, `pair_tidal_factor`,
+  `relaxation_gamma`.
+
+### Changed
+
+- `remnant_diagnostics` takes `settings::PostprocessConfig` instead of
+  `n_massive`, `n_random`, `seed`, `lambda_threshold`, `nbins` and
+  `overlap_factor`.
+- `RadialProfile` has new trailing fields, and its kinematic shells are of
+  equal membership; the figures are unchanged.
+- `RotationProfile` and `RemnantDiagnostics` have new trailing fields, and
+  `remnant_diagnostics.csv` has new columns and header scalars (a
+  minor-version API change).
+- `coalescence_time` uses per-tag bound sets with their density centres and
+  half-mass radii and requires the single group to persist to the last
+  snapshot; it returns the `separation` and `threshold` matrices and no
+  longer depends on `overlap_factor`.
+- The shrinking-sphere centre is number-weighted with the stop rule of
+  Power et al. (2003) (was mass-weighted, stopping at 20 particles or 1 %).
+- `mass_segregation` takes a tracer class and a scan of tree sizes (was the
+  50 most massive stars by present mass against 50 random sets).
+- The sixth-neighbour density runs on a k-d tree (was O(N²)).
+- New dependency: NearestNeighbors 0.4.
+
 ## [0.5.0] — 2026-10-15
 
 ### Added

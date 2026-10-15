@@ -36,8 +36,12 @@ makedocs(;
         prettyurls = get(ENV, "CI", nothing) == "true",
         assets = String[],
         # The API reference lists every public docstring on one page; exempt
-        # it from Documenter's per-page size threshold.
+        # it from Documenter's per-page size threshold. The manual carries the
+        # configuration reference and the estimator descriptions on one page
+        # too, within a raised threshold.
         size_threshold_ignore = ["api.md"],
+        size_threshold = 400 * 2^10,
+        size_threshold_warn = 300 * 2^10,
     ),
     pages = [
         "Home" => "index.md",

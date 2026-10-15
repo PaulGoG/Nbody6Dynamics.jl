@@ -1,29 +1,27 @@
 # =============================================================================
 # Merger-specific diagnostics
 # =============================================================================
-# Track each initial cluster's centre-of-mass over the course of the run.
-# Gives meaningful pre-coalescence diagnostics for multi-cluster setups where
-# global Lagrangian radii measure cluster separation rather than internal
-# structure.
-
-"""Coalescence heuristic: max/mean pairwise-separation ratio below which the ensemble is considered merged."""
-const _COALESCENCE_RATIO_MAX = 2.0
-
-"""Coalescence heuristic: mean separation must also drop below this multiple of the initial minimum separation."""
-const _COALESCENCE_MEAN_SEP_FACTOR = 1.5
+# Track each initial cluster through its own bound set over the course of the
+# run. Gives meaningful pre-coalescence diagnostics for multi-cluster setups
+# where global Lagrangian radii measure cluster separation rather than
+# internal structure.
 
 """
     plot_cluster_separation(snaps, cluster_ranges, cfg;
                             filename = "merger_cluster_separation")
 
-Plot the evolution of pairwise centre-of-mass separations between the initial
-clusters. For small n_clusters (≤ 5) every pair is shown individually; for
-larger N, min/max/mean envelopes are plotted instead.  Separations are shown
-in pc and times in Myr when `cfg.units == "physical"` (header AS scaling).
+Plot the separation of the density centres of every pair of initial clusters
+against time, with the half-mass threshold `min(r_h,i, r_h,j)` below which
+the pair counts as merged, both from [`coalescence_time`](@ref). For
+n_clusters ≤ 5 every pair is shown individually, its threshold dashed in the
+same colour; for more clusters the min/max envelope and mean of the
+separations are drawn with the mean threshold dashed and the number of
+distinct clusters (`n_distinct`) on a twin axis. Separations are shown in pc
+and times in Myr when `cfg.units == "physical"` (header AS scaling).
 
-The time at which the ratio `max_sep / mean_sep` drops below a heuristic
-threshold is marked as an estimated "coalescence time". After that epoch the
-initial cluster decomposition is no longer physically meaningful.
+The coalescence time of [`coalescence_time`](@ref) is marked when the
+clusters coalesce within the snapshots. After that epoch the initial cluster
+decomposition is no longer physically meaningful.
 """
 @publication function Nbody6Dynamics.plot_cluster_separation(
     snaps::Vector{Snapshot},
@@ -38,28 +36,29 @@ initial cluster decomposition is no longer physically meaningful.
 
     physical = cfg.units == "physical" && all(_has_physical_scaling(s.header) for s in snaps)
     t = physical ? [time_myr(s.header) for s in snaps] : [time_nb(s.header) for s in snaps]
-    coms, present, r_rms = _cluster_com_trajectories(snaps, cluster_ranges)
+    # One bound set per cluster and snapshot, shared by every series below
+    coal = coalescence_time(snaps, cluster_ranges)
 
-    # Pairwise separations over time: pairs × n_times
+    # Density-centre separations and half-mass thresholds: pairs × n_times
     pairs = [(i, j) for i in 1:(n_cl - 1) for j in (i + 1):n_cl]
-    n_pairs = length(pairs)
-    seps = fill(NaN, n_pairs, n_t)
-    for (p, (i, j)) in enumerate(pairs)
-        for k in 1:n_t
-            (present[i, k] && present[j, k]) || continue
-            dx = coms[1, i, k] - coms[1, j, k]
-            dy = coms[2, i, k] - coms[2, j, k]
-            dz = coms[3, i, k] - coms[3, j, k]
-            seps[p, k] = sqrt(dx*dx + dy*dy + dz*dz)
-        end
-    end
-    # NB length → pc (uniform scaling; ratio-based coalescence heuristics
-    # below are unaffected)
+    seps = copy(coal.separation)
+    thr = copy(coal.threshold)
+    # NB length → pc
     if physical
         for k in 1:n_t
-            seps[:, k] .*= rbar(snaps[k].header)
+            s = rbar(snaps[k].header)
+            seps[:, k] .*= s
+            thr[:, k] .*= s
         end
     end
+    t_c = coal.index === nothing ? NaN : (physical ? coal.time_myr : coal.time_nb)
+    t_c_label =
+        isfinite(t_c) ?
+        latexstring(
+            "t_\\mathrm{coalesce} = $(_fmt_latex_sig3(t_c))\\;",
+            physical ? "\\mathrm{Myr}" : "[\\mathrm{NB}]",
+        ) : L""
+    d_all = filter(isfinite, vcat(vec(seps), vec(thr)))
 
     fig = Figure(; size = _figsize_px(cfg))
     ax = Axis(
@@ -68,87 +67,99 @@ initial cluster decomposition is no longer physically meaningful.
         ylabel = physical ? L"d_{ij} \; [\mathrm{pc}]" : L"d_{ij} \; [\mathrm{NB}]",
         xticks = _time_ticks(first(t), last(t)),
     )
+    # Upper limit of the separation axis, from which the event label hangs
+    y_top = NaN
+    if isempty(d_all)
+        _no_data_note!(ax, "No cluster with enough bound members")
+    else
+        y_lo, y_top = _pad_limits(0.0, maximum(d_all); floor = 0)
+        ylims!(ax, y_lo, y_top)
+        ax.yticks = _nice_ticks(y_lo, y_top)
+    end
+    # Two legend families; headers above their entries keep the legend within
+    # the figure width
+    family_titles = ["Separation of density centres:", "Half-mass threshold:"]
+    legend_kw = (;
+        orientation = :horizontal,
+        framevisible = false,
+        titleposition = :top,
+        tellheight = true,
+        padding = (0, 0, 0, 0),
+    )
 
     detail = n_cl ≤ 5
     if detail
-        # One line per pair, labelled
-        n_lines = 0
+        # One colour per pair: separation solid, its threshold dashed
+        pair_entries = _LegendElement[]
+        pair_labels = AbstractString[]
         for (p, (i, j)) in enumerate(pairs)
-            valid = .!isnan.(seps[p, :])
+            valid = isfinite.(@view seps[p, :])
             any(valid) || continue
+            color = _OKABE_ITO[mod1(p, length(_OKABE_ITO))]
+            lines!(ax, t[valid], seps[p, valid]; color = color, linewidth = _STYLE.data)
             lines!(
                 ax,
                 t[valid],
-                seps[p, valid];
-                color = _OKABE_ITO[mod1(p, length(_OKABE_ITO))],
-                linewidth = _STYLE.data,
-                label = "$(i)–$(j)",
+                thr[p, valid];
+                color = color,
+                linestyle = :dash,
+                linewidth = _STYLE.guide,
             )
-            n_lines += 1
+            push!(pair_entries, LineElement(; color = color, linewidth = _STYLE.data))
+            push!(pair_labels, "$(i)–$(j)")
         end
-        n_lines ≥ 2 && _top_legend!(fig, ax; nbanks = min(3, cld(n_pairs, 4)))
-        # First-class coalescence time: all initial clusters spatially merged
-        coal = coalescence_time(snaps, cluster_ranges)
-        if coal.index !== nothing
-            t_c = physical ? coal.time_myr : coal.time_nb
-            vlines!(ax, [t_c]; color = :black, linestyle = :dash, linewidth = _STYLE.guide)
-            text!(
-                ax,
-                t_c,
-                maximum(filter(!isnan, vec(seps)));
-                text = latexstring(
-                    "t_\\mathrm{coalesce} = $(_fmt_latex_sig3(t_c))\\;",
-                    physical ? "\\mathrm{Myr}" : "[\\mathrm{NB}]",
-                ),
-                align = (:left, :top),
-                offset = (4, 0),
-                fontsize = _ANNOTATION_FONTSIZE,
+        isfinite(y_top) && _event_marker!(ax, t_c, t_c_label, y_top, (first(t), last(t)))
+        if !isempty(pair_entries)
+            Legend(
+                fig[0, :],
+                [
+                    pair_entries,
+                    _LegendElement[LineElement(;
+                        color = :black,
+                        linestyle = :dash,
+                        linewidth = _STYLE.guide,
+                    )],
+                ],
+                [pair_labels, AbstractString[L"\min(r_{h,i},\, r_{h,j})"]],
+                family_titles;
+                nbanks = min(3, cld(length(pair_entries), 4)),
+                legend_kw...,
             )
         end
     else
-        # Envelope: show min/max band plus mean line
+        # Envelope: min/max band plus mean line, mean threshold dashed
         d_min, d_max, d_mean = _envelope_stats(seps)
+        _, _, thr_mean = _envelope_stats(thr)
 
         valid = .!isnan.(d_mean)
         sep_color = _SEMANTIC_COLORS[:separation]
-        band_plot = band!(ax, t[valid], d_min[valid], d_max[valid]; color = (sep_color, 0.25))
         # Darker same-hue edges on the band fill
         sep_edge = _band_edge(sep_color)
-        lines!(ax, t[valid], d_min[valid]; color = sep_edge, linewidth = _STYLE.envelope)
-        lines!(ax, t[valid], d_max[valid]; color = sep_edge, linewidth = _STYLE.envelope)
-        mean_plot = lines!(ax, t[valid], d_mean[valid]; color = sep_color, linewidth = _STYLE.data)
-
-        # Mark estimated coalescence: max/mean ratio and mean separation both
-        # drop below their heuristic thresholds (consts at top of file)
-        d_init_min = minimum(filter(!isnan, d_min))
-        ratio = [isnan(d_mean[k]) ? NaN : d_max[k] / d_mean[k] for k in 1:n_t]
-        idx_merge = findfirst(
-            k ->
-                !isnan(ratio[k]) &&
-                ratio[k] < _COALESCENCE_RATIO_MAX &&
-                d_mean[k] < _COALESCENCE_MEAN_SEP_FACTOR * d_init_min,
-            1:n_t,
-        )
-
-        merge_plot = nothing
-        merge_label = ""
-        if idx_merge !== nothing && t[idx_merge] > first(t)
-            t_merge = t[idx_merge]
-            merge_plot =
-                vlines!(ax, [t_merge]; color = :black, linestyle = :dash, linewidth = _STYLE.guide)
-            merge_label = latexstring("t_\\mathrm{merge} \\approx $(_fmt_latex_sig3(t_merge))")
+        if any(valid)
+            band!(ax, t[valid], d_min[valid], d_max[valid]; color = (sep_color, 0.25))
+            lines!(ax, t[valid], d_min[valid]; color = sep_edge, linewidth = _STYLE.envelope)
+            lines!(ax, t[valid], d_max[valid]; color = sep_edge, linewidth = _STYLE.envelope)
+            lines!(ax, t[valid], d_mean[valid]; color = sep_color, linewidth = _STYLE.data)
+            lines!(
+                ax,
+                t[valid],
+                thr_mean[valid];
+                color = sep_color,
+                linestyle = :dash,
+                linewidth = _STYLE.guide,
+            )
         end
+        isfinite(y_top) && _event_marker!(ax, t_c, t_c_label, y_top, (first(t), last(t)))
 
-        # Twin axis: count of spatially-distinct clusters. Two clusters are
-        # merged when |COM_i − COM_j| < (r_rms_i + r_rms_j), i.e. their
-        # member spheres overlap. Connected components via union-find.
-        # Tick/label colour matches the count series (semantic N colour).
-        survivor_count = _count_spatial_clusters(coms, r_rms, present; overlap_factor = 1.0)
+        # Twin axis: number of distinct clusters, the connected components of
+        # the merged-pair graph of `coalescence_time`. Tick/label colour
+        # matches the count series (semantic N colour).
+        survivor_count = coal.n_distinct
         count_color = _SEMANTIC_COLORS[:n_particles]
         ax2 = Axis(
             fig[1, 1];
             yaxisposition = :right,
-            ylabel = L"N_\mathrm{clusters}\;\mathrm{(\geq 3\;members)}",
+            ylabel = L"N_\mathrm{distinct}",
             ylabelcolor = count_color,
             yticklabelcolor = count_color,
             ytickcolor = count_color,
@@ -165,7 +176,7 @@ initial cluster decomposition is no longer physically meaningful.
             limits = ((nothing, nothing), (0, n_cl + max(1, ceil(Int, 0.1 * n_cl)))),
         )
         hidespines!(ax2, :t, :b, :l)
-        surv_plot = stairs!(
+        stairs!(
             ax2,
             t,
             Float64.(survivor_count);
@@ -174,16 +185,32 @@ initial cluster decomposition is no longer physically meaningful.
             step = :post,
         )
 
-        # Manual legend combining primary and twin axes: horizontal, above
-        legend_elems = Any[band_plot, mean_plot]
-        legend_labels = [L"\min\;-\;\max\;\mathrm{range}", L"\mathrm{mean}"]
-        if merge_plot !== nothing
-            push!(legend_elems, merge_plot)
-            push!(legend_labels, merge_label)
+        # The count is named by its twin axis in its own colour; a third
+        # family would carry the legend past the figure width
+        if any(valid)
+            Legend(
+                fig[0, :],
+                [
+                    _LegendElement[
+                        PolyElement(;
+                            color = (sep_color, 0.25),
+                            strokecolor = sep_edge,
+                            strokewidth = _STYLE.envelope,
+                        ),
+                        LineElement(; color = sep_color, linewidth = _STYLE.data),
+                    ],
+                    _LegendElement[LineElement(;
+                        color = sep_color,
+                        linestyle = :dash,
+                        linewidth = _STYLE.guide,
+                    )],
+                ],
+                [AbstractString["Min–max range", "Mean"], AbstractString["Mean"]],
+                family_titles;
+                nbanks = 1,
+                legend_kw...,
+            )
         end
-        push!(legend_elems, surv_plot)
-        push!(legend_labels, L"\mathrm{surviving\;clusters}")
-        _top_legend!(fig, legend_elems, legend_labels)
     end
 
     return _save_fig(cfg, filename, fig)

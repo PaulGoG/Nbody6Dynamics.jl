@@ -60,6 +60,20 @@ export_width = 5.0
     @test PostprocessConfig().energy_jump_threshold == 1.0e-4
     @test PostprocessConfig().energy_jump_sigma == 5.0
     @test PostprocessConfig().events_file == "event.35"
+    pp = PostprocessConfig()
+    @test (pp.centre_n_stop, pp.centre_stop_fraction, pp.centre_n_floor, pp.centre_shrink) ==
+          (1000, 0.01, 500, 0.025)
+    @test pp.lagr_n_min == 100 && pp.profile_nbins == 12
+    @test (pp.profile_n_min_sigma, pp.profile_n_min_beta, pp.profile_n_min_density) ==
+          (50, 300, 100)
+    @test pp.density_neighbours == 6 && pp.msr_n_tracer == 50
+    @test pp.msr_scan == [10, 20, 50, 100, 200] && pp.msr_n_random == 200
+    @test (pp.msr_n_random_small, pp.msr_n_small, pp.msr_seed, pp.msr_threshold) ==
+          (1000, 20, 0, 2.0)
+    @test (pp.rotation_n_min, pp.rotation_nbins_max, pp.rotation_n_null) == (1000, 16, 20)
+    @test (pp.shape_n_min_shell, pp.shape_n_min_enclosed) == (3000, 7000)
+    @test pp.pair_k == 10 && pp.pair_tidal_factor ≈ 1 / 3
+    @test pp.relaxation_gamma == [0.02, 0.11]
     @test cfg.visualization.dpi == 150
     @test cfg.visualization.export_width == 5.0
     @test cfg.install.source_url == "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
@@ -209,6 +223,22 @@ format = "pdf"
             "[postprocess]\nmass_budget = true\nevents_file = \"\"\n",
             "postprocess.events_file",
         ),
+        ("centre_shrink", "[postprocess]\ncentre_shrink = 1.0\n", "postprocess.centre_shrink"),
+        ("centre_n_stop", "[postprocess]\ncentre_n_stop = 0\n", "postprocess.centre_n_stop"),
+        ("msr_scan", "[postprocess]\nmsr_scan = [20, 10]\n", "postprocess.msr_scan"),
+        ("msr_scan_empty", "[postprocess]\nmsr_scan = []\n", "postprocess.msr_scan"),
+        (
+            "profile_n_min_beta",
+            "[postprocess]\nprofile_n_min_sigma = 50\nprofile_n_min_beta = 10\n",
+            "postprocess.profile_n_min_beta",
+        ),
+        (
+            "relaxation_gamma",
+            "[postprocess]\nrelaxation_gamma = [0.02, -0.1]\n",
+            "postprocess.relaxation_gamma",
+        ),
+        ("pair_k", "[postprocess]\npair_k = 0\n", "postprocess.pair_k"),
+        ("rotation_n_null", "[postprocess]\nrotation_n_null = -1\n", "postprocess.rotation_n_null"),
         ("format", "[visualization]\nformat = \"gif\"\n", "visualization.format"),
         ("column", "[visualization]\ncolumn = \"triple\"\n", "visualization.column"),
         ("units", "[visualization]\nunits = \"cgs\"\n", "visualization.units"),

@@ -362,6 +362,7 @@ function _validate(cfg::Nbody6Config)
     pp.mass_budget &&
         isempty(pp.events_file) &&
         _config_error("postprocess.events_file", "must be nonempty when mass_budget = true")
+    _validate_estimators(pp)
 
     # [visualization]
     vis.format in ("pdf", "svg", "png") || _config_error(
@@ -438,6 +439,86 @@ function _validate(cfg::Nbody6Config)
     _validate_cluster(cfg)
     _validate_cost(cfg)
 
+    return nothing
+end
+
+"""
+    _validate_estimators(pp::PostprocessConfig)
+
+The estimator checks of [`_validate`](@ref) for the `[postprocess]` keys
+that set the shrinking-sphere centre, the Lagrangian grid, the radial
+profiles, the local density, the mass segregation, the rotation analysis,
+the shape tensor, the snapshot pair finder and the relaxation times. Raises
+an `ArgumentError` naming the offending `postprocess.<key>`.
+"""
+function _validate_estimators(pp::PostprocessConfig)
+    pp.centre_n_stop ≥ 1 ||
+        _config_error("postprocess.centre_n_stop", "must be ≥ 1; got $(pp.centre_n_stop)")
+    (0 < pp.centre_stop_fraction ≤ 1) || _config_error(
+        "postprocess.centre_stop_fraction",
+        "must satisfy 0 < centre_stop_fraction ≤ 1; got $(pp.centre_stop_fraction)",
+    )
+    pp.centre_n_floor ≥ 1 ||
+        _config_error("postprocess.centre_n_floor", "must be ≥ 1; got $(pp.centre_n_floor)")
+    (0 < pp.centre_shrink < 1) || _config_error(
+        "postprocess.centre_shrink",
+        "must satisfy 0 < centre_shrink < 1; got $(pp.centre_shrink)",
+    )
+    pp.lagr_n_min ≥ 1 ||
+        _config_error("postprocess.lagr_n_min", "must be ≥ 1; got $(pp.lagr_n_min)")
+    pp.profile_nbins ≥ 2 ||
+        _config_error("postprocess.profile_nbins", "must be ≥ 2; got $(pp.profile_nbins)")
+    pp.profile_n_min_sigma ≥ 2 || _config_error(
+        "postprocess.profile_n_min_sigma",
+        "must be ≥ 2; got $(pp.profile_n_min_sigma)",
+    )
+    pp.profile_n_min_beta ≥ pp.profile_n_min_sigma || _config_error(
+        "postprocess.profile_n_min_beta",
+        "must be ≥ profile_n_min_sigma = $(pp.profile_n_min_sigma); got $(pp.profile_n_min_beta)",
+    )
+    pp.profile_n_min_density ≥ 1 || _config_error(
+        "postprocess.profile_n_min_density",
+        "must be ≥ 1; got $(pp.profile_n_min_density)",
+    )
+    pp.density_neighbours ≥ 2 ||
+        _config_error("postprocess.density_neighbours", "must be ≥ 2; got $(pp.density_neighbours)")
+    pp.msr_n_tracer ≥ 2 ||
+        _config_error("postprocess.msr_n_tracer", "must be ≥ 2; got $(pp.msr_n_tracer)")
+    isempty(pp.msr_scan) && _config_error("postprocess.msr_scan", "must be nonempty")
+    all(≥(2), pp.msr_scan) ||
+        _config_error("postprocess.msr_scan", "entries must be ≥ 2; got $(pp.msr_scan)")
+    all(diff(pp.msr_scan) .> 0) ||
+        _config_error("postprocess.msr_scan", "must be strictly increasing; got $(pp.msr_scan)")
+    pp.msr_n_random ≥ 2 ||
+        _config_error("postprocess.msr_n_random", "must be ≥ 2; got $(pp.msr_n_random)")
+    pp.msr_n_random_small ≥ 2 ||
+        _config_error("postprocess.msr_n_random_small", "must be ≥ 2; got $(pp.msr_n_random_small)")
+    pp.msr_n_small ≥ 0 ||
+        _config_error("postprocess.msr_n_small", "must be ≥ 0; got $(pp.msr_n_small)")
+    pp.msr_seed ≥ 0 || _config_error("postprocess.msr_seed", "must be ≥ 0; got $(pp.msr_seed)")
+    pp.msr_threshold > 0 ||
+        _config_error("postprocess.msr_threshold", "must be > 0; got $(pp.msr_threshold)")
+    pp.rotation_n_min ≥ 2 ||
+        _config_error("postprocess.rotation_n_min", "must be ≥ 2; got $(pp.rotation_n_min)")
+    pp.rotation_nbins_max ≥ 1 ||
+        _config_error("postprocess.rotation_nbins_max", "must be ≥ 1; got $(pp.rotation_nbins_max)")
+    pp.rotation_n_null ≥ 0 ||
+        _config_error("postprocess.rotation_n_null", "must be ≥ 0; got $(pp.rotation_n_null)")
+    pp.shape_n_min_shell ≥ 1 ||
+        _config_error("postprocess.shape_n_min_shell", "must be ≥ 1; got $(pp.shape_n_min_shell)")
+    pp.shape_n_min_enclosed ≥ 1 || _config_error(
+        "postprocess.shape_n_min_enclosed",
+        "must be ≥ 1; got $(pp.shape_n_min_enclosed)",
+    )
+    pp.pair_k ≥ 1 || _config_error("postprocess.pair_k", "must be ≥ 1; got $(pp.pair_k)")
+    pp.pair_tidal_factor > 0 ||
+        _config_error("postprocess.pair_tidal_factor", "must be > 0; got $(pp.pair_tidal_factor)")
+    isempty(pp.relaxation_gamma) &&
+        _config_error("postprocess.relaxation_gamma", "must be nonempty")
+    all(>(0), pp.relaxation_gamma) || _config_error(
+        "postprocess.relaxation_gamma",
+        "entries must be > 0; got $(pp.relaxation_gamma)",
+    )
     return nothing
 end
 

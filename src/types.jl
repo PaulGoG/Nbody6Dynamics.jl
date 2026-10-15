@@ -126,6 +126,27 @@ bound-set iteration (`bound_max_passes`, `bound_min_members`, see
 adjustment interval whose |DE| reaches `max(energy_jump_threshold,
 energy_jump_sigma × 1.4826 × MAD)`, see [`energy_intervals`](@ref)) and the
 mass budget (`mass_budget`, see [`mass_budget`](@ref)).
+
+The estimator settings follow. The centre keys (`centre_n_stop`,
+`centre_stop_fraction`, `centre_n_floor`, `centre_shrink`) set the stop rule
+and step of `shrinking_sphere_centre`. `lagr_n_min` is the effective
+particle number `lagrangian_grid` requires on either side of a
+Lagrangian radius. The profile keys (`profile_nbins`, `profile_n_min_sigma`,
+`profile_n_min_beta`, `profile_n_min_density`) are the shell count and
+membership thresholds of [`radial_profile`](@ref). `density_neighbours` is
+the neighbour rank of the Casertano–Hut density estimate behind the core
+radius and core density. The segregation keys (`msr_n_tracer`, `msr_scan`,
+`msr_n_random`, `msr_n_random_small`, `msr_n_small`, `msr_seed`,
+`msr_threshold`) fix the tracer class, the N_MST scan, the random comparison
+sets and seed of [`mass_segregation`](@ref) and the Λ_MSR level of the
+segregation time. The rotation keys (`rotation_n_min`, `rotation_nbins_max`,
+`rotation_n_null`) are the shell membership, shell cap and null draws of
+[`rotation_analysis`](@ref). The shape keys (`shape_n_min_shell`,
+`shape_n_min_enclosed`) are the membership thresholds of `shape_tensor`.
+The pair keys (`pair_k`, `pair_tidal_factor`) are the neighbour count and
+tidal criterion of `snapshot_pairs`, which feeds the hardness series of
+[`remnant_diagnostics`](@ref). `relaxation_gamma` holds the
+Coulomb-logarithm arguments γ of `relaxation_times`.
 """
 Base.@kwdef struct PostprocessConfig
     enabled::Bool = true
@@ -151,6 +172,31 @@ Base.@kwdef struct PostprocessConfig
     energy_jump_threshold::Float64 = 1.0e-4
     energy_jump_sigma::Float64 = 5.0
     mass_budget::Bool = true
+    centre_n_stop::Int = 1000
+    centre_stop_fraction::Float64 = 0.01
+    centre_n_floor::Int = 500
+    centre_shrink::Float64 = 0.025
+    lagr_n_min::Int = 100
+    profile_nbins::Int = 12
+    profile_n_min_sigma::Int = 50
+    profile_n_min_beta::Int = 300
+    profile_n_min_density::Int = 100
+    density_neighbours::Int = 6
+    msr_n_tracer::Int = 50
+    msr_scan::Vector{Int} = [10, 20, 50, 100, 200]
+    msr_n_random::Int = 200
+    msr_n_random_small::Int = 1000
+    msr_n_small::Int = 20
+    msr_seed::Int = 0
+    msr_threshold::Float64 = 2.0
+    rotation_n_min::Int = 1000
+    rotation_nbins_max::Int = 16
+    rotation_n_null::Int = 20
+    shape_n_min_shell::Int = 3000
+    shape_n_min_enclosed::Int = 7000
+    pair_k::Int = 10
+    pair_tidal_factor::Float64 = 1 / 3
+    relaxation_gamma::Vector{Float64} = [0.02, 0.11]
 end
 
 """

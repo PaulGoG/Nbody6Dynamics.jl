@@ -177,6 +177,15 @@ tidal_mode
 engine_energy_valid
 ```
 
+## Structure Estimators
+
+```@docs
+shrinking_sphere_centre
+lagrangian_grid
+relaxation_times
+local_relaxation_time
+```
+
 ## Energy-Jump Localisation and Mass Budget
 
 ```@docs
@@ -207,11 +216,32 @@ coalescence_time
 core_radius
 rotation_analysis
 mass_segregation
+core_collapse_markers
 plot_remnant_rotation
 plot_rotation_profile
 plot_remnant_structure
 plot_mass_segregation_evolution
 remnant_figures
+```
+
+## Shape, Segregation and Mixing
+
+```@docs
+ShapeShell
+shape_tensor
+projected_ellipticity
+aplus
+two_sample_d
+mixing
+```
+
+## Snapshot Binaries
+
+```@docs
+SnapshotPair
+local_density
+snapshot_pairs
+reconcile_pairs
 ```
 
 ## Binary Population
@@ -301,6 +331,15 @@ cuda_gencode_flags
 resolve_cuda_arch
 nvcc_release
 nvcc_supported_archs
+```
+
+## Static Test Models
+
+```@docs
+sample_plummer_om
+lynden_bell_flip!
+stretch_positions!
+rank_masses_by_energy!
 ```
 
 ## Merger Initial Conditions
@@ -404,7 +443,6 @@ Nbody6Dynamics._kinetic_and_potential
 Nbody6Dynamics._central_density_contrast
 Nbody6Dynamics._sweep_point_outcome
 Nbody6Dynamics._run_series
-Nbody6Dynamics._count_spatial_clusters
 Nbody6Dynamics._control_time_factor
 Nbody6Dynamics._local_density
 ```

@@ -4,140 +4,11 @@
 #
 # The "remnant" is the self-consistent bound set of the whole system at a
 # snapshot (see `bound_set`); before coalescence it is simply the bound
-# part of the whole configuration. Cluster centre-of-mass trajectories and
-# the union-find count of spatially distinct clusters live here for the
-# merger figures; the coalescence time is derived from per-cluster bound sets
-# and density centres instead.
+# part of the whole configuration. The coalescence time follows from the
+# density-centre separations of the surviving per-cluster memberships of the
+# global bound set.
 
 using LinearAlgebra: dot, ×
-
-"""
-    _cluster_com_trajectories(snaps, cluster_ranges)
-        -> (coms, present, r_rms)
-
-Compute the mass-weighted centre of mass of each initial cluster at every
-snapshot. `coms` is `3 × n_clusters × n_times`. `present[i, k]` is false when
-fewer than 3 members of cluster `i` remain in snapshot `k`. `r_rms[i, k]` is
-the mass-weighted RMS radius of cluster `i`'s members from their COM (a
-proxy for cluster extent); `NaN` when `present` is false.
-"""
-function _cluster_com_trajectories(
-    snaps::Vector{Snapshot},
-    cluster_ranges::AbstractVector{<:AbstractVector{Int}},
-)
-    n_cl = length(cluster_ranges)
-    n_t = length(snaps)
-    coms = fill(NaN, 3, n_cl, n_t)
-    r_rms = fill(NaN, n_cl, n_t)
-    present = falses(n_cl, n_t)
-
-    for (k, snap) in enumerate(snaps)
-        for (i, rng) in enumerate(cluster_ranges)
-            mask = falses(length(snap.name))
-            mask[_member_indices(snap, rng)] .= true
-            n_mem = count(mask)
-            n_mem < 3 && continue
-            m = Float64.(snap.mass[mask])
-            M = sum(m)
-            M > 0 || continue
-            cx = sum(m .* Float64.(snap.pos[1, mask])) / M
-            cy = sum(m .* Float64.(snap.pos[2, mask])) / M
-            cz = sum(m .* Float64.(snap.pos[3, mask])) / M
-            coms[1, i, k] = cx
-            coms[2, i, k] = cy
-            coms[3, i, k] = cz
-
-            # Mass-weighted RMS radius: sqrt(Σ m_k r_k² / Σ m_k)
-            x = Float64.(@view snap.pos[1, mask])
-            y = Float64.(@view snap.pos[2, mask])
-            z = Float64.(@view snap.pos[3, mask])
-            ssum = 0.0
-            @inbounds for j in eachindex(m)
-                dx = x[j] - cx
-                dy = y[j] - cy
-                dz = z[j] - cz
-                ssum += m[j] * (dx*dx + dy*dy + dz*dz)
-            end
-            r_rms[i, k] = sqrt(ssum / M)
-            present[i, k] = true
-        end
-    end
-    return coms, present, r_rms
-end
-
-"""
-    _count_spatial_clusters(coms, r_rms, present; overlap_factor = 1.0) -> Vector{Int}
-
-At each snapshot, count spatially distinct initial clusters via union-find.
-Two clusters are considered merged when their COMs are closer than
-`overlap_factor × (r_ref_i + r_ref_j)`, where `r_ref` is the *initial* RMS
-radius of each cluster (held fixed throughout). Using the initial radius
-(rather than current) prevents spurious "mergers" caused by infall-driven
-puffing — the criterion then measures true spatial convergence of COMs.
-"""
-function _count_spatial_clusters(
-    coms::Array{Float64,3},
-    r_rms::AbstractMatrix{<:Real},
-    present::AbstractMatrix{Bool};
-    overlap_factor::Real = 1.0,
-)
-    n_cl = size(coms, 2)
-    n_t = size(coms, 3)
-    counts = zeros(Int, n_t)
-
-    # Reference radii: each cluster's RMS radius in its first present snapshot
-    r_ref = fill(NaN, n_cl)
-    for i in 1:n_cl
-        for k in 1:n_t
-            if present[i, k] && !isnan(r_rms[i, k])
-                r_ref[i] = r_rms[i, k]
-                break
-            end
-        end
-    end
-
-    # Simple union-find with path compression
-    parent = zeros(Int, n_cl)
-    function find(p::Vector{Int}, a::Int)
-        while p[a] != a
-            p[a] = p[p[a]]
-            a = p[a]
-        end
-        return a
-    end
-
-    for k in 1:n_t
-        active = findall(@view present[:, k])
-        isempty(active) && (counts[k] = 0; continue)
-
-        for i in 1:n_cl
-            parent[i] = i
-        end
-        for ia in eachindex(active)
-            i = active[ia]
-            isnan(r_ref[i]) && continue
-            for jb in (ia + 1):length(active)
-                j = active[jb]
-                isnan(r_ref[j]) && continue
-                dx = coms[1, i, k] - coms[1, j, k]
-                dy = coms[2, i, k] - coms[2, j, k]
-                dz = coms[3, i, k] - coms[3, j, k]
-                d = sqrt(dx*dx + dy*dy + dz*dz)
-                if d < overlap_factor * (r_ref[i] + r_ref[j])
-                    ri = find(parent, i)
-                    rj = find(parent, j)
-                    ri == rj || (parent[ri] = rj)
-                end
-            end
-        end
-        roots = Set{Int}()
-        for i in active
-            push!(roots, find(parent, i))
-        end
-        counts[k] = length(roots)
-    end
-    return counts
-end
 
 # ---------------------------------------------------------------------------
 # Coalescence
@@ -153,18 +24,23 @@ function _union_root!(parent::Vector{Int}, a::Int)::Int
 end
 
 """
-    coalescence_time(snaps, cluster_ranges; max_passes = 100, min_members = 10)
+    coalescence_time(snaps, cluster_ranges; bound_sets = nothing, max_passes = 100, min_members = 10)
         -> (; index, time_nb, time_myr, n_distinct::Vector{Int},
              separation::Matrix{Float64}, threshold::Matrix{Float64})
 
 First snapshot from which the initial clusters form a single spatial group
 for the rest of the run.
 
-At every snapshot each cluster (tag of `cluster_ranges`) is reduced to its
-bound set ([`bound_set`](@ref) of its present members with `max_passes` and
-`min_members`); a cluster with fewer than `2 × _MIN_MEMBERS` bound stars is
-absent at that snapshot. Its centre is the shrinking-sphere density centre of
-the bound stars and `r_h` their half-mass radius about it. Two present
+At every snapshot each cluster (tag of `cluster_ranges`) is represented by
+its members that belong to the bound set of the whole system
+([`bound_set`](@ref) of the snapshot with `max_passes` and `min_members`, or
+the entries of `bound_sets`, one per snapshot, when the caller has them); a
+cluster with fewer than `2 × _MIN_MEMBERS` bound members is absent at that
+snapshot. Its centre is the shrinking-sphere density centre of those members
+and `r_h` their half-mass radius about it. The members are taken from the
+global bound set, not from a bound set of the tag alone: after the merger the
+stars of the smaller cluster are bound to the remnant, not to each other, and
+a per-tag unbinding would strip them away. Two present
 clusters are merged when their centres are closer than
 `min(r_h,i, r_h,j)`; `n_distinct` counts the connected components of the
 merged-pair graph over the present clusters (union–find). The clusters have
@@ -181,18 +57,22 @@ debris rather than the cluster.
 `index` is `nothing` and the times are `NaN` when the clusters never
 coalesce within the snapshots. `separation` and `threshold` are
 `n_pairs × n_t` in the pair order `(1, 2), (1, 3), …, (2, 3), …`, `NaN`
-where a cluster of the pair is absent. One bound-set evaluation per cluster
-and snapshot.
+where a cluster of the pair is absent. One bound-set evaluation per snapshot
+unless `bound_sets` is given.
 """
 function coalescence_time(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}};
+    bound_sets::Union{Nothing,AbstractVector{BoundSet}} = nothing,
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
 )
     n_cl = length(cluster_ranges)
     n_cl ≥ 2 || throw(ArgumentError("coalescence_time needs at least two clusters"))
     isempty(snaps) && throw(ArgumentError("coalescence_time needs at least one snapshot"))
+    bound_sets === nothing ||
+        length(bound_sets) == length(snaps) ||
+        throw(ArgumentError("coalescence_time: one bound set per snapshot is needed"))
     n_t = length(snaps)
     pairs = [(i, j) for i in 1:(n_cl - 1) for j in (i + 1):n_cl]
     separation = fill(NaN, length(pairs), n_t)
@@ -206,10 +86,13 @@ function coalescence_time(
 
     for (k, snap) in enumerate(snaps)
         fill!(present, false)
+        bound =
+            bound_sets === nothing ? bound_set(snap; max_passes, min_members).stars :
+            bound_sets[k].stars
+        in_bound = falses(nparticles(snap))
+        in_bound[bound] .= true
         for (i, rng) in enumerate(cluster_ranges)
-            idx = _member_indices(snap, rng)
-            length(idx) < 2 * _MIN_MEMBERS && continue
-            sel = bound_set(snap, idx; max_passes, min_members).stars
+            sel = [s for s in _member_indices(snap, rng) if in_bound[s]]
             length(sel) < 2 * _MIN_MEMBERS && continue
             p = Float64.(snap.pos[:, sel])
             m = Float64.(snap.mass[sel])
@@ -350,20 +233,25 @@ function _local_density(
 end
 
 """
-    _snapshot_density(snap, idx; weighting = :mass) -> Vector{Float64}
+    _snapshot_density(snap, idx; weighting = :mass, k = _DENSITY_NEIGHBOURS) -> Vector{Float64}
 
 Local densities of the particles `idx`. Mass densities are the engine's
 values when the snapshot carries a density column with positive entries for
-most of them, otherwise [`_local_density`](@ref) on the subset; number
-densities (`weighting = :number`) are always computed locally, the engine
-column being a mass density.
+most of them, otherwise [`_local_density`](@ref) on the subset with
+neighbour rank `k`; number densities (`weighting = :number`) are always
+computed locally, the engine column being a mass density.
 """
-function _snapshot_density(snap::Snapshot, idx::AbstractVector{Int}; weighting::Symbol = :mass)
+function _snapshot_density(
+    snap::Snapshot,
+    idx::AbstractVector{Int};
+    weighting::Symbol = :mass,
+    k::Int = _DENSITY_NEIGHBOURS,
+)
     if weighting === :mass && length(snap.rho) == nparticles(snap)
         ρ = Float64.(snap.rho[idx])
         count(>(0), ρ) ≥ length(idx) ÷ 2 && return ρ
     end
-    return local_density(Float64.(snap.pos[:, idx]), Float64.(snap.mass[idx]); weighting)
+    return local_density(Float64.(snap.pos[:, idx]), Float64.(snap.mass[idx]); k, weighting)
 end
 
 """
@@ -489,11 +377,13 @@ end
 
 """
     rotation_analysis(pos, vel, mass; n_min = 1000, nbins_max = 16, n_null = 20, seed = 0,
-                      energy = nothing, r_h = NaN)
+                      energy = nothing, r_h = NaN, shrink = 0.025, n_stop = 1000,
+                      stop_fraction = 0.01, n_floor = 500)
         -> (; L, axis, lambda_r, lambda_r_floor, lambda_peebles, lambda_peebles_floor,
              lambda_peebles_floor_analytic, v_peak, r_peak, profile)
 
-Rotation of a bound set about its shrinking-sphere centre.
+Rotation of a bound set about its shrinking-sphere centre (`shrink`,
+`n_stop`, `stop_fraction` and `n_floor` go to `shrinking_sphere_centre`).
 
 `L` is the angular momentum of the whole set about its centre and
 mass-weighted mean velocity. The spin `axis` is the unit vector of the
@@ -503,8 +393,10 @@ outer stars and tidal debris do not tilt it; `r_h` is the half-mass radius
 about the centre unless passed.
 
 The [`RotationProfile`](@ref) uses cylindrical shells of equal membership,
-`max(1, min(nbins_max, ⌊N_eff / n_min⌋))` of them with
-`N_eff = (Σm)² / Σm²`. Each carries the mass-weighted mean azimuthal
+`max(1, min(nbins_max, ⌊N / n_min⌋))` of them; the mass-weighting noise
+of a shell is measured by the sign-flip null rather than assumed through
+`N_eff = (Σm)² / Σm²`, which enters the analytic λ_P floor only. Each
+carries the mass-weighted mean azimuthal
 velocity `v_rot`, the dispersions `sigma` and `sigma_phi`, and the debiased
 amplitude ``\\sqrt{\\bar v_φ^2 − σ_φ^2/n}``, which removes the noise bias of
 a mean of `n` azimuthal velocities. From the shells follow the
@@ -549,6 +441,10 @@ function rotation_analysis(
     seed::Integer = 0,
     energy::Union{Nothing,Real} = nothing,
     r_h::Real = NaN,
+    shrink::Real = 0.025,
+    n_stop::Integer = 1000,
+    stop_fraction::Real = 0.01,
+    n_floor::Integer = 500,
 )
     n = length(mass)
     n ≥ _MIN_MEMBERS ||
@@ -560,7 +456,7 @@ function rotation_analysis(
     n_null ≥ 0 || throw(ArgumentError("n_null must be ≥ 0, got $n_null"))
     isnan(r_h) || r_h > 0 || throw(ArgumentError("r_h must be positive or NaN, got $r_h"))
     M = sum(mass)
-    c = _shrinking_sphere_centre(pos, mass)
+    c = _shrinking_sphere_centre(pos, mass; shrink, n_stop, stop_fraction, n_floor)
     rh = isnan(r_h) ? _lagrangian_radii(pos, mass, c, (0.5,))[1] : Float64(r_h)
     vc = vec(sum(vel .* mass'; dims = 2)) ./ M
     L = zeros(3)
@@ -628,7 +524,7 @@ function rotation_analysis(
 
     # Shells of equal membership in cylindrical radius
     N_eff = M^2 / sum(abs2, mass)
-    nb = max(1, min(nbins_max, floor(Int, N_eff / n_min)))
+    nb = max(1, min(nbins_max, length(mass) ÷ n_min))
     order = sortperm(R)
     edges = round.(Int, range(0, n; length = nb + 1))
     radius = zeros(nb)
@@ -753,8 +649,7 @@ end
 # Olczak, Spurzem & Henning 2011)
 # ---------------------------------------------------------------------------
 
-"""Size of the tracer class and random comparison sets per N_MST above `n_small`."""
-const _MSR_N_MASSIVE = 50
+"""Random comparison sets per N_MST above `n_small`."""
 const _MSR_N_RANDOM = 200
 """Random comparison sets per N_MST up to `n_small`, and that limit."""
 const _MSR_N_RANDOM_SMALL = 1000
@@ -1058,7 +953,7 @@ Diagnostics of the bound remnant of the whole system at every snapshot
 - `coalescence_time`, `coalescence_time_myr`: first snapshot from which all
   initial clusters form one group ([`coalescence_time`](@ref)); `NaN` if never
 - `segregation_time`, `segregation_time_myr`: first snapshot with
-  `Λ_MSR − σ > lambda_threshold`; `NaN` if never
+  `Λ_MSR − σ > msr_threshold`; `NaN` if never
 - `profile`: rotation profile of the last snapshot with enough members
 - `r_core_number`: Casertano–Hut core radius from the number density
 - `rho_core`: maximum local mass density among the bound members
@@ -1068,6 +963,25 @@ Diagnostics of the bound remnant of the whole system at every snapshot
 - `v_peak`, `r_peak`: rotation-curve fit ([`rotation_analysis`](@ref))
 - `tracer_names`: names of the tracer class of the mass segregation, in
   decreasing mass at the first snapshot
+- `n_pairs_snapshot`: pairs of the snapshot pair finder among the bound
+  stars that pass its tidal criterion (`tidal_ok`)
+- `n_hard_pairs`: those of them with hardness `E_b / kT > 1`
+- `hardness_max`: largest hardness among them; `NaN` when there is none
+- `kt`: hard/soft energy scale `kT = 2K / (3n)` of the bound set, `K` its
+  kinetic energy about its mean velocity and `n` its star count
+- `f_max`: largest stellar mass of the bound set over its mean stellar mass
+- `t_first_10kt`, `t_first_10kt_myr`: first snapshot with
+  `hardness_max > 10`; `NaN` if never
+- `t_first_10fmax_kt`, `t_first_10fmax_kt_myr`: first snapshot with
+  `hardness_max > 10 f_max`; `NaN` if never
+- `t_rc_min`, `t_rc_min_myr`: minimum of the smoothed core radius `r_core`
+- `t_rho_max`, `t_rho_max_myr`: maximum of the smoothed core density
+  `rho_core`
+
+The last four pairs of times are the core-collapse markers: the first hard
+binaries (Tanikawa, Hut & Makino 2012, doi:10.1016/j.newast.2011.09.001;
+Fujii & Portegies Zwart 2014) and the structural
+extrema of `core_collapse_markers` (running mean over five snapshots).
 """
 struct RemnantDiagnostics
     time::Vector{Float64}
@@ -1099,48 +1013,72 @@ struct RemnantDiagnostics
     v_peak::Vector{Float64}
     r_peak::Vector{Float64}
     tracer_names::Vector{Int32}
+    n_pairs_snapshot::Vector{Int}
+    n_hard_pairs::Vector{Int}
+    hardness_max::Vector{Float64}
+    kt::Vector{Float64}
+    f_max::Vector{Float64}
+    t_first_10kt::Float64
+    t_first_10kt_myr::Float64
+    t_first_10fmax_kt::Float64
+    t_first_10fmax_kt_myr::Float64
+    t_rc_min::Float64
+    t_rc_min_myr::Float64
+    t_rho_max::Float64
+    t_rho_max_myr::Float64
 end
 
 """Λ_MSR level (minus its error) above which the remnant counts as mass-segregated."""
 const _MSR_THRESHOLD = 2.0
 
 """
-    remnant_diagnostics(snaps, cluster_ranges; n_massive = 50, n_random = 200,
-                        seed = 0, lambda_threshold = 2.0, nbins = 16,
-                        overlap_factor = 1.0, bound_sets = nothing,
-                        max_passes = 100, min_members = 10) -> RemnantDiagnostics
+    remnant_diagnostics(snaps, cluster_ranges; settings = PostprocessConfig(),
+                        bound_sets = nothing, max_passes = 100,
+                        min_members = 10) -> RemnantDiagnostics
 
 Bound remnant of the whole system at every snapshot (the bound set of all
 stars, regularised pairs at their centres of mass, [`bound_set`](@ref) with
 `max_passes` and `min_members`), its core radii from the mass and the number
-density, core density, half-mass radius, rotation and mass segregation, plus
-the coalescence and segregation times. `bound_sets` passes the bound sets
-when they are already known, one per snapshot (the `bound` of
-[`snapshot_integrals`](@ref)); otherwise each costs one O(N²) pair sum.
+density, core density, half-mass radius, rotation, mass segregation and
+snapshot pairs, plus the coalescence, segregation and core-collapse times.
+`bound_sets` passes the bound sets when they are already known, one per
+snapshot (the `bound` of [`snapshot_integrals`](@ref)); otherwise each costs
+one O(N²) pair sum.
 
-The mass segregation follows a fixed tracer class: the names of the
-`n_massive` most massive stars of the first snapshot's bound set, in
-decreasing mass. At every snapshot the tracers still in the bound set enter
-[`mass_segregation`](@ref) in that order, with `n_random` random sets per
-N_MST above 20. `nbins` caps the rotation shells (`nbins_max` of
-[`rotation_analysis`](@ref)). `overlap_factor` has no effect: the
-coalescence criterion of [`coalescence_time`](@ref) has no free factor.
+Every estimator parameter comes from `settings`, a
+[`PostprocessConfig`](@ref). The local densities use the neighbour rank
+`density_neighbours`; the half-mass radius and the rotation are measured
+about the shrinking-sphere centre with the centre keys. The mass segregation
+follows a fixed tracer class: the names of the `msr_n_tracer` most massive
+stars of the first snapshot's bound set, in decreasing mass. At every
+snapshot the tracers still in the bound set enter [`mass_segregation`](@ref)
+in that order, with the N_MST scan `msr_scan`, `msr_n_random` random sets per
+N_MST above `msr_n_small` (`msr_n_random_small` up to it) and the seed
+`msr_seed`; the segregation time is the first snapshot with
+`Λ_MSR − σ > msr_threshold`. [`rotation_analysis`](@ref) takes
+`rotation_n_min`, `rotation_nbins_max`, `rotation_n_null` and `msr_seed`.
+
+The snapshot pair finder (`snapshot_pairs` with `pair_k` and
+`pair_tidal_factor`) runs on the bound stars of every snapshot with the
+energy scale `kT = 2K / (3n)`, `K` the kinetic energy of the bound set about
+its mean velocity and `n` its star count; the hardness series count the
+pairs that pass the tidal criterion. The first snapshots with a pair harder
+than `10 kT` and than `10 f_max kT` (`f_max` the largest over the mean
+stellar mass) and the extrema of the core radius and core density
+(`core_collapse_markers`, `window = 5`) are the core-collapse markers of
+[`RemnantDiagnostics`](@ref). The pair finder costs O(N log N) per snapshot.
 """
 function remnant_diagnostics(
     snaps::Vector{Snapshot},
     cluster_ranges::AbstractVector{<:AbstractVector{Int}};
-    n_massive::Int = _MSR_N_MASSIVE,
-    n_random::Int = _MSR_N_RANDOM,
-    seed::Integer = 0,
-    lambda_threshold::Real = _MSR_THRESHOLD,
-    nbins::Int = _ROTATION_SHELLS,
-    overlap_factor::Real = 1.0,
+    settings::PostprocessConfig = PostprocessConfig(),
     bound_sets::Union{Nothing,AbstractVector{BoundSet}} = nothing,
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
 )::RemnantDiagnostics
     isempty(snaps) && throw(ArgumentError("remnant_diagnostics needs at least one snapshot"))
-    n_massive ≥ 2 || throw(ArgumentError("n_massive must be ≥ 2, got $n_massive"))
+    settings.msr_n_tracer ≥ 2 ||
+        throw(ArgumentError("settings.msr_n_tracer must be ≥ 2, got $(settings.msr_n_tracer)"))
     bound_sets === nothing ||
         length(bound_sets) == length(snaps) ||
         throw(DimensionMismatch("$(length(bound_sets)) bound sets for $(length(snaps)) snapshots"))
@@ -1168,6 +1106,12 @@ function remnant_diagnostics(
     γ_err = fill(NaN, n_t)
     v_pk = fill(NaN, n_t)
     r_pk = fill(NaN, n_t)
+    n_pairs = zeros(Int, n_t)
+    n_hard = zeros(Int, n_t)
+    x_max = fill(NaN, n_t)
+    kt = fill(NaN, n_t)
+    f_max = fill(NaN, n_t)
+    centre_kw = _centre_keywords(settings)
     tracer_names = Int32[]
     profile = RotationProfile(
         Float64[],
@@ -1183,6 +1127,7 @@ function remnant_diagnostics(
     L_orb = _orbital_angular_momentum(snaps[1], cluster_ranges)
     L_norm = sqrt(sum(abs2, L_orb))
     L_hat = L_norm > 0 ? L_orb ./ L_norm : fill(NaN, 3)
+    bsets = Vector{BoundSet}(undef, n_t)
 
     for (k, snap) in enumerate(snaps)
         pos_all = Float64.(snap.pos)
@@ -1190,12 +1135,13 @@ function remnant_diagnostics(
         mass_all = Float64.(snap.mass)
         length(mass_all) < _MIN_MEMBERS && continue
         b = bound_sets === nothing ? bound_set(snap; max_passes, min_members) : bound_sets[k]
+        bsets[k] = b
         sel = b.stars
         n_bound[k] = length(sel)
         fbound[k] = sum(mass_all[sel]) / sum(mass_all)
         if k == 1
             # Tracer class: fixed identities, in decreasing mass at the first snapshot
-            n_tr = min(n_massive, length(sel))
+            n_tr = min(settings.msr_n_tracer, length(sel))
             top = n_tr > 0 ? partialsortperm(mass_all[sel], 1:n_tr; rev = true) : Int[]
             tracer_names = snap.name[sel[top]]
         end
@@ -1204,24 +1150,50 @@ function remnant_diagnostics(
         vel = vel_all[:, sel]
         mass = mass_all[sel]
 
-        if length(sel) > _DENSITY_NEIGHBOURS
-            ρ = _snapshot_density(snap, sel)
+        # Snapshot pairs on the bound stars, hardness against kT = 2K/(3n)
+        n_sel = length(sel)
+        kt[k] = b.kinetic > 0 ? 2 * b.kinetic / (3 * n_sel) : NaN
+        f_max[k] = maximum(mass) / (sum(mass) / n_sel)
+        found = snapshot_pairs(
+            pos,
+            vel,
+            mass;
+            k = settings.pair_k,
+            tidal_factor = settings.pair_tidal_factor,
+            kT = kt[k],
+        )
+        for p in found
+            p.tidal_ok || continue
+            n_pairs[k] += 1
+            p.hardness > 1 && (n_hard[k] += 1)
+            if !isnan(p.hardness) && (isnan(x_max[k]) || p.hardness > x_max[k])
+                x_max[k] = p.hardness
+            end
+        end
+
+        k_nb = settings.density_neighbours
+        if n_sel > k_nb
+            ρ = _snapshot_density(snap, sel; k = k_nb)
             cr = core_radius(pos, ρ)
             r_core[k] = cr.r_core
             ρ_core[k] = maximum(ρ)
-            ρn = _snapshot_density(snap, sel; weighting = :number)
+            ρn = _snapshot_density(snap, sel; weighting = :number, k = k_nb)
             r_core_n[k] = core_radius(pos, ρn).r_core
         end
-        c = _shrinking_sphere_centre(pos, mass)
+        c = _shrinking_sphere_centre(pos, mass; centre_kw...)
         r_half[k] = _lagrangian_radii(pos, mass, c, (0.5,))[1]
 
         rot = rotation_analysis(
             pos,
             vel,
             mass;
-            nbins_max = nbins,
+            n_min = settings.rotation_n_min,
+            nbins_max = settings.rotation_nbins_max,
+            n_null = settings.rotation_n_null,
+            seed = settings.msr_seed,
             energy = b.kinetic + b.potential,
             r_h = r_half[k],
+            centre_kw...,
         )
         λr[k] = rot.lambda_r
         λp[k] = rot.lambda_peebles
@@ -1240,9 +1212,18 @@ function remnant_diagnostics(
             j = get(slot, nm, 0)
             j > 0 && push!(tracer, j)
         end
-        n_scan = maximum((m for m in _MSR_N_MST if 2 ≤ m ≤ length(tracer)); init = 0)
+        n_scan = maximum((m for m in settings.msr_scan if 2 ≤ m ≤ length(tracer)); init = 0)
         if n_scan ≥ 2 && length(sel) > n_scan
-            ms = mass_segregation(pos, mass; tracer, n_random, seed)
+            ms = mass_segregation(
+                pos,
+                mass;
+                tracer,
+                n_mst = Tuple(settings.msr_scan),
+                n_random = settings.msr_n_random,
+                n_random_small = settings.msr_n_random_small,
+                n_small = settings.msr_n_small,
+                seed = settings.msr_seed,
+            )
             λmsr[k] = ms.lambda_msr
             λerr[k] = ms.lambda_err
             seg[k] = ms.r_half_ratio
@@ -1254,11 +1235,17 @@ function remnant_diagnostics(
 
     coal =
         length(cluster_ranges) ≥ 2 ?
-        coalescence_time(snaps, cluster_ranges; max_passes, min_members) :
+        coalescence_time(snaps, cluster_ranges; bound_sets = bsets, max_passes, min_members) :
         (; index = nothing, time_nb = NaN, time_myr = NaN)
-    k_seg = findfirst(k -> isfinite(λmsr[k]) && λmsr[k] - λerr[k] > lambda_threshold, 1:n_t)
+    k_seg = findfirst(k -> isfinite(λmsr[k]) && λmsr[k] - λerr[k] > settings.msr_threshold, 1:n_t)
     t_seg = k_seg === nothing ? NaN : t[k_seg]
     t_seg_myr = k_seg === nothing ? NaN : t_myr[k_seg]
+
+    # Core-collapse markers: first hard pairs, then the structural extrema
+    k_10 = findfirst(k -> x_max[k] > 10, 1:n_t)
+    k_10f = findfirst(k -> x_max[k] > 10 * f_max[k], 1:n_t)
+    cc = core_collapse_markers(t, r_core, ρ_core; window = 5)
+    t_at(i, times) = i === nothing ? NaN : times[i]
 
     return RemnantDiagnostics(
         t,
@@ -1290,6 +1277,19 @@ function remnant_diagnostics(
         v_pk,
         r_pk,
         tracer_names,
+        n_pairs,
+        n_hard,
+        x_max,
+        kt,
+        f_max,
+        t_at(k_10, t),
+        t_at(k_10, t_myr),
+        t_at(k_10f, t),
+        t_at(k_10f, t_myr),
+        cc.t_rc_min,
+        t_at(cc.i_rc_min, t_myr),
+        cc.t_rho_max,
+        t_at(cc.i_rho_max, t_myr),
     )
 end
 
@@ -1297,19 +1297,21 @@ end
     write_remnant_diagnostics(path, diag::RemnantDiagnostics) -> String
 
 Write the time series of `diag` as CSV (one row per snapshot, NB units
-plus `time_myr`) with the coalescence and segregation times in a leading
-comment line. An existing file is backed up, never overwritten.
+plus `time_myr`) with the coalescence, segregation and core-collapse times
+in a leading comment line. An existing file is backed up, never overwritten.
 """
 function write_remnant_diagnostics(path::AbstractString, diag::RemnantDiagnostics)
     _backup_existing(path)
     open(path, "w") do io
         println(
             io,
-            "# coalescence_time_nb=$(diag.coalescence_time) coalescence_time_myr=$(diag.coalescence_time_myr) segregation_time_nb=$(diag.segregation_time) segregation_time_myr=$(diag.segregation_time_myr)",
+            "# coalescence_time_nb=$(diag.coalescence_time) coalescence_time_myr=$(diag.coalescence_time_myr) segregation_time_nb=$(diag.segregation_time) segregation_time_myr=$(diag.segregation_time_myr)" *
+            " t_first_10kt_nb=$(diag.t_first_10kt) t_first_10kt_myr=$(diag.t_first_10kt_myr) t_first_10fmax_kt_nb=$(diag.t_first_10fmax_kt) t_first_10fmax_kt_myr=$(diag.t_first_10fmax_kt_myr)" *
+            " t_rc_min_nb=$(diag.t_rc_min) t_rc_min_myr=$(diag.t_rc_min_myr) t_rho_max_nb=$(diag.t_rho_max) t_rho_max_myr=$(diag.t_rho_max_myr)",
         )
         println(
             io,
-            "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio,r_core_number,rho_core,lambda_r_floor,lambda_peebles_floor,lambda_median,gamma_msr,gamma_msr_err,v_peak,r_peak",
+            "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio,r_core_number,rho_core,lambda_r_floor,lambda_peebles_floor,lambda_median,gamma_msr,gamma_msr_err,v_peak,r_peak,n_pairs_snapshot,n_hard_pairs,hardness_max,kt,f_max",
         )
         for k in eachindex(diag.time)
             cells = [
@@ -1338,6 +1340,11 @@ function write_remnant_diagnostics(path::AbstractString, diag::RemnantDiagnostic
                 diag.gamma_msr_err[k],
                 diag.v_peak[k],
                 diag.r_peak[k],
+                diag.n_pairs_snapshot[k],
+                diag.n_hard_pairs[k],
+                diag.hardness_max[k],
+                diag.kt[k],
+                diag.f_max[k],
             ]
             println(io, join(_csv_cell.(cells), ","))
         end

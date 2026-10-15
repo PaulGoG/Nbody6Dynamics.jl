@@ -32,8 +32,6 @@ using Nbody6Dynamics:
     _MSR_THRESHOLD,
     _axis_short,
     _backup_existing,
-    _cluster_com_trajectories,
-    _count_spatial_clusters,
     _mean,
     _run_series,
     _series_label,
