@@ -124,6 +124,8 @@ include("cluster_structure.jl")
 include("binary_population.jl")
 include("stellar_population.jl")
 include("remnant.jl")
+include("shape_mixing.jl")
+include("pair_finder.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -756,6 +758,11 @@ export ClusterStructure, cluster_structure, bound_fraction, per_cluster_virial, 
 export RadialProfile, radial_profile, cluster_profiles, system_profile, model_density
 export RemnantDiagnostics, RotationProfile, remnant_diagnostics, write_remnant_diagnostics
 export coalescence_time, core_radius, rotation_analysis, mass_segregation
+export shrinking_sphere_centre, lagrangian_grid, relaxation_times, local_relaxation_time
+export core_collapse_markers
+export ShapeShell, shape_tensor, projected_ellipticity, aplus, two_sample_d, mixing
+export SnapshotPair, local_density, snapshot_pairs, reconcile_pairs
+export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
 export sweep_summary, write_sweep_summary, sweep_visualization
 export EnsembleStatistics, ensemble_statistics, sweep_ensembles

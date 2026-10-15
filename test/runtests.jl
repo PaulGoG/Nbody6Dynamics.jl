@@ -95,6 +95,7 @@ end
     include("test_diagnostics.jl")
     include("test_potential.jl")
     include("test_energy_budget.jl")
+    include("test_static_models.jl")
     include("test_sweep_ensemble.jl")
     include("test_plotting.jl")
     include("test_external.jl")

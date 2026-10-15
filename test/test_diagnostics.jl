@@ -168,7 +168,7 @@ end
     rot0 = rotation_analysis(pos, vel, mass)
     @test rot0.lambda_r < 0.15
     @test rot0.lambda_peebles < 0.05
-    @test length(rot0.profile.radius) == 8 && issorted(rot0.profile.radius)
+    @test length(rot0.profile.radius) == 2 && issorted(rot0.profile.radius)   # 2000 members, 1000 per shell
     vrot = copy(vel)
     Ω = 0.5
     for i in 1:N
@@ -180,8 +180,11 @@ end
     @test abs(rot1.axis[3]) > 0.99
     @test rot1.axis[3] > 0                          # L along +z for counter-clockwise motion
     @test all(>(0), rot1.profile.v_rot)              # v_φ > 0 in every shell
-    @test rot1.profile.v_rot_over_sigma[end - 1] > rot1.profile.v_rot_over_sigma[1]   # Ω R grows outward
-    @test rotation_analysis(pos, vrot, mass; nbins = 3).profile.radius |> length == 3
+    @test rot1.profile.v_rot_over_sigma[end] > rot1.profile.v_rot_over_sigma[1]       # Ω R grows outward
+    @test rotation_analysis(pos, vrot, mass; n_min = 100, nbins_max = 3).profile.radius |> length ==
+          3
+    @test all(rot1.profile.v_rot_debiased .> 0) && all(isfinite, rot1.profile.v_rot_floor)
+    @test rot1.lambda_r > 5 * rot1.lambda_r_floor && isfinite(rot1.lambda_peebles_floor)
     @test_throws ArgumentError rotation_analysis(pos[:, 1:5], vrot[:, 1:5], mass[1:5])
 
     # Mass segregation: random masses give Λ ≈ 1; the heaviest stars
@@ -194,10 +197,11 @@ end
     m_seg[sortperm(r_all)] = sort(1 .+ 9 .* rand(rng_r, N); rev = true)
     ms1 = mass_segregation(pos, m_seg; seed = 1)
     @test ms1.lambda_msr > 5
-    @test ms1.r_half_ratio < 0.4
+    @test ms1.r_half_ratio < 0.5                 # the 200-star tracer class of the default scan
     @test mass_segregation(pos, m_seg; seed = 1).lambda_msr == ms1.lambda_msr   # reproducible
     @test_throws ArgumentError mass_segregation(pos[:, 1:20], m_seg[1:20])       # ≤ n_massive
-    @test_throws ArgumentError mass_segregation(pos, m_seg; n_massive = 1)
+    @test_throws ArgumentError mass_segregation(pos, m_seg; n_mst = (1,))
+    @test ms1.n_mst_used == [10, 20, 50, 100, 200] && ms1.gamma_msr > 1 && ms1.lambda_median > 1
     @test Nbody6Dynamics._mst_length(pos, Int[]) == 0.0
     @test Nbody6Dynamics._mst_length([0.0 3.0 3.0; 0.0 0.0 4.0; 0.0 0.0 0.0], [1, 2, 3]) ≈ 7.0   # 3 + 4
 
@@ -238,12 +242,13 @@ end
         )
     end
     s0 = _rsnap(pos_o, vel_o, mass_o, 0.0)
-    # "Merged": the clusters overlap (0.5 apart, radii ≈ 0.35) and keep
-    # their orbital velocities, so the pair's angular momentum survives
-    # with the orbital sense; superposing them exactly would cancel it.
+    # "Merged": the density centres are 0.3 apart, below the half-mass radii
+    # (≈ 0.39), and the clusters keep their orbital velocities, so the pair's
+    # angular momentum survives with the orbital sense; superposing them
+    # exactly would cancel it.
     pos_m = copy(pos_o)
-    pos_m[:, ranges_o[1]] .= p1 .- [0.25, 0.0, 0.0]
-    pos_m[:, ranges_o[2]] .= p2 .+ [0.25, 0.0, 0.0]
+    pos_m[:, ranges_o[1]] .= p1 .- [0.15, 0.0, 0.0]
+    pos_m[:, ranges_o[2]] .= p2 .+ [0.15, 0.0, 0.0]
     s1 = _rsnap(pos_m, vel_o, mass_o, 1.0)
     coal = coalescence_time([s0, s1], ranges_o)
     @test coal.index == 2 && coal.time_nb == 1.0 && coal.time_myr == 3.0
@@ -275,7 +280,7 @@ end
     @test length(lines) == 4
     @test startswith(lines[1], "# coalescence_time_nb=1.0 coalescence_time_myr=3.0")
     @test lines[2] ==
-          "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio"
+          "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio,r_core_number,rho_core,lambda_r_floor,lambda_peebles_floor,lambda_median,gamma_msr,gamma_msr_err,v_peak,r_peak"
     @test startswith(lines[4], "1,3,2,")
 
     vis_r = VisualizationConfig(; format = "png", column = "single", output_dir = mktempdir())
@@ -301,7 +306,16 @@ end
         ),
     )
     @test_throws ErrorException plot_rotation_profile(
-        RotationProfile(Float64[], Float64[], Float64[], Float64[]),
+        RotationProfile(
+            Float64[],
+            Float64[],
+            Float64[],
+            Float64[],
+            Int[],
+            Float64[],
+            Float64[],
+            Float64[],
+        ),
         vis_r,
     )
     rm(vis_r.output_dir; recursive = true, force = true)
@@ -510,9 +524,17 @@ end
     @test prof isa RadialProfile && length(prof.r) == 12 && sum(prof.n) ≥ 0.98 * Np
     @test isapprox(prof.r_h, 1.305 * 0.2; rtol = 0.08)
     ρ_pl = model_density(PlummerProfile(), 1.0, prof.r_h)
-    good = prof.n .≥ 80
-    ratios = prof.rho[good] ./ [ρ_pl(x) for x in prof.r[good]]
+    # Density on the logarithmic shells (narrow in r); the outermost equal-membership
+    # shell spans a decade in radius and its mean density sits below ρ at its median.
+    # Shells merged outward to ≥ 100 members grow wide where the density falls as
+    # r⁻⁵; the comparison with the model is made on the shells narrower than a
+    # factor 2 in radius.
+    narrow = [prof.r_log_edges[k + 1] < 2 * prof.r_log_edges[k] for k in eachindex(prof.r_log)]
+    good = (prof.n_log .≥ 80) .& narrow
+    ratios = prof.rho_log[good] ./ [ρ_pl(x) for x in prof.r_log[good]]
     @test all(0.7 .≤ ratios .≤ 1.3)
+    ratios_k = prof.rho[1:(end - 1)] ./ [ρ_pl(x) for x in prof.r[1:(end - 1)]]
+    @test all(0.7 .≤ ratios_k .≤ 1.3)
     @test all(abs.(prof.beta[prof.n .≥ 150]) .< 0.25)           # isotropic Plummer
     σ_iso = prof.sigma_r[prof.n .≥ 150]
     @test all(0.3 .< σ_iso .< 3.0)
@@ -525,8 +547,9 @@ end
     virialise!(mk, pk, vk)
     profk = radial_profile(pk, vk, mk, zeros(3))
     ρ_k = model_density(KingProfile(W0 = 6.0), 1.0, 0.3)
-    goodk = profk.n .≥ 80
-    ratk = profk.rho[goodk] ./ [ρ_k(x) for x in profk.r[goodk]]
+    narrowk = [profk.r_log_edges[k + 1] < 2 * profk.r_log_edges[k] for k in eachindex(profk.r_log)]
+    goodk = (profk.n_log .≥ 80) .& narrowk
+    ratk = profk.rho_log[goodk] ./ [ρ_k(x) for x in profk.r_log[goodk]]
     @test all(0.65 .≤ ratk .≤ 1.35)
     @test ρ_k(100.0) == 0.0                                       # beyond the tidal radius
     r_grid = exp10.(range(-3, 1; length = 400))
