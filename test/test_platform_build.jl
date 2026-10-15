@@ -344,7 +344,7 @@ end
     @test sort(first_pass.applied) == sort(["escape-summary-format"; tidal_ids]) &&
           isempty(first_pass.skipped)
     energy_amended = read(energy_f, String)
-    @test occursin("\n      ELSE\n", energy_amended) &&
+    @test occursin("\n      ELSE IF (KZ(14).LE.2) THEN\n", energy_amended) &&
           occursin("\n          CALL XTRNLV(1,N)\n", energy_amended) &&
           !occursin("*         CALL XTRNLV", energy_amended) &&
           count(==('\n'), energy_amended) == 7

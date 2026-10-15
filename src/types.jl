@@ -197,6 +197,13 @@ Base.@kwdef struct PostprocessConfig
     pair_k::Int = 10
     pair_tidal_factor::Float64 = 1 / 3
     relaxation_gamma::Vector{Float64} = [0.02, 0.11]
+    angular_momentum::Bool = true
+    mass_class_edges::Vector{Float64} = [0.5, 5.0]
+    mass_class_n_min::Int = 100
+    equipartition::Bool = true
+    equipartition_bin_width::Float64 = 0.1
+    equipartition_n_min::Int = 50
+    merger_tree::Bool = true
 end
 
 """

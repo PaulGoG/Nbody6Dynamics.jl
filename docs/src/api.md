@@ -244,6 +244,36 @@ snapshot_pairs
 reconcile_pairs
 ```
 
+## Angular-Momentum Budget
+
+```@docs
+AngularMomentumBudget
+angular_momentum_budget
+write_angular_momentum
+```
+
+## Equipartition
+
+```@docs
+EquipartitionFit
+equipartition_fit
+EquipartitionRow
+equipartition_series
+write_equipartition
+```
+
+## Merger Tree and Progenitor Budget
+
+```@docs
+MergerEvent
+MergerTree
+merger_tree
+write_merger_tree
+ProgenitorBudgetRow
+progenitor_budget
+write_progenitor_budget
+```
+
 ## Binary Population
 
 ```@docs

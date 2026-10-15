@@ -126,6 +126,9 @@ include("stellar_population.jl")
 include("remnant.jl")
 include("shape_mixing.jl")
 include("pair_finder.jl")
+include("equipartition.jl")
+include("angular_momentum.jl")
+include("merger_tree.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -359,6 +362,43 @@ function postprocess(
                 settings = pp,
                 bound_sets,
                 bound...,
+            )
+            if pp.merger_tree && bound_sets !== nothing
+                @info "Progenitor budget" * (length(ranges) ≥ 2 ? " and merger tree..." : "...")
+                results[:progenitor_budget] =
+                    progenitor_budget(results[:snapshots], ranges, bound_sets; settings = pp)
+                length(ranges) ≥ 2 && (
+                    results[:merger_tree] =
+                        merger_tree(results[:snapshots], ranges; bound_sets, bound...)
+                )
+            end
+        end
+    end
+    # Angular-momentum budget and equipartition: the bound sets of the integrals
+    # with the unit scaling of the stdout capture.
+    if haskey(results, :integrals) && haskey(results, :diagnostics) && haskey(results, :snapshots)
+        bsets = [s.bound for s in results[:integrals]]
+        units = extract_scaling(results[:diagnostics])
+        if pp.angular_momentum
+            @info "Angular-momentum budget and rotation by radius and mass class..."
+            results[:angular_momentum] = angular_momentum_budget(
+                results[:snapshots],
+                bsets,
+                units;
+                events = get(results, :engine_events, EngineEvent[]),
+                class_edges_solar = Tuple(pp.mass_class_edges),
+                settings = pp,
+                n_min_class = pp.mass_class_n_min,
+            )
+        end
+        if pp.equipartition
+            @info "Equipartition mass of the luminous stars within r_h..."
+            results[:equipartition] = equipartition_series(
+                results[:snapshots],
+                bsets,
+                units;
+                sevs = get(results, :stellar_evo, StellarEvolutionSnapshot[]),
+                settings = pp,
             )
         end
     end
@@ -622,6 +662,24 @@ function _finish_pipeline(
     if haskey(results, :energy_budget) && !isempty(products_dir)
         write_energy_budget(joinpath(products_dir, "energy_budget.csv"), results[:energy_budget])
     end
+    if haskey(results, :angular_momentum) && !isempty(products_dir)
+        write_angular_momentum(
+            joinpath(products_dir, "angular_momentum.csv"),
+            results[:angular_momentum],
+        )
+    end
+    if haskey(results, :equipartition) && !isempty(products_dir)
+        write_equipartition(joinpath(products_dir, "equipartition.csv"), results[:equipartition])
+    end
+    if haskey(results, :merger_tree) && !isempty(products_dir)
+        write_merger_tree(joinpath(products_dir, "merger_tree.csv"), results[:merger_tree])
+    end
+    if haskey(results, :progenitor_budget) && !isempty(products_dir)
+        write_progenitor_budget(
+            joinpath(products_dir, "progenitor_budget.csv"),
+            results[:progenitor_budget],
+        )
+    end
 
     # ── Phase 4: Plots ──
     if cfg.visualization.enabled && !isempty(results)
@@ -792,6 +850,11 @@ export shrinking_sphere_centre, lagrangian_grid, relaxation_times, local_relaxat
 export core_collapse_markers
 export ShapeShell, shape_tensor, projected_ellipticity, aplus, two_sample_d, mixing
 export SnapshotPair, local_density, snapshot_pairs, reconcile_pairs
+export EquipartitionFit, EquipartitionRow, equipartition_fit, equipartition_series
+export write_equipartition
+export AngularMomentumBudget, angular_momentum_budget, write_angular_momentum
+export MergerEvent, MergerTree, merger_tree, write_merger_tree
+export ProgenitorBudgetRow, progenitor_budget, write_progenitor_budget
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
 export sweep_summary, write_sweep_summary, sweep_visualization

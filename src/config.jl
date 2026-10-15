@@ -519,6 +519,22 @@ function _validate_estimators(pp::PostprocessConfig)
         "postprocess.relaxation_gamma",
         "entries must be > 0; got $(pp.relaxation_gamma)",
     )
+    isempty(pp.mass_class_edges) &&
+        _config_error("postprocess.mass_class_edges", "must be nonempty")
+    (all(>(0), pp.mass_class_edges) && all(diff(pp.mass_class_edges) .> 0)) || _config_error(
+        "postprocess.mass_class_edges",
+        "entries must be > 0 and strictly increasing; got $(pp.mass_class_edges)",
+    )
+    pp.mass_class_n_min ≥ 2 ||
+        _config_error("postprocess.mass_class_n_min", "must be ≥ 2; got $(pp.mass_class_n_min)")
+    pp.equipartition_bin_width > 0 || _config_error(
+        "postprocess.equipartition_bin_width",
+        "must be > 0; got $(pp.equipartition_bin_width)",
+    )
+    pp.equipartition_n_min ≥ 2 || _config_error(
+        "postprocess.equipartition_n_min",
+        "must be ≥ 2; got $(pp.equipartition_n_min)",
+    )
     return nothing
 end
 

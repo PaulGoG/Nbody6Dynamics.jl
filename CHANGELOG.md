@@ -8,11 +8,33 @@ entries say so.
 
 ### Added
 
+- Angular-momentum budget (`angular_momentum_budget`, `angular_momentum.csv`):
+  the internal angular momentum of the stars (about their centre of mass,
+  invariant under the engine's centre-of-mass corrections) closed against
+  escapers, newcomers, stellar mass loss and the kicked remnants named by
+  the engine's events, by exact set differences, with the angular-momentum
+  content `l_scale` as the reference of the residual, the rotation of the bound set inside its Lagrangian
+  radii and per initial-mass class about one spin axis (`spin_axis` of
+  `rotation_analysis`), and the elapsed relaxation times `∫dt/t_rh`;
+  `[postprocess]` keys `angular_momentum`, `mass_class_edges`,
+  `mass_class_n_min`.
+- Equipartition mass of Bianchini et al. (2016) (`equipartition_fit`,
+  `equipartition_series`, `equipartition.csv`); keys `equipartition`,
+  `equipartition_bin_width`, `equipartition_n_min`.
+- Merger tree and per-progenitor budget for multi-cluster runs
+  (`merger_tree`, `progenitor_budget`, `merger_tree.csv`,
+  `progenitor_budget.csv`): persistent pairwise joins with union–find, the
+  exact mass split of every progenitor into present, removed and shed mass,
+  and the mixing of its bound members in the product; `coalescence_time`
+  returns the pair list and the presence matrix; key `merger_tree`.
 - Engine source amendments `tidal-energy-total` and `tidal-energy-total-mpi`:
-  the whole-system call of `xtrnlv.F` is restored in the energy evaluation,
-  so that under a linearised tide (`KZ(14) = 1, 2`) the potential energy of
+  the whole-system call of `xtrnlv.F` is restored in the energy evaluation
+  for a linearised tide (`KZ(14) = 1, 2`), so that the potential energy of
   the field enters `ETIDE`, the engine's total and its energy check, and the
-  external virial term enters `Q`, as in the original NBODY6.
+  external virial term enters `Q`, as in the original NBODY6; the
+  post-processing then treats the engine's `DE` of such a run as an error
+  measure (`engine_energy_valid(mode; tidal_energy_amended)`, from the
+  build record copied into the run).
 - `scripts/calibrate_estimators.jl`: bias and variance of every estimator
   versus N on the static models, seeded with `StableRNGs`, written as the
   versioned table `assets/calibration/estimators.csv` with its sidecar

@@ -18,11 +18,11 @@ search = '''
 *         CALL XTRNLV(1,N)
 '''
 replace = '''
-      ELSE
+      ELSE IF (KZ(14).LE.2) THEN
 *       Employ general expression sum {m*r*F} for virial energy.
           CALL XTRNLV(1,N)
 '''
-description = "energy evaluation: the whole-system call of XTRNLV is restored for an external field, so that the potential energy of a linearised tide (KZ(14) = 1, 2) enters ETIDE, the total and the energy check, and the external virial term enters Q; under KZ(14) = 3, 5 the call returns before touching the accumulated ETIDE"
+description = "energy evaluation: the whole-system call of XTRNLV is restored for a linearised external field (KZ(14) = 1, 2), so that its potential energy enters ETIDE, the total and the energy check, and the external virial term enters Q; the orbit modes (KZ(14) = 3, 5) keep the accumulated ETIDE and the original code path"
 
 [[amendment]]
 id = "tidal-energy-total-mpi"
@@ -33,7 +33,7 @@ search = '''
 *         CALL XTRNLV(1,N)
 '''
 replace = '''
-      ELSE
+      ELSE IF (KZ(14).LE.2) THEN
 *       Employ general expression sum {m*r*F} for virial energy.
           CALL XTRNLV(1,N)
 '''

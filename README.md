@@ -36,6 +36,7 @@ Nbody6Dynamics/
 ├── test/             # Unit and physics-validation suite
 ├── bench/            # Benchmarks and scaling scripts
 ├── docs/             # Documenter.jl site sources
+├── assets/           # Shipped tables: the estimator calibration (assets/calibration/)
 ├── deps/cuda/        # NVIDIA samples headers used by the CUDA build
 ├── deps/engine/      # Corrections applied to the engine source before the build
 ├── backend/          # (gitignored) engine checkout and build
@@ -104,6 +105,7 @@ One invocation each; details in the sections below.
 | Generate a single cluster or a merger and run it | `julia scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (the showcase cases; a single-cluster case: `[merger] config_file = "input_files/clusters/imbh_runaway.toml"`) |
 | Run a parameter sweep | `julia scripts/run_sweep.jl input_files/sweeps/sweep_demo.toml [--dry-run]` |
 | Run the verification suite | `julia scripts/run_verif_suite.jl` |
+| Regenerate the estimator calibration table | `julia -t 6 scripts/calibrate_estimators.jl` (`--quick` for a schema check; writes `assets/calibration/`) |
 | Execute the test suite | `julia -e 'include("activate.jl"); Pkg.test()'` |
 | Run the benchmarks | `julia bench/benchmarks.jl` |
 | Validate a CUDA host | `julia scripts/run_gpu_validation.jl` (`--dry-run`, `--stages=`, `--stop-on-failure`; results under `runs/gpu_validation_<host>_<timestamp>/`) |
@@ -162,6 +164,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | Snapshot integrals and bound sets | Working | Exact Newtonian potential in Float64 (one KernelAbstractions kernel on the CPU threads); regularised pairs as centres of mass; iterative energetic unbinding with an explicit convergence status; per snapshot the mass, centre of mass, momenta, angular momentum, kinetic and potential energy of the reduced system (the engine's `EKIN` and `POT`), the pairs' internal energy and the bound set; the Jacobi integral under a linearised tide (`e_jacobi`); `snapshot_integrals.csv` per run |
 | Energy-jump localisation and mass budget | Working | The stamped event lines of the engine log as records with their adjustment interval; per interval the engine's `DE` with the increments of its correction channels and the event counts, flagged by a floor and a robust scale (`energy_intervals.csv`, `engine_events.csv`); per snapshot the mass against the escapers, the stellar-evolution and the collision losses (`mass_budget.csv`) and the energy against the removed escapers and the engine's corrections (`energy_budget.csv`); the Jacobi integral of a linearised tide, under which the engine's `DE` is a drift |
 | Remnant diagnostics | Working | Bound remnant of the whole system per snapshot: both Casertano–Hut core radii, from the mass density (engine densities or sixth-neighbour estimate on a k-d tree) and from the number density, core density, half-mass radius, rotation (λ_R, Peebles λ_P, spin alignment with the orbital angular momentum, v_rot/σ profile, floors from a sign-flip null, Bianchini rotation-curve fit), mass segregation of a fixed-identity tracer class with Λ_MSR (Allison et al. 2009), Λ̃_MSR and Γ_MSR over a scan of tree sizes and the segregation time, union-find coalescence time from per-tag density centres and half-mass radii with persistence, snapshot binary census (pairs, hard pairs, largest hardness), the core-collapse marker set; `remnant_diagnostics.csv` and four figures per merger run |
+| Angular momentum, equipartition, merger tree | Working | Angular-momentum budget of the stars against escapers, newcomers and stellar mass loss, rotation of the bound set inside its Lagrangian radii and per initial-mass class with sign-flip floors, elapsed relaxation times (`angular_momentum.csv`); Bianchini equipartition mass of the luminous stars within r_h (`equipartition.csv`); merger tree with persistent joins and the per-progenitor mass budget with the mixing of every progenitor in the product (`merger_tree.csv`, `progenitor_budget.csv`) |
 | Shape, segregation and mixing | Working | Intrinsic axis ratios from the iterative unweighted shape tensor in ellipsoidal shells (Zemp et al. 2011), projected ellipticities in three projections, the A⁺ concentration index with a jackknife error, the two-sample Kolmogorov–Smirnov distance with its null floor, and the mixing of two tagged populations in radius, energy and angular momentum |
 | Stellar population | Working | `STELLAR_CLASSES` (engine grouping of K* = −1…15), `hr_population` (single stars and members of KS pairs together), `stellar_census` per epoch and class, written as `stellar_census.csv`; HR figures with a run-level legend and a census strip |
 | Parameter sweeps | Working | Sweep TOML → Cartesian grid over dotted merger-TOML keys × seeds; one directory per point with derived configs validated before launch; points run as concurrent worker processes (`omp_threads` per job from the cost model; on a GPU node `devices` and `engines_per_device` assign a device per point and admit k engines per device); `sweep_index.toml` kept current, `sweep_summary.csv` with final N, pairs, energy error and virial ratio; comparison figures on common axes coloured by one grid axis; seeded ensembles (a sweep without axes, or the seeds of every grid point) summarised by median and central 68/95 % bands on a common time grid; `controls = true` adds the isolated single-cluster equivalent of every point and a paired merger-versus-control figure |
@@ -248,7 +251,8 @@ Nbody6Dynamics/
 ├── activate.jl                      # Activates and instantiates the package environment
 ├── config.toml                      # Main pipeline configuration (edit this)
 ├── deps/cuda/                       # helper_cuda.h, helper_string.h from NVIDIA cuda-samples v13.0 (CUDA 13 build of the engine)
-├── deps/engine/amendments.toml      # Source corrections applied to the engine tree before configure (escaper summary format)
+├── assets/calibration/              # estimators.csv (bias, scatter, errors of every estimator versus N on the static models) and estimators.toml (version, grid, seeds)
+├── deps/engine/amendments.toml      # Source corrections applied to the engine tree before configure (escaper summary format, tidal energy in the total under a linearised tide)
 ├── deps/activation.jl               # Shared by the activate.jl scripts: resolves a manifest left stale by a dependency change
 ├── src/
 │   ├── Nbody6Dynamics.jl               # Module root; run_pipeline orchestrator; exports
@@ -274,6 +278,9 @@ Nbody6Dynamics/
 │   ├── remnant.jl                   # Remnant diagnostics: coalescence, Casertano–Hut core radius, rotation, mass segregation
 │   ├── shape_mixing.jl              # Shape tensor, projected ellipticity, A⁺ index, two-sample D, mixing of two populations
 │   ├── pair_finder.jl               # k-d tree local density, snapshot binary finder, reconciliation with the KS pairs
+│   ├── equipartition.jl             # Bianchini equipartition-mass fit and its per-snapshot series; equipartition.csv
+│   ├── angular_momentum.jl          # Angular-momentum budget, rotation by radius and mass class, elapsed relaxation times; angular_momentum.csv
+│   ├── merger_tree.jl               # Merger tree from the density-centre separations, per-progenitor mass budget and mixing; merger_tree.csv, progenitor_budget.csv
 │   ├── sweep.jl                     # Parameter sweeps: grid × seeds, concurrent worker processes, index and summary
 │   ├── ensemble.jl                  # Seeded ensembles: series extractors, common-grid percentiles (median, 68/95 %)
 │   ├── io/
@@ -324,6 +331,7 @@ Nbody6Dynamics/
 │   ├── run_cluster_segment.jl       # Job entry: cluster_segment on a run directory (called by the generated job script)
 │   ├── run_sweep.jl                 # CLI wrapper: sweep TOML → run_sweep → comparison figures
 │   ├── run_verif_suite.jl           # Three-target verification suite
+│   ├── calibrate_estimators.jl      # Bias and variance of every estimator on the static models versus N → assets/calibration/
 │   ├── run_gpu_validation.jl        # CLI wrapper: logged validation stages of a CUDA host
 │   ├── activate.jl                  # Activates the script environment (package + CairoMakie)
 │   └── Project.toml                 # Script environment: the package and its figure backend

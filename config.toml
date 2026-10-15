@@ -86,6 +86,13 @@ shape_n_min_enclosed = 7000         # ≥ 1; particles required inside a shape-t
 pair_k               = 10           # ≥ 1; nearest neighbours searched by the snapshot pair finder
 pair_tidal_factor    = 0.3333333333333333   # > 0; apocentre limit of a pair in units of the nearest third-body distance
 relaxation_gamma     = [0.02, 0.11]             # > 0 each; Coulomb-logarithm arguments reported for t_rh
+angular_momentum     = true         # write angular_momentum.csv (budget, rotation by radius and mass class, elapsed relaxation times)
+mass_class_edges     = [0.5, 5.0]   # M☉; > 0, increasing; edges of the initial-mass classes
+mass_class_n_min     = 100          # ≥ 2; bound members a class or a radial subset needs for its rotation measure
+equipartition        = true         # write equipartition.csv (Bianchini m_eq of the luminous stars within r_h)
+equipartition_bin_width = 0.1       # M☉; > 0; mass bin of the dispersion–mass relation
+equipartition_n_min  = 50           # ≥ 2; stars a mass bin needs to enter the fit
+merger_tree          = true         # write merger_tree.csv and progenitor_budget.csv for multi-cluster runs
 
 [visualization]
 enabled    = true
