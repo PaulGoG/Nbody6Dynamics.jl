@@ -4,32 +4,7 @@ Notable changes to Nbody6Dynamics.jl, by version. The package follows
 semantic versioning; before 1.0 a minor version may change the API, and the
 entries say so.
 
-## [Unreleased]
-
-### Changed
-
-- `[postprocess] pair_sum_max_n` defaults to 2 000 000 (was 100 000): the
-  pair sum is threaded and computed once per snapshot. The four 6 × 10⁵-body
-  probe pipelines set 100 000 and keep their diagnostics off.
-- New dependency: KernelAbstractions 0.9.
-- `AdjustRecord` and `DiagnosticsData` gained fields; the previous
-  positional constructors remain. `SnapshotIntegrals` gained
-  `tidal_potential` and `snapshot_integrals.csv` the columns `w_tidal` and
-  `e_jacobi` (a minor-version API change).
-- The launch script owns the stop request. `_launch.sh` stays the parent of
-  the engine: it starts the engine in a subshell that ignores SIGTERM, turns
-  a SIGTERM to itself into the `STOP` file, waits, and exits the way the
-  engine did (its exit status, or the signal re-raised). A scheduler's
-  job-wide SIGTERM therefore stops the engine with a dump; a termination by
-  the package is a stop request followed, 15 s later, by a SIGKILL of the
-  process group. Segment records gain `engine_pid` next to `pid` (the
-  script); `output/engine.pid` holds it while the engine runs. An engine
-  killed at its wall budget is recorded with exit status −9 (was −15); an
-  operator interrupt closes the record as `stopped` with the dump when the
-  engine honoured the request (`stop_requested = "interrupt"`), else
-  `killed`. A SIGTERM sent to the engine process by hand no longer ends it;
-  a SIGKILL of the launch script alone orphans the engine — kill
-  `engine_pid`, or the process group.
+## [0.5.0] — 2026-10-15
 
 ### Added
 
@@ -201,6 +176,29 @@ entries say so.
   preset's value or rule; explicit keys override it.
 
 ### Changed
+
+- `[postprocess] pair_sum_max_n` defaults to 2 000 000 (was 100 000): the
+  pair sum is threaded and computed once per snapshot. The four 6 × 10⁵-body
+  probe pipelines set 100 000 and keep their diagnostics off.
+- New dependency: KernelAbstractions 0.9.
+- `AdjustRecord` and `DiagnosticsData` gained fields; the previous
+  positional constructors remain. `SnapshotIntegrals` gained
+  `tidal_potential` and `snapshot_integrals.csv` the columns `w_tidal` and
+  `e_jacobi` (a minor-version API change).
+- The launch script owns the stop request. `_launch.sh` stays the parent of
+  the engine: it starts the engine in a subshell that ignores SIGTERM, turns
+  a SIGTERM to itself into the `STOP` file, waits, and exits the way the
+  engine did (its exit status, or the signal re-raised). A scheduler's
+  job-wide SIGTERM therefore stops the engine with a dump; a termination by
+  the package is a stop request followed, 15 s later, by a SIGKILL of the
+  process group. Segment records gain `engine_pid` next to `pid` (the
+  script); `output/engine.pid` holds it while the engine runs. An engine
+  killed at its wall budget is recorded with exit status −9 (was −15); an
+  operator interrupt closes the record as `stopped` with the dump when the
+  engine honoured the request (`stop_requested = "interrupt"`), else
+  `killed`. A SIGTERM sent to the engine process by hand no longer ends it;
+  a SIGKILL of the launch script alone orphans the engine — kill
+  `engine_pid`, or the process group.
 
 - The defaults of `Nbody6ParameterSpec` for `etai`, `etar` and `etau` are
   `0.0` (resolved from the preset at generation time; the engine preset
