@@ -1,0 +1,73 @@
+version = 1
+seed = "StableRNG(100_000_000 i_model + 100 N + replica)"
+wall_seconds = 1094.3
+threads = 6
+quick = false
+host = "Lenovo-Yoga-Pro-7"
+generated = "2026-10-15 19:31:10"
+julia = "1.13.1"
+n_grid = [1000, 3162, 10000, 31623, 100000, 316228, 1000000]
+package = "0.5.0"
+models = ["plummer", "plummer_om15", "plummer_rot", "plummer_kroupa", "plummer_kroupa_s05", "plummer_stretch"]
+
+[timings_seconds]
+"plummer_stretch/N31623" = 2.0076920986175537
+"plummer/N10000" = 4.702920913696289
+"plummer_kroupa_s05/N1000" = 1.4040908813476562
+"plummer_kroupa_s05/N1000000" = 217.6917109489441
+"plummer_om15/N1000" = 0.44261908531188965
+"plummer_rot/N1000000" = 75.33404803276062
+"plummer_kroupa/N316228" = 54.88294005393982
+"plummer/N31623" = 6.387330055236816
+"plummer_stretch/N100000" = 5.7904579639434814
+"plummer_om15/N100000" = 14.655647993087769
+"plummer_rot/N10000" = 3.853170871734619
+"plummer_rot/N316228" = 46.72308897972107
+"plummer_kroupa/N10000" = 6.663448095321655
+"plummer_rot/N1000" = 0.9508428573608398
+"plummer_stretch/N316228" = 7.880374908447266
+"plummer_om15/N3162" = 1.4733750820159912
+"plummer_rot/N100000" = 21.534868955612183
+"plummer_kroupa/N100000" = 26.19297504425049
+"plummer_stretch/N3162" = 0.5544710159301758
+"plummer_kroupa/N1000" = 2.0649209022521973
+"plummer_stretch/N1000000" = 17.06271505355835
+"plummer/N100000" = 14.286710023880005
+"plummer_rot/N3162" = 1.8948769569396973
+"plummer_kroupa/N1000000" = 169.6426260471344
+"plummer_rot/N31623" = 6.6111321449279785
+"plummer_om15/N1000000" = 99.46763205528259
+"plummer_kroupa/N31623" = 12.99818205833435
+"plummer_om15/N316228" = 24.858407974243164
+"plummer_stretch/N10000" = 1.3097999095916748
+"plummer_om15/N10000" = 3.384474992752075
+"plummer_kroupa/N3162" = 3.9773108959198
+"plummer_kroupa_s05/N10000" = 7.066436052322388
+"plummer_kroupa_s05/N100000" = 36.31575393676758
+"plummer_kroupa_s05/N316228" = 64.80625510215759
+"plummer/N316228" = 29.35220694541931
+"plummer/N1000000" = 57.40728306770325
+"plummer_stretch/N1000" = 0.23409104347229004
+"plummer_om15/N31623" = 6.020884990692139
+"plummer/N3162" = 2.093916893005371
+"plummer_kroupa_s05/N3162" = 3.6176669597625732
+"plummer/N1000" = 18.017194986343384
+"plummer_kroupa_s05/N31623" = 12.270518064498901
+
+[columns]
+mean = "mean of the estimate over the replicas"
+reported_error = "mean of the estimator's own error estimate"
+truth = "known answer of the static model; NaN without one"
+predicted_scatter = "mean of the analytic noise prediction"
+scatter = "standard deviation over the replicas"
+bias_err = "scatter / √n_rep"
+bias = "mean − truth"
+
+[replicas]
+31623 = 16
+316228 = 6
+10000 = 32
+100000 = 12
+1000000 = 4
+1000 = 64
+3162 = 48

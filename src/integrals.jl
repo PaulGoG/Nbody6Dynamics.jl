@@ -264,14 +264,19 @@ function tidal_mode(diag::DiagnosticsData)::Symbol
 end
 
 """
-    engine_energy_valid(mode::Symbol) -> Bool
+    engine_energy_valid(mode::Symbol; tidal_energy_amended = false) -> Bool
 
 Whether the engine's ADJUST `DE` measures an integration error under the
-tidal mode of [`tidal_mode`](@ref): true for `:none` and `:orbit`.
+tidal mode of [`tidal_mode`](@ref): true for `:none` and `:orbit`, and for
+`:linearised` when the engine was built with the `tidal-energy-total`
+source amendment (`tidal_energy_amended`, read from the `source_amendments`
+of the build record), which restores the tidal potential energy in the
+engine's total; false for `:linearised` otherwise and for `:external`.
 """
-function engine_energy_valid(mode::Symbol)::Bool
+function engine_energy_valid(mode::Symbol; tidal_energy_amended::Bool = false)::Bool
     (mode === :none || mode === :orbit) && return true
-    (mode === :linearised || mode === :external) && return false
+    mode === :linearised && return tidal_energy_amended
+    mode === :external && return false
     throw(
         ArgumentError(
             "tidal mode must be one of :none, :linearised, :orbit, :external, got :$mode",

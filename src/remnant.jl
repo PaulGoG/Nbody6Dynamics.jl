@@ -26,7 +26,8 @@ end
 """
     coalescence_time(snaps, cluster_ranges; bound_sets = nothing, max_passes = 100, min_members = 10)
         -> (; index, time_nb, time_myr, n_distinct::Vector{Int},
-             separation::Matrix{Float64}, threshold::Matrix{Float64})
+             separation::Matrix{Float64}, threshold::Matrix{Float64},
+             pairs::Vector{Tuple{Int,Int}}, present::BitMatrix)
 
 First snapshot from which the initial clusters form a single spatial group
 for the rest of the run.
@@ -79,6 +80,7 @@ function coalescence_time(
     threshold = fill(NaN, length(pairs), n_t)
     n_distinct = zeros(Int, n_t)
     n_present = zeros(Int, n_t)
+    present_all = falses(n_cl, n_t)
     centres = zeros(3, n_cl)
     r_h = fill(NaN, n_cl)
     present = falses(n_cl)
@@ -120,6 +122,7 @@ function coalescence_time(
             end
         end
         n_present[k] = count(present)
+        present_all[:, k] .= present
         n_distinct[k] = count(i -> present[i] && _union_root!(parent, i) == i, 1:n_cl)
     end
 
@@ -130,7 +133,16 @@ function coalescence_time(
         n_present[k] ≥ 2 && (index = k)
     end
     if index === nothing
-        return (; index = nothing, time_nb = NaN, time_myr = NaN, n_distinct, separation, threshold)
+        return (;
+            index = nothing,
+            time_nb = NaN,
+            time_myr = NaN,
+            n_distinct,
+            separation,
+            threshold,
+            pairs,
+            present = present_all,
+        )
     end
     h = snaps[index].header
     return (;
@@ -140,6 +152,8 @@ function coalescence_time(
         n_distinct,
         separation,
         threshold,
+        pairs,
+        present = present_all,
     )
 end
 
@@ -426,6 +440,10 @@ of Bianchini et al. (2018, doi:10.1093/mnras/sty2225) to the shells within
 across the shell radii, `V_pk` the linear least-squares amplitude; `NaN`
 with fewer than two shells.
 
+`spin_axis` fixes the axis instead of deriving it from the particles within
+`2 r_h`, so that subsets (a radial range, a mass class) are measured about
+the axis of the whole set.
+
 `energy` passes `E` when it is known, as for a [`BoundSet`](@ref)
 (`kinetic + potential`, regularised pairs at their centres of mass);
 otherwise it is the star-level `T + W` of the given particles, which
@@ -445,10 +463,15 @@ function rotation_analysis(
     n_stop::Integer = 1000,
     stop_fraction::Real = 0.01,
     n_floor::Integer = 500,
+    spin_axis::Union{Nothing,AbstractVector{<:Real}} = nothing,
 )
     n = length(mass)
     n ≥ _MIN_MEMBERS ||
         throw(ArgumentError("rotation_analysis needs at least $(_MIN_MEMBERS) particles, got $n"))
+    if spin_axis !== nothing
+        length(spin_axis) == 3 && all(isfinite, spin_axis) && sqrt(sum(abs2, spin_axis)) > 0 ||
+            throw(ArgumentError("spin_axis must be a finite non-zero 3-vector"))
+    end
     size(pos, 2) == n && size(vel, 2) == n ||
         throw(DimensionMismatch("pos, vel and mass disagree in length"))
     n_min ≥ 2 || throw(ArgumentError("n_min must be ≥ 2, got $n_min"))
@@ -494,7 +517,11 @@ function rotation_analysis(
         end
     end
     L_in_norm = sqrt(sum(abs2, L_in))
-    axis = L_in_norm > 0 ? L_in ./ L_in_norm : [0.0, 0.0, 1.0]
+    axis = if spin_axis !== nothing
+        collect(Float64, spin_axis) ./ sqrt(sum(abs2, spin_axis))
+    else
+        L_in_norm > 0 ? L_in ./ L_in_norm : [0.0, 0.0, 1.0]
+    end
     a1, a2, a3 = axis[1], axis[2], axis[3]
 
     # Cylindrical radius and azimuthal velocity of every particle, and the

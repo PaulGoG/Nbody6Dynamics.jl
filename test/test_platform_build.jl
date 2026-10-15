@@ -328,8 +328,26 @@ end
         "     & I10,I8,I6,' M* ',1P,E13.5,' total E, RCM, RESC, <m*>, NCRIT1 =',\n" *
         "     &    4E13.5,I10,' JLIST: ',1000I10)\n"
     write(escape_f, escape_lines)
+    energy_lines =
+        "*       Note: EPL holds accumulated tidal energy if KZ(14) = 3.\n" *
+        "          EPL = 0.0D0\n" *
+        "*     ELSE\n" *
+        "*       Employ general expression sum {m*r*F} for virial energy.\n" *
+        "*         CALL XTRNLV(1,N)\n" *
+        "*       Form tidal energy with Plummer potential (note EPL use for #14=3).\n" *
+        "      END IF\n"
+    energy_f = joinpath(tree, "src", "Main", "energy.F")
+    write(energy_f, energy_lines)
+    write(joinpath(tree, "src", "Main", "energy_mpi.F"), energy_lines)
+    tidal_ids = ["tidal-energy-total", "tidal-energy-total-mpi"]
     first_pass = Nbody6Dynamics._apply_engine_amendments(tree)
-    @test "escape-summary-format" in first_pass.applied && isempty(first_pass.skipped)
+    @test sort(first_pass.applied) == sort(["escape-summary-format"; tidal_ids]) &&
+          isempty(first_pass.skipped)
+    energy_amended = read(energy_f, String)
+    @test occursin("\n      ELSE\n", energy_amended) &&
+          occursin("\n          CALL XTRNLV(1,N)\n", energy_amended) &&
+          !occursin("*         CALL XTRNLV", energy_amended) &&
+          count(==('\n'), energy_amended) == 7
     amended = read(escape_f, String)
     @test occursin("' JLIST: ',1000(I10))", amended) && !occursin("1000I10)", amended)
     @test count(==('\n'), amended) == 3 && !isfile(escape_f * ".tmp")
@@ -341,7 +359,7 @@ end
         @test_logs (:warn, r"escape-summary-format skipped") Nbody6Dynamics._apply_engine_amendments(
             tree,
         )
-    @test ambiguous.skipped == ["escape-summary-format"] && isempty(ambiguous.applied)
+    @test ambiguous.skipped == ["escape-summary-format"] && sort(ambiguous.applied) == tidal_ids
     @test read(escape_f, String) == escape_lines * escape_lines
     rm(escape_f)
     missing_file =

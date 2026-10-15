@@ -8,3 +8,33 @@ file = "src/Main/escape.F"
 search = "    4E13.5,I10,' JLIST: ',1000I10)"
 replace = "    4E13.5,I10,' JLIST: ',1000(I10))"
 description = "escaper summary: name list in a repeatable format group, so a step with more than 1000 escapers no longer ends the run with a format error"
+
+[[amendment]]
+id = "tidal-energy-total"
+file = "src/Main/energy.F"
+search = '''
+*     ELSE
+*       Employ general expression sum {m*r*F} for virial energy.
+*         CALL XTRNLV(1,N)
+'''
+replace = '''
+      ELSE
+*       Employ general expression sum {m*r*F} for virial energy.
+          CALL XTRNLV(1,N)
+'''
+description = "energy evaluation: the whole-system call of XTRNLV is restored for an external field, so that the potential energy of a linearised tide (KZ(14) = 1, 2) enters ETIDE, the total and the energy check, and the external virial term enters Q; under KZ(14) = 3, 5 the call returns before touching the accumulated ETIDE"
+
+[[amendment]]
+id = "tidal-energy-total-mpi"
+file = "src/Main/energy_mpi.F"
+search = '''
+*     ELSE
+*       Employ general expression sum {m*r*F} for virial energy.
+*         CALL XTRNLV(1,N)
+'''
+replace = '''
+      ELSE
+*       Employ general expression sum {m*r*F} for virial energy.
+          CALL XTRNLV(1,N)
+'''
+description = "the same restoration in the MPI variant of the energy evaluation"

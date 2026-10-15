@@ -83,11 +83,15 @@ end
 """Known answers and which estimators apply, per model."""
 const MODEL_TRUTH = Dict(
     "plummer" => (; q = 1.0, s = 1.0, beta = r -> 0.0, isotropic = true, segregation = NaN),
-    "plummer_om15" => (; q = 1.0, s = 1.0, beta = om_beta, isotropic = false, segregation = NaN),
+    "plummer_om15" =>
+        (; q = 1.0, s = 1.0, beta = om_beta, isotropic = false, segregation = NaN),
     "plummer_rot" => (; q = 1.0, s = 1.0, beta = r -> 0.0, isotropic = true, segregation = NaN),
-    "plummer_kroupa" => (; q = 1.0, s = 1.0, beta = r -> 0.0, isotropic = true, segregation = 1.0),
-    "plummer_kroupa_s05" => (; q = 1.0, s = 1.0, beta = r -> 0.0, isotropic = true, segregation = NaN),
-    "plummer_stretch" => (; q = 0.8, s = 0.6, beta = r -> NaN, isotropic = false, segregation = NaN),
+    "plummer_kroupa" =>
+        (; q = 1.0, s = 1.0, beta = r -> 0.0, isotropic = true, segregation = 1.0),
+    "plummer_kroupa_s05" =>
+        (; q = 1.0, s = 1.0, beta = r -> 0.0, isotropic = true, segregation = NaN),
+    "plummer_stretch" =>
+        (; q = 0.8, s = 0.6, beta = r -> NaN, isotropic = false, segregation = NaN),
 )
 
 """
@@ -108,14 +112,26 @@ function evaluate(model::AbstractString, N::Int, replica::Int)
     # (design note §7.3); the expected |offset| of a 3-D isotropic error is 2√(2/π) σ_axis.
     c = shrinking_sphere_centre(pos, mass)
     chi3 = 2 * sqrt(2 / π)
-    record!("centre", "offset", norm(c.centre), 0.0, chi3 * c.sigma,
-        chi3 * c.sigma / min(1.0, c.radius^2))
+    record!(
+        "centre",
+        "offset",
+        norm(c.centre),
+        0.0,
+        chi3 * c.sigma,
+        chi3 * c.sigma / min(1.0, c.radius^2),
+    )
     record!("centre", "radius", c.radius)
     record!("centre", "n_final", c.n_final)
     if kroupa
         cm = shrinking_sphere_centre(pos, mass; weights = :mass)
-        record!("centre", "offset_mass_weighted", norm(cm.centre), 0.0, chi3 * cm.sigma,
-            chi3 * cm.sigma / min(1.0, cm.radius^2))
+        record!(
+            "centre",
+            "offset_mass_weighted",
+            norm(cm.centre),
+            0.0,
+            chi3 * cm.sigma,
+            chi3 * cm.sigma / min(1.0, cm.radius^2),
+        )
     end
 
     if !stretched
@@ -138,8 +154,14 @@ function evaluate(model::AbstractString, N::Int, replica::Int)
             for f in LAGR_FRACTIONS
                 i = findfirst(x -> isapprox(x, f), g.fractions)
                 (i === nothing || g.masked[i]) && continue
-                record!("lagrangian_grid", "ln_r_$(f)_$(label)", log(g.radii[i]),
-                    log(plummer_lagrangian_radius(f)), g.sigma_log[i], g.sigma_log[i])
+                record!(
+                    "lagrangian_grid",
+                    "ln_r_$(f)_$(label)",
+                    log(g.radii[i]),
+                    log(plummer_lagrangian_radius(f)),
+                    g.sigma_log[i],
+                    g.sigma_log[i],
+                )
             end
         end
 
@@ -147,55 +169,108 @@ function evaluate(model::AbstractString, N::Int, replica::Int)
         p = radial_profile(pos, vel, mass, origin)
         ok = .!isnan.(p.beta)
         if any(ok)
-            record!("radial_profile", "beta_residual",
-                mean(p.beta[ok] .- truth.beta.(p.r[ok])), 0.0, mean(p.beta_err[ok]))
-            record!("radial_profile", "beta_residual_rms",
-                sqrt(mean((p.beta[ok] .- truth.beta.(p.r[ok])) .^ 2)), NaN, mean(p.beta_err[ok]))
+            record!(
+                "radial_profile",
+                "beta_residual",
+                mean(p.beta[ok] .- truth.beta.(p.r[ok])),
+                0.0,
+                mean(p.beta_err[ok]),
+            )
+            record!(
+                "radial_profile",
+                "beta_residual_rms",
+                sqrt(mean((p.beta[ok] .- truth.beta.(p.r[ok])) .^ 2)),
+                NaN,
+                mean(p.beta_err[ok]),
+            )
         end
         oks = .!isnan.(p.sigma_r)
         if truth.isotropic && any(oks)
-            record!("radial_profile", "sigma_r_relative",
-                mean(p.sigma_r[oks] ./ plummer_sigma_r.(p.r[oks]) .- 1), 0.0, mean(p.sigma_err[oks]))
+            record!(
+                "radial_profile",
+                "sigma_r_relative",
+                mean(p.sigma_r[oks] ./ plummer_sigma_r.(p.r[oks]) .- 1),
+                0.0,
+                mean(p.sigma_err[oks]),
+            )
         end
         okd = .!isnan.(p.rho_log) .& (p.rho_log .> 0)
-        any(okd) && record!("radial_profile", "rho_relative",
-            mean(p.rho_log[okd] ./ plummer_density.(p.r_log[okd]) .- 1), 0.0)
+        any(okd) && record!(
+            "radial_profile",
+            "rho_relative",
+            mean(p.rho_log[okd] ./ plummer_density.(p.r_log[okd]) .- 1),
+            0.0,
+        )
         record!("radial_profile", "r_h", p.r_h, R_H_PLUMMER)
         record!("radial_profile", "n_shells", count(ok))
 
         # Relaxation and crossing times from the sample
         t = relaxation_times(pos, vel, mass, origin)
-        record!("relaxation_times", "t_rh_gamma0.02", t.t_rh[1],
-            0.138 * N * R_H_PLUMMER^1.5 / log(0.02 * N))
+        record!(
+            "relaxation_times",
+            "t_rh_gamma0.02",
+            t.t_rh[1],
+            0.138 * N * R_H_PLUMMER^1.5 / log(0.02 * N),
+        )
         record!("relaxation_times", "t_cr", t.t_cr, 2 * R_H_PLUMMER / sqrt(2 * K_PLUMMER))
 
         # Rotation: the Plummer sample is the null (truth 0), the flipped model the signal
-        rot = rotation_analysis(pos, vel, mass; energy = E_PLUMMER, r_h = R_H_PLUMMER, seed = replica)
+        rot =
+            rotation_analysis(pos, vel, mass; energy = E_PLUMMER, r_h = R_H_PLUMMER, seed = replica)
         signal = model == "plummer_rot"
-        record!("rotation", "lambda_r", rot.lambda_r, signal ? NaN : 0.0, rot.lambda_r_floor,
-            rot.lambda_r_floor)
-        record!("rotation", "lambda_peebles", rot.lambda_peebles, signal ? NaN : 0.0,
-            rot.lambda_peebles_floor, rot.lambda_peebles_floor_analytic)
+        record!(
+            "rotation",
+            "lambda_r",
+            rot.lambda_r,
+            signal ? NaN : 0.0,
+            rot.lambda_r_floor,
+            rot.lambda_r_floor,
+        )
+        record!(
+            "rotation",
+            "lambda_peebles",
+            rot.lambda_peebles,
+            signal ? NaN : 0.0,
+            rot.lambda_peebles_floor,
+            rot.lambda_peebles_floor_analytic,
+        )
         record!("rotation", "lambda_peebles_floor_analytic", rot.lambda_peebles_floor_analytic)
         record!("rotation", "v_peak", rot.v_peak, signal ? NaN : 0.0)
         record!("rotation", "r_peak", rot.r_peak)
         record!("rotation", "n_shells", length(rot.profile.radius))
         okr = .!isnan.(rot.profile.v_rot_debiased)
-        any(okr) && record!("rotation", "v_rot_debiased_max",
-            maximum(rot.profile.v_rot_debiased[okr]), signal ? NaN : 0.0,
-            mean(rot.profile.v_rot_floor[okr]))
+        any(okr) && record!(
+            "rotation",
+            "v_rot_debiased_max",
+            maximum(rot.profile.v_rot_debiased[okr]),
+            signal ? NaN : 0.0,
+            mean(rot.profile.v_rot_floor[okr]),
+        )
 
         # Pairs: a Plummer sample has no binaries, so every pair found is spurious
         kT = 2 * K_PLUMMER / (3 * N)
         prs = snapshot_pairs(pos, vel, mass; kT)
         record!("snapshot_pairs", "n_pairs", length(prs), 0.0)
         record!("snapshot_pairs", "n_tidal_ok", count(q -> q.tidal_ok, prs), 0.0)
-        record!("snapshot_pairs", "n_hard_tidal_ok", count(q -> q.tidal_ok && q.hardness > 1, prs), 0.0)
-        record!("snapshot_pairs", "hardness_max",
-            isempty(prs) ? 0.0 : maximum(q -> q.hardness, prs), 0.0)
-        record!("snapshot_pairs", "hardness_max_tidal_ok",
-            any(q -> q.tidal_ok, prs) ? maximum(q -> q.hardness, filter(q -> q.tidal_ok, prs)) : 0.0,
-            0.0)
+        record!(
+            "snapshot_pairs",
+            "n_hard_tidal_ok",
+            count(q -> q.tidal_ok && q.hardness > 1, prs),
+            0.0,
+        )
+        record!(
+            "snapshot_pairs",
+            "hardness_max",
+            isempty(prs) ? 0.0 : maximum(q -> q.hardness, prs),
+            0.0,
+        )
+        record!(
+            "snapshot_pairs",
+            "hardness_max_tidal_ok",
+            any(q -> q.tidal_ok, prs) ? maximum(q -> q.hardness, filter(q -> q.tidal_ok, prs)) :
+            0.0,
+            0.0,
+        )
 
         # Mixing null: two random halves of one model
         tags = rand(rng, 1:2, N)
@@ -211,14 +286,29 @@ function evaluate(model::AbstractString, N::Int, replica::Int)
         tracer = collect(Int, partialsortperm(mass, 1:N_TRACER; rev = true))
         ms = mass_segregation(pos, mass; tracer, n_mst = (10, 20, 50), seed = replica)
         record!("mass_segregation", "lambda_msr", ms.lambda_msr, truth.segregation, ms.lambda_err)
-        record!("mass_segregation", "lambda_median", ms.lambda_median, truth.segregation,
-            ms.lambda_median_err)
-        record!("mass_segregation", "ln_gamma_msr", log(ms.gamma_msr),
-            isnan(truth.segregation) ? NaN : 0.0, log(ms.gamma_err))
+        record!(
+            "mass_segregation",
+            "lambda_median",
+            ms.lambda_median,
+            truth.segregation,
+            ms.lambda_median_err,
+        )
+        record!(
+            "mass_segregation",
+            "ln_gamma_msr",
+            log(ms.gamma_msr),
+            isnan(truth.segregation) ? NaN : 0.0,
+            log(ms.gamma_err),
+        )
         record!("mass_segregation", "r_half_ratio", ms.r_half_ratio, truth.segregation)
         for (k, n_mst) in enumerate(ms.n_mst_used)
-            record!("mass_segregation", "lambda_msr_nmst$(n_mst)", ms.lambda_scan[k],
-                truth.segregation, ms.lambda_err_scan[k])
+            record!(
+                "mass_segregation",
+                "lambda_msr_nmst$(n_mst)",
+                ms.lambda_scan[k],
+                truth.segregation,
+                ms.lambda_err_scan[k],
+            )
         end
         r = [norm(@view pos[:, i]) for i in 1:N]
         isT = falses(N)
@@ -256,13 +346,23 @@ function aggregate(model, N, results)
         m = mean(v)
         sc = n ≥ 2 ? std(v) : NaN
         tr = all(isnan, t) ? NaN : mean(filter(!isnan, t))
-        push!(rows, (;
-            model, estimator = key[1], quantity = key[2], N, n_rep = n, truth = tr, mean = m,
-            scatter = sc, bias = isnan(tr) ? NaN : m - tr,
-            bias_err = isnan(tr) || isnan(sc) ? NaN : sc / sqrt(n),
-            reported_error = all(isnan, e) ? NaN : mean(filter(!isnan, e)),
-            predicted_scatter = all(isnan, p) ? NaN : mean(filter(!isnan, p)),
-        ))
+        push!(
+            rows,
+            (;
+                model,
+                estimator = key[1],
+                quantity = key[2],
+                N,
+                n_rep = n,
+                truth = tr,
+                mean = m,
+                scatter = sc,
+                bias = isnan(tr) ? NaN : m - tr,
+                bias_err = isnan(tr) || isnan(sc) ? NaN : sc / sqrt(n),
+                reported_error = all(isnan, e) ? NaN : mean(filter(!isnan, e)),
+                predicted_scatter = all(isnan, p) ? NaN : mean(filter(!isnan, p)),
+            ),
+        )
     end
     return rows
 end
@@ -272,11 +372,31 @@ fmt(x::Integer) = string(x)
 
 function write_table(path, rows)
     open(path, "w") do io
-        println(io, "model,estimator,quantity,N,n_rep,truth,mean,scatter,bias,bias_err,reported_error,predicted_scatter")
+        println(
+            io,
+            "model,estimator,quantity,N,n_rep,truth,mean,scatter,bias,bias_err,reported_error,predicted_scatter",
+        )
         for r in rows
-            println(io, join([r.model, r.estimator, r.quantity, string(r.N), string(r.n_rep),
-                fmt(r.truth), fmt(r.mean), fmt(r.scatter), fmt(r.bias), fmt(r.bias_err),
-                fmt(r.reported_error), fmt(r.predicted_scatter)], ","))
+            println(
+                io,
+                join(
+                    [
+                        r.model,
+                        r.estimator,
+                        r.quantity,
+                        string(r.N),
+                        string(r.n_rep),
+                        fmt(r.truth),
+                        fmt(r.mean),
+                        fmt(r.scatter),
+                        fmt(r.bias),
+                        fmt(r.bias_err),
+                        fmt(r.reported_error),
+                        fmt(r.predicted_scatter),
+                    ],
+                    ",",
+                ),
+            )
         end
     end
 end
@@ -325,8 +445,15 @@ function main(args)
         dt = time() - t0
         timings["$(model)/N$(N)"] = dt
         append!(rows, aggregate(model, N, results))
-        @printf("%-20s N = %8d  replicas = %3d  %8.1f s  (%6.2f s per replica, %d threads)\n",
-            model, N, n_rep, dt, dt / n_rep, Threads.nthreads())
+        @printf(
+            "%-20s N = %8d  replicas = %3d  %8.1f s  (%6.2f s per replica, %d threads)\n",
+            model,
+            N,
+            n_rep,
+            dt,
+            dt / n_rep,
+            Threads.nthreads()
+        )
         flush(stdout)
     end
     table = joinpath(opts.out, "estimators.csv")

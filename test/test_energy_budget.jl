@@ -121,6 +121,18 @@ end
           :linearised
     @test engine_energy_valid(:none) && engine_energy_valid(:orbit)
     @test !engine_energy_valid(:linearised) && !engine_energy_valid(:external)
+    @test engine_energy_valid(:linearised; tidal_energy_amended = true)
+    @test !engine_energy_valid(:external; tidal_energy_amended = true)
+    mktempdir() do dir
+        @test !Nbody6Dynamics._tidal_energy_amended(dir)
+        write(joinpath(dir, "BUILD_INFO.toml"), "source_amendments = [\"escape-summary-format\"]\n")
+        @test !Nbody6Dynamics._tidal_energy_amended(dir)
+        write(
+            joinpath(dir, "BUILD_INFO.toml"),
+            "source_amendments = [\"escape-summary-format\", \"tidal-energy-total\"]\n",
+        )
+        @test Nbody6Dynamics._tidal_energy_amended(dir)
+    end
     @test_throws ArgumentError engine_energy_valid(:tide)
 end
 

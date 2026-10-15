@@ -294,9 +294,14 @@ function postprocess(
     # is the conserved quantity there and the engine's DE is not an error.
     mode = haskey(results, :diagnostics) ? tidal_mode(results[:diagnostics]) : :none
     tidal = haskey(results, :diagnostics) ? results[:diagnostics].tidal : (0.0, 0.0, 0.0, 0.0)
-    if mode == :linearised
+    tidal_energy_amended = _tidal_energy_amended(sim_dir)
+    de_valid = engine_energy_valid(mode; tidal_energy_amended)
+    if mode == :linearised && !de_valid
         @info "Linearised tidal field (KZ(14) = $(results[:diagnostics].kz[14])): the engine's DE " *
               "excludes the tidal potential; e_jacobi of snapshot_integrals.csv is the conserved energy"
+    elseif mode == :linearised
+        @info "Linearised tidal field (KZ(14) = $(results[:diagnostics].kz[14])) with the " *
+              "tidal-energy-total amendment: the engine's DE measures the error of the Jacobi integral"
     elseif mode != :none
         @info "External field mode $mode (KZ(14) = $(results[:diagnostics].kz[14])): snapshot " *
               "energies are not comparable with the engine's total"
@@ -313,7 +318,7 @@ function postprocess(
             results[:engine_events];
             threshold = pp.energy_jump_threshold,
             sigma = pp.energy_jump_sigma,
-            engine_energy_valid = engine_energy_valid(mode),
+            engine_energy_valid = de_valid,
         )
         @info "Energy-jump localisation: " * energy_events_summary(results[:energy_events])
     end
@@ -359,6 +364,26 @@ function postprocess(
     end
 
     return results
+end
+
+"""
+    _tidal_energy_amended(sim_dir) -> Bool
+
+Whether the build record copied into the run's output directory
+(`BUILD_INFO.toml`) lists the `tidal-energy-total` source amendment among
+its `source_amendments`; false without a record.
+"""
+function _tidal_energy_amended(sim_dir::AbstractString)::Bool
+    path = joinpath(sim_dir, "BUILD_INFO.toml")
+    isfile(path) || return false
+    record = try
+        TOML.parsefile(path)
+    catch e
+        e isa Base.TOML.ParserError || rethrow()
+        @warn "Build record $path is not valid TOML; the engine is taken as unamended"
+        return false
+    end
+    return "tidal-energy-total" in get(record, "source_amendments", String[])
 end
 
 """

@@ -8,6 +8,15 @@ entries say so.
 
 ### Added
 
+- Engine source amendments `tidal-energy-total` and `tidal-energy-total-mpi`:
+  the whole-system call of `xtrnlv.F` is restored in the energy evaluation,
+  so that under a linearised tide (`KZ(14) = 1, 2`) the potential energy of
+  the field enters `ETIDE`, the engine's total and its energy check, and the
+  external virial term enters `Q`, as in the original NBODY6.
+- `scripts/calibrate_estimators.jl`: bias and variance of every estimator
+  versus N on the static models, seeded with `StableRNGs`, written as the
+  versioned table `assets/calibration/estimators.csv` with its sidecar
+  `estimators.toml`.
 - Static test models, each with a known answer for one estimator:
   `sample_plummer_om` (the Osipkov–Merritt Plummer sphere,
   `β(r) = r²/(r² + r_a²)`, `r_a ≥ 0.75 a`), `lynden_bell_flip!` (rotation

@@ -782,27 +782,30 @@ function load_merger_config(path::AbstractString)::MergerConfig
 end
 
 # Energy tolerance below which a tidal-field run halts at its first adjustment:
-# this fork never evaluates the tidal potential energy (the XTRNLV call in
-# energy.F is commented out), so the engine's DE measures the tidal work.
+# this fork never evaluates the tidal potential energy unless it is built with
+# the package's tidal-energy-total amendment (the XTRNLV call in energy.F is
+# commented out), so an unamended engine's DE measures the tidal work.
 const _QE_MIN_TIDAL = 0.01
 
 """
     _validate_tidal_tolerance(t::TidalSpec, p::Nbody6ParameterSpec)
 
 Refuse an external field with an energy tolerance below `$(_QE_MIN_TIDAL)`:
-the engine's energy bookkeeping omits the tidal potential energy, so the
-relative energy change it checks against `QE` is the work done by the field
-(10⁻⁴ to 10⁻² per adjustment interval for realistic fields) and the run
-would halt at its first adjustment.
+an engine built without the `tidal-energy-total` source amendment omits the
+tidal potential energy from its bookkeeping, so the relative energy change it
+checks against `QE` is the work done by the field (10⁻⁴ to 10⁻² per
+adjustment interval for realistic fields) and the run would halt at its
+first adjustment. The generator does not know which build will run the
+input, so the floor applies to every tidal configuration.
 """
 function _validate_tidal_tolerance(t::TidalSpec, p::Nbody6ParameterSpec)
     if t.kz14 > 0 && p.qe < _QE_MIN_TIDAL
         _config_error(
             "merger.nbody6.qe",
-            "= $(p.qe) with merger.tidal.kz14 = $(t.kz14): the engine does " *
-            "not evaluate the tidal potential energy (energy.F), so its energy check measures the " *
-            "tidal work and halts the run at the first adjustment; set qe ≥ $(_QE_MIN_TIDAL) for " *
-            "tidal-field runs and assess the integration accuracy against an isolated control run",
+            "= $(p.qe) with merger.tidal.kz14 = $(t.kz14): an engine built without the " *
+            "tidal-energy-total amendment does not evaluate the tidal potential energy (energy.F), " *
+            "so its energy check measures the tidal work and halts the run at the first " *
+            "adjustment; set qe ≥ $(_QE_MIN_TIDAL) for tidal-field runs",
         )
     end
     return nothing
