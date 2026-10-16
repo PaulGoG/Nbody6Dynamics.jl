@@ -568,7 +568,8 @@ function _validity_energy(
         msgs = String[]
         n_above > 0 && push!(
             msgs,
-            "$n_above intervals above $(_validity_sci(settings.validity_interval_de))",
+            "$n_above interval$(n_above == 1 ? "" : "s") above " *
+            _validity_sci(settings.validity_interval_de),
         )
         cumulative > settings.validity_cumulative_de && push!(
             msgs,

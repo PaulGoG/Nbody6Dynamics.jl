@@ -149,7 +149,7 @@ end
     @test e["max_abs_de_rel"] ≈ 5e-4
     @test e["e0"] == -0.25 && e["detot"] ≈ detot[end]
     @test e["cumulative_rel"] ≈ detot[end] / 0.25
-    @test e["verdict"] == "flag" && length(e["reasons"]) == 1
+    @test e["verdict"] == "flag" && e["reasons"] == ["1 interval above 1.0e-4"]
     @test isnan(e["budget_final_residual_rel"])
 
     # Crossing time of the bound set (Heggie & Mathieu 1986) and the violent-relaxation window
