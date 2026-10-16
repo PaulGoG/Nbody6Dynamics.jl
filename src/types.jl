@@ -17,7 +17,7 @@ behaviour, and clean builds.
 Base.@kwdef struct InstallConfig
     enabled::Bool = true
     source_url::String = "https://github.com/PaulGoG/Nbody6PPGPU-beijing.git"
-    ref::String = "v2026.07-campaign.3"   # validated engine tag (the fork's campaign branch on upstream v2026.07); "" = clone default branch
+    ref::String = "v2026.07-campaign.4"   # validated engine tag (the fork's campaign branch on upstream v2026.07); "" = clone default branch
     install_dir::String = joinpath("backend", "Nbody6PPGPU-beijing")
     reinstall::Bool = false
     clean_build::Bool = true

@@ -111,7 +111,7 @@ entries say so.
   fraction and mass class, a pair sum per call that it did not use.
 - The engine is cloned from the package's fork,
   [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing),
-  at the tag `v2026.07-campaign.3` by default (`install.source_url`,
+  at the tag `v2026.07-campaign.4` by default (`install.source_url`,
   `install.ref`; the shipped pipeline configurations pin the same tag). The
   fork's branch `campaign` carries the three source amendments and the CUDA 13
   helper headers as commits on upstream v2026.07, and no longer tracks the
@@ -125,7 +125,10 @@ entries say so.
   `NCOMM`, on a fixed unit; the `COMMON SAVED` line prints its values under
   their labels; `configure` finds `nvcc` under `--with-cuda`; more than 32
   OpenMP threads no longer abort the AVX build; and the supernova-ghost and
-  `lagr.7` fixes of upstream `dev` are included. The fork's `NOTICE.md` lists
+  `lagr.7` fixes of upstream `dev` are included. From `campaign.4` the
+  Milky-Way potential mode (`KZ(14) = 5`) runs: escapers and mass changes no
+  longer carry the absolute Galactic potential into the energy bookkeeping,
+  and the NFW and bulge jerks are corrected. The fork's `NOTICE.md` lists
   the corrections by tag and states the provenance, the credit and the
   licensing. An existing
   engine checkout under `install.install_dir` is reused as it is; set
