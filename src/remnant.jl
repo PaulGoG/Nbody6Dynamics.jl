@@ -1008,6 +1008,11 @@ Diagnostics of the bound remnant of the whole system at every snapshot
 - `t_rc_min`, `t_rc_min_myr`: minimum of the smoothed core radius `r_core`
 - `t_rho_max`, `t_rho_max_myr`: maximum of the smoothed core density
   `rho_core`
+- `coalescence_pairs`, `coalescence_separation`, `coalescence_threshold`: the
+  cluster pairs and, per pair (row) and snapshot (column), the separation of
+  the per-cluster density centres and the coalescence threshold of
+  [`coalescence_time`](@ref) (`NaN` where a cluster is absent); empty with
+  fewer than two clusters
 
 The last four pairs of times are the core-collapse markers: the first hard
 binaries (Tanikawa, Hut & Makino 2012, doi:10.1016/j.newast.2011.09.001;
@@ -1057,6 +1062,9 @@ struct RemnantDiagnostics
     t_rc_min_myr::Float64
     t_rho_max::Float64
     t_rho_max_myr::Float64
+    coalescence_pairs::Vector{Tuple{Int,Int}}
+    coalescence_separation::Matrix{Float64}
+    coalescence_threshold::Matrix{Float64}
 end
 
 """Λ_MSR level (minus its error) above which the remnant counts as mass-segregated."""
@@ -1267,7 +1275,14 @@ function remnant_diagnostics(
     coal =
         length(cluster_ranges) ≥ 2 ?
         coalescence_time(snaps, cluster_ranges; bound_sets = bsets, max_passes, min_members) :
-        (; index = nothing, time_nb = NaN, time_myr = NaN)
+        (;
+            index = nothing,
+            time_nb = NaN,
+            time_myr = NaN,
+            pairs = Tuple{Int,Int}[],
+            separation = zeros(Float64, 0, n_t),
+            threshold = zeros(Float64, 0, n_t),
+        )
     k_seg = findfirst(k -> isfinite(λmsr[k]) && λmsr[k] - λerr[k] > settings.msr_threshold, 1:n_t)
     t_seg = k_seg === nothing ? NaN : t[k_seg]
     t_seg_myr = k_seg === nothing ? NaN : t_myr[k_seg]
@@ -1321,6 +1336,9 @@ function remnant_diagnostics(
         t_at(cc.i_rc_min, t_myr),
         cc.t_rho_max,
         t_at(cc.i_rho_max, t_myr),
+        coal.pairs,
+        coal.separation,
+        coal.threshold,
     )
 end
 
