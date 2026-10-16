@@ -322,6 +322,17 @@ end
         @test parsed["run"]["id"] == "merger_cpu_x"
         @test parsed["pipeline"]["phases"] == ["merger_ic", "simulation", "postprocess", "plots"]
         @test parsed["pipeline"]["elapsed_seconds"] ≈ 12.2 atol = 0.1
+        @test !haskey(parsed["pipeline"], "postprocess_seconds")
+
+        # Stage times of the post-processing, rounded to 0.01 s.
+        @test Nbody6Dynamics._stamp_pipeline_completion(
+            dir,
+            ["postprocess"],
+            3.0;
+            postprocess_seconds = ["snapshots" => 1.234, "integrals" => 2.0],
+        )
+        @test Nbody6Dynamics.TOML.parsefile(info)["pipeline"]["postprocess_seconds"] ==
+              Dict("snapshots" => 1.23, "integrals" => 2.0)
 
         # Unreadable summary: false, not an exception.
         write(info, "this is not TOML {{{")

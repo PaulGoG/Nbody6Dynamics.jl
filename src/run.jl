@@ -1963,11 +1963,13 @@ function _write_run_summary(
 end
 
 """
-    _stamp_pipeline_completion(run_dir, phases, elapsed) -> Bool
+    _stamp_pipeline_completion(run_dir, phases, elapsed; postprocess_seconds = nothing) -> Bool
 
 Record in `run_dir/RUN_INFO.toml` that the pipeline ran to its end, as
 `[pipeline]` with `completed = true`, the phases performed and the total
-wall time. Returns `false`, without raising, when there is no run directory
+wall time, and with `postprocess_seconds` (the stage times of
+[`postprocess`](@ref), `label => seconds`) the table `[pipeline.postprocess_seconds]`.
+Returns `false`, without raising, when there is no run directory
 or no summary to amend.
 
 A run summary is written as soon as the engine exits, so its presence says
@@ -1981,7 +1983,8 @@ END RUN, since the pipeline also completes on partial output.
 function _stamp_pipeline_completion(
     run_dir::AbstractString,
     phases::AbstractVector{<:AbstractString},
-    elapsed::Real,
+    elapsed::Real;
+    postprocess_seconds::Union{Nothing,AbstractVector{<:Pair{String,Float64}}} = nothing,
 )::Bool
     isempty(run_dir) && return false
     info_path = joinpath(run_dir, "RUN_INFO.toml")
@@ -1993,6 +1996,10 @@ function _stamp_pipeline_completion(
         "phases" => String.(phases),
         "elapsed_seconds" => round(Float64(elapsed); digits = 1),
     )
+    if postprocess_seconds !== nothing && !isempty(postprocess_seconds)
+        d["pipeline"]["postprocess_seconds"] =
+            Dict{String,Any}(k => round(v; digits = 2) for (k, v) in postprocess_seconds)
+    end
     # The pipeline post-processes whatever the engine left, so its own
     # completion says nothing about the integration; state that separately.
     segments = get(d, "segments", Any[])

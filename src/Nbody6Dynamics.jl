@@ -216,12 +216,17 @@ function postprocess(
     isdir(sim_dir) || error("Data directory does not exist: $sim_dir")
 
     results = Dict{Symbol,Any}()
+    # Wall time of each stage, in order (`results[:timings]`, RUN_INFO [pipeline]).
+    timings = Pair{String,Float64}[]
+    t_lap = Ref(time())
+    lap!(label) = (t = time(); push!(timings, label => t - t_lap[]); t_lap[] = t; nothing)
 
     # Snapshots (snapshot_format is validated to "conf3" at config load)
     if pp.snapshot_format == "conf3"
         snaps = read_all_conf3(sim_dir, pp.snapshot_pattern)
         isempty(snaps) || (results[:snapshots] = snaps)
     end
+    lap!("snapshots")
 
     # Diagnostics from stdout, and its stamped event lines
     if pp.parse_stdout
@@ -235,6 +240,7 @@ function postprocess(
             @warn "Stdout file not found: $diag_path"
         end
     end
+    lap!("stdout")
 
     # Engine counters per output time (written with stellar evolution on)
     if pp.mass_budget
@@ -245,6 +251,7 @@ function postprocess(
             @info "No counters file $(pp.events_file): stellar mass loss taken as zero in the mass budget"
         end
     end
+    lap!("event_counters")
 
     # Lagrangian radii
     if pp.read_lagr
@@ -255,6 +262,7 @@ function postprocess(
             @warn "Lagrangian radii file not found: $lagr_path"
         end
     end
+    lap!("lagr")
 
     # Escapers
     if pp.read_escapers
@@ -265,18 +273,21 @@ function postprocess(
             @warn "Escaper file not found: $esc_path"
         end
     end
+    lap!("escapers")
 
     # Stellar evolution
     if pp.read_stellar_evo
         sevs = read_all_stellar_evolution(sim_dir, pp.stellar_evo_pattern)
         isempty(sevs) || (results[:stellar_evo] = sevs)
     end
+    lap!("stellar_evolution")
 
     # Regularised binaries
     if pp.read_binary_evo
         bevs = read_all_binary_evolution(sim_dir, pp.binary_evo_pattern)
         isempty(bevs) || (results[:binary_evo] = bevs)
     end
+    lap!("binary_evolution")
 
     # Class census over single stars and binary members
     if haskey(results, :stellar_evo)
@@ -285,6 +296,7 @@ function postprocess(
             get(results, :binary_evo, BinaryEvolutionSnapshot[]),
         )
     end
+    lap!("census")
 
     # Integrals of motion and remnant diagnostics: data products, so they are
     # computed here and not in the figure layer, and a headless host gets them
@@ -315,6 +327,7 @@ function postprocess(
             results[:integrals] = snapshot_integrals(results[:snapshots]; bound..., tidal)
         end
     end
+    lap!("integrals")
     if pp.energy_events && haskey(results, :diagnostics) && haskey(results, :engine_events)
         results[:energy_events] = energy_intervals(
             results[:diagnostics],
@@ -325,6 +338,7 @@ function postprocess(
         )
         @info "Energy-jump localisation: " * energy_events_summary(results[:energy_events])
     end
+    lap!("energy_events")
     if pp.mass_budget && haskey(results, :integrals)
         if haskey(results, :diagnostics)
             results[:mass_budget] = mass_budget(
@@ -348,6 +362,7 @@ function postprocess(
             @warn "Mass and energy budgets skipped: the unit scaling needs the stdout capture"
         end
     end
+    lap!("budgets")
     summary_path = joinpath(sim_dir, "merger_summary.txt")
     if haskey(results, :snapshots) && length(results[:snapshots]) ≥ 2 && isfile(summary_path)
         ranges = parse_merger_summary(summary_path)
@@ -363,6 +378,7 @@ function postprocess(
                 bound_sets,
                 bound...,
             )
+            lap!("remnant")
             if pp.merger_tree && bound_sets !== nothing
                 @info "Progenitor budget" * (length(ranges) ≥ 2 ? " and merger tree..." : "...")
                 results[:progenitor_budget] =
@@ -374,6 +390,7 @@ function postprocess(
             end
         end
     end
+    lap!("progenitor_budget_merger_tree")
     # Angular-momentum budget and equipartition: the bound sets of the integrals
     # with the unit scaling of the stdout capture.
     if haskey(results, :integrals) && haskey(results, :diagnostics) && haskey(results, :snapshots)
@@ -391,6 +408,7 @@ function postprocess(
                 n_min_class = pp.mass_class_n_min,
             )
         end
+        lap!("angular_momentum")
         if pp.equipartition
             @info "Equipartition mass of the luminous stars within r_h..."
             results[:equipartition] = equipartition_series(
@@ -402,6 +420,11 @@ function postprocess(
             )
         end
     end
+    lap!("equipartition")
+    results[:timings] = timings
+    @info "Post-processing stage times [s]: " *
+          join(("$k $(round(v; digits = 1))" for (k, v) in timings if v ≥ 0.05), ", ") *
+          "; total $(round(sum(last, timings; init = 0.0); digits = 1))"
 
     return results
 end
@@ -688,7 +711,12 @@ function _finish_pipeline(
         push!(phases, "plots")
     end
 
-    _stamp_pipeline_completion(run_dir, phases, time() - t_pipeline)
+    _stamp_pipeline_completion(
+        run_dir,
+        phases,
+        time() - t_pipeline;
+        postprocess_seconds = get(results, :timings, nothing),
+    )
     return results
 end
 

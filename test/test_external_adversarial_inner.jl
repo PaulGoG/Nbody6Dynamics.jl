@@ -329,6 +329,23 @@ end
         results = run_pipeline(cfg2)
         @test haskey(results, :diagnostics)
         @test !haskey(results, :snapshots)
+        # Stage times in pipeline order, every stage present even when it did nothing
+        labels = first.(results[:timings])
+        @test labels[1:11] == [
+            "snapshots",
+            "stdout",
+            "event_counters",
+            "lagr",
+            "escapers",
+            "stellar_evolution",
+            "binary_evolution",
+            "census",
+            "integrals",
+            "energy_events",
+            "budgets",
+        ]
+        @test last(labels) == "equipartition"
+        @test all(≥(0), last.(results[:timings]))
         plots_dir = joinpath(d_diag_only, "plots")
         @test isfile(joinpath(plots_dir, "energy.pdf"))
         @test isfile(joinpath(plots_dir, "particle_count.pdf"))
