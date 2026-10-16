@@ -86,6 +86,19 @@ entries say so.
 
 ### Changed
 
+- The engine is cloned from the package's fork,
+  [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing),
+  at the tag `v2026.07-campaign.2` by default (`install.source_url`,
+  `install.ref`; the shipped pipeline configurations pin the same tag). The
+  fork's branch `campaign` carries the three source amendments and the CUDA 13
+  helper headers as commits on upstream v2026.07, and no longer tracks the
+  outputs of `configure`, so a build from it records the amendments as found
+  in place and its `backend_commit` is clean (an upstream checkout reports
+  `-dirty` after every `configure`). `deps/engine/amendments.toml` and
+  `deps/cuda/` remain for a build from an upstream checkout. The fork's
+  `NOTICE.md` states the provenance, the credit and the licensing. An existing
+  engine checkout under `install.install_dir` is reused as it is; set
+  `install.reinstall = true` once to replace an upstream checkout with the fork.
 - `remnant_diagnostics` takes `settings::PostprocessConfig` instead of
   `n_massive`, `n_random`, `seed`, `lambda_threshold`, `nbins` and
   `overlap_factor`.

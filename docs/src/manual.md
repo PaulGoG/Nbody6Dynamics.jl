@@ -72,8 +72,8 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | Key           | Type   | Default | Description |
 |---------------|--------|---------|-------------|
 | `enabled`     | Bool   | `true`  | Enable the install/build phase |
-| `source_url`  | String | `"https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"` | Git repository to clone |
-| `ref`         | String | `"618d7a4"` | Commit, tag, or branch checked out after cloning (the default is the validated upstream v2026.07 commit); `""` keeps the default branch. An existing source directory is left as is |
+| `source_url`  | String | `"https://github.com/PaulGoG/Nbody6PPGPU-beijing.git"` | Git repository to clone: the package's engine fork; the upstream repository `nbody6ppgpu/Nbody6PPGPU-beijing` also works |
+| `ref`         | String | `"v2026.07-campaign.2"` | Commit, tag, or branch checked out after cloning (the default is the validated tag of the fork's `campaign` branch, on upstream v2026.07); `""` keeps the default branch. An existing source directory is left as is |
 | `install_dir` | String | `"backend/Nbody6PPGPU-beijing"` | Source directory, relative to the project directory (the configuration file's directory); must be nonempty |
 | `reinstall`   | Bool   | `false` | Delete and re-clone if `true` |
 | `clean_build` | Bool   | `true`  | Run `make clean` before building |
@@ -297,7 +297,7 @@ With `enable_hdf5 = true` the build adds the HDF5 compiler and linker flags and 
 
 ### Source amendments
 
-Before `configure`, the install phase applies the corrections listed in the package's `deps/engine/amendments.toml` to the engine source tree. Each is an exact text substitution in one file, for a defect met in production runs and reported upstream:
+The package's engine fork carries the corrections below as commits on its `campaign` branch (the default `install.source_url` and `install.ref`), and a build from it finds them in place. For a build from an upstream checkout, the install phase applies the same corrections before `configure` from the package's `deps/engine/amendments.toml`. Each is an exact text substitution in one file, for a defect met in production runs:
 
 | Identifier | File | Correction |
 |---|---|---|
@@ -305,7 +305,7 @@ Before `configure`, the install phase applies the corrections listed in the pack
 | `tidal-energy-total` | `src/Main/energy.F` | The whole-system call of `xtrnlv.F` is restored for a linearised external field (`CALL XTRNLV(1,N)` in a branch for `KZ(14) ≤ 2`; the call is commented out in this engine version). The potential energy of the field then enters `ETIDE`, the total energy and the energy check, and the external virial term enters `Q`, as in the original NBODY6. The orbit modes (`KZ(14) = 3, 5`) keep their code path: on the Milky-Way potential the restored whole-system call corrupts the energy bookkeeping at the first adjustment |
 | `tidal-energy-total-mpi` | `src/Main/energy_mpi.F` | The same restoration in the MPI variant of the energy evaluation |
 
-The step is idempotent, and the identifiers in effect are recorded as `source_amendments` in `BUILD_INFO.toml`, hence in the `[build]` table of every run. An amendment whose text does not occur exactly once in the tree, as with another engine revision, is skipped with a warning and listed under `source_amendments_skipped`; the build then proceeds on the unamended source. The engine checkout shows the substitution as a local modification (`backend_commit` carries `-dirty`).
+The step is idempotent (a substitution found in place counts as applied), and the identifiers in effect are recorded as `source_amendments` in `BUILD_INFO.toml`, hence in the `[build]` table of every run. An amendment whose text does not occur exactly once in the tree, as with another engine revision, is skipped with a warning and listed under `source_amendments_skipped`; the build then proceeds on the unamended source. On an upstream checkout `backend_commit` carries `-dirty`: the substitutions are local modifications, and `configure` rewrites two tracked files (`config.log`, `include/params.h`). The fork tracks neither and ignores the build outputs, so a build from its tag records a clean commit, and `-dirty` there means a hand-edited tree. Further corrections are made as commits of the fork, not as amendments. An existing checkout under `install_dir` is reused as it is (whatever its origin); `reinstall = true` replaces it with a fresh clone of `source_url` at `ref`.
 
 ### CUDA auto-detection
 

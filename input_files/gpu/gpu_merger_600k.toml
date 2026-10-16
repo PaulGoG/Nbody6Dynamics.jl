@@ -3,7 +3,7 @@
 [install]
 enabled = false           # the tree below is built by gpu_pipeline.toml (or the validation driver) beforehand
 install_dir = "../../backend/Nbody6PPGPU-beijing-gpu"
-ref = "618d7a4"
+ref = "v2026.07-campaign.2"
 
 [build]
 configure_flags = ["--enable-mcmodel=large", "--with-par=b1m"]

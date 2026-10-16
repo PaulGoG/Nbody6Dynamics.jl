@@ -76,7 +76,7 @@ export_width = 5.0
     @test pp.relaxation_gamma == [0.02, 0.11]
     @test cfg.visualization.dpi == 150
     @test cfg.visualization.export_width == 5.0
-    @test cfg.install.source_url == "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git"
+    @test cfg.install.source_url == "https://github.com/PaulGoG/Nbody6PPGPU-beijing.git"
 end
 
 # =====================================================================
@@ -114,7 +114,7 @@ export_width = 7.0
 
     cfg2 = load_config(save_path)
     @test cfg2.install.ref == "v2026.07"
-    @test InstallConfig().ref == "618d7a4"
+    @test InstallConfig().ref == "v2026.07-campaign.2"
     @test cfg2.build.enable_gpu == cfg.build.enable_gpu
     @test cfg2.build.cuda_path == cfg.build.cuda_path
     @test cfg2.simulation.run_id_prefix == cfg.simulation.run_id_prefix
