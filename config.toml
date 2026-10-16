@@ -93,6 +93,16 @@ equipartition        = true         # write equipartition.csv (Bianchini m_eq of
 equipartition_bin_width = 0.1       # M☉; > 0; mass bin of the dispersion–mass relation
 equipartition_n_min  = 50           # ≥ 2; stars a mass bin needs to enter the fit
 merger_tree          = true         # write merger_tree.csv and progenitor_budget.csv for multi-cluster runs
+validity                  = true          # write validity.toml and validity_snapshots.csv
+validity_interval_de      = 1.0e-4        # > 0; per-interval |DE| above which an interval is flagged
+validity_cumulative_de    = 1.0e-3        # > 0; |DETOT / E0| above which the run is flagged
+validity_mass_tolerance   = 1.0e-6        # > 0; |relative mass-budget residual| above which an epoch is flagged
+validity_settle_tcr       = 5.0           # ≥ 0; violent-relaxation window after the start [crossing times]
+validity_pericentre_tcr   = 2.0           # ≥ 0; half-width of the window around a pericentre [crossing times of the denser progenitor]
+validity_window_tcr       = 5.0           # > 0; window of the stationarity tests [crossing times]
+validity_virial_tolerance = 0.05          # > 0; |2T/|W| − 1| of a virialised bound set
+validity_rate_tolerance   = 0.05          # > 0; change per window of a stationary series (ln r_10, λ_R)
+validity_bias_tolerance   = 0.05          # > 0; |relative calibrated bias| above which an estimator is masked
 
 [visualization]
 enabled    = true

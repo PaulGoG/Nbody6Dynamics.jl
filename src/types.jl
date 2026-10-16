@@ -147,6 +147,20 @@ The pair keys (`pair_k`, `pair_tidal_factor`) are the neighbour count and
 tidal criterion of `snapshot_pairs`, which feeds the hardness series of
 [`remnant_diagnostics`](@ref). `relaxation_gamma` holds the
 Coulomb-logarithm arguments γ of `relaxation_times`.
+
+The validity keys set the per-run validity record of `validity_record`:
+`validity` switches the output of `validity.toml` and
+`validity_snapshots.csv`; `validity_interval_de` and
+`validity_cumulative_de` are the per-interval |DE| and the cumulative
+|DETOT/E₀| above which the energy check flags the run;
+`validity_mass_tolerance` is the relative mass-budget residual above which
+an epoch is flagged; `validity_settle_tcr`, `validity_pericentre_tcr` and
+`validity_window_tcr` are the violent-relaxation window after the start,
+the half-width of the window about a pericentre and the window of the
+stationarity tests, in crossing times; `validity_virial_tolerance` bounds
+|2T/|W| − 1| of a virialised bound set, `validity_rate_tolerance` the change
+per window of a stationary series, and `validity_bias_tolerance` the
+relative calibrated bias above which an estimator is masked.
 """
 Base.@kwdef struct PostprocessConfig
     enabled::Bool = true
@@ -204,6 +218,16 @@ Base.@kwdef struct PostprocessConfig
     equipartition_bin_width::Float64 = 0.1
     equipartition_n_min::Int = 50
     merger_tree::Bool = true
+    validity::Bool = true
+    validity_interval_de::Float64 = 1.0e-4
+    validity_cumulative_de::Float64 = 1.0e-3
+    validity_mass_tolerance::Float64 = 1.0e-6
+    validity_settle_tcr::Float64 = 5.0
+    validity_pericentre_tcr::Float64 = 2.0
+    validity_window_tcr::Float64 = 5.0
+    validity_virial_tolerance::Float64 = 0.05
+    validity_rate_tolerance::Float64 = 0.05
+    validity_bias_tolerance::Float64 = 0.05
 end
 
 """

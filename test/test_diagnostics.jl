@@ -268,7 +268,8 @@ end
     @test diag.coalescence_time == 1.0 && diag.coalescence_time_myr == 3.0
     # The pair separations of the coalescence test are kept, as coalescence_time gives them
     @test diag.coalescence_pairs == coal.pairs == [(1, 2)]
-    @test diag.coalescence_separation ≈ coal.separation && size(diag.coalescence_separation) == (1, 2)
+    @test diag.coalescence_separation ≈ coal.separation &&
+          size(diag.coalescence_separation) == (1, 2)
     @test diag.coalescence_threshold ≈ coal.threshold
     @test all(diag.n_bound .≥ 1100)
     @test all(0.9 .< diag.bound_mass_fraction .≤ 1.0)

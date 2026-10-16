@@ -274,6 +274,22 @@ progenitor_budget
 write_progenitor_budget
 ```
 
+## Validity Record
+
+```@docs
+ValidityRecord
+ValidityEpoch
+ValiditySnapshot
+validity_record
+write_validity
+write_validity_snapshots
+CalibrationRow
+CalibrationTable
+CalibratedEstimate
+load_calibration
+calibrated
+```
+
 ## Binary Population
 
 ```@docs

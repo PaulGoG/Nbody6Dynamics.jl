@@ -344,7 +344,9 @@ end
             "energy_events",
             "budgets",
         ]
-        @test last(labels) == "equipartition"
+        @test labels[(end - 1):end] == ["equipartition", "validity"]
+        @test haskey(results, :validity) &&
+              results[:validity].sections["energy"]["verdict"] in ("ok", "flag", "unavailable")
         @test all(≥(0), last.(results[:timings]))
         plots_dir = joinpath(d_diag_only, "plots")
         @test isfile(joinpath(plots_dir, "energy.pdf"))

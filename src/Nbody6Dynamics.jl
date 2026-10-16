@@ -129,6 +129,7 @@ include("pair_finder.jl")
 include("equipartition.jl")
 include("angular_momentum.jl")
 include("merger_tree.jl")
+include("validity.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -421,6 +422,21 @@ function postprocess(
         end
     end
     lap!("equipartition")
+    # Validity record: built from the products above, with the build record of
+    # the output directory and the run record of its parent.
+    if pp.validity
+        results[:validity] = validity_record(
+            results,
+            pp;
+            build_info = _read_toml_or_empty(joinpath(sim_dir, "BUILD_INFO.toml")),
+            run_info = _read_toml_or_empty(joinpath(dirname(sim_dir), "RUN_INFO.toml")),
+        )
+        energy = results[:validity].sections["energy"]
+        @info "Validity record: energy $(energy["verdict"])" *
+              (isempty(energy["reasons"]) ? "" : " ($(join(energy["reasons"], "; ")))") *
+              ", $(length(results[:validity].epochs)) epochs"
+    end
+    lap!("validity")
     results[:timings] = timings
     @info "Post-processing stage times [s]: " *
           join(("$k $(round(v; digits = 1))" for (k, v) in timings if v ≥ 0.05), ", ") *
@@ -703,6 +719,13 @@ function _finish_pipeline(
             results[:progenitor_budget],
         )
     end
+    if haskey(results, :validity) && !isempty(products_dir)
+        write_validity(joinpath(products_dir, "validity.toml"), results[:validity])
+        write_validity_snapshots(
+            joinpath(products_dir, "validity_snapshots.csv"),
+            results[:validity],
+        )
+    end
 
     # ── Phase 4: Plots ──
     if cfg.visualization.enabled && !isempty(results)
@@ -883,6 +906,9 @@ export write_equipartition
 export AngularMomentumBudget, angular_momentum_budget, write_angular_momentum
 export MergerEvent, MergerTree, merger_tree, write_merger_tree
 export ProgenitorBudgetRow, progenitor_budget, write_progenitor_budget
+export ValidityRecord, ValidityEpoch, ValiditySnapshot, validity_record
+export write_validity, write_validity_snapshots
+export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
 export sweep_summary, write_sweep_summary, sweep_visualization

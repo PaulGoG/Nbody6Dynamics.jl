@@ -448,7 +448,8 @@ end
 The estimator checks of [`_validate`](@ref) for the `[postprocess]` keys
 that set the shrinking-sphere centre, the Lagrangian grid, the radial
 profiles, the local density, the mass segregation, the rotation analysis,
-the shape tensor, the snapshot pair finder and the relaxation times. Raises
+the shape tensor, the snapshot pair finder, the relaxation times and the
+thresholds of the validity record. Raises
 an `ArgumentError` naming the offending `postprocess.<key>`.
 """
 function _validate_estimators(pp::PostprocessConfig)
@@ -534,6 +535,42 @@ function _validate_estimators(pp::PostprocessConfig)
     pp.equipartition_n_min ≥ 2 || _config_error(
         "postprocess.equipartition_n_min",
         "must be ≥ 2; got $(pp.equipartition_n_min)",
+    )
+    pp.validity_interval_de > 0 || _config_error(
+        "postprocess.validity_interval_de",
+        "must be > 0; got $(pp.validity_interval_de)",
+    )
+    pp.validity_cumulative_de > 0 || _config_error(
+        "postprocess.validity_cumulative_de",
+        "must be > 0; got $(pp.validity_cumulative_de)",
+    )
+    pp.validity_mass_tolerance > 0 || _config_error(
+        "postprocess.validity_mass_tolerance",
+        "must be > 0; got $(pp.validity_mass_tolerance)",
+    )
+    pp.validity_settle_tcr ≥ 0 || _config_error(
+        "postprocess.validity_settle_tcr",
+        "must be ≥ 0; got $(pp.validity_settle_tcr)",
+    )
+    pp.validity_pericentre_tcr ≥ 0 || _config_error(
+        "postprocess.validity_pericentre_tcr",
+        "must be ≥ 0; got $(pp.validity_pericentre_tcr)",
+    )
+    pp.validity_window_tcr > 0 || _config_error(
+        "postprocess.validity_window_tcr",
+        "must be > 0; got $(pp.validity_window_tcr)",
+    )
+    pp.validity_virial_tolerance > 0 || _config_error(
+        "postprocess.validity_virial_tolerance",
+        "must be > 0; got $(pp.validity_virial_tolerance)",
+    )
+    pp.validity_rate_tolerance > 0 || _config_error(
+        "postprocess.validity_rate_tolerance",
+        "must be > 0; got $(pp.validity_rate_tolerance)",
+    )
+    pp.validity_bias_tolerance > 0 || _config_error(
+        "postprocess.validity_bias_tolerance",
+        "must be > 0; got $(pp.validity_bias_tolerance)",
     )
     return nothing
 end

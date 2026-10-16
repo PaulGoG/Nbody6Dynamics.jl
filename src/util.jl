@@ -232,3 +232,15 @@ function _atomic_write_toml(path::AbstractString, table::AbstractDict)
     mv(tmp, path; force = true)
     return String(path)
 end
+
+"""
+    _read_toml_or_empty(path) -> Dict{String,Any}
+
+The parsed TOML file at `path`, or an empty dictionary when the file is
+absent or not valid TOML (a record that a killed run left half-written).
+"""
+function _read_toml_or_empty(path::AbstractString)::Dict{String,Any}
+    isfile(path) || return Dict{String,Any}()
+    d = TOML.tryparsefile(path)
+    return d isa Dict{String,Any} ? d : Dict{String,Any}()
+end

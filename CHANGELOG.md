@@ -8,6 +8,22 @@ entries say so.
 
 ### Added
 
+- Validity record of a run (`validity_record`, `validity.toml`,
+  `validity_snapshots.csv`): energy, mass and angular-momentum checks with a
+  verdict, bound-set convergence, the snapshot cadence against the crossing
+  and relaxation times, the windows that exclude snapshots from equilibrium
+  estimators (violent relaxation, pericentres, coalescence phase), the times
+  of virialisation, kinematic relaxation and mixing, the calibrated bias and
+  scatter of the tracked estimators at the bound star count, and the masking
+  rules; ten `[postprocess]` keys (`validity`, `validity_*`) hold the
+  thresholds. `load_calibration` and `calibrated` read the shipped
+  calibration table.
+- Wall time of every post-processing stage in `results[:timings]`, the log
+  and `RUN_INFO.toml` (`[pipeline.postprocess_seconds]`).
+- `RemnantDiagnostics` keeps the per-pair density-centre separations and
+  thresholds of the coalescence test (`coalescence_pairs`,
+  `coalescence_separation`, `coalescence_threshold`).
+- `rotation_analysis(...; peebles = false)` skips λ_P and its pair sum.
 - Angular-momentum budget (`angular_momentum_budget`, `angular_momentum.csv`):
   the internal angular momentum of the stars (about their centre of mass,
   invariant under the engine's centre-of-mass corrections) closed against
@@ -86,6 +102,13 @@ entries say so.
 
 ### Changed
 
+- The exact potential runs on the CPU as a threaded, vectorised loop over
+  tiles; the potential of a set on itself visits every pair once. At 10⁵
+  bodies on 8 threads it takes 1.9 s instead of 9.2 s, and it agrees with the
+  previous kernel to 10⁻¹⁵ (summation order). The KernelAbstractions kernel
+  remains as the device form.
+- The angular-momentum budget no longer computes λ_P for every Lagrangian
+  fraction and mass class, a pair sum per call that it did not use.
 - The engine is cloned from the package's fork,
   [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing),
   at the tag `v2026.07-campaign.3` by default (`install.source_url`,
