@@ -421,6 +421,7 @@ function angular_momentum_budget(
                     nbins_max = settings.rotation_nbins_max,
                     n_null = settings.rotation_n_null,
                     seed = settings.msr_seed,
+                    peebles = false,
                     r_h = r_h,
                 )
                 λr_radius[j, k] = rot.lambda_r
@@ -445,6 +446,7 @@ function angular_momentum_budget(
                     nbins_max = settings.rotation_nbins_max,
                     n_null = settings.rotation_n_null,
                     seed = settings.msr_seed,
+                    peebles = false,
                     r_h = r_h,
                 )
                 λr_class[c, k] = rot.lambda_r

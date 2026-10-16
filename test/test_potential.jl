@@ -69,6 +69,27 @@ end
     # Float32 input is promoted, not truncated further.
     @test pair_potential(Float32.(pos), Float32.(mass)) ≈
           pair_potential(Float64.(Float32.(pos)), Float64.(Float32.(mass)))
+
+    # The CPU loops against the device kernel (KernelAbstractions on the CPU backend):
+    # coincident bodies inside and across tiles, a partial last tile of targets
+    # (130 = 2 × 64 + 2) and sources over three blocks of 2048.
+    cpu = Nbody6Dynamics.CPU()
+    posd = copy(pos)
+    posd[:, 17] .= posd[:, 3]      # same tile
+    posd[:, 1999] .= posd[:, 5]    # different tiles
+    Φd = pair_potential(posd, mass)
+    Φk = Nbody6Dynamics._pair_potential_kernel(cpu, posd, posd, mass)
+    @test maximum(abs.(Φd .- Φk) ./ abs.(Φk)) < 1e-13
+    @test isfinite(Φd[17]) && isfinite(Φd[1999])
+    src, _ = sample_plummer(5000, 2.0; rng = rng)
+    msrc = rand(rng, 5000)
+    Φt = pair_potential(pos[:, 1:130], src, msrc)
+    Φtk = Nbody6Dynamics._pair_potential_kernel(cpu, pos[:, 1:130], src, msrc)
+    @test length(Φt) == 130
+    @test maximum(abs.(Φt .- Φtk) ./ abs.(Φtk)) < 1e-13
+    @test Nbody6Dynamics._pair_potential_kernel(cpu, zeros(3, 2), zeros(3, 0), Float64[]) ==
+          zeros(2)
+    @test_throws DimensionMismatch Nbody6Dynamics._pair_potential_kernel(cpu, x3, x3, ones(2))
 end
 
 @testset "Reduced systems" begin

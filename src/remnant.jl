@@ -395,7 +395,7 @@ end
 
 """
     rotation_analysis(pos, vel, mass; n_min = 1000, nbins_max = 16, n_null = 20, seed = 0,
-                      energy = nothing, r_h = NaN, shrink = 0.025, n_stop = 1000,
+                      energy = nothing, peebles = true, r_h = NaN, shrink = 0.025, n_stop = 1000,
                       stop_fraction = 0.01, n_floor = 500)
         -> (; L, axis, lambda_r, lambda_r_floor, lambda_peebles, lambda_peebles_floor,
              lambda_peebles_floor_analytic, v_peak, r_peak, profile)
@@ -451,7 +451,10 @@ the axis of the whole set.
 `energy` passes `E` when it is known, as for a [`BoundSet`](@ref)
 (`kinetic + potential`, regularised pairs at their centres of mass);
 otherwise it is the star-level `T + W` of the given particles, which
-includes the internal energy of any pair among them.
+includes the internal energy of any pair among them and costs an O(n²) pair
+sum. `peebles = false` skips λ_P altogether: `lambda_peebles` and
+`lambda_peebles_floor` are then `NaN`, for callers that use the shells and
+λ_R only.
 """
 function rotation_analysis(
     pos::AbstractMatrix{Float64},
@@ -462,6 +465,7 @@ function rotation_analysis(
     n_null::Int = _ROTATION_NULL_DRAWS,
     seed::Integer = 0,
     energy::Union{Nothing,Real} = nothing,
+    peebles::Bool = true,
     r_h::Real = NaN,
     shrink::Real = 0.025,
     n_stop::Integer = 1000,
@@ -610,7 +614,9 @@ function rotation_analysis(
     ratio = [sigma[b] > 0 ? v_rot[b] / sigma[b] : NaN for b in 1:nb]
     lambda_r = _shell_lambda_r(w_R, v_rot, sigma)
 
-    E = if energy === nothing
+    E = if !peebles
+        NaN
+    elseif energy === nothing
         T = 0.0
         for i in 1:n
             T += 0.5 * mass[i] * sum((vel[k, i] - vc[k])^2 for k in 1:3)

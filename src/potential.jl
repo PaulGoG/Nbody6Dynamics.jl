@@ -2,16 +2,25 @@
 # Gravitational potential, reduced systems and bound sets of snapshots
 # =============================================================================
 # The potential is the exact Newtonian pair sum (G = 1, no softening) in
-# Float64, written once as a KernelAbstractions kernel and run on the CPU
-# backend. The engine's own PHI is not used: it excludes the companion of a
-# regularised component, is zero for ghosts and single precision (notes of
-# 2026-10-14). Regularised pairs enter the energetics as their centre of mass:
-# with the companion's potential included, a component's internal binding
-# outweighs the energy of the pair's centre of mass, and an escaping hard pair
-# would stay in the bound set.
+# Float64. On the CPU it is a threaded loop over tiles of contiguous coordinate
+# vectors, vectorised by @simd; the potential of a set on itself visits every
+# pair once. The KernelAbstractions kernel below evaluates the same sum with
+# one work-item per target, the form for a device backend; the tests check it
+# against the CPU loop. The engine's own PHI is not used: it excludes the
+# companion of a regularised component, is zero for ghosts and single precision
+# (notes of 2026-10-14). Regularised pairs enter the energetics as their centre
+# of mass: with the companion's potential included, a component's internal
+# binding outweighs the energy of the pair's centre of mass, and an escaping
+# hard pair would stay in the bound set.
 
 """Work-group size of the potential kernel (CPU backend: 256 matches a plain threaded loop)."""
 const _POTENTIAL_WORKGROUP = 256
+"""Targets per task of the one-sided CPU sum."""
+const _POTENTIAL_TILE = 64
+"""Sources per block of the one-sided CPU sum: four Float64 vectors of this length stay in the L2 cache."""
+const _POTENTIAL_BLOCK = 2048
+"""Bodies per tile of the symmetric CPU sum."""
+const _POTENTIAL_SYM_TILE = 512
 
 @kernel function _potential_kernel!(Φ, @Const(xt), @Const(xs), @Const(ms), ns)
     i = @index(Global)
@@ -41,8 +50,12 @@ others; the second the potential at the points `targets` (3 × n_t) of the
 bodies at `sources` (3 × n_s) with masses `source_mass`, the form that updates
 a potential by subtraction when bodies leave a set. Bodies at identical
 positions do not interact, which also excludes the self-term. The sum is exact,
-O(n_t n_s), in Float64, evaluated by one KernelAbstractions kernel on
-`backend`.
+O(n_t n_s), in Float64. On the CPU it is a threaded loop over tiles,
+vectorised by `@simd`; the first form visits each pair once and holds one
+accumulator of n values per task (two tasks per thread), the second streams
+blocks of sources through the cache for tiles of targets. The summation order
+differs from a sequential sum, so results agree with it to round-off
+(≈ 10⁻¹⁵ relative), not bit for bit.
 
 # Example
 ```julia
@@ -53,8 +66,13 @@ function pair_potential(
     pos::AbstractMatrix{<:Real},
     mass::AbstractVector{<:Real};
     backend::CPU = CPU(),
-)
-    return pair_potential(pos, pos, mass; backend = backend)
+)::Vector{Float64}
+    size(pos, 1) == 3 || throw(DimensionMismatch("targets must be 3 × n, got $(size(pos))"))
+    size(pos, 2) == length(mass) ||
+        throw(DimensionMismatch("$(size(pos, 2)) sources but $(length(mass)) source masses"))
+    isempty(mass) && return Float64[]
+    x, y, z = _coordinate_vectors(pos)
+    return _pair_potential_symmetric(x, y, z, Vector{Float64}(mass))
 end
 
 function pair_potential(
@@ -63,11 +81,159 @@ function pair_potential(
     source_mass::AbstractVector{<:Real};
     backend::CPU = CPU(),
 )::Vector{Float64}
+    _check_potential_arguments(targets, sources, source_mass)
+    nt = size(targets, 2)
+    (nt == 0 || isempty(source_mass)) && return zeros(Float64, nt)
+    xt, yt, zt = _coordinate_vectors(targets)
+    xs, ys, zs = _coordinate_vectors(sources)
+    return _pair_potential_tiled(xt, yt, zt, xs, ys, zs, Vector{Float64}(source_mass))
+end
+
+"""Throw `DimensionMismatch` unless `targets`, `sources` are 3 × n and the masses match the sources."""
+function _check_potential_arguments(targets, sources, source_mass)::Nothing
     size(targets, 1) == 3 || throw(DimensionMismatch("targets must be 3 × n, got $(size(targets))"))
     size(sources, 1) == 3 || throw(DimensionMismatch("sources must be 3 × n, got $(size(sources))"))
     size(sources, 2) == length(source_mass) || throw(
         DimensionMismatch("$(size(sources, 2)) sources but $(length(source_mass)) source masses"),
     )
+    return nothing
+end
+
+"""Rows of a 3 × n coordinate matrix as three contiguous Float64 vectors."""
+function _coordinate_vectors(a::AbstractMatrix{<:Real})::NTuple{3,Vector{Float64}}
+    return (Vector{Float64}(a[1, :]), Vector{Float64}(a[2, :]), Vector{Float64}(a[3, :]))
+end
+
+"""
+    _pair_potential_tiled(xt, yt, zt, xs, ys, zs, ms) -> Vector{Float64}
+
+One-sided CPU sum of [`pair_potential`](@ref): tasks of `_POTENTIAL_TILE`
+targets, each sweeping the sources in blocks of `_POTENTIAL_BLOCK`, the inner
+loop over a block vectorised.
+"""
+function _pair_potential_tiled(
+    xt::Vector{Float64},
+    yt::Vector{Float64},
+    zt::Vector{Float64},
+    xs::Vector{Float64},
+    ys::Vector{Float64},
+    zs::Vector{Float64},
+    ms::Vector{Float64},
+)::Vector{Float64}
+    nt = length(xt)
+    ns = length(ms)
+    Φ = Vector{Float64}(undef, nt)
+    Threads.@threads :dynamic for k in 1:cld(nt, _POTENTIAL_TILE)
+        i0 = (k - 1) * _POTENTIAL_TILE + 1
+        i1 = min(k * _POTENTIAL_TILE, nt)
+        acc = zeros(Float64, i1 - i0 + 1)
+        for j0 in 1:_POTENTIAL_BLOCK:ns
+            j1 = min(j0 + _POTENTIAL_BLOCK - 1, ns)
+            @inbounds for i in i0:i1
+                xi = xt[i]
+                yi = yt[i]
+                zi = zt[i]
+                a = 0.0
+                @simd for j in j0:j1
+                    dx = xs[j] - xi
+                    dy = ys[j] - yi
+                    dz = zs[j] - zi
+                    r2 = muladd(dx, dx, muladd(dy, dy, dz * dz))
+                    a += ifelse(r2 > 0.0, ms[j] / sqrt(r2), 0.0)
+                end
+                acc[i - i0 + 1] += a
+            end
+        end
+        @inbounds for i in i0:i1
+            Φ[i] = -acc[i - i0 + 1]
+        end
+    end
+    return Φ
+end
+
+"""
+    _pair_potential_symmetric(x, y, z, m) -> Vector{Float64}
+
+Potential of a set on itself, visiting every pair once: the tile pairs
+`I ≤ J` of `_POTENTIAL_SYM_TILE` bodies are dealt round-robin to two tasks per
+thread, each accumulating both members' terms in its own vector of n values;
+the vectors are summed at the end.
+"""
+function _pair_potential_symmetric(
+    x::Vector{Float64},
+    y::Vector{Float64},
+    z::Vector{Float64},
+    m::Vector{Float64},
+)::Vector{Float64}
+    n = length(m)
+    nb = cld(n, _POTENTIAL_SYM_TILE)
+    ntasks = min(2 * Threads.nthreads(), nb * (nb + 1) ÷ 2)
+    parts = Vector{Vector{Float64}}(undef, ntasks)
+    Threads.@threads :dynamic for c in 1:ntasks
+        acc = zeros(Float64, n)
+        q = 0
+        for I in 1:nb, J in I:nb
+            q += 1
+            mod1(q, ntasks) == c && _symmetric_tile!(acc, x, y, z, m, I, J, n)
+        end
+        parts[c] = acc
+    end
+    Φ = zeros(Float64, n)
+    for p in parts
+        Φ .-= p
+    end
+    return Φ
+end
+
+"""Add the pair terms of tiles `I` and `J` (pairs `i < j` within a diagonal tile) to `acc`."""
+function _symmetric_tile!(
+    acc::Vector{Float64},
+    x::Vector{Float64},
+    y::Vector{Float64},
+    z::Vector{Float64},
+    m::Vector{Float64},
+    I::Int,
+    J::Int,
+    n::Int,
+)::Nothing
+    i0 = (I - 1) * _POTENTIAL_SYM_TILE + 1
+    i1 = min(I * _POTENTIAL_SYM_TILE, n)
+    j0 = (J - 1) * _POTENTIAL_SYM_TILE + 1
+    j1 = min(J * _POTENTIAL_SYM_TILE, n)
+    @inbounds for i in i0:i1
+        xi = x[i]
+        yi = y[i]
+        zi = z[i]
+        mi = m[i]
+        a = 0.0
+        @simd for j in (I == J ? i + 1 : j0):j1
+            dx = x[j] - xi
+            dy = y[j] - yi
+            dz = z[j] - zi
+            r2 = muladd(dx, dx, muladd(dy, dy, dz * dz))
+            w = ifelse(r2 > 0.0, 1.0 / sqrt(r2), 0.0)
+            a += m[j] * w
+            acc[j] += mi * w
+        end
+        acc[i] += a
+    end
+    return nothing
+end
+
+"""
+    _pair_potential_kernel(backend, targets, sources, source_mass) -> Vector{Float64}
+
+The one-sided sum of [`pair_potential`](@ref) evaluated by the
+KernelAbstractions kernel `_potential_kernel!` on `backend` (one work-item per
+target); the form a device backend runs.
+"""
+function _pair_potential_kernel(
+    backend::CPU,
+    targets::AbstractMatrix{<:Real},
+    sources::AbstractMatrix{<:Real},
+    source_mass::AbstractVector{<:Real},
+)::Vector{Float64}
+    _check_potential_arguments(targets, sources, source_mass)
     nt = size(targets, 2)
     ns = length(source_mass)
     (nt == 0 || ns == 0) && return zeros(Float64, nt)
