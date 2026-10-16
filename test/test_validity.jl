@@ -171,6 +171,8 @@ end
     cp = only(filter(x -> x.kind === :coalescence_phase, rec.epochs))
     @test cp.t_start ≈ pe.t_start && cp.t_end == 4.0
     @test st["virialised"] in ("reached", "not_reached", "undetermined")
+    @test rec.sections["cadence"]["pericentre_resolved"] == "yes"
+    @test isnan(st["r10_drift_per_tcr"]) && st["r10_stationary"] == "not_applicable"   # no lagr.7
     @test st["mixed"] in ("reached", "not_reached", "undetermined")
 
     # Per-snapshot rows
@@ -246,6 +248,47 @@ end
         Dict{Symbol,Any}(:snapshots => snaps, :integrals => ints[1:2]),
         pp,
     )
+end
+
+@testset "Validity: approach without a resolved pericentre, r_10 drift" begin
+    rng = StableRNG(77)
+    n_cl = 400
+    p1, v1 = Nbody6Dynamics.sample_plummer(n_cl, 0.2; rng = rng)
+    p2, v2 = Nbody6Dynamics.sample_plummer(n_cl, 0.2; rng = rng)
+    mass = fill(1.0 / (2n_cl), 2n_cl)
+    vel = hcat(v1, v2) .* sqrt(0.5)
+    ranges = [1:n_cl, (n_cl + 1):(2n_cl)]
+    sep = [4.0, 2.0, 1.0, 0.1, 0.1, 0.1]     # monotone: no interior minimum before coalescence
+    snaps = [
+        _val_snap(hcat(p1 .- [d / 2, 0, 0], p2 .+ [d / 2, 0, 0]), vel, mass, Float64(k - 1)) for
+        (k, d) in enumerate(sep)
+    ]
+    ints = snapshot_integrals(snaps)
+    pp = PostprocessConfig(; msr_n_tracer = 20, msr_n_random = 20)
+    remn = remnant_diagnostics(snaps, ranges; settings = pp, bound_sets = [s.bound for s in ints])
+    @test remn.coalescence_time == 3.0
+    rec = validity_record(
+        Dict{Symbol,Any}(:snapshots => snaps, :integrals => ints, :remnant => remn),
+        pp;
+        calibration = nothing,
+    )
+    @test isempty(rec.sections["stages"]["pericentres"])
+    @test isempty(filter(x -> x.kind === :pericentre, rec.epochs))
+    cp = only(filter(x -> x.kind === :coalescence_phase, rec.epochs))
+    @test cp.t_start == 0.0 && cp.t_end == 3.0
+    @test rec.sections["cadence"]["pericentre_resolved"] == "no"
+    @test all(s -> s.in_window, rec.snapshots[1:4])
+
+    # Drift of the 10 % Lagrangian radius: r_10 = r₀ exp(αt) gives α t_cr per crossing time
+    t = collect(0.0:0.5:10.0)
+    α = 0.01
+    radii = vcat((0.3 .* exp.(α .* t))', (1.0 .* exp.(α .* t))')
+    lagr = Nbody6Dynamics.LagrangianData(t, [0.1, 0.5], radii)
+    drift = Nbody6Dynamics._validity_lagr_drift
+    @test drift(lagr, 0.0, 2.0) ≈ α * 2.0
+    @test drift(lagr, 0.0, NaN) |> isnan
+    @test drift(Nbody6Dynamics.LagrangianData(t, [0.5], radii[2:2, :]), 0.0, 2.0) |> isnan
+    @test drift(nothing, 0.0, 2.0) |> isnan
 end
 
 @testset "Validity: empty results and configuration bounds" begin

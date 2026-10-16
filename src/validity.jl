@@ -453,6 +453,33 @@ function _validity_lagr_stationary(
     return _validity_rate_test(lagr.time[sel], y, window, tolerance)
 end
 
+"""
+    _validity_lagr_drift(lagr, t0, t_cr) -> Float64
+
+Median of `|Δ ln r_10| / (Δt / t_cr)` over consecutive `lagr.7` records at
+`t ≥ t0`: the relative change of the 10 % Lagrangian radius per crossing time.
+NaN without `lagr`, without a 0.1 fraction, with fewer than two records or a
+non-finite `t_cr`.
+"""
+function _validity_lagr_drift(
+    lagr::Union{Nothing,LagrangianData},
+    t0::Float64,
+    t_cr::Float64,
+)::Float64
+    (lagr === nothing || !(isfinite(t_cr) && t_cr > 0)) && return NaN
+    f = findfirst(x -> isapprox(x, 0.1; atol = 1e-12), lagr.mass_fractions)
+    (f === nothing || f > size(lagr.radii, 1)) && return NaN
+    sel = findall(≥(t0), lagr.time)
+    rates = Float64[]
+    for q in 2:length(sel)
+        i, j = sel[q - 1], sel[q]
+        dt = lagr.time[j] - lagr.time[i]
+        (dt > 0 && lagr.radii[f, i] > 0 && lagr.radii[f, j] > 0) || continue
+        push!(rates, abs(log(lagr.radii[f, j] / lagr.radii[f, i])) / (dt / t_cr))
+    end
+    return _validity_finite_median(rates)
+end
+
 """Calibration model of the run: `"plummer"` for equal masses (to 1e-12 relative), `"plummer_kroupa"` otherwise, `""` without stars."""
 function _validity_model(snaps::AbstractVector{Snapshot})::String
     isempty(snaps) && return ""
@@ -705,8 +732,10 @@ The sections:
 - `cadence`: snapshot spacing against the crossing and the initial
   half-mass relaxation times
 - `stages`: end of violent relaxation, pericentres, coalescence, and the
-  times of virialisation (2T/|W| within `virial_tolerance` from then on and
-  `ln r_10` stationary), kinematic relaxation (λ_R stationary) and mixing
+  times of virialisation (2T/|W| within `virial_tolerance` from then on; the
+  drift of `ln r_10` per crossing time and its stationarity are reported
+  beside it, since stellar mass loss and relaxation move the inner radii of a
+  virialised cluster), kinematic relaxation (λ_R stationary) and mixing
   (|a₊₂| ≤ 2σ for every progenitor from then on), each `"reached"`,
   `"not_reached"`, `"undetermined"` (or `"not_applicable"` for mixing with
   fewer than two progenitors), also in initial half-mass relaxation times
@@ -896,7 +925,21 @@ function validity_record(
                 ValidityEpoch(tp - wp, t_end, :coalescence_phase, "not coalesced by the end"),
             )
         end
+    elseif isfinite(t_coal)
+        # Coalescence without a resolved pericentre: the whole approach is out of equilibrium
+        push!(
+            epochs,
+            ValidityEpoch(
+                t_start,
+                t_coal,
+                :coalescence_phase,
+                "approach without a pericentre resolved at this cadence",
+            ),
+        )
     end
+    cadence["pericentre_resolved"] =
+        (remn === nothing || isempty(remn.coalescence_pairs)) ? "not_applicable" :
+        (isempty(pericentres) ? "no" : "yes")
     if ev !== nothing
         for iv in ev.intervals
             iv.flagged && push!(
@@ -968,15 +1011,17 @@ function validity_record(
             nrow,
         )
         if k_q !== nothing
-            for k in max(k_q, first(after)):nrow
-                if _validity_lagr_stationary(lagr, t_row[k], window, rate_tol)
-                    virialised = "reached"
-                    t_virialised = t_row[k]
-                    break
-                end
-            end
+            virialised = "reached"
+            t_virialised = t_row[max(k_q, first(after))]
         end
     end
+    # Secular evolution of the inner Lagrangian radius from virialisation on
+    # (stellar mass loss, relaxation): reported beside the virial state, not gating it
+    t_drift = isnan(t_virialised) ? T_w : t_virialised
+    r10_drift = _validity_lagr_drift(lagr, t_drift, t_cr_median)
+    r10_stationary =
+        isnan(r10_drift) ? "not_applicable" :
+        (_validity_lagr_stationary(lagr, t_drift, window, rate_tol) ? "yes" : "no")
     t_kinematic = NaN
     kinematic = "undetermined"
     if remn !== nothing
@@ -1029,6 +1074,8 @@ function validity_record(
         "coalescence_time_nb" => t_coal,
         "t_virialised" => t_virialised,
         "virialised" => virialised,
+        "r10_drift_per_tcr" => r10_drift,
+        "r10_stationary" => r10_stationary,
         "t_kinematic" => t_kinematic,
         "kinematic" => kinematic,
         "t_mixed" => t_mixed,
