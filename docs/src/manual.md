@@ -73,7 +73,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 |---------------|--------|---------|-------------|
 | `enabled`     | Bool   | `true`  | Enable the install/build phase |
 | `source_url`  | String | `"https://github.com/PaulGoG/Nbody6PPGPU-beijing.git"` | Git repository to clone: the package's engine fork; the upstream repository `nbody6ppgpu/Nbody6PPGPU-beijing` also works |
-| `ref`         | String | `"v2026.07-campaign.4"` | Commit, tag, or branch checked out after cloning (the default is the validated tag of the fork's `campaign` branch, on upstream v2026.07); `""` keeps the default branch. An existing source directory is left as is |
+| `ref`         | String | `"v2026.07-campaign.5"` | Commit, tag, or branch checked out after cloning (the default is the validated tag of the fork's `campaign` branch, on upstream v2026.07); `""` keeps the default branch. An existing source directory is left as is |
 | `install_dir` | String | `"backend/Nbody6PPGPU-beijing"` | Source directory, relative to the project directory (the configuration file's directory); must be nonempty |
 | `reinstall`   | Bool   | `false` | Delete and re-clone if `true` |
 | `clean_build` | Bool   | `true`  | Run `make clean` before building |

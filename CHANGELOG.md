@@ -111,7 +111,7 @@ entries say so.
   fraction and mass class, a pair sum per call that it did not use.
 - The engine is cloned from the package's fork,
   [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing),
-  at the tag `v2026.07-campaign.4` by default (`install.source_url`,
+  at the tag `v2026.07-campaign.5` by default (`install.source_url`,
   `install.ref`; the shipped pipeline configurations pin the same tag). The
   fork's branch `campaign` carries the three source amendments and the CUDA 13
   helper headers as commits on upstream v2026.07, and no longer tracks the
@@ -128,7 +128,17 @@ entries say so.
   `lagr.7` fixes of upstream `dev` are included. From `campaign.4` the
   Milky-Way potential mode (`KZ(14) = 5`) runs: escapers and mass changes no
   longer carry the absolute Galactic potential into the energy bookkeeping,
-  and the NFW and bulge jerks are corrected. The fork's `NOTICE.md` lists
+  and the NFW and bulge jerks are corrected. From `campaign.5` the
+  gravitational-wave decay of compact KS pairs under `KZ(27) > 2` follows the
+  Peters equations: decay below a relative change of 10⁻⁴ per step is
+  accumulated instead of discarded, the KS slow-down is included, the decay
+  is integrated over the accumulated interval and applied at any orbital
+  phase (an unperturbed eccentric pair gained eccentricity at every
+  application, merged early or reached e > 1), the stellar-evolution look-up
+  no longer applies it a second time, and a decaying pair is no longer
+  treated as a chaotic binary; the speed of light is 299 792.458 km/s instead
+  of 3×10⁵ km/s. Runs with `KZ(27) ≤ 2` are unchanged, and restart dumps of
+  earlier builds cannot be read by `campaign.5`. The fork's `NOTICE.md` lists
   the corrections by tag and states the provenance, the credit and the
   licensing. An existing
   engine checkout under `install.install_dir` is reused as it is; set

@@ -3,7 +3,7 @@
 [install]
 enabled = true
 install_dir = "../../backend/Nbody6PPGPU-beijing-gpu"   # CUDA build tree, separate from the CPU one
-ref = "v2026.07-campaign.4"
+ref = "v2026.07-campaign.5"
 reinstall = false
 clean_build = true
 
