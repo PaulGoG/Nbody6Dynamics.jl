@@ -102,6 +102,10 @@ entries say so.
 
 ### Changed
 
+- The restart input carries the `&INSSE`, `&INBSE` and `&INCOLL` blocks of
+  the original input after `&ININPUT`: the engine reads them again at a
+  restart, and without them non-default stellar, binary-evolution and
+  collision parameters reverted to the Level defaults.
 - The exact potential runs on the CPU as a threaded, vectorised loop over
   tiles; the potential of a set on itself visits every pair once. At 10⁵
   bodies on 8 threads it takes 1.9 s instead of 9.2 s, and it agrees with the

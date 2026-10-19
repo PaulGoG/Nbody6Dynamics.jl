@@ -127,7 +127,11 @@ end
 Write the restart input for `KSTART = 2` from the original input file: the
 `&INNBODY6` block with `KSTART=2` (and `TCRTP0` replaced when given) and
 the original `&ININPUT` block with `TCRIT` set to `tcrit_extra`, which the
-engine adds to the saved time (`modify.F`: `TCRIT = TTOT + TCRIT`). Later
+engine adds to the saved time (`modify.F`: `TCRIT = TTOT + TCRIT`), then the
+`&INSSE`, `&INBSE` and `&INCOLL` blocks verbatim: `MODIFY` reads them again
+through `READSE`, which without them keeps the Level defaults (and logs an
+invalid namelist for each), so non-default stellar, binary-evolution or
+collision parameters would revert at the restart. `&INDATA` and the later
 namelists are not read on restart and are omitted.
 
 The increment is written with round-trip precision: the engine ends a run at
@@ -154,11 +158,20 @@ function _write_restart_inp(
         replace(mi.captures[1], r"TCRIT\s*=\s*[0-9.eE+-]+" => "TCRIT=" * repr(Float64(tcrit_extra)))
     occursin("TCRIT=", bi) ||
         error("restart: no TCRIT entry found in the &ININPUT block of $original_inp")
+    # Values of these namelists hold no '/', which ends a block.
+    se_blocks = String[]
+    for name in ("INSSE", "INBSE", "INCOLL")
+        m = match(Regex("&" * name * "\\b[^/]*/"), text)
+        m === nothing || push!(se_blocks, String(m.match))
+    end
     open(path, "w") do io
         println(io, "&INNBODY6")
         print(io, rstrip(b6), " /\n\n")
         println(io, "&ININPUT")
         print(io, rstrip(bi), " /\n")
+        for b in se_blocks
+            print(io, "\n", b, "\n")
+        end
     end
     return path
 end

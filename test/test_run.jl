@@ -613,7 +613,7 @@ Base.CoreLogging.handle_message(::_ClosedPipeLogger, args...; kwargs...) =
     @test Nbody6Dynamics._latest_dump(mktempdir()) === nothing
 
     # Restart input from an original merger input: KSTART=2, TCRIT as increment,
-    # only the first two namelists
+    # the first two namelists and the SSE/BSE/collision blocks READSE reads again
     orig = joinpath(d, "merger.inp")
     write(
         orig,
@@ -630,8 +630,26 @@ Base.CoreLogging.handle_message(::_ClosedPipeLogger, args...; kwargs...) =
     @test occursin("KSTART=2,TCOMP=1E+08,TCRTP0=900,isernb=40", txt)
     @test occursin("TCRIT=3.0,QE=2.000E-04", txt)
     @test occursin("KZ(11:20)=0 1 0 0 0 0 0 0 3 0", txt) && occursin("Level='C' /", txt)
-    @test !occursin("&INSSE", txt) && !occursin("&INDATA", txt)
+    @test occursin("Level='C' /\n\n&INSSE /\n", txt) && !occursin("&INDATA", txt)
+    @test !occursin("&INBSE", txt) && !occursin("&INCOLL", txt)
     @test_throws ArgumentError Nbody6Dynamics._write_restart_inp(rin, orig, 0.0)
+    # Non-default values survive, in the engine's read order
+    write(
+        orig,
+        replace(
+            read(orig, String),
+            "&INSSE /\n" => "&INSSE /\n\n&INBSE\nkicktype=-2,bhspinfl=4 /\n\n&INCOLL fctorcl=0.25 /\n",
+        ),
+    )
+    Nbody6Dynamics._write_restart_inp(rin, orig, 3.0)
+    txt = read(rin, String)
+    i_in = findfirst("&ININPUT", txt)
+    i_se = findfirst("&INSSE /", txt)
+    i_bse = findfirst("&INBSE\nkicktype=-2,bhspinfl=4 /", txt)
+    i_coll = findfirst("&INCOLL fctorcl=0.25 /", txt)
+    @test all(!isnothing, (i_in, i_se, i_bse, i_coll))
+    @test first(i_in) < first(i_se) < first(i_bse) < first(i_coll)
+    @test !occursin("&INDATA", txt)
 
     # RUN_INFO segments accumulate across launches
     run_dir = mktempdir()
