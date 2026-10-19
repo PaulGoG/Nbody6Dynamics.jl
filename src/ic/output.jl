@@ -381,7 +381,9 @@ Follows the Fortran NAMELIST read order expected by `nbody6.F → start.F`:
 # Key settings
 - `nbody6`: resolved [`Nbody6ParameterSpec`](@ref); obtain it from
   [`resolve_nbody6_parameters`](@ref) — unresolved zeros are refused. Its
-  `kz` overrides are applied last. `checkpoint = true` sets `KZ(2) = 1` (a
+  `binary_physics = "campaign"` writes the option set of
+  `_CAMPAIGN_BINARY_KZ` over the inherited block, then its `kz` overrides
+  are applied; a resulting `KZ(46) > 0` warns. `checkpoint = true` sets `KZ(2) = 1` (a
   restart dump at every adjustment) and logs the disk space the dumps can
   take.
 - `stellar`: [`StellarSpec`](@ref) (`KZ(19)`, `Level`, `ZMET`, `EPOCH0`,
@@ -424,11 +426,18 @@ function generate_merger_inp(
     kz[23] = 2
     kz[26] = 1
     kz[30] = 1
+    if nbody6.binary_physics == "campaign"
+        for (i, v) in _CAMPAIGN_BINARY_KZ
+            kz[i] = v
+        end
+    end
     for (i, v) in nbody6.kz
         i in (8, 14, 16, 19) &&
             @warn "merger.nbody6.kz overrides KZ($i) = $v, which also has a named setting (binaries, kz14/tidal, kz16, stellar.kz19)"
         kz[i] = v
     end
+    kz[46] > 0 &&
+        @warn "KZ(46) = $(kz[46]) writes the per-binary custom output (ASCII, several GB per N-body time unit at 6×10⁵ bodies); meant for test arms"
 
     # Build KZ lines: KZ(1:10) = ... etc.
     kz_strs = String[]
@@ -551,7 +560,7 @@ function generate_merger_inp(
         # --- No binaries (NBIN0=0) or hierarchical triples ---
     end
 
-    @info "Wrote .inp file: $path (N=$N_total, NBIN0=$nbin0, KZ(22)=2, KZ(14)=$kz14, RBAR=$rbar, ZMBAR=$zmbar)"
+    @info "Wrote .inp file: $path (N=$N_total, NBIN0=$nbin0, KZ(22)=2, KZ(14)=$kz14, binary_physics=$(nbody6.binary_physics), RBAR=$rbar, ZMBAR=$zmbar)"
     if nbody6.checkpoint
         n_dumps = floor(Int, tcrit / dtadj) + 1
         dump_bytes = _checkpoint_dump_bytes(N_total, nbody6.nnbopt)
@@ -644,6 +653,7 @@ function generate_merger_ic(
     end
     _validate_nbody6(cfg.nbody6)
     _validate_stellar(cfg.stellar, cfg.output)
+    _validate_binary_physics(cfg.nbody6, cfg.stellar)
     _validate_tidal(cfg.tidal)
     _validate_tidal_tolerance(cfg.tidal, cfg.nbody6)
 
@@ -1185,8 +1195,9 @@ function _write_merger_summary(
         p = regime.nbody6
         @printf(
             io,
-            "Integration (merger.inp, N-body units): preset=%s QE=%.1E ETAI=%.3g ETAR=%.3g NNBOPT=%d RS0=%.3g RMIN=%.3E DTMIN=%.3E KZ(16)=%d TCRTP0=%.4g Myr\n",
+            "Integration (merger.inp, N-body units): preset=%s binary_physics=%s QE=%.1E ETAI=%.3g ETAR=%.3g NNBOPT=%d RS0=%.3g RMIN=%.3E DTMIN=%.3E KZ(16)=%d TCRTP0=%.4g Myr\n",
             p.preset,
+            p.binary_physics,
             p.qe,
             p.etai,
             p.etar,

@@ -8,6 +8,18 @@ entries say so.
 
 ### Added
 
+- `binary_physics = "inherited" | "campaign"` in `[merger.nbody6]`: the
+  few-body and binary options of the generated input. `"inherited"` (the
+  default) keeps the block written so far, without the chain, stable
+  hierarchies or the gravitational-wave decay of compact pairs.
+  `"campaign"` writes the set adopted for the binary programme: chain and
+  hierarchies (`KZ(15) = 2`, `KZ(30) = 2`), slow-down `KZ(26) = 2`, Peters
+  decay with sequential tides `KZ(27) = 3`, `KZ(28) = 1`, Roche transfer
+  `KZ(34) = 2`, the hierarchy census `KZ(18) = 1`, binary records also
+  without primordial pairs `KZ(8) = 2`, the binary event files `KZ(9) = 3`
+  and KS event lines `KZ(10) = 2`; it requires stellar evolution. Explicit
+  `kz` keys override either set; `KZ(18) ≥ 2` (the engine's primordial-triple
+  generator) is refused and `KZ(46) > 0` (per-binary custom output) warns.
 - Validity record of a run (`validity_record`, `validity.toml`,
   `validity_snapshots.csv`): energy, mass and angular-momentum checks with a
   verdict, bound-set convergence, the snapshot cadence against the crossing

@@ -276,6 +276,32 @@ end
 """Integration-parameter presets of `[merger.nbody6]` (the `preset` key)."""
 const _NBODY6_PRESETS = ("engine", "campaign")
 
+"""Binary-physics option sets of `[merger.nbody6]` (the `binary_physics` key)."""
+const _BINARY_PHYSICS = ("inherited", "campaign")
+
+"""
+`(index, value)` pairs of the `KZ` options that `binary_physics = "campaign"` writes: chain and stable
+hierarchies (`KZ(15) = 2`, chain records `KZ(30) = 2`), KS and chain slow-down (`KZ(26) = 2`), Peters
+decay of compact KS pairs with sequential tides (`KZ(27) = 3`), GW braking of the inner compact binaries
+of hierarchies (`KZ(28) = 1`), BSE Roche transfer with tidal synchronisation (`KZ(34) = 2`), the
+hierarchy census (`KZ(18) = 1`), binary records also without primordial pairs (`KZ(8) = 2`), the binary
+event files (`KZ(9) = 3`), the KS formation and termination lines (`KZ(10) = 2`) and no per-binary custom
+output (`KZ(46) = 0`).
+"""
+const _CAMPAIGN_BINARY_KZ = (
+    (8, 2),
+    (9, 3),
+    (10, 2),
+    (15, 2),
+    (18, 1),
+    (26, 2),
+    (27, 3),
+    (28, 1),
+    (30, 2),
+    (34, 2),
+    (46, 0),
+)
+
 """
     Nbody6ParameterSpec(; qe = 2.0e-4, etai = 0.0, etar = 0.0, etau = 0.0,
                           nnbopt = 0, rs0 = 0.0, rmin = 0.0, dtmin = 0.0,
@@ -283,7 +309,7 @@ const _NBODY6_PRESETS = ("engine", "campaign")
                           kz16 = 0, tcomp = 1.0e8, tcrtp0 = 3600.0,
                           isernb = 40, iserreg = 40, iserks = 0,
                           nfix = 1, ncrit = 10, nrun = 1, ncomm = 1, checkpoint = false,
-                          preset = "engine", kz = Dict{Int,Int}())
+                          preset = "engine", binary_physics = "inherited", kz = Dict{Int,Int}())
 
 Every numerical field of the `&INNBODY6` and `&ININPUT` namelists that the
 merger input writer emits (`[merger.nbody6]`), in the N-body units of the
@@ -332,9 +358,22 @@ input manual.
   Aarseth close-encounter step at that `RMIN`; the engine's automatic
   re-derivation of these quantities (`KZ(16)`, `KZ(17)`, `KZ(32)`) is
   refused. Explicit nonzero keys override the preset in both cases.
+- `binary_physics`: `"inherited"` or `"campaign"`; the few-body and binary
+  options. `"inherited"` writes the block the generator has always written:
+  no chain and no stable hierarchies (`KZ(15) = 0`), no gravitational-wave
+  decay of compact pairs (`KZ(27) = 0`), no binary event output.
+  `"campaign"` writes the set adopted for the binary programme (second table
+  below, `_CAMPAIGN_BINARY_KZ`) with the Level defaults of `&INSSE`, `&INBSE`
+  and `&INCOLL`; it requires stellar evolution (`stellar.kz19 ≥ 3`), since
+  the decay, tides and Roche transfer act on the stellar types, and an engine
+  from `v2026.07-campaign.5`, whose decay of compact KS pairs follows the
+  Peters equations
 - `kz`: explicit `KZ(i) = v` overrides applied last (`[merger.nbody6.kz]`,
-  keys 1–50); an override of an index that also has a named key (14, 16,
-  19) warns
+  keys 1–50); an override of an index that also has a named key (8, 14, 16,
+  19) warns. `KZ(18) ≥ 2` is refused: it runs the engine's primordial-triple
+  generator on the `dat.10` pairs, and the generator writes no triples
+  (`NHI0 = 0`). `KZ(46) > 0` (per-binary custom output, several GB per
+  N-body time unit at 6×10⁵ bodies) warns
 
 # Presets
 | Key | `"engine"` | `"campaign"` |
@@ -350,6 +389,15 @@ input manual.
 
 `r_h` and `N_min` of the smallest member in N-body units of the combined
 system, `ρ̂` its central density contrast, `N_total` the number of bodies.
+
+# Binary physics
+| `KZ` | `"inherited"` | `"campaign"` |
+|---|---|---|
+| 8 | 2 with primordial pairs, else 0 | 2 |
+| 9, 10 | 0, 0 | 3, 2 |
+| 15, 18 | 0, 0 | 2, 1 |
+| 26, 27, 28 | 1, 0, 0 | 2, 3, 1 |
+| 30, 34, 46 | 1, 0, 0 | 2, 2, 0 |
 """
 Base.@kwdef struct Nbody6ParameterSpec
     qe::Float64 = 2.0e-4
@@ -376,6 +424,7 @@ Base.@kwdef struct Nbody6ParameterSpec
     ncomm::Int = 1
     checkpoint::Bool = false
     preset::String = "engine"
+    binary_physics::String = "inherited"
     kz::Dict{Int,Int} = Dict{Int,Int}()
 end
 
@@ -765,6 +814,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
         _config_error("merger.output.deltat_myr", "must be ≥ 0; got $(output.deltat_myr)")
     _validate_nbody6(nbody6)
     _validate_stellar(stellar, output)
+    _validate_binary_physics(nbody6, stellar)
     _validate_tidal(tidal)
     _validate_tidal_tolerance(tidal, nbody6)
 
@@ -837,6 +887,17 @@ function _validate_tidal(t::TidalSpec)
     return nothing
 end
 
+"""Refuse `binary_physics = "campaign"` without stellar evolution (`kz19 ≥ 3`): the gravitational-wave decay, tides and Roche transfer of the set act on the stellar types."""
+function _validate_binary_physics(p::Nbody6ParameterSpec, s::StellarSpec)
+    (p.binary_physics == "campaign" && s.kz19 < 3) && _config_error(
+        "merger.nbody6.binary_physics",
+        "= \"campaign\" requires stellar evolution (merger.stellar.kz19 ≥ 3): the " *
+        "gravitational-wave decay, tides and Roche transfer act on the stellar types; " *
+        "got kz19 = $(s.kz19)",
+    )
+    return nothing
+end
+
 """Fail-fast bounds of `[merger.stellar]` (the engine's own limits on `zmet`; `level` one of A, B, C, 0)."""
 function _validate_stellar(s::StellarSpec, output::MergerOutputSpec)
     s.kz19 ≥ 0 || _config_error("merger.stellar.kz19", "must be ≥ 0; got $(s.kz19)")
@@ -902,9 +963,18 @@ function _validate_nbody6(p::Nbody6ParameterSpec)
         getfield(p, k) ≥ 1 ||
             _config_error("merger.nbody6.$k", "must be ≥ 1; got $(getfield(p, k))")
     end
+    p.binary_physics in _BINARY_PHYSICS || _config_error(
+        "merger.nbody6.binary_physics",
+        "must be one of \"inherited\", \"campaign\"; got \"$(p.binary_physics)\"",
+    )
     for (i, v) in p.kz
         1 ≤ i ≤ 50 || _config_error("merger.nbody6.kz", "index must be within 1–50; got $i")
     end
+    get(p.kz, 18, 0) ≥ 2 && _config_error(
+        "merger.nbody6.kz",
+        "must not set KZ(18) ≥ 2: it runs the engine's primordial-triple generator on the dat.10 " *
+        "pairs, and the generator writes no triples (NHI0 = 0); got KZ(18) = $(p.kz[18])",
+    )
     if p.preset == "campaign"
         p.kz16 == 0 || _config_error(
             "merger.nbody6.kz16",

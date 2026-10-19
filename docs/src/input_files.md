@@ -194,6 +194,7 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `preset` | String | `"engine"` | Source of every zero entry below; one of `"engine"`, `"campaign"` (table above) |
+| `binary_physics` | String | `"inherited"` | Few-body and binary options of the input; one of `"inherited"`, `"campaign"` (table below); `"campaign"` requires `stellar.kz19 ≥ 3` |
 | `qe` | Float | `2.0e-4` | Energy-error tolerance per adjustment interval (`QE`); must be > 0 |
 | `etai` | Float | `0.0` | Irregular time-step factor; `0` = preset value; must be ≥ 0 |
 | `etar` | Float | `0.0` | Regular time-step factor; `0` = preset value; must be ≥ 0 |
@@ -218,7 +219,20 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 
 Runs with stellar evolution need the relaxed tolerance `qe ≈ 1e-2`: supernova kicks change the energy budget between adjustments, and the default tolerance halts the run.
 
-`[merger.nbody6.kz]` holds explicit `KZ(i) = v` overrides with string keys `"1"`–`"50"` and integer values, applied after every named option (an override of an index that also has a named key, 14, 16, or 19, warns):
+`binary_physics` selects the few-body and binary options. `"inherited"` keeps the block the generator has always written: no chain and no stable hierarchies (`KZ(15) = 0`), no gravitational-wave decay of compact pairs (`KZ(27) = 0`), no binary event files. `"campaign"` writes the set adopted for the binary programme, with the Level defaults of `&INSSE`, `&INBSE` and `&INCOLL` (zero recoil of GW mergers, `fctorcl = 0.5`); its decay of compact KS pairs needs an engine from `v2026.07-campaign.5`, the default pin.
+
+| `KZ` | `"inherited"` | `"campaign"` | Effect |
+|---|---|---|---|
+| 8 | 2 with primordial pairs, else 0 | 2 | binary records (`bdat.9`, `bwdat.19`, `merger.84`), also of dynamically formed pairs |
+| 9, 10 | 0, 0 | 3, 2 | binary event files (`binev.17`, `degen.4`, `hbin.39`); `NEW`/`END KSREG` lines |
+| 15, 30 | 0, 1 | 2, 2 | chain regularisation and stable hierarchies, with their begin and end records |
+| 18 | 0 | 1 | hierarchy census `hiarch.12` |
+| 26 | 1 | 2 | KS and chain slow-down |
+| 27, 28 | 0, 0 | 3, 1 | Peters decay of compact KS pairs with sequential tides; GW braking of the inner compact binaries of hierarchies |
+| 34 | 0 | 2 | Roche-lobe transfer with tidal synchronisation |
+| 46 | 0 | 0 | no per-binary custom output |
+
+`[merger.nbody6.kz]` holds explicit `KZ(i) = v` overrides with string keys `"1"`–`"50"` and integer values, applied after every named option and after the `binary_physics` set (an override of an index that also has a named key, 8, 14, 16, or 19, warns). `KZ(18) ≥ 2` is refused: it runs the engine's primordial-triple generator on the `dat.10` pairs, and the generator writes no triples. `KZ(46) > 0`, the per-binary custom output (several GB per N-body time unit at 6×10⁵ bodies), warns:
 
 ```toml
 [merger.nbody6.kz]

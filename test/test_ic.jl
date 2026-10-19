@@ -869,6 +869,23 @@ dtplot = 2.0
             replace(nb_txt, "[merger.nbody6]\n" => "[merger.nbody6]\npreset = \"foo\"\n"),
         )
         @test_throws ArgumentError load_merger_config(nb_preset_path)
+        # binary_physics: parsed, and the campaign set refused without stellar evolution (kz19 = 0 here)
+        write(
+            nb_preset_path,
+            replace(
+                nb_txt,
+                "[merger.nbody6]\n" => "[merger.nbody6]\nbinary_physics = \"inherited\"\n",
+            ),
+        )
+        @test load_merger_config(nb_preset_path).nbody6.binary_physics == "inherited"
+        write(
+            nb_preset_path,
+            replace(
+                nb_txt,
+                "[merger.nbody6]\n" => "[merger.nbody6]\nbinary_physics = \"campaign\"\n",
+            ),
+        )
+        @test_throws ArgumentError load_merger_config(nb_preset_path)
 
         # Writer: run control, stellar settings, KZ overrides (an override of a named
         # index warns), and mass bounds reach the file
@@ -1133,6 +1150,76 @@ dtplot = 2.0
         ic_meta = Nbody6Dynamics.TOML.parsefile(joinpath(result.output_dir, "merger_ic.toml"))
         @test ic_meta["nbody6"]["preset"] == "campaign"
         @test ic_meta["nbody6"]["etai"] == 0.01
+    end
+
+    @testset "Binary-physics option set in the generated input" begin
+        imf_b = RescaledKroupaIMF(
+            bodyn = 0.1,
+            body1 = 50.0,
+            target_mass = 100 * kroupa_mean_mass(0.1, 50.0),
+        )
+        bcfg(nb; stellar = StellarSpec()) = MergerConfig(
+            [ClusterSpec(profile = PlummerProfile(), N = 100, rbar = 1.0, imf = imf_b)],
+            "single",
+            OrbitSpec(),
+            MergerOutputSpec(format = "nbody", output_dir = mktempdir());
+            nbody6 = nb,
+            stellar = stellar,
+        )
+        kz_lines(dir) = filter(startswith("KZ("), readlines(joinpath(dir, "merger.inp")))
+        # Inherited block: no chain, no GW decay, no binary event output
+        r0 = generate_merger_ic(bcfg(Nbody6ParameterSpec()); rng = StableRNG(7))
+        @test kz_lines(r0.output_dir)[1:4] == [
+            "KZ(1:10)=1 -1 2 0 0 0 3 0 0 0",
+            "KZ(11:20)=0 1 0 0 0 0 0 0 3 0",
+            "KZ(21:30)=0 2 2 0 0 1 0 0 0 1",
+            "KZ(31:40)=0 0 0 0 0 0 0 0 0 0",
+        ]
+        # Campaign set
+        rc = generate_merger_ic(
+            bcfg(Nbody6ParameterSpec(; binary_physics = "campaign"));
+            rng = StableRNG(7),
+        )
+        @test kz_lines(rc.output_dir) == [
+            "KZ(1:10)=1 -1 2 0 0 0 3 2 3 2",
+            "KZ(11:20)=0 1 0 0 2 0 0 1 3 0",
+            "KZ(21:30)=0 2 2 0 0 2 3 1 0 2",
+            "KZ(31:40)=0 0 0 2 0 0 0 0 0 0",
+            "KZ(41:50)=0 0 0 0 0 0 0 0 0 0",
+        ]
+        meta = Nbody6Dynamics.TOML.parsefile(joinpath(rc.output_dir, "merger_ic.toml"))
+        @test meta["nbody6"]["binary_physics"] == "campaign"
+        @test occursin(
+            "binary_physics=campaign",
+            read(joinpath(rc.output_dir, "merger_summary.txt"), String),
+        )
+        # Explicit keys override the set (an arm without the chain)
+        ra = generate_merger_ic(
+            bcfg(Nbody6ParameterSpec(; binary_physics = "campaign", kz = Dict(15 => 0)));
+            rng = StableRNG(7),
+        )
+        @test kz_lines(ra.output_dir)[2] == "KZ(11:20)=0 1 0 0 0 0 0 1 3 0"
+        # Per-binary custom output warns
+        @test_logs (:warn, r"KZ\(46\) = 4") match_mode = :any generate_merger_ic(
+            bcfg(Nbody6ParameterSpec(; binary_physics = "campaign", kz = Dict(46 => 4)));
+            rng = StableRNG(7),
+        )
+        # Refusals: unknown set, the campaign set without stellar evolution, KZ(18) ≥ 2
+        @test_throws ArgumentError generate_merger_ic(
+            bcfg(Nbody6ParameterSpec(; binary_physics = "full"));
+            rng = StableRNG(7),
+        )
+        @test_throws ArgumentError generate_merger_ic(
+            bcfg(
+                Nbody6ParameterSpec(; binary_physics = "campaign");
+                stellar = StellarSpec(; kz19 = 0, level = "0"),
+            );
+            rng = StableRNG(7),
+        )
+        @test_throws ArgumentError generate_merger_ic(
+            bcfg(Nbody6ParameterSpec(; kz = Dict(18 => 2)));
+            rng = StableRNG(7),
+        )
     end
 
     # --- Equal-mass IMF ---
