@@ -20,6 +20,12 @@ entries say so.
   and KS event lines `KZ(10) = 2`; it requires stellar evolution. Explicit
   `kz` keys override either set; `KZ(18) ≥ 2` (the engine's primordial-triple
   generator) is refused and `KZ(46) > 0` (per-binary custom output) warns.
+- `capacity` section of the validity record (schema version 2): the
+  headroom of the engine's SIMD irregular-force library (KS pairs beyond
+  `NBIN0 + 100` overrun it) and of the merger table of stable hierarchies
+  (`MMAX − 1` entries), with a verdict. `AdjustRecord` gains `nmerge`,
+  `DiagnosticsData` gains `nbin0` (from the `&INDATA` echo), and the build
+  record's `engine_limits` gains `MMAX`.
 - Validity record of a run (`validity_record`, `validity.toml`,
   `validity_snapshots.csv`): energy, mass and angular-momentum checks with a
   verdict, bound-set convergence, the snapshot cadence against the crossing

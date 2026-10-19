@@ -135,7 +135,7 @@ end
         ),
         run_info = Dict{String,Any}("run" => Dict{String,Any}("id" => "val_test")),
     )
-    @test rec.schema_version == Nbody6Dynamics.VALIDITY_SCHEMA_VERSION == 1
+    @test rec.schema_version == Nbody6Dynamics.VALIDITY_SCHEMA_VERSION == 2
     h = rec.sections["header"]
     @test h["run_id"] == "val_test" && h["backend_commit"] == "abc1234"
     @test h["source_amendments"] == ["escape-summary-format"]
@@ -193,13 +193,22 @@ end
     @test all(haskey(cs, "$(a)__$(b)") for (a, b) in Nbody6Dynamics.VALIDITY_TRACKED)
     @test rec.sections["masks"]["M2_lagr_n_min"] == pp.lagr_n_min
     @test rec.sections["bound_set"]["n_snapshots"] == 7
+    # Capacity without the NBIN0 echo and without engine limits: headroom unknown, no flag
+    c = rec.sections["capacity"]
+    @test c["available"]
+    @test c["nbin0"] == -1
+    @test isnan(c["simd_headroom"])
+    @test c["mmax"] == -1
+    @test c["merge_table_headroom"] == -1
+    @test c["verdict"] == "ok"
+    @test isempty(c["reasons"])
     @test rec.sections["thresholds"]["interval_de"] == pp.validity_interval_de
 
     # Schema of the written files
     dir = mktempdir()
     path = write_validity(joinpath(dir, "validity.toml"), rec)
     d = Nbody6Dynamics.TOML.parsefile(path)
-    @test d["schema_version"] == 1
+    @test d["schema_version"] == 2
     for sec in (
         "header",
         "thresholds",
@@ -207,6 +216,7 @@ end
         "mass",
         "angular_momentum",
         "bound_set",
+        "capacity",
         "cadence",
         "stages",
         "calibration",
@@ -248,6 +258,39 @@ end
         Dict{Symbol,Any}(:snapshots => snaps, :integrals => ints[1:2]),
         pp,
     )
+end
+
+@testset "capacity flags" begin
+    capacity = Nbody6Dynamics._validity_capacity
+    record(t, npairs, nmerge) = Nbody6Dynamics.AdjustRecord(
+        t,
+        t,
+        NaN,
+        NaN,
+        NaN,
+        1000,
+        npairs,
+        ntuple(_ -> NaN, 12)...,
+        nmerge,
+    )
+    diag(npairs, nmerge) = Nbody6Dynamics.DiagnosticsData(
+        [record(0.0, npairs[1], nmerge[1]), record(1.0, npairs[2], nmerge[2])],
+        Dict{String,Float64}(),
+        Int[],
+        (0.0, 0.0, 0.0, 0.0),
+        10,
+    )
+    build_info = Dict{String,Any}("engine_limits" => Dict{String,Any}("MMAX" => 2048))
+    # One KS pair beyond NBIN0 + 100, merger table at MMAX − 1
+    c = capacity(diag((50, 111), (0, 2047)), build_info)
+    @test c["npairs_max"] == 111 && c["simd_headroom"] == -1.0
+    @test c["nmerge_max"] == 2047 && c["merge_table_headroom"] == 0
+    @test c["verdict"] == "flag" && length(c["reasons"]) == 2
+    # SIMD library at its margin, one free merger-table entry
+    c = capacity(diag((50, 110), (0, 2046)), build_info)
+    @test c["simd_headroom"] == 0.0 && c["merge_table_headroom"] == 1
+    @test c["verdict"] == "ok"
+    @test capacity(nothing, Dict{String,Any}())["verdict"] == "unavailable"
 end
 
 @testset "Validity: approach without a resolved pericentre, r_10 drift" begin

@@ -634,7 +634,9 @@ energy, W = −POT), `etide` (ETIDE), and the engine's correction channels `ebin
 (EBIN), `emerge` (EMERGE), `esub` (ESUB), `ecoll` (ECOLL), `emdot` (EMDOT),
 `ecdot` (ECDOT), whose increments between consecutive lines locate the energy
 changes the engine has accounted for. The ten-argument constructor leaves the
-energy terms NaN.
+energy terms NaN. `nmerge` is the NMERGE count of the `TIME[NB]` line (stable
+hierarchies held in the engine's merger table), 0 when not printed; the ten- and
+nineteen-argument constructors set it to 0.
 """
 struct AdjustRecord
     time_nb::Float64
@@ -656,6 +658,7 @@ struct AdjustRecord
     ecoll::Float64           # ECOLL (NB); NaN when not printed
     emdot::Float64           # EMDOT (NB); NaN when not printed
     ecdot::Float64           # ECDOT (NB); NaN when not printed
+    nmerge::Int              # NMERGE of the TIME[NB] line (stable hierarchies in the merger table); 0 when not printed
 end
 
 function AdjustRecord(
@@ -690,6 +693,52 @@ function AdjustRecord(
         NaN,
         NaN,
         NaN,
+        0,
+    )
+end
+
+function AdjustRecord(
+    time_nb::Real,
+    time_myr::Real,
+    qvir::Real,
+    de_rel::Real,
+    e_tot::Real,
+    n::Integer,
+    npairs::Integer,
+    rscale::Real,
+    de_abs::Real,
+    detot::Real,
+    ekin::Real,
+    pot::Real,
+    etide::Real,
+    ebin::Real,
+    emerge::Real,
+    esub::Real,
+    ecoll::Real,
+    emdot::Real,
+    ecdot::Real,
+)
+    return AdjustRecord(
+        time_nb,
+        time_myr,
+        qvir,
+        de_rel,
+        e_tot,
+        n,
+        npairs,
+        rscale,
+        de_abs,
+        detot,
+        ekin,
+        pot,
+        etide,
+        ebin,
+        emerge,
+        esub,
+        ecoll,
+        emdot,
+        ecdot,
+        0,
     )
 end
 
@@ -701,17 +750,29 @@ the `PHYSICAL SCALING` values, the engine options `kz` (the 50 values of the
 `OPTIONS` echo; empty when the capture lacks it) and the linearised tidal
 field `tidal` (`TIDAL(1:4)` of the `TIDAL PARAMETERS` echo, N-body units;
 zeros when absent, i.e. no external field of `KZ(14) ≤ 2`). The two-argument
-constructor leaves `kz` empty and `tidal` zero.
+constructor leaves `kz` empty and `tidal` zero. `nbin0` is NBIN0 of the
+`&INDATA` echo (`NBIN0 = …` on the line that starts with `ALPHAS`), `-1` when
+absent; the two- and four-argument constructors set it to `-1`.
 """
 struct DiagnosticsData
     adjust::Vector{AdjustRecord}
     physical_scaling::Dict{String,Float64}
     kz::Vector{Int}
     tidal::NTuple{4,Float64}
+    nbin0::Int
 end
 
 function DiagnosticsData(adjust::Vector{AdjustRecord}, physical_scaling::Dict{String,Float64})
-    return DiagnosticsData(adjust, physical_scaling, Int[], (0.0, 0.0, 0.0, 0.0))
+    return DiagnosticsData(adjust, physical_scaling, Int[], (0.0, 0.0, 0.0, 0.0), -1)
+end
+
+function DiagnosticsData(
+    adjust::Vector{AdjustRecord},
+    physical_scaling::Dict{String,Float64},
+    kz::Vector{Int},
+    tidal::NTuple{4,Float64},
+)
+    return DiagnosticsData(adjust, physical_scaling, kz, tidal, -1)
 end
 
 # ---------------------------------------------------------------------------

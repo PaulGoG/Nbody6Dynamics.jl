@@ -20,7 +20,8 @@
     read_diagnostics(path::AbstractString) -> DiagnosticsData
 
 Parse the simulation stdout file for ADJUST lines, supplementary RSCALE
-and TIME[NB] lines (N, NPAIRS), and physical scaling info.
+and TIME[NB] lines, and physical scaling info; the TIME[NB] lines give N,
+NPAIRS and NMERGE.
 
 Each ADJUST epoch in Nbody6++ output consists of up to three lines:
 1. `ADJUST:` — energy, virial ratio, time
@@ -36,6 +37,7 @@ The first `OPTIONS` echo gives `kz`, the 50 option values, left empty when
 the capture lacks the echo or its value row does not hold 50 integers.
 The `TIDAL PARAMETERS:` echo gives `tidal`, the four coefficients
 `TIDAL(1:4)` in N-body units, zeros when the capture lacks it.
+`nbin0` from the `&INDATA` echo (`-1` when absent).
 """
 function read_diagnostics(path::AbstractString)::DiagnosticsData
     isfile(path) || error("Diagnostics file not found: $path")
@@ -51,6 +53,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     pending_e_tot = NaN
     pending_n = 0
     pending_npairs = 0
+    pending_nmerge = 0
     pending_rscale = 0.0
     pending_de_abs = NaN
     pending_detot = NaN
@@ -69,9 +72,16 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     tidal = (0.0, 0.0, 0.0, 0.0)
     options_seen = false
     options_pending = 0   # non-empty lines after OPTIONS still to read; the second holds the values
+    nbin0 = -1
 
     for line in eachline(path)
         stripped = lstrip(line)
+
+        # ── NBIN0 of the &INDATA echo; no `continue`, the line may serve other branches ──
+        if nbin0 < 0
+            m = match(r"NBIN0\s*=\s*(\d+)", stripped)
+            m === nothing || (nbin0 = parse(Int, something(m.captures[1])))
+        end
 
         # ── OPTIONS echo: index row, then value row ──
         if options_pending > 0
@@ -120,6 +130,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
                         pending_ecoll,
                         pending_emdot,
                         pending_ecdot,
+                        pending_nmerge,
                     ),
                 )
             end
@@ -132,6 +143,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
             pending_e_tot = vals.e_tot
             pending_n = vals.n
             pending_npairs = vals.npairs
+            pending_nmerge = 0
             pending_rscale = vals.rscale
             pending_de_abs = vals.de_abs
             pending_detot = vals.detot
@@ -163,6 +175,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
             info = _parse_time_nb_line(stripped)
             pending_n = info.n
             pending_npairs = info.npairs
+            pending_nmerge = info.nmerge
             continue
         end
 
@@ -197,6 +210,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
                 pending_ecoll,
                 pending_emdot,
                 pending_ecdot,
+                pending_nmerge,
             ),
         )
     end
@@ -206,7 +220,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     # particle count so plots don't show sawtooth artefacts.
     _forward_fill_particle_counts!(adjust_records)
 
-    return DiagnosticsData(adjust_records, scaling, kz, tidal)
+    return DiagnosticsData(adjust_records, scaling, kz, tidal, nbin0)
 end
 
 # ---------------------------------------------------------------------------
@@ -417,13 +431,14 @@ function _parse_tidal_line(line::AbstractString)::NTuple{4,Float64}
 end
 
 """
-Parse a TIME[NB] line for N and NPAIRS.
+Parse a TIME[NB] line for N, NPAIRS and NMERGE.
 
 Format: `TIME[NB]  val  N  val  <NB>  val  NPAIRS  val  …`
 """
 function _parse_time_nb_line(line::AbstractString)
     n = 0
     npairs = 0
+    nmerge = 0
 
     m_n = match(r"\bN\s+(\d+)", line)
     if !isnothing(m_n)
@@ -435,7 +450,12 @@ function _parse_time_nb_line(line::AbstractString)
         npairs = parse(Int, something(m_np.captures[1]))
     end
 
-    return (; n, npairs)
+    m_nm = match(r"NMERGE\s+(\d+)", line)
+    if !isnothing(m_nm)
+        nmerge = parse(Int, something(m_nm.captures[1]))
+    end
+
+    return (; n, npairs, nmerge)
 end
 
 """
@@ -453,7 +473,7 @@ function _parse_scaling_line!(scaling::Dict{String,Float64}, line::AbstractStrin
 end
 
 """
-Forward-fill N and NPAIRS across ADJUST records.  TIME[NB] lines (which
+Forward-fill N, NPAIRS and NMERGE across ADJUST records.  TIME[NB] lines (which
 carry particle counts) appear only at snapshot intervals, not at every
 ADJUST step.  Records without a TIME[NB] line have n=0; we replace those
 with the most recent known value.
@@ -461,11 +481,13 @@ with the most recent known value.
 function _forward_fill_particle_counts!(records::Vector{AdjustRecord})
     last_n = 0
     last_np = 0
+    last_nm = 0
     for i in eachindex(records)
         r = records[i]
         if r.n > 0
             last_n = r.n
             last_np = r.npairs
+            last_nm = r.nmerge
         elseif last_n > 0
             records[i] = AdjustRecord(
                 r.time_nb,
@@ -487,6 +509,7 @@ function _forward_fill_particle_counts!(records::Vector{AdjustRecord})
                 r.ecoll,
                 r.emdot,
                 r.ecdot,
+                last_nm,
             )
         end
     end

@@ -399,7 +399,8 @@ end
         "      PARAMETER  (NMAX=1572864,KMAX=524288,LMAX=600,MMAX=2048,\n" *
         "     &          MLD=22,MLR=600,MLV=200,MCL=10,NCMAX=10,NTMAX=10000)\n",
     )
-    @test Nbody6Dynamics._engine_limits(tree) == (nmax = 1572864, kmax = 524288, lmax = 600)
+    @test Nbody6Dynamics._engine_limits(tree) ==
+          (nmax = 1572864, kmax = 524288, lmax = 600, mmax = 2048)
     limits_tree = joinpath(dir, "limits_tree")
     mkpath(joinpath(limits_tree, "build"))
     cp(dirname(params_h), joinpath(limits_tree, "include"))
@@ -413,8 +414,11 @@ end
             joinpath(limits_tree, "build", "nbody6++.avx"),
         ),
     )
-    @test limits_record["engine_limits"] == Dict("NMAX" => 1572864, "KMAX" => 524288, "LMAX" => 600)
+    @test limits_record["engine_limits"] ==
+          Dict("NMAX" => 1572864, "KMAX" => 524288, "LMAX" => 600, "MMAX" => 2048)
     @test !haskey(rec, "engine_limits")
+    write(params_h, "      PARAMETER  (NMAX=1000,KMAX=500,LMAX=100)\n")
+    @test Nbody6Dynamics._engine_limits(tree) == (nmax = 1000, kmax = 500, lmax = 100, mmax = 0)
 
     # Launch script: GPU_LIST exported only when configured
     args = (joinpath(dir, "nbody6++"), "in.inp", "out1000", "err1000")

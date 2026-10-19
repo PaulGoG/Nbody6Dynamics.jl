@@ -9,7 +9,7 @@
 # number, and the masking rules the estimators apply. Times in N-body units.
 
 """Schema version of `validity.toml` and `validity_snapshots.csv`."""
-const VALIDITY_SCHEMA_VERSION = 1
+const VALIDITY_SCHEMA_VERSION = 2
 
 """Directory of the shipped estimator calibration (`estimators.csv`, `estimators.toml`)."""
 const _CALIBRATION_DIR = joinpath(_PACKAGE_ROOT, "assets", "calibration")
@@ -36,6 +36,7 @@ const _VALIDITY_SECTIONS = (
     "mass",
     "angular_momentum",
     "bound_set",
+    "capacity",
     "cadence",
     "stages",
     "calibration",
@@ -171,12 +172,12 @@ end
 The validity record of a run, from `validity_record`:
 `schema_version` (`VALIDITY_SCHEMA_VERSION`); `sections`, the tables
 `header`, `thresholds`, `energy`, `mass`, `angular_momentum`, `bound_set`,
-`cadence`, `stages`, `calibration` and `masks`; the `epochs`, sorted by
-`t_start`; and one `ValiditySnapshot` per snapshot integral.
+`capacity`, `cadence`, `stages`, `calibration` and `masks`; the `epochs`,
+sorted by `t_start`; and one `ValiditySnapshot` per snapshot integral.
 """
 struct ValidityRecord
     schema_version::Int
-    sections::Dict{String,Dict{String,Any}}   # header, thresholds, energy, mass, angular_momentum, bound_set, cadence, stages, calibration, masks
+    sections::Dict{String,Dict{String,Any}}   # header, thresholds, energy, mass, angular_momentum, bound_set, capacity, cadence, stages, calibration, masks
     epochs::Vector{ValidityEpoch}
     snapshots::Vector{ValiditySnapshot}
 end
@@ -671,6 +672,55 @@ function _validity_bound_section(ints::AbstractVector{SnapshotIntegrals})::Dict{
 end
 
 """
+    _validity_capacity(diag, build_info) -> Dict{String,Any}
+
+Fixed-size engine arrays the run came close to. The SIMD irregular-force library is opened for
+N + NBIN0 − NPAIRS + 100 bodies at each start or restart (`intgrt.F`) and indexed without a bounds check,
+so KS pairs beyond NBIN0 + 100 overrun it (500 more slots at a cold start; the test ignores them); the
+merger table of stable hierarchies holds MMAX − 1 entries (`impact.f`). From the adjustment records:
+`npairs_max`, `nmerge_max`; `nbin0` from the log (`-1` unknown); `simd_margin` = 100,
+`simd_headroom` = 100 − (npairs_max − nbin0) (NaN when nbin0 is unknown); `mmax` from
+`build_info["engine_limits"]["MMAX"]` (`-1` unknown), `merge_table_headroom` = mmax − 1 − nmerge_max (`-1`
+when mmax is unknown); `verdict` `"ok"`, `"flag"` (a headroom below zero for the SIMD library, or at or
+below zero for the merger table) or `"unavailable"` (no records); `reasons` names each flag.
+"""
+function _validity_capacity(
+    diag::Union{Nothing,DiagnosticsData},
+    build_info::AbstractDict,
+)::Dict{String,Any}
+    adj = diag === nothing ? AdjustRecord[] : diag.adjust
+    nbin0 = diag === nothing ? -1 : diag.nbin0
+    npairs_max = isempty(adj) ? 0 : maximum(a.npairs for a in adj)
+    nmerge_max = isempty(adj) ? 0 : maximum(a.nmerge for a in adj)
+    limits = get(build_info, "engine_limits", nothing)
+    mmax = limits isa AbstractDict ? Int(get(limits, "MMAX", -1)) : -1
+    mmax ≤ 0 && (mmax = -1)
+    simd_headroom = nbin0 ≥ 0 ? Float64(100 - (npairs_max - nbin0)) : NaN
+    merge_table_headroom = mmax > 0 ? mmax - 1 - nmerge_max : -1
+    reasons = String[]
+    if nbin0 ≥ 0 && simd_headroom < 0
+        excess = npairs_max - nbin0
+        push!(reasons, "KS pairs reached NBIN0 + $(excess) > NBIN0 + 100 (SIMD library overrun)")
+    end
+    if mmax > 0 && merge_table_headroom ≤ 0
+        push!(reasons, "merger table full: NMERGE = $(nmerge_max) of MMAX − 1 = $(mmax - 1)")
+    end
+    verdict = isempty(adj) ? "unavailable" : (isempty(reasons) ? "ok" : "flag")
+    return Dict{String,Any}(
+        "available" => !isempty(adj),
+        "nbin0" => nbin0,
+        "npairs_max" => npairs_max,
+        "simd_margin" => 100,
+        "simd_headroom" => simd_headroom,
+        "nmerge_max" => nmerge_max,
+        "mmax" => mmax,
+        "merge_table_headroom" => merge_table_headroom,
+        "verdict" => verdict,
+        "reasons" => reasons,
+    )
+end
+
+"""
 The `masks` section of `validity_record`: the masking rules M1–M7
 with the thresholds of `settings`. M6 restricts the equilibrium estimators
 of a tidal run to 0.5 r_J (Küpper et al. 2010, DOI
@@ -729,6 +779,7 @@ The sections:
   its `reasons`
 - `mass`, `angular_momentum`: budget residuals
 - `bound_set`: convergence of the bound-set iteration
+- `capacity`: the SIMD-library and merger-table headroom (`_validity_capacity`)
 - `cadence`: snapshot spacing against the crossing and the initial
   half-mass relaxation times
 - `stages`: end of violent relaxation, pericentres, coalescence, and the
@@ -1142,6 +1193,7 @@ function validity_record(
         "mass" => _validity_mass(mb, settings),
         "angular_momentum" => _validity_angular_momentum(am),
         "bound_set" => _validity_bound_section(ints),
+        "capacity" => _validity_capacity(diag, build_info),
         "cadence" => cadence,
         "stages" => stages,
         "calibration" => calibration_section,
@@ -1159,7 +1211,7 @@ end
 
 Write the record as TOML: the top-level `schema_version`, one table per
 section in the order `header`, `thresholds`, `energy`, `mass`,
-`angular_momentum`, `bound_set`, `cadence`, `stages`, `calibration` (with a
+`angular_momentum`, `bound_set`, `capacity`, `cadence`, `stages`, `calibration` (with a
 nested `[calibration.<estimator>__<quantity>]` table per tracked
 estimator) and `masks`, keys sorted within a table, then the epochs as
 `[[epochs]]` with `t_start`, `t_end`, `kind` and `detail`. NaN is written as

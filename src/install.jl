@@ -214,28 +214,33 @@ function _apply_engine_amendments(
 end
 
 """
-    _engine_limits(src_dir) -> Union{Nothing,@NamedTuple{nmax::Int,kmax::Int,lmax::Int}}
+    _engine_limits(src_dir) -> Union{Nothing,@NamedTuple{nmax::Int,kmax::Int,lmax::Int,mmax::Int}}
 
 Compile-time array limits of the engine tree at `src_dir`, from the
 `PARAMETER` statement of `include/params.h` that `configure` writes for the
-chosen `--with-par` preset: `NMAX` (bodies), `KMAX` (regularised pairs) and
-`LMAX` (neighbour-list length). `nothing` when the file is missing or holds
-no such statement.
+chosen `--with-par` preset: `NMAX` (bodies), `KMAX` (regularised pairs),
+`LMAX` (neighbour-list length) and `MMAX` (size of the merger table of stable
+hierarchies, `0` when the statement lacks it). `nothing` when the file is
+missing or holds no such statement.
 """
 function _engine_limits(
     src_dir::AbstractString,
-)::Union{Nothing,@NamedTuple{nmax::Int,kmax::Int,lmax::Int}}
+)::Union{Nothing,@NamedTuple{nmax::Int,kmax::Int,lmax::Int,mmax::Int}}
     path = joinpath(src_dir, "include", "params.h")
     isfile(path) || return nothing
     for line in eachline(path)
         isempty(line) && continue
         line[1] in ('*', 'C', 'c', '!') && continue
-        m = match(r"NMAX\s*=\s*(\d+)\s*,\s*KMAX\s*=\s*(\d+)\s*,\s*LMAX\s*=\s*(\d+)", line)
+        m = match(
+            r"NMAX\s*=\s*(\d+)\s*,\s*KMAX\s*=\s*(\d+)\s*,\s*LMAX\s*=\s*(\d+)(?:\s*,\s*MMAX\s*=\s*(\d+))?",
+            line,
+        )
         m === nothing && continue
         return (
             nmax = parse(Int, something(m.captures[1])),
             kmax = parse(Int, something(m.captures[2])),
             lmax = parse(Int, something(m.captures[3])),
+            mmax = m.captures[4] === nothing ? 0 : parse(Int, something(m.captures[4])),
         )
     end
     return nothing
@@ -332,6 +337,7 @@ function _write_build_info(
             "NMAX" => limits.nmax,
             "KMAX" => limits.kmax,
             "LMAX" => limits.lmax,
+            "MMAX" => limits.mmax,
         )
     )
     if build.enable_gpu

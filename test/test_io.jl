@@ -643,6 +643,8 @@ end
         @test diag.kz[14] == 0 && diag.kz[19] == 3 && diag.kz[30] == 1 && diag.kz[2] == -1
         @test diag.tidal == (0.0, 0.0, 0.0, 0.0)
         @test tidal_mode(diag) == :none
+        @test diag.nbin0 == 0
+        @test all(a -> a.nmerge == 0, diag.adjust)
         # A tidal echo and an options row that is not 50 integers
         tidal_log = joinpath(mktempdir(), "out1000")
         write(
@@ -655,6 +657,23 @@ end
         @test isempty(td.kz)
         @test td.tidal == (5.34429e-3, 0.0, -1.78143e-3, 8.44140e-2)
         @test td.adjust[1].ekin == 0.3405 && td.adjust[1].pot == 0.7952
+    end
+
+    @testset "TIME[NB] NMERGE and the NBIN0 echo" begin
+        capture = joinpath(mktempdir(), "out1000")
+        write(
+            capture,
+            "           ALPHAS =  2.35000E+00  BODY1 =  1.00000E+00  BODYN =  8.00000E-02 ZMASS =  2.00000E+03 NBIN0 =      12 NHI0 =    0 ZMET =  2.00000E-04\n" *
+            " ADJUST:  TIME    0.00000E+00  T[Myr]   0.000E+00  Q   0.362E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.934E-01\n" *
+            " TIME[NB]    0.000000E+00  N     2000  <NB>   162  NPAIRS      15  NMERGE     3 MULT    0 NS     1970\n" *
+            " ADJUST:  TIME    5.00000E-01  T[Myr]   0.100E+00  Q   0.500E+00  DE   1.000E-06 DELTA   1.000E-07 DETOT   1.000E-07 E  -2.934E-01\n",
+        )
+        d = read_diagnostics(capture)
+        @test d.nbin0 == 12
+        @test length(d.adjust) == 2
+        @test d.adjust[1].npairs == 15 && d.adjust[1].nmerge == 3
+        # Forward fill of the record without a TIME[NB] line
+        @test d.adjust[2].npairs == 15 && d.adjust[2].nmerge == 3
     end
 
     @testset "out1000 event lines" begin
