@@ -1380,7 +1380,7 @@ those of the outer orbit). Fields a kind does not carry are `NaN`, `0` or
 | NAME(I1), NAME(I2), NAME(I3) | `name1`, `name2`, `name_outer` | — |
 | K*(INCM) | `kstar_inner_cm` (−10 when NAME(I) < 0, as printed) | — |
 | ECC0 (F6.2) | `eccentricity_inner` (Runge–Lenz vector) | — |
-| ECCMIN (F6.2) | `eccentricity_min` (√(sin²i + e²cos²i)) | — |
+| ECCMIN (F6.2) | `eccentricity_jz` (√(sin²i + e²cos²i) = √(1 − j_z²), the inner eccentricity at which the dimensionless angular momentum equals its conserved z-component j_z = √(1 − e²) cos i; not a minimum, despite the label) | — |
 | ECCMAX (F6.2) | `eccentricity_max` (Heggie maximum) | — |
 | K*(I1), K*(I2) | `kstar1`, `kstar2` | — |
 | RSM | `radius_max_nb` (max stellar radius) | NB |
@@ -1413,7 +1413,7 @@ Base.@kwdef struct HierarchyLogRecord
     semi_major_axis_outer_nb::Float64 = NaN
     eccentricity_inner::Float64 = NaN
     eccentricity_outer::Float64 = NaN
-    eccentricity_min::Float64 = NaN
+    eccentricity_jz::Float64 = NaN
     eccentricity_max::Float64 = NaN
     pericentre_inner_nb::Float64 = NaN
     pericentre_inner_min_nb::Float64 = NaN
@@ -1464,7 +1464,7 @@ function _parse_hierarchy_log_record(line::AbstractString)::HierarchyLogRecord
             name_outer = _fixed_int(v[15]),
             kstar_inner_cm = _fixed_int(v[16], KSTAR_ABSENT),
             eccentricity_inner = v[17],
-            eccentricity_min = v[18],
+            eccentricity_jz = v[18],
             eccentricity_max = v[19],
             kstar1 = _fixed_int(v[20], KSTAR_ABSENT),
             kstar2 = _fixed_int(v[21], KSTAR_ABSENT),

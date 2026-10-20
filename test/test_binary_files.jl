@@ -834,7 +834,7 @@ const _BF_BWDAT_LABEL =
         @test rn.name1 == 10311 && rn.name2 == 10312 && rn.name_outer == 3881
         @test rn.kstar_inner_cm == 0
         @test rn.eccentricity_inner == 0.52
-        @test rn.eccentricity_min == 0.94
+        @test rn.eccentricity_jz == 0.94
         @test rn.eccentricity_max == 0.95
         @test rn.kstar1 == 0 && rn.kstar2 == 1
         @test rn.radius_max_nb == 5.78125e-9
