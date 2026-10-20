@@ -219,7 +219,7 @@ kind does not carry hold `NaN`, `0` or [`KSTAR_ABSENT`](@ref).
 | `:chterm_names` | `chterm.f` FORMAT 4, `KZ(30) > 1` | following `CHTERM: TIME[NB]` line |
 | `:chterm` | `chterm.f` FORMAT 75, `KZ(30) > 1` | own TIME + TOFF (F10.4) |
 | `:chterm_second_binary` | `chterm.f` FORMAT 90, `KZ(30) > 1` | preceding `CHTERM: TIME[NB]` line |
-| `:chain_bb` | `impact.f` FORMAT 22, binary–binary chain start | following `NEW CHAIN   TIME` line |
+| `:chain_bb` | `impact.f` FORMAT 22, binary–binary chain start | preceding `NEW CHAIN   TIME` line (written by the same IMPACT call), else the following one |
 | `:chain_escape_single` | `chmod_chain.f` FORMAT 35 | own TTOT |
 | `:chain_escape_binary` | `chmod_chain.f` FORMAT 28 (two physical lines) | own TTOT |
 | `:chain_binary` | `recoil.f` FORMAT 20, DB > 0.1, a > 0 | following `CHTERM: TIME[NB]` line |
@@ -1372,7 +1372,11 @@ function _dyn_parse_chain(
     elseif kind === :chain_bb
         rec = read_fixed(line, _CHAIN_BB_FORMAT)
         v = rec.values
-        t = _dyn_nearby_value(lines, i, 1, 3, "NEW CHAIN   TIME", _CHAIN_NEW_TIME_FORMAT, 1)
+        # IMPACT writes its NEW CHAIN line just before this one; a later one
+        # belongs to the next chain and is the fallback only.
+        t = _dyn_nearby_value(lines, i, -1, 3, "NEW CHAIN   TIME", _CHAIN_NEW_TIME_FORMAT, 1)
+        isnan(t) &&
+            (t = _dyn_nearby_value(lines, i, 1, 3, "NEW CHAIN   TIME", _CHAIN_NEW_TIME_FORMAT, 1))
         return FewBodyEvent(;
             line = i,
             interval = interval,

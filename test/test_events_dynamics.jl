@@ -275,9 +275,13 @@ end
     @test ev.separations_nb[1:3] == (1.2345678e-4, 2.3456789e-3, 3.456789e-3)
     @test ev.rcoll_nb == 1.0e-6 && ev.qperi_nb == 5.0e-7 && ev.gpert == 2.5e-4
 
-    # Binary–binary chain selection: time of the following NEW CHAIN line.
+    # Binary–binary chain selection: time of the NEW CHAIN line IMPACT writes just before it,
+    # else of the following one.
     bb = " CHAIN B-B    NAME(I1-I4)      7461      7462      9906      9907  K*(INCM)  1  K*(OCM)  0  ECC0 0.774  ECC1 2.965  SEMI0  6.517E-05  SEMI2  3.329E-04  RIN3  7.276E-04  SEMI1 -3.569E-04  PERIM  3.211E-04"
     @test _tdyn_kind(bb) === :chain_bb
+    later = replace(_tdyn_impact(), "TIME 9.40626E-02" => "TIME 9.50000E-02")
+    ev, _ = _tdyn_parse(:chain_bb, ["", _tdyn_impact(), bb, "", later], 3)
+    @test ev.time_nb == 9.40626e-2
     ev, _ = _tdyn_parse(:chain_bb, [bb, "", _tdyn_impact()], 1)
     @test ev.time_nb == 9.40626e-2 && ev.n_members == 4
     @test ev.names == (7461, 7462, 9906, 9907, 0, 0)
