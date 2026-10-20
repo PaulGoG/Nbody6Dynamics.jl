@@ -284,6 +284,8 @@ function _validate(cfg::Nbody6Config)
     )
     sim.startup_timeout ≥ 0 ||
         _config_error("simulation.startup_timeout", "must be ≥ 0 [s]; got $(sim.startup_timeout)")
+    sim.stall_timeout ≥ 0 ||
+        _config_error("simulation.stall_timeout", "must be ≥ 0 [s]; got $(sim.stall_timeout)")
     sim.exit_grace ≥ 0 ||
         _config_error("simulation.exit_grace", "must be ≥ 0 [s]; got $(sim.exit_grace)")
     sim.wall_budget ≥ 0 ||

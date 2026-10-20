@@ -468,9 +468,9 @@ stdout capture, the later records of `lagr.7`, `global.30`, `esc.11` and
 cannot cut by time are listed in the new segment's record (`discarded.uncut`).
 Nothing is deleted.
 
-A run halted by the engine's energy check or terminated by the start-up
-watchdog is refused: the first needs a decision on the accuracy parameters,
-the second would hang again. A run whose record says `running` is refused
+A run halted by the engine's energy check, terminated by the start-up
+watchdog or stopped by the stall watchdog is refused: the first needs a
+decision on the accuracy parameters, the other two would hang again. A run whose record says `running` is refused
 while its engine is alive on this host; otherwise the record is closed from
 what the stdout shows.
 
@@ -545,6 +545,15 @@ function resume_run(
                 "resume: $(basename(run_dir)) was terminated by the start-up watchdog; it " *
                 "would hang again (check the input intervals, or raise " *
                 "simulation.startup_timeout)",
+            ),
+        )
+    end
+    if status == "stalled"
+        throw(
+            ArgumentError(
+                "resume: $(basename(run_dir)) was stopped by the stall watchdog (no progress for " *
+                "simulation.stall_timeout); resumed as it is it would stall again: inspect the end " *
+                "of the stdout capture, then continue it explicitly with restart_simulation",
             ),
         )
     end

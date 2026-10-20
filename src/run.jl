@@ -469,6 +469,17 @@ function _execute_simulation(
                 interrupt_to = waiting,
                 offset = stdout_offset,
             ) : nothing
+        # Stall watchdog: stop an engine whose output stops advancing after start-up.
+        staller =
+            sim.stall_timeout > 0 ?
+            _start_stall_watchdog(
+                out_dir,
+                stdout_path,
+                process,
+                sim.stall_timeout;
+                interrupt_to = waiting,
+                offset = stdout_offset,
+            ) : nothing
         # Completion monitor: an engine that printed END RUN but never exits
         # is terminated after the grace period and recorded as completed.
         completion =
@@ -544,6 +555,7 @@ function _execute_simulation(
                 fields = Dict{String,Any}("stop_requested" => "interrupt", "stop_dump" => int_dump),
             )
             watchdog === nothing || (watchdog.stop[] = true)
+            staller === nothing || (staller.stop[] = true)
             completion === nothing || (completion.stop[] = true)
             stopper === nothing || (stopper.stop[] = true)
             pruner === nothing || (pruner.stop[] = true)
@@ -563,6 +575,7 @@ function _execute_simulation(
             rm(joinpath(out_dir, _ENGINE_PID_FILE); force = true)
         end
         watchdog === nothing || (watchdog.stop[] = true)
+        staller === nothing || (staller.stop[] = true)
         completion === nothing || (completion.stop[] = true)
         stopper === nothing || (stopper.stop[] = true)
         pruner === nothing || (pruner.stop[] = true)
@@ -574,6 +587,7 @@ function _execute_simulation(
         merge!(telemetry, _backend_performance(stdout_path, stderr_path))
 
         hung = watchdog !== nothing && watchdog.fired[]
+        stalled = staller !== nothing && staller.requested[]
         completed = _run_completed(stdout_path; offset = stdout_offset)
         killed_after_completion = completion !== nothing && completion.fired[]
         status =
@@ -583,9 +597,10 @@ function _execute_simulation(
                 offset = stdout_offset,
                 exit_status = _exit_status(process),
                 watchdog = hung,
+                stalled = stalled,
             )
         stop_dump = _stop_dump(stdout_path; offset = stdout_offset)
-        t_end = if status == "stopped" && !isempty(stop_dump)
+        t_end = if status in ("stopped", "stalled") && !isempty(stop_dump)
             last(_dump_markers(stdout_path; offset = stdout_offset)).time_nb
         else
             t_adjust = _last_adjust_time(stdout_path; offset = stdout_offset)
@@ -594,6 +609,11 @@ function _execute_simulation(
         if killed_after_completion
             @warn "The engine printed END RUN but had not exited $(sim.exit_grace) s later; " *
                   "terminated and recorded as completed (exit status $(_exit_status(process)))"
+        elseif stalled
+            @warn "Stall watchdog: the run made no progress for $(sim.stall_timeout) s after " *
+                  "start-up and was stopped (recorded as stalled; a resume is refused because the " *
+                  "engine would stall again: inspect the end of the stdout capture, then continue " *
+                  "with restart_simulation)"
         elseif !success(process) && !hung
             @warn "Simulation exited with non-zero status ($(_exit_status(process))) after $(_format_elapsed(elapsed))"
         end
@@ -621,7 +641,9 @@ function _execute_simulation(
                     "terminated_after_completion" => killed_after_completion,
                     "stop_dump" => stop_dump,
                     "t_end" => t_end,
+                    "stalled" => stalled,
                     "stop_requested" =>
+                        stalled ? "stall" :
                         (stopper !== nothing && stopper.requested[]) ? "wall_budget" : "",
                     "dumps_pruned" => pruner === nothing ? 0 : pruner.removed[],
                 ),
@@ -1020,6 +1042,75 @@ function _start_startup_watchdog(
     return (stop = stop, fired = fired, task = task)
 end
 
+"""
+    _start_stall_watchdog(out_dir, stdout_path, process, timeout; interrupt_to = nothing,
+                          offset = 0) -> (; stop, requested, fired, task)
+
+Asynchronous stall watchdog. Armed once the stdout from byte `offset` on
+shows an adjustment beyond t = 0; from then on progress is a growth of the
+stdout capture or a new latest restart dump in `out_dir`. After `timeout`
+seconds without progress the engine is asked to stop
+([`_request_stop`](@ref)) and `requested` is set; an engine still running
+`timeout` seconds after the request is terminated (SIGTERM, then SIGKILL
+after `_KILL_GRACE_SECONDS`) and `fired` is set. Each signal precedes its
+log record, as in [`_start_startup_watchdog`](@ref). The case it guards: an
+engine whose block time stalls on a collapsed step keeps running without
+output until its wall budget is spent. Setting `stop` ends the watchdog
+quietly; an `InterruptException` landing in the task goes to `interrupt_to`
+([`_forwarding_interrupts`](@ref)).
+"""
+function _start_stall_watchdog(
+    out_dir::AbstractString,
+    stdout_path::AbstractString,
+    process::Base.Process,
+    timeout::Real;
+    interrupt_to::Union{Nothing,Task} = nothing,
+    offset::Integer = 0,
+)
+    stop = Ref(false)
+    requested = Ref(false)
+    fired = Ref(false)
+    task = errormonitor(
+        _forwarding_interrupts(interrupt_to) do
+            armed = false
+            marker = (-1, "")
+            last_progress = time()
+            requested_at = 0.0
+            while !stop[] && process_running(process)
+                if requested[]
+                    if time() - requested_at > timeout
+                        fired[] = true
+                        _terminate(process)
+                        @warn "Stall watchdog: the engine had not stopped $(timeout) s after the " *
+                              "request; terminated"
+                        return nothing
+                    end
+                elseif !armed
+                    armed = _adjust_advanced(stdout_path; offset = offset)
+                    last_progress = time()
+                else
+                    now_marker = (
+                        isfile(stdout_path) ? Int(filesize(stdout_path)) : 0,
+                        something(_latest_dump(out_dir), ""),
+                    )
+                    if now_marker != marker
+                        marker = now_marker
+                        last_progress = time()
+                    elseif time() - last_progress > timeout
+                        _request_stop(out_dir)
+                        requested[] = true
+                        requested_at = time()
+                        @warn "Stall watchdog: neither the stdout capture nor the restart dumps " *
+                              "advanced for $(timeout) s; stop requested"
+                    end
+                end
+                sleep(min(2.0, timeout))
+            end
+        end,
+    )
+    return (stop = stop, requested = requested, fired = fired, task = task)
+end
+
 """Name of the file whose presence in the engine's working directory makes it save its state and exit (`intgrt.F`)."""
 const _STOP_FILE = "STOP"
 
@@ -1256,33 +1347,38 @@ function _last_adjust_time(stdout_path::AbstractString; offset::Integer = 0)::Fl
 end
 
 """
-    _segment_status(stdout_path; offset = 0, exit_status = nothing, watchdog = false)
-        -> String
+    _segment_status(stdout_path; offset = 0, exit_status = nothing, watchdog = false,
+                    stalled = false) -> String
 
 Status of a finished segment from the stdout it wrote (from byte `offset`
-on), its exit status ([`_exit_status`](@ref)) and whether the start-up
-watchdog fired. A segment record carries one of seven values:
+on), its exit status ([`_exit_status`](@ref)), whether the start-up
+watchdog fired and whether the stall watchdog stopped it. A segment record
+carries one of eight values:
 
   - `running`: the engine has been launched and has not exited;
   - `completed`: `END RUN` printed;
   - `halted`: the engine's energy check stopped the run;
   - `stopped`: the engine ended at a stop request and can be resumed;
   - `watchdog`: terminated by the start-up watchdog;
+  - `stalled`: stopped by the stall watchdog (no progress after start-up);
   - `killed`: ended by a signal, or its end was not witnessed;
   - `failed`: exited by itself without any of the above (runtime error).
 
-This function returns one of the last six; the first matching of
-`watchdog`, `completed`, `halted`, `stopped`, `killed`, `failed` wins.
+This function returns one of the last seven; the first matching of
+`watchdog`, `completed`, `stalled`, `halted`, `stopped`, `killed`, `failed`
+wins.
 """
 function _segment_status(
     stdout_path::AbstractString;
     offset::Integer = 0,
     exit_status::Union{Nothing,Integer} = nothing,
     watchdog::Bool = false,
+    stalled::Bool = false,
 )::String
     watchdog && return "watchdog"
     tail = _stdout_tail(stdout_path; offset = offset)
     occursin("END RUN", tail) && return "completed"
+    stalled && return "stalled"
     occursin("CALCULATIONS HALTED", tail) && return "halted"
     if occursin("TERMINATION BY MANUAL INTERVENTION", tail) || occursin("COMMON SAVED AT", tail)
         return "stopped"

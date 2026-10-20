@@ -19,7 +19,7 @@ const _LEDGER_COLUMNS =
 const _LedgerRow = NamedTuple{_LEDGER_COLUMNS,NTuple{9,String}}
 
 """Run statuses after which no further job is submitted (complete, or a decision is needed)."""
-const _FINAL_STATUSES = ("completed", "halted", "watchdog")
+const _FINAL_STATUSES = ("completed", "halted", "watchdog", "stalled")
 
 # ---------------------------------------------------------------------------
 # Job script

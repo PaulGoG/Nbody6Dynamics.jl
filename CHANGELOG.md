@@ -8,6 +8,13 @@ entries say so.
 
 ### Added
 
+- `simulation.stall_timeout` (default `0`, off): a stall watchdog armed after
+  the first adjustment beyond t = 0. When neither the stdout capture grows nor
+  a new restart dump appears for that wall-clock time, the engine is asked to
+  stop, terminated if it has not stopped the same time later, and the segment
+  is recorded as `stalled`; `resume_run` refuses such a run and a cluster job
+  chain ends on it. An engine whose block time stalls on a collapsed step
+  otherwise runs without output until its wall budget is spent.
 - Readers of the engine's binary, few-body and gravitational-wave output.
   `read_binary_events(path)` reads `out1000` in one pass into a
   `BinaryEventLog`: KS episodes (`KSEvent`: NEW/END KSREG, NS/BH BINARY),

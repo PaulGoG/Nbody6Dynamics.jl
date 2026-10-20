@@ -69,6 +69,11 @@ run ID generation, and runtime telemetry.
 - `startup_timeout`: wall-clock seconds within which the engine must report
   its first adjustment beyond t = 0; otherwise the run is terminated with an
   error. `0` disables
+- `stall_timeout`: wall-clock seconds after the first adjustment beyond
+  t = 0 during which neither the stdout capture grows nor a new restart dump
+  appears; then the engine is asked to stop, terminated if it has not
+  stopped the same time later, and the segment is recorded as `stalled`.
+  `0` disables
 - `exit_grace`: after the engine has printed `END RUN`, the wall-clock
   seconds its output directory may stay unchanged with the process still
   alive; then it is terminated and the segment is recorded as completed
@@ -107,6 +112,7 @@ Base.@kwdef struct SimulationConfig
     live_interval::Float64 = 30.0
     telemetry_interval::Float64 = 5.0
     startup_timeout::Float64 = 0.0
+    stall_timeout::Float64 = 0.0
     exit_grace::Float64 = 120.0
     wall_budget::Float64 = 0.0
     stop_margin::Float64 = 120.0

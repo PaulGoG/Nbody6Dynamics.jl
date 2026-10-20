@@ -404,6 +404,16 @@ end
             : > "conf.3_$t.5"
             kill -KILL $$
         fi
+        if [ -n "$FAKE_STALL_AT" ] && [ "$t" -eq "$FAKE_STALL_AT" ]; then
+            # block time stalled: no output until a stop request arrives
+            while [ ! -f STOP ]; do sleep 0.1; done
+            printf '\n         TERMINATION BY MANUAL INTERVENTION\n'
+            dump "comm.1_$t.0" "$t"
+            printf '  MYDUMP    %d.0000000000000000      %d.0                         203 comm.1_%d.0                \n' "$t" "$t" "$t"
+            printf '  W MYDUMP J,II,NPARTMP=         203\n  NA-NS=          85\n'
+            printf '\n\n         COMMON SAVED AT TOFF/TIME/TTOT =  0.00000000E+00  TCOMP =  0.0\n'
+            exit 0
+        fi
         sleep 0.1
         t=$((t + 1))
     done
@@ -431,7 +441,7 @@ end
         """,
     )
     cfg_path = joinpath(base, "c.toml")
-    function cfg(; wall_budget = 0.0, stop_margin = 120.0)
+    function cfg(; wall_budget = 0.0, stop_margin = 120.0, stall_timeout = 0.0)
         write(
             cfg_path,
             """
@@ -455,6 +465,7 @@ end
             exit_grace = 0.0
             wall_budget = $(Float64(wall_budget))
             stop_margin = $(Float64(stop_margin))
+            stall_timeout = $(Float64(stall_timeout))
 
             [postprocess]
             enabled = false
@@ -627,6 +638,23 @@ end
     @test_throws ArgumentError restart_simulation(killed; tcrit_extra = 1.0, dump = "comm.2_14.0")
     @test length(readdir(kout)) == n_before
     rm(joinpath(kout, "comm.2_14.0"))
+
+    # 7c. Stall watchdog: an engine whose output stops advancing after start-up is asked to
+    # stop, the segment is recorded as stalled, and a resume is refused
+    stall_run =
+        withenv("FAKE_CHECKPOINT" => "1", "FAKE_DIE_AT" => nothing, "FAKE_STALL_AT" => "3") do
+            @test_logs (:warn, r"Stall watchdog") match_mode = :any run_simulation(
+                cfg(; stall_timeout = 1.0);
+                base_dir = base,
+                run_id = "stall",
+            )
+        end
+    sseg = info(stall_run)["segments"][end]
+    @test sseg["status"] == "stalled" && sseg["stalled"] == true
+    @test sseg["stop_requested"] == "stall" && sseg["stop_dump"] == "comm.1_3.0"
+    @test sseg["t_end"] == 3.0
+    @test info(stall_run)["run"]["status"] == "stalled"
+    @test_throws ArgumentError resume_run(stall_run)
 
     # 8. Pipeline: a stop request ends it without a stamp; resume_pipeline finishes it
     @test Nbody6Dynamics._run_status(mktempdir()) == ""
