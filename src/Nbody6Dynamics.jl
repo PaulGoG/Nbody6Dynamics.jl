@@ -889,6 +889,16 @@ export SnapshotIntegrals, snapshot_integrals, write_snapshot_integrals
 export tidal_mode, engine_energy_valid
 export EngineEvent, EventCounters, ENGINE_EVENT_KINDS, KSTAR_ABSENT
 export read_engine_events, read_event_counters
+export BinaryEventLog, read_binary_events, DYNAMICS_EVENT_KINDS, EVOLUTION_EVENT_KINDS
+export KSEvent, FewBodyEvent, HierarchyEvent, ExchangeEvent, TerminationEvent
+export GWEvent, BinaryEscapeEvent, MassLossEvent, TidalEvent, RocheEvent
+export KSPairListing, KSPairRecord, read_ks_pair_listing, read_all_ks_pair_listings
+export WidePairListing, WidePairRecord, read_wide_pair_listing, read_all_wide_pair_listings
+export HierarchyListingRecord, read_hierarchy_listing, HierarchyLogRecord, read_hierarchy_log
+export CollisionRecord, read_collision_log, CoalescenceRecord, read_coalescence_log
+export CMBodyRecord, read_cmbody_log, BinaryStageRecord, read_binary_stage_log
+export DegenerateRecord, read_degenerate_log, EscapedBinaryRecord, read_escaped_binary_log
+export HardestBinaryRecord, read_hardest_binary_log
 export EnergyInterval, EnergyEventAnalysis, energy_intervals, energy_events_summary
 export write_energy_intervals, write_engine_events
 export MassBudgetRow, mass_budget, mass_budget_summary, write_mass_budget

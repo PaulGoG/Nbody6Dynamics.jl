@@ -135,6 +135,49 @@ read_binary_evolution
 read_all_binary_evolution
 ```
 
+### Binary, few-body and gravitational-wave output
+
+```@docs
+read_binary_events
+BinaryEventLog
+KSEvent
+FewBodyEvent
+HierarchyEvent
+ExchangeEvent
+TerminationEvent
+GWEvent
+BinaryEscapeEvent
+MassLossEvent
+TidalEvent
+RocheEvent
+read_ks_pair_listing
+read_all_ks_pair_listings
+KSPairListing
+KSPairRecord
+read_wide_pair_listing
+read_all_wide_pair_listings
+WidePairListing
+WidePairRecord
+read_hierarchy_listing
+HierarchyListingRecord
+read_hierarchy_log
+HierarchyLogRecord
+read_collision_log
+CollisionRecord
+read_coalescence_log
+CoalescenceRecord
+read_cmbody_log
+CMBodyRecord
+read_binary_stage_log
+BinaryStageRecord
+read_degenerate_log
+DegenerateRecord
+read_escaped_binary_log
+EscapedBinaryRecord
+read_hardest_binary_log
+HardestBinaryRecord
+```
+
 ## Parameter Sweeps
 
 ```@docs

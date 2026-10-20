@@ -8,6 +8,25 @@ entries say so.
 
 ### Added
 
+- Readers of the engine's binary, few-body and gravitational-wave output.
+  `read_binary_events(path)` reads `out1000` in one pass into a
+  `BinaryEventLog`: KS episodes (`KSEvent`: NEW/END KSREG, NS/BH BINARY),
+  chain, triple and quad regularisations (`FewBodyEvent`), stable hierarchies
+  (`HierarchyEvent`), exchanges, the termination diagnostics of the fork
+  (`TerminationEvent`), Peters decay steps, GW mergers and recoil, BSE
+  braking (`GWEvent`), escapes of binaries and hierarchies
+  (`BinaryEscapeEvent`), mass-loss terminations and kicks (`MassLossEvent`),
+  tidal circularisation and capture (`TidalEvent`) and Roche-lobe overflow
+  (`RocheEvent`), each record with its line, adjustment interval and time.
+  File readers: `read_ks_pair_listing` (`bdat.9`), `read_wide_pair_listing`
+  (`bwdat.19`), `read_hierarchy_listing` (`merger.84`), `read_hierarchy_log`
+  (`hiarch.12`), `read_collision_log` (`coll.13`), `read_coalescence_log`
+  (`coal.24`), `read_cmbody_log` (`cmbody.26`), `read_binary_stage_log`
+  (`binev.17`), `read_degenerate_log` (`degen.4`), `read_escaped_binary_log`
+  (`escbin.31`), `read_hardest_binary_log` (`hbin.39`). Formatted records are
+  read by their FORMAT's field widths (`read_fixed`), since the engine glues
+  fields together; values the engine prints under a wrong label or unit are
+  stored under their true meaning, as each record type documents.
 - `binary_physics = "inherited" | "full"` in `[merger.nbody6]`: the
   few-body and binary options of the generated input. `"inherited"` (the
   default) keeps the block written so far, without the chain, stable

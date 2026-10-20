@@ -999,6 +999,12 @@ Files produced by the Nbody6++ simulation and read by this package:
 | `event.35` | Event counters per output time (ASCII; stellar evolution on) | `read_event_counters` |
 | `sev.83_*` | Single-star evolution snapshots (ASCII) | `read_stellar_evolution` |
 | `bev.82_*` | Regularised-binary snapshots (ASCII) | `read_binary_evolution` |
+| `out1000` (binary lines) | KS episodes, chains and other few-body regularisations, hierarchies, exchanges, gravitational-wave decay and mergers, escapes of binaries, mass-loss terminations, tidal circularisation, Roche-lobe overflow | `read_binary_events` |
+| `bdat.9_*`, `bwdat.19_*` | KS pairs and wide pairs at each output (`KZ(8) ≥ 2`) | `read_ks_pair_listing`, `read_wide_pair_listing` (and `read_all_…`) |
+| `merger.84`, `hiarch.12` | Stable hierarchies at each output; their begin and end records (`KZ(18)`) | `read_hierarchy_listing`, `read_hierarchy_log` |
+| `coll.13`, `coal.24`, `cmbody.26` | Collisions, coalescences (common envelope, Roche), CMBODY coalescences | `read_collision_log`, `read_coalescence_log`, `read_cmbody_log` |
+| `binev.17`, `degen.4`, `hbin.39` | Binary-evolution stages, degenerate binaries (`KZ(9)`), the hardest binary | `read_binary_stage_log`, `read_degenerate_log`, `read_hardest_binary_log` |
+| `escbin.31` | Escaped binaries | `read_escaped_binary_log` |
 | `snap.40_*.h5part` | HDF5 snapshots (KZ(46)) | **not readable** — detected and warned about only |
 
 ### Remnant diagnostics table
