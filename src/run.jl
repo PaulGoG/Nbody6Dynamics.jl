@@ -182,7 +182,9 @@ end
 
 Continue a finished or interrupted run from one of the engine's COMMON
 dumps for `tcrit_extra` further N-body time units. The chosen dump
-(default: the latest `comm.[12]_<t>` in `output/`) is copied to
+(default: the last restartable `comm.[12]_<t>` in `output/`, chosen as by
+[`resume_run`](@ref); a `dump` written during triple, quad or chain
+regularization, `NSUB > 0`, is refused with an `ArgumentError`) is copied to
 `output/comm.1`, which is what `KSTART = 2` reads, as a working copy that is
 removed when the engine exits. A restart from a dump older than the last
 moves what was written after it to `output/discarded/segment_<k>/`, as
@@ -216,13 +218,27 @@ function restart_simulation(
     cfg = load_config(joinpath(run_dir, "config.toml"))
     base_dir === nothing && (base_dir = cfg.config_dir)
 
-    chosen = dump === nothing ? _latest_dump(out_dir) : String(dump)
-    chosen === nothing && error("restart: no COMMON dump (comm.[12]_<t>) in $out_dir")
-    dump_path = joinpath(out_dir, chosen)
-    isfile(dump_path) || error("restart: dump not found: $dump_path")
+    stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
+    if dump === nothing
+        resumable = _resume_dump(out_dir, stdout_path)
+        resumable === nothing &&
+            error("restart: no restartable COMMON dump (comm.[12]_<t>) in $out_dir")
+        chosen = resumable.file
+    else
+        chosen = String(dump)
+        dump_path = joinpath(out_dir, chosen)
+        isfile(dump_path) || error("restart: dump not found: $dump_path")
+        counts = _dump_counts(dump_path)
+        (counts !== nothing && counts.nsub > 0) && throw(
+            ArgumentError(
+                "restart: $chosen was written during triple, quad or chain regularization " *
+                "(NSUB = $(counts.nsub)); the subsystem is not part of the dump, so it cannot " *
+                "start a restart — choose an earlier dump",
+            ),
+        )
+    end
 
     # Exact time of the dump from its stdout line, else the rounded one of its name
-    stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
     markers = _dump_markers(stdout_path)
     k = findlast(m -> m.file == chosen, markers)
     marker =

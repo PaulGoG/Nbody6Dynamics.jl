@@ -101,6 +101,36 @@
     write(joinpath(d, "comm.2_1.0"), dump_bytes()[1:20])
     @test resume(d, so) === nothing
 
+    # 2f. Dumps written inside a subsystem (NSUB > 0) are passed over (P2)
+    # Second record as mydump.F writes it: NTOT NPAIRS NTTOT, then /NAMES/ from N
+    names_record(; nsub, nmerge = 2) = record(
+        collect(reinterpret(UInt8, Int32[6111, 1111, 0, 5000, 550, 10, 1, nmerge, nsub, 0, 0, 0])),
+    )
+    engine_dump(; nsub) =
+        vcat(record(collect(UInt8, 1:40)), names_record(; nsub = nsub), record(UInt8[7]))
+    counts = Nbody6Dynamics._dump_counts
+    d = mktempdir()
+    write(joinpath(d, "comm.1_2.0"), engine_dump(; nsub = 1))
+    @test counts(joinpath(d, "comm.1_2.0")) ==
+          (ntot = 6111, npairs = 1111, n = 5000, nmerge = 2, nsub = 1)
+    write(joinpath(d, "short"), dump_bytes())
+    @test counts(joinpath(d, "short")) === nothing
+    @test counts(joinpath(d, "absent")) === nothing
+    @test !Nbody6Dynamics._restartable(joinpath(d, "comm.1_2.0"))
+    @test Nbody6Dynamics._restartable(joinpath(d, "short"))
+    so = joinpath(d, "out1000")
+    write(
+        so,
+        marker_lines(1.5, "comm.2_1.5", 204) *
+        adj("2.00000E+00") *
+        marker_lines(2.0, "comm.1_2.0", 201),
+    )
+    write(joinpath(d, "comm.2_1.5"), engine_dump(; nsub = 0))
+    mk_f = @test_logs (:warn, r"inside a subsystem") resume(d, so)
+    @test mk_f.file == "comm.2_1.5" && mk_f.time_nb == 1.5
+    rm(joinpath(d, "comm.2_1.5"))
+    @test (@test_logs (:warn, r"inside a subsystem") resume(d, so)) === nothing
+
     # 4. Cut offset of a series file
     cut_offset = Nbody6Dynamics._series_cut_offset
     d4 = mktempdir()
@@ -584,6 +614,19 @@ end
     @test rinfo["segments"][end]["dump"] == "comm.1_12.0"
     @test !haskey(rinfo["segments"][end], "discarded")
     @test !isfile(joinpath(kout, "comm.1"))
+
+    # 7b. A dump written inside a subsystem (NSUB > 0) is refused before anything moves
+    rec(p) = vcat(reinterpret(UInt8, [Int32(length(p))]), p, reinterpret(UInt8, [Int32(length(p))]))
+    nsub_dump = vcat(
+        rec(collect(UInt8, 1:40)),
+        rec(reinterpret(UInt8, Int32[6111, 1111, 0, 5000, 550, 10, 1, 0, 1, 0])),
+        rec(UInt8[7]),
+    )
+    write(joinpath(kout, "comm.2_14.0"), nsub_dump)
+    n_before = length(readdir(kout))
+    @test_throws ArgumentError restart_simulation(killed; tcrit_extra = 1.0, dump = "comm.2_14.0")
+    @test length(readdir(kout)) == n_before
+    rm(joinpath(kout, "comm.2_14.0"))
 
     # 8. Pipeline: a stop request ends it without a stamp; resume_pipeline finishes it
     @test Nbody6Dynamics._run_status(mktempdir()) == ""

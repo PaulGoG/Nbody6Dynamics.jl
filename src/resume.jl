@@ -29,17 +29,66 @@ function _dump_complete(path::AbstractString)::Bool
 end
 
 """
+    _dump_counts(path) -> Union{Nothing,@NamedTuple{ntot, npairs, n, nmerge, nsub}}
+
+Particle and subsystem counters of a COMMON dump, read from its first two
+records (`mydump.F`: the ten array sizes of `params.h`, then `NTOT`,
+`NPAIRS`, `NTTOT` and the integer block `/NAMES/`, whose first entries are
+`N`, `NNBMAX`, `NCRIT`, `NFIX`, `NMERGE`, `NSUB`): total bodies, KS pairs,
+single bodies and centres of mass, stable hierarchies, and active triple,
+quad or chain subsystems. `nothing` when the file is absent or its first
+records do not have that shape.
+"""
+function _dump_counts(path::AbstractString)
+    isfile(path) || return nothing
+    return open(path) do io
+        filesize(path) ≥ 4 + 40 + 4 + 4 + 36 || return nothing
+        read(io, Int32) == 40 || return nothing
+        skip(io, 44)
+        read(io, Int32) ≥ 36 || return nothing
+        v = [read(io, Int32) for _ in 1:9]
+        return (
+            ntot = Int(v[1]),
+            npairs = Int(v[2]),
+            n = Int(v[4]),
+            nmerge = Int(v[8]),
+            nsub = Int(v[9]),
+        )
+    end
+end
+
+"""
+    _restartable(path) -> Bool
+
+Whether the dump at `path` can start a restart: complete
+([`_dump_complete`](@ref)) and not written during triple, quad or chain
+regularization (`NSUB > 0`, [`_dump_counts`](@ref); a file whose counters
+cannot be read is judged by completeness alone). The engine skips its
+periodic dumps while a subsystem is active ("no restart with NSUB > 0",
+`chterm.f`), but before `v2026.07-campaign.6` it wrote the END RUN dump and
+the dump of an energy-check halt regardless; the subsystem's state is not
+part of the dump.
+"""
+function _restartable(path::AbstractString)::Bool
+    _dump_complete(path) || return false
+    counts = _dump_counts(path)
+    return counts === nothing || counts.nsub == 0
+end
+
+"""
     _resume_dump(out_dir, stdout_path) -> Union{Nothing,_DumpMarker}
 
 Dump an interrupted run is restarted from: the last dump reported in the
-stdout capture ([`_dump_markers`](@ref)) whose file in `out_dir` is complete
-([`_dump_complete`](@ref)). The markers are searched from the last to the
-first; a file name is examined once, at its last marker, because a dump
-rewritten later holds what that last marker wrote. When no reported dump
-qualifies, the latest dump file by name ([`_latest_dump`](@ref)) is taken if
-complete, with `line_end = -1`: such a dump has no stdout line, its time is
-the rounded one of its name, and the stdout capture cannot be cut at it.
-`nothing` when no complete dump exists.
+stdout capture ([`_dump_markers`](@ref)) whose file in `out_dir` is
+restartable ([`_restartable`](@ref): complete, no active subsystem). The
+markers are searched from the last to the first; a file name is examined
+once, at its last marker, because a dump rewritten later holds what that
+last marker wrote. A complete dump passed over for an active subsystem is
+named in a warning. When no reported dump qualifies, the latest dump file by
+name ([`_latest_dump`](@ref)) is taken if restartable, with `line_end = -1`:
+such a dump has no stdout line, its time is the rounded one of its name, and
+the stdout capture cannot be cut at it. `nothing` when no restartable dump
+exists.
 """
 function _resume_dump(
     out_dir::AbstractString,
@@ -50,10 +99,14 @@ function _resume_dump(
     for mk in Iterators.reverse(markers)
         mk.file in seen && continue
         push!(seen, mk.file)
-        _dump_complete(joinpath(out_dir, mk.file)) && return mk
+        path = joinpath(out_dir, mk.file)
+        _restartable(path) && return mk
+        _dump_complete(path) &&
+            @warn "Dump $(mk.file) (t = $(mk.time_nb)) was written inside a subsystem " *
+                  "(NSUB > 0) and cannot start a restart; taking an earlier one"
     end
     name = _latest_dump(out_dir)
-    if name !== nothing && _dump_complete(joinpath(out_dir, name))
+    if name !== nothing && _restartable(joinpath(out_dir, name))
         return (file = name, time_nb = _dump_time(name), line_end = -1)
     end
     return nothing

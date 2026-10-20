@@ -124,6 +124,13 @@ entries say so.
   the original input after `&ININPUT`: the engine reads them again at a
   restart, and without them non-default stellar, binary-evolution and
   collision parameters reverted to the Level defaults.
+- `resume_run` and `restart_simulation` read the subsystem counter `NSUB` from
+  the header of a dump and do not restart from one written while a triple,
+  quad or chain was active: such a dump does not hold the subsystem, and the
+  engine crashes on it. `resume_run` takes the previous restartable dump with
+  a warning; `restart_simulation` does the same by default and refuses such a
+  `dump` named explicitly. Builds before `v2026.07-campaign.6` wrote one at a
+  run's end and at an energy-check halt.
 - The exact potential runs on the CPU as a threaded, vectorised loop over
   tiles; the potential of a set on itself visits every pair once. At 10⁵
   bodies on 8 threads it takes 1.9 s instead of 9.2 s, and it agrees with the
