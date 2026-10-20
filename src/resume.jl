@@ -65,7 +65,7 @@ Whether the dump at `path` can start a restart: complete
 regularization (`NSUB > 0`, [`_dump_counts`](@ref); a file whose counters
 cannot be read is judged by completeness alone). The engine skips its
 periodic dumps while a subsystem is active ("no restart with NSUB > 0",
-`chterm.f`), but before `v2026.07-campaign.6` it wrote the END RUN dump and
+`chterm.f`), but before `v2026.07.6` it wrote the END RUN dump and
 the dump of an energy-check halt regardless; the subsystem's state is not
 part of the dump.
 """

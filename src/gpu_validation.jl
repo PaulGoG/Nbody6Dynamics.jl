@@ -465,7 +465,7 @@ A command that cannot be spawned throws.
 A `Cmd` is started in its own session (`detach`): the hangup of a terminal
 closing above this process then never reaches it. `nohup` shields the
 driver alone, because a child spawned by Julia carries libuv's default
-signal dispositions; on 2026-09-24 two campaigns lost their running stage on
+signal dispositions; on 2026-09-24 two benchmark runs lost their running stage on
 every host to exactly that. Since a detached child no longer receives the
 terminal's Ctrl-C either, an `InterruptException` here is forwarded through
 [`_interrupt_child`](@ref) before it propagates.

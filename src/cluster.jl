@@ -254,7 +254,7 @@ submission command lines) and `job_ids` (empty for a dry run).
 
 # Example
 ```julia
-cfg = load_config("campaign.toml")    # [cluster] enabled = true
+cfg = load_config("run.toml")    # [cluster] enabled = true
 sub = submit_run(cfg; dry_run = true)
 foreach(println, sub.commands)
 sub = submit_run(cfg)

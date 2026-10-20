@@ -8,11 +8,11 @@ entries say so.
 
 ### Added
 
-- `binary_physics = "inherited" | "campaign"` in `[merger.nbody6]`: the
+- `binary_physics = "inherited" | "full"` in `[merger.nbody6]`: the
   few-body and binary options of the generated input. `"inherited"` (the
   default) keeps the block written so far, without the chain, stable
   hierarchies or the gravitational-wave decay of compact pairs.
-  `"campaign"` writes the set adopted for the binary programme: chain and
+  `"full"` writes the set adopted for the binary programme: chain and
   hierarchies (`KZ(15) = 2`, `KZ(30) = 2`), slow-down `KZ(26) = 2`, Peters
   decay with sequential tides `KZ(27) = 3`, `KZ(28) = 1`, Roche transfer
   `KZ(34) = 2`, the hierarchy census `KZ(18) = 1`, binary records also
@@ -129,7 +129,7 @@ entries say so.
   quad or chain was active: such a dump does not hold the subsystem, and the
   engine crashes on it. `resume_run` takes the previous restartable dump with
   a warning; `restart_simulation` does the same by default and refuses such a
-  `dump` named explicitly. Builds before `v2026.07-campaign.6` wrote one at a
+  `dump` named explicitly. Builds before `v2026.07.6` wrote one at a
   run's end and at an energy-check halt.
 - The exact potential runs on the CPU as a threaded, vectorised loop over
   tiles; the potential of a set on itself visits every pair once. At 10⁵
@@ -140,9 +140,10 @@ entries say so.
   fraction and mass class, a pair sum per call that it did not use.
 - The engine is cloned from the package's fork,
   [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing),
-  at the tag `v2026.07-campaign.6` by default (`install.source_url`,
+  at the tag `v2026.07.6` by default (`install.source_url`,
   `install.ref`; the shipped pipeline configurations pin the same tag). The
-  fork's branch `campaign` carries the three source amendments and the CUDA 13
+  fork's branch `main` (named `campaign` until its tags `v2026.07-campaign.1`
+  to `.6`; later tags are `v2026.07.N`) carries the three source amendments and the CUDA 13
   helper headers as commits on upstream v2026.07, and no longer tracks the
   outputs of `configure`, so a build from it records the amendments as found
   in place and its `backend_commit` is clean (an upstream checkout reports
@@ -199,6 +200,11 @@ entries say so.
   50 most massive stars by present mass against 50 random sets).
 - The sixth-neighbour density runs on a k-d tree (was O(N²)).
 - New dependency: NearestNeighbors 0.4.
+### Deprecated
+
+- `preset = "campaign"` in `[merger.nbody6]` is now `preset = "baseline"`;
+  the former name is read as `"baseline"` with a deprecation warning. The
+  same holds for `binary_physics = "campaign"`, read as `"full"`.
 
 ## [0.5.0] — 2026-10-15
 

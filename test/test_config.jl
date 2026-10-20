@@ -114,7 +114,7 @@ export_width = 7.0
 
     cfg2 = load_config(save_path)
     @test cfg2.install.ref == "v2026.07"
-    @test InstallConfig().ref == "v2026.07-campaign.6"
+    @test InstallConfig().ref == "v2026.07.6"
     @test cfg2.build.enable_gpu == cfg.build.enable_gpu
     @test cfg2.build.cuda_path == cfg.build.cuda_path
     @test cfg2.simulation.run_id_prefix == cfg.simulation.run_id_prefix
@@ -496,11 +496,11 @@ end
         nbin0 = parse(Int, match(r"NBIN0=(\d+)", text).captures[1])
         @test (nbin0 > 0) == (kz[8] == 1)
     end
-    # The single-cluster science cases: single mode, campaign numerics.
+    # The single-cluster science cases: single mode, baseline numerics.
     for f in readdir(joinpath(root, "clusters"))
         m = load_merger_config(joinpath(root, "clusters", f))
         @test m.orbit_mode == "single" && length(m.clusters) == 1
-        @test m.nbody6.preset == "campaign" && m.nbody6.checkpoint
+        @test m.nbody6.preset == "baseline" && m.nbody6.checkpoint
         @test m.output.tcrit_myr > 0 && m.output.dtadj_myr > 0 && m.output.deltat_myr > 0
     end
 end

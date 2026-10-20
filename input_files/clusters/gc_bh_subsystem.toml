@@ -39,6 +39,6 @@ gmg = 1.0e11        # galaxy mass [M☉]; > 0
 rg0 = 8.0           # galactocentric radius of the circular orbit [kpc]; > 0
 
 [merger.nbody6]
-preset = "campaign"  # one of: "engine" | "campaign"
+preset = "baseline"  # one of: "engine" | "baseline"
 qe = 0.01           # energy-error tolerance per adjustment interval; > 0
 checkpoint = true   # restart dump at every adjustment; bound the disk with simulation.checkpoint_keep

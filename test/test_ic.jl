@@ -728,14 +728,14 @@ seed = 5
         ru = resolve_nbody6_parameters(user, clusters, ranges, 220, 4.0)
         @test ru.nnbopt == 50 && ru.rs0 == 0.1 && ru.rmin == 1e-4 && ru.dtmin == 1e-6
         @test ru.kz16 == 2 && ru.qe == 1e-3
-        pc = Nbody6ParameterSpec(; preset = "campaign")
+        pc = Nbody6ParameterSpec(; preset = "baseline")
         rc = resolve_nbody6_parameters(pc, clusters, ranges, 220, 4.0)
         @test rc.etai == 0.01 && rc.etar == 0.02 && rc.etau == 0.1 && rc.nnbopt == 100
         @test rc.rmin ≈ 12 * 0.25 / 100
         @test rc.dtmin ≈ 0.016 * sqrt(0.5) * sqrt(rc.rmin^3 * 220)
         @test rc.rs0 ≈ min(2 * 0.25 * cbrt(2 * 100 / 100), 0.25)
         rco = resolve_nbody6_parameters(
-            Nbody6ParameterSpec(; preset = "campaign", etai = 0.005, nnbopt = 50),
+            Nbody6ParameterSpec(; preset = "baseline", etai = 0.005, nnbopt = 50),
             clusters,
             ranges,
             220,
@@ -747,13 +747,13 @@ seed = 5
             Nbody6ParameterSpec(; preset = "x"),
         )
         @test_throws ArgumentError Nbody6Dynamics._validate_nbody6(
-            Nbody6ParameterSpec(; preset = "campaign", kz16 = 1),
+            Nbody6ParameterSpec(; preset = "baseline", kz16 = 1),
         )
         @test_throws ArgumentError Nbody6Dynamics._validate_nbody6(
-            Nbody6ParameterSpec(; preset = "campaign", kz = Dict(17 => 1)),
+            Nbody6ParameterSpec(; preset = "baseline", kz = Dict(17 => 1)),
         )
         @test Nbody6Dynamics._validate_nbody6(
-            Nbody6ParameterSpec(; preset = "campaign", kz = Dict(16 => 0)),
+            Nbody6ParameterSpec(; preset = "baseline", kz = Dict(16 => 0)),
         ) === nothing
         @test_throws ArgumentError Nbody6Dynamics._validate_nbody6(
             Nbody6ParameterSpec(; etai = -1.0),
@@ -853,15 +853,15 @@ dtplot = 2.0
         @test cfg_nb.stellar.zmet == 0.02 &&
               cfg_nb.stellar.epoch0 == -1.0 &&
               cfg_nb.stellar.dtplot == 2.0
-        # Preset: "campaign" loads without KZ(16), refuses it, and the name is enumerated
+        # Preset: "baseline" loads without KZ(16), refuses it, and the name is enumerated
         nb_txt = read(nb_path, String)
         nb_preset_path = joinpath(TESTDIR, "merger_nbody6_preset.toml")
-        write(nb_preset_path, replace(nb_txt, "kz16 = 1\n" => "preset = \"campaign\"\n"))
+        write(nb_preset_path, replace(nb_txt, "kz16 = 1\n" => "preset = \"baseline\"\n"))
         cfg_pc = load_merger_config(nb_preset_path)
-        @test cfg_pc.nbody6.preset == "campaign" && cfg_pc.nbody6.nnbopt == 30
+        @test cfg_pc.nbody6.preset == "baseline" && cfg_pc.nbody6.nnbopt == 30
         write(
             nb_preset_path,
-            replace(nb_txt, "[merger.nbody6]\n" => "[merger.nbody6]\npreset = \"campaign\"\n"),
+            replace(nb_txt, "[merger.nbody6]\n" => "[merger.nbody6]\npreset = \"baseline\"\n"),
         )
         @test_throws ArgumentError load_merger_config(nb_preset_path)
         write(
@@ -869,7 +869,30 @@ dtplot = 2.0
             replace(nb_txt, "[merger.nbody6]\n" => "[merger.nbody6]\npreset = \"foo\"\n"),
         )
         @test_throws ArgumentError load_merger_config(nb_preset_path)
-        # binary_physics: parsed, and the campaign set refused without stellar evolution (kz19 = 0 here)
+        # Former names: read as the new ones with a deprecation warning
+        write(nb_preset_path, replace(nb_txt, "kz16 = 1\n" => "preset = \"campaign\"\n"))
+        cfg_old =
+            @test_logs (:warn, r"preset = \"campaign\" is deprecated") match_mode = :any load_merger_config(
+                nb_preset_path,
+            )
+        @test cfg_old.nbody6.preset == "baseline"
+        write(
+            nb_preset_path,
+            replace(
+                nb_txt,
+                "[merger.nbody6]\n" => "[merger.nbody6]\nbinary_physics = \"campaign\"\n",
+            ),
+        )
+        err_old =
+            @test_logs (:warn, r"binary_physics = \"campaign\" is deprecated") match_mode = :any try
+                load_merger_config(nb_preset_path)
+                nothing
+            catch e
+                e
+            end
+        @test err_old isa ArgumentError &&
+              occursin("= \"full\" requires stellar evolution", sprint(showerror, err_old))
+        # binary_physics: parsed, and the full set refused without stellar evolution (kz19 = 0 here)
         write(
             nb_preset_path,
             replace(
@@ -880,10 +903,7 @@ dtplot = 2.0
         @test load_merger_config(nb_preset_path).nbody6.binary_physics == "inherited"
         write(
             nb_preset_path,
-            replace(
-                nb_txt,
-                "[merger.nbody6]\n" => "[merger.nbody6]\nbinary_physics = \"campaign\"\n",
-            ),
+            replace(nb_txt, "[merger.nbody6]\n" => "[merger.nbody6]\nbinary_physics = \"full\"\n"),
         )
         @test_throws ArgumentError load_merger_config(nb_preset_path)
 
@@ -1123,8 +1143,8 @@ dtplot = 2.0
         @test sum(parse(Float64, split(l)[1]) for l in lines) ≈ 1.0 atol = 1e-10
     end
 
-    # --- Campaign preset through the full pipeline ---
-    @testset "Campaign preset in the generated input" begin
+    # --- Baseline preset through the full pipeline ---
+    @testset "Baseline preset in the generated input" begin
         imf_c = RescaledKroupaIMF(
             bodyn = 0.1,
             body1 = 50.0,
@@ -1138,7 +1158,7 @@ dtplot = 2.0
             "kepler",
             OrbitSpec(apocentre = 10.0, eccentricity = 0.5),
             MergerOutputSpec(format = "nbody", truncate_jacobi = true, output_dir = mktempdir());
-            nbody6 = Nbody6ParameterSpec(; preset = "campaign"),
+            nbody6 = Nbody6ParameterSpec(; preset = "baseline"),
         )
         result = generate_merger_ic(cfg; rng = rng)
         inp = read(joinpath(result.output_dir, "merger.inp"), String)
@@ -1146,9 +1166,9 @@ dtplot = 2.0
         @test occursin("NNBOPT=100,", inp)
         @test occursin("ETAU=0.1,", inp)
         summary_text = read(joinpath(result.output_dir, "merger_summary.txt"), String)
-        @test occursin("preset=campaign", summary_text)
+        @test occursin("preset=baseline", summary_text)
         ic_meta = Nbody6Dynamics.TOML.parsefile(joinpath(result.output_dir, "merger_ic.toml"))
-        @test ic_meta["nbody6"]["preset"] == "campaign"
+        @test ic_meta["nbody6"]["preset"] == "baseline"
         @test ic_meta["nbody6"]["etai"] == 0.01
     end
 
@@ -1175,9 +1195,9 @@ dtplot = 2.0
             "KZ(21:30)=0 2 2 0 0 1 0 0 0 1",
             "KZ(31:40)=0 0 0 0 0 0 0 0 0 0",
         ]
-        # Campaign set
+        # Full set
         rc = generate_merger_ic(
-            bcfg(Nbody6ParameterSpec(; binary_physics = "campaign"));
+            bcfg(Nbody6ParameterSpec(; binary_physics = "full"));
             rng = StableRNG(7),
         )
         @test kz_lines(rc.output_dir) == [
@@ -1188,30 +1208,30 @@ dtplot = 2.0
             "KZ(41:50)=0 0 0 0 0 0 0 0 0 0",
         ]
         meta = Nbody6Dynamics.TOML.parsefile(joinpath(rc.output_dir, "merger_ic.toml"))
-        @test meta["nbody6"]["binary_physics"] == "campaign"
+        @test meta["nbody6"]["binary_physics"] == "full"
         @test occursin(
-            "binary_physics=campaign",
+            "binary_physics=full",
             read(joinpath(rc.output_dir, "merger_summary.txt"), String),
         )
         # Explicit keys override the set (an arm without the chain)
         ra = generate_merger_ic(
-            bcfg(Nbody6ParameterSpec(; binary_physics = "campaign", kz = Dict(15 => 0)));
+            bcfg(Nbody6ParameterSpec(; binary_physics = "full", kz = Dict(15 => 0)));
             rng = StableRNG(7),
         )
         @test kz_lines(ra.output_dir)[2] == "KZ(11:20)=0 1 0 0 0 0 0 1 3 0"
         # Per-binary custom output warns
         @test_logs (:warn, r"KZ\(46\) = 4") match_mode = :any generate_merger_ic(
-            bcfg(Nbody6ParameterSpec(; binary_physics = "campaign", kz = Dict(46 => 4)));
+            bcfg(Nbody6ParameterSpec(; binary_physics = "full", kz = Dict(46 => 4)));
             rng = StableRNG(7),
         )
-        # Refusals: unknown set, the campaign set without stellar evolution, KZ(18) ≥ 2
+        # Refusals: unknown set, the full set without stellar evolution, KZ(18) ≥ 2
         @test_throws ArgumentError generate_merger_ic(
-            bcfg(Nbody6ParameterSpec(; binary_physics = "full"));
+            bcfg(Nbody6ParameterSpec(; binary_physics = "complete"));
             rng = StableRNG(7),
         )
         @test_throws ArgumentError generate_merger_ic(
             bcfg(
-                Nbody6ParameterSpec(; binary_physics = "campaign");
+                Nbody6ParameterSpec(; binary_physics = "full");
                 stellar = StellarSpec(; kz19 = 0, level = "0"),
             );
             rng = StableRNG(7),

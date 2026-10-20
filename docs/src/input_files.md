@@ -180,9 +180,9 @@ In `"explicit"` mode this section is ignored (a warning is emitted if present).
 
 ### `[merger.nbody6]`
 
-Integration parameters written to `merger.inp`, in N-body units of the combined system (length unit `RBAR`, mass unit `M_total`). A zero for a derivable key means "take the preset's value or rule at generation time": with `r_h` the smallest member half-mass radius in those units, `N_min` the smallest post-truncation membership, and `ρ̂` the central density contrast of that member's profile, the `"engine"` rules are those of the engine's own example inputs and of its `adjust.F` evaluated for the member cluster instead of the whole configuration, and the `"campaign"` rules are the baseline of the calibration programme: η_I = 0.01 (the manual's value), η_R = 0.02 (the benchmarks of [NitadoriAarseth2012](@cite)), 100 neighbours (the middle of the manual's range), `RMIN` three times the 90° deflection scale `4 r_h/N` of the smallest member (the manual's example and the 10⁶-body run of [Wang2015](@cite), which both found the engine's automatic re-derivation too small), and `DTMIN` 0.4 of the Aarseth close-encounter step at that `RMIN`. Explicit nonzero keys override the preset in both cases.
+Integration parameters written to `merger.inp`, in N-body units of the combined system (length unit `RBAR`, mass unit `M_total`). A zero for a derivable key means "take the preset's value or rule at generation time": with `r_h` the smallest member half-mass radius in those units, `N_min` the smallest post-truncation membership, and `ρ̂` the central density contrast of that member's profile, the `"engine"` rules are those of the engine's own example inputs and of its `adjust.F` evaluated for the member cluster instead of the whole configuration, and the `"baseline"` rules are those of the calibration programme: η_I = 0.01 (the manual's value), η_R = 0.02 (the benchmarks of [NitadoriAarseth2012](@cite)), 100 neighbours (the middle of the manual's range), `RMIN` three times the 90° deflection scale `4 r_h/N` of the smallest member (the manual's example and the 10⁶-body run of [Wang2015](@cite), which both found the engine's automatic re-derivation too small), and `DTMIN` 0.4 of the Aarseth close-encounter step at that `RMIN`. Explicit nonzero keys override the preset in both cases.
 
-| Key | `"engine"` | `"campaign"` |
+| Key | `"engine"` | `"baseline"` |
 |---|---|---|
 | `etai`, `etar`, `etau` | 0.02, 0.02, 0.1 | 0.01, 0.02, 0.1 |
 | `nnbopt` | `clamp(round(√N_total), 20, 300)` | 100 |
@@ -193,8 +193,8 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `preset` | String | `"engine"` | Source of every zero entry below; one of `"engine"`, `"campaign"` (table above) |
-| `binary_physics` | String | `"inherited"` | Few-body and binary options of the input; one of `"inherited"`, `"campaign"` (table below); `"campaign"` requires `stellar.kz19 ≥ 3` |
+| `preset` | String | `"engine"` | Source of every zero entry below; one of `"engine"`, `"baseline"` (table above; the former name `"campaign"` is read as `"baseline"` with a deprecation warning) |
+| `binary_physics` | String | `"inherited"` | Few-body and binary options of the input; one of `"inherited"`, `"full"` (table below; the former name `"campaign"` is read as `"full"` with a deprecation warning); `"full"` requires `stellar.kz19 ≥ 3` |
 | `qe` | Float | `2.0e-4` | Energy-error tolerance per adjustment interval (`QE`); must be > 0 |
 | `etai` | Float | `0.0` | Irregular time-step factor; `0` = preset value; must be ≥ 0 |
 | `etar` | Float | `0.0` | Regular time-step factor; `0` = preset value; must be ≥ 0 |
@@ -219,9 +219,9 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 
 Runs with stellar evolution need the relaxed tolerance `qe ≈ 1e-2`: supernova kicks change the energy budget between adjustments, and the default tolerance halts the run.
 
-`binary_physics` selects the few-body and binary options. `"inherited"` keeps the block the generator has always written: no chain and no stable hierarchies (`KZ(15) = 0`), no gravitational-wave decay of compact pairs (`KZ(27) = 0`), no binary event files. `"campaign"` writes the set adopted for the binary programme, with the Level defaults of `&INSSE`, `&INBSE` and `&INCOLL` (zero recoil of GW mergers, `fctorcl = 0.5`); it needs an engine from `v2026.07-campaign.6`, the default pin: the decay of compact KS pairs follows the Peters equations from `campaign.5`, and earlier builds end the run at the first binary–binary chain (a run-time FORMAT error) and can end a run with an unrestartable dump inside a chain.
+`binary_physics` selects the few-body and binary options. `"inherited"` keeps the block the generator has always written: no chain and no stable hierarchies (`KZ(15) = 0`), no gravitational-wave decay of compact pairs (`KZ(27) = 0`), no binary event files. `"full"` writes the complete set adopted for the binary programme, with the Level defaults of `&INSSE`, `&INBSE` and `&INCOLL` (zero recoil of GW mergers, `fctorcl = 0.5`); it needs an engine from the fork tag `v2026.07.6`, the default pin: the decay of compact KS pairs follows the Peters equations from `v2026.07-campaign.5` on, and earlier builds end the run at the first binary–binary chain (a run-time FORMAT error) and can end a run with an unrestartable dump inside a chain.
 
-| `KZ` | `"inherited"` | `"campaign"` | Effect |
+| `KZ` | `"inherited"` | `"full"` | Effect |
 |---|---|---|---|
 | 8 | 2 with primordial pairs, else 0 | 2 | binary records (`bdat.9`, `bwdat.19`, `merger.84`), also of dynamically formed pairs |
 | 9, 10 | 0, 0 | 3, 2 | binary event files (`binev.17`, `degen.4`, `hbin.39`); `NEW`/`END KSREG` lines |

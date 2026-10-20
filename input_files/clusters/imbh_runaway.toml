@@ -26,6 +26,6 @@ zmet = 0.001        # metal abundance; 0.0001 ≤ zmet ≤ 0.03
 dtplot_myr = 0.05   # stellar-evolution diagnostic interval [Myr]; ≥ deltat
 
 [merger.nbody6]
-preset = "campaign"  # one of: "engine" | "campaign"
+preset = "baseline"  # one of: "engine" | "baseline"
 qe = 0.01           # energy-error tolerance per adjustment interval; > 0
 checkpoint = true   # restart dump at every adjustment; bound the disk with simulation.checkpoint_keep

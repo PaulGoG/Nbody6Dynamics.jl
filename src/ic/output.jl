@@ -205,7 +205,7 @@ smallest member half-mass radius in those units, `N_min` the smallest
 post-truncation membership, and `ρ̂` the central density contrast of that
 cluster's profile ([`_central_density_contrast`](@ref)):
 
-| Key | `"engine"` | `"campaign"` |
+| Key | `"engine"` | `"baseline"` |
 |---|---|---|
 | `ETAI` | 0.02 | 0.01 |
 | `ETAR` | 0.02 | 0.02 |
@@ -224,10 +224,10 @@ cluster's profile ([`_central_density_contrast`](@ref)):
   ([`engine_interval`](@ref)).
 - `RMIN` of `"engine"` is the functional form of the engine's own
   re-derivation (`adjust.F`) evaluated for the member cluster instead of the
-  whole configuration; that of `"campaign"` is three times the 90°
+  whole configuration; that of `"baseline"` is three times the 90°
   deflection scale `4 r_h / N_min`.
 - `DTMIN` is the Aarseth close-encounter step with the mean body mass
-  `1/N_total` (`"engine"`), or 0.4 of it (`"campaign"`), at the resolved
+  `1/N_total` (`"engine"`), or 0.4 of it (`"baseline"`), at the resolved
   `RMIN`; it uses the resolved `ETAI`.
 
 User-supplied (nonzero) values are kept. The result has no zero entries.
@@ -381,8 +381,8 @@ Follows the Fortran NAMELIST read order expected by `nbody6.F → start.F`:
 # Key settings
 - `nbody6`: resolved [`Nbody6ParameterSpec`](@ref); obtain it from
   [`resolve_nbody6_parameters`](@ref) — unresolved zeros are refused. Its
-  `binary_physics = "campaign"` writes the option set of
-  `_CAMPAIGN_BINARY_KZ` over the inherited block, then its `kz` overrides
+  `binary_physics = "full"` writes the option set of
+  `_FULL_BINARY_KZ` over the inherited block, then its `kz` overrides
   are applied; a resulting `KZ(46) > 0` warns. `checkpoint = true` sets `KZ(2) = 1` (a
   restart dump at every adjustment) and logs the disk space the dumps can
   take.
@@ -426,8 +426,8 @@ function generate_merger_inp(
     kz[23] = 2
     kz[26] = 1
     kz[30] = 1
-    if nbody6.binary_physics == "campaign"
-        for (i, v) in _CAMPAIGN_BINARY_KZ
+    if nbody6.binary_physics == "full"
+        for (i, v) in _FULL_BINARY_KZ
             kz[i] = v
         end
     end
