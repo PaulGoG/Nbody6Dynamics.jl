@@ -166,7 +166,7 @@ entries say so.
   fraction and mass class, a pair sum per call that it did not use.
 - The engine is cloned from the package's fork,
   [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing),
-  at the tag `v2026.07.6` by default (`install.source_url`,
+  at the tag `v2026.07.7` by default (`install.source_url`,
   `install.ref`; the shipped pipeline configurations pin the same tag). The
   fork's branch `main` (named `campaign` until its tags `v2026.07-campaign.1`
   to `.6`; later tags are `v2026.07.N`) carries the three source amendments and the CUDA 13
@@ -203,7 +203,13 @@ entries say so.
   skipped during a chain is written at its end also under `KZ(2) = 1`; the
   limit on tiny chain steps acts per chain and terminates the chain, not the
   run; `KZ(26)` survives the absorption of an inert binary; and `MIX` no
-  longer overwrites the `&INSSE` `nsflag`. The fork's `NOTICE.md` lists
+  longer overwrites the `&INSSE` `nsflag`. From `v2026.07.7` a body inside
+  a perturbed KS pair whose step has collapsed no longer stalls the block
+  time (the pair is terminated), and every mass change of a KS component
+  corrects the KS orbit and books its energy: below 10⁻⁸ N-body mass units the
+  binding energy of a hard pair changed without a counterpart, which in a
+  metal-poor cluster of 10⁴ stars cost up to 7×10⁻³ of the cluster energy per
+  adjustment. The fork's `NOTICE.md` lists
   the corrections by tag and states the provenance, the credit and the
   licensing. An existing
   engine checkout under `install.install_dir` is reused as it is; set
