@@ -219,7 +219,7 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 
 Runs with stellar evolution need the relaxed tolerance `qe ≈ 1e-2`: supernova kicks change the energy budget between adjustments, and the default tolerance halts the run.
 
-`binary_physics` selects the few-body and binary options. `"inherited"` keeps the block the generator has always written: no chain and no stable hierarchies (`KZ(15) = 0`), no gravitational-wave decay of compact pairs (`KZ(27) = 0`), no binary event files. `"campaign"` writes the set adopted for the binary programme, with the Level defaults of `&INSSE`, `&INBSE` and `&INCOLL` (zero recoil of GW mergers, `fctorcl = 0.5`); its decay of compact KS pairs needs an engine from `v2026.07-campaign.5`, the default pin.
+`binary_physics` selects the few-body and binary options. `"inherited"` keeps the block the generator has always written: no chain and no stable hierarchies (`KZ(15) = 0`), no gravitational-wave decay of compact pairs (`KZ(27) = 0`), no binary event files. `"campaign"` writes the set adopted for the binary programme, with the Level defaults of `&INSSE`, `&INBSE` and `&INCOLL` (zero recoil of GW mergers, `fctorcl = 0.5`); it needs an engine from `v2026.07-campaign.6`, the default pin: the decay of compact KS pairs follows the Peters equations from `campaign.5`, and earlier builds end the run at the first binary–binary chain (a run-time FORMAT error) and can end a run with an unrestartable dump inside a chain.
 
 | `KZ` | `"inherited"` | `"campaign"` | Effect |
 |---|---|---|---|

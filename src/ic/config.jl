@@ -366,8 +366,10 @@ input manual.
   below, `_CAMPAIGN_BINARY_KZ`) with the Level defaults of `&INSSE`, `&INBSE`
   and `&INCOLL`; it requires stellar evolution (`stellar.kz19 ≥ 3`), since
   the decay, tides and Roche transfer act on the stellar types, and an engine
-  from `v2026.07-campaign.5`, whose decay of compact KS pairs follows the
-  Peters equations
+  from `v2026.07-campaign.6`: from `campaign.5` the decay of compact KS pairs
+  follows the Peters equations, and before `campaign.6` the first
+  binary–binary chain ended the run and a run could end with an
+  unrestartable dump inside a chain
 - `kz`: explicit `KZ(i) = v` overrides applied last (`[merger.nbody6.kz]`,
   keys 1–50); an override of an index that also has a named key (8, 14, 16,
   19) warns. `KZ(18) ≥ 2` is refused: it runs the engine's primordial-triple

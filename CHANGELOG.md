@@ -140,7 +140,7 @@ entries say so.
   fraction and mass class, a pair sum per call that it did not use.
 - The engine is cloned from the package's fork,
   [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing),
-  at the tag `v2026.07-campaign.5` by default (`install.source_url`,
+  at the tag `v2026.07-campaign.6` by default (`install.source_url`,
   `install.ref`; the shipped pipeline configurations pin the same tag). The
   fork's branch `campaign` carries the three source amendments and the CUDA 13
   helper headers as commits on upstream v2026.07, and no longer tracks the
@@ -167,7 +167,16 @@ entries say so.
   no longer applies it a second time, and a decaying pair is no longer
   treated as a chaotic binary; the speed of light is 299 792.458 km/s instead
   of 3×10⁵ km/s. Runs with `KZ(27) ≤ 2` are unchanged, and restart dumps of
-  earlier builds cannot be read by `campaign.5`. The fork's `NOTICE.md` lists
+  earlier builds cannot be read by `campaign.5`. From `campaign.6` chain
+  regularization (`KZ(15) > 0`) runs: five FORMAT statements that gfortran
+  rejects at run time are repaired (the first binary–binary chain ended every
+  run); a run reaching its end while a triple, quad or chain is active
+  terminates the subsystem and ends at the next adjustment (`END RUN
+  DEFERRED`) instead of writing a dump that crashes the restart; a dump
+  skipped during a chain is written at its end also under `KZ(2) = 1`; the
+  limit on tiny chain steps acts per chain and terminates the chain, not the
+  run; `KZ(26)` survives the absorption of an inert binary; and `MIX` no
+  longer overwrites the `&INSSE` `nsflag`. The fork's `NOTICE.md` lists
   the corrections by tag and states the provenance, the credit and the
   licensing. An existing
   engine checkout under `install.install_dir` is reused as it is; set
