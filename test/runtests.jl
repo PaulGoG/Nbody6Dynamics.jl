@@ -92,6 +92,7 @@ end
     include("test_cost.jl")
     include("test_cluster.jl")
     include("test_io.jl")
+    include("test_fortran_format.jl")
     include("test_diagnostics.jl")
     include("test_potential.jl")
     include("test_energy_budget.jl")

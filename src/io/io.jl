@@ -3,6 +3,7 @@
 # =============================================================================
 
 include("fortran_binary.jl")
+include("fortran_format.jl")
 include("conf3.jl")
 include("diagnostics.jl")
 include("lagr.jl")
