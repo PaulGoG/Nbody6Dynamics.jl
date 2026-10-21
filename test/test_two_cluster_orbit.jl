@@ -257,5 +257,55 @@ $output
         @test meta["orbit"]["apocentre_resolved"] == 12.0
         @test meta["orbit"]["j_orb"] ≈ sqrt(12.0 / 1.5 * (1 - 0.25) / 1.0)
         @test haskey(meta["cluster1"], "mass_truncated")
+        @test meta["meta"]["fp32_offset_bound"] > 0
+    end
+
+    @testset "Tidal frame and the pair Jacobi radius (6.4)" begin
+        t1 = TidalSpec(; kz14 = 1)
+        @test nd.tidal_frame_rotation(t1) ≈ 0.0264
+        @test nd.tidal_frame_rotation(TidalSpec()) == 0.0
+        t2 = TidalSpec(; kz14 = 2, gmg = 1.0e11, rg0 = 8.0)
+        Ω2 = sqrt(G * 1.0e11 / 8000.0^3)
+        @test nd.tidal_frame_rotation(t2) ≈ Ω2
+        @test nd.pair_jacobi_radius(6.0e4, t1) ≈ cbrt(G * 6.0e4 / (4 * 0.0144 * 0.0264))
+        @test nd.pair_jacobi_radius(6.0e4, t1) ≈ 1.4142 * cbrt(6.0e4) rtol = 1e-4
+        @test nd.pair_jacobi_radius(6.0e4, t2) ≈ cbrt(G * 6.0e4 / (3Ω2^2))
+        @test nd.pair_jacobi_radius(6.0e4, TidalSpec()) == Inf
+        pos = [1.0 0.0; 0.0 2.0; 0.0 0.0]
+        vel = zeros(3, 2)
+        nd.to_rotating_frame!(pos, vel, 0.5)
+        @test vel == [0.0 1.0; -0.5 0.0; 0.0 0.0]
+
+        tidal(frame) = "\n[merger.tidal]\nkz14 = 1\nvelocity_frame = \"$frame\"\n"
+        # The frame key needs a rotating-frame tide
+        @test_throws ArgumentError load(
+            base_toml("apocentre = 10.0\neccentricity = 0.5"; extra_cluster2 = "rbar = 1.0") *
+            "\n[merger.tidal]\nkz14 = 0\nvelocity_frame = \"inertial\"\n",
+        )
+        gen(frame; orbit = "apocentre = 3.0\neccentricity = 0.5") = generate_merger_ic(
+            load(
+                base_toml(
+                    orbit;
+                    extra_cluster2 = "rbar = 1.0",
+                    extra_merger = "seed_streams = \"per_cluster\"",
+                ) *
+                tidal(frame) *
+                "\n[merger.nbody6]\nqe = 0.01\n",
+            );
+            output_dir = mktempdir(),
+        )
+        rot = gen("rotating")
+        ine = gen("inertial")
+        Ω = nd.tidal_frame_rotation(t1)
+        # Same bodies, velocities differ by −Ω × r
+        @test rot.pos_physical == ine.pos_physical
+        @test ine.vel_physical[1, :] ≈ rot.vel_physical[1, :] .+ Ω .* rot.pos_physical[2, :]
+        @test ine.vel_physical[2, :] ≈ rot.vel_physical[2, :] .- Ω .* rot.pos_physical[1, :]
+        @test ine.vel_physical[3, :] == rot.vel_physical[3, :]
+        meta = Nbody6Dynamics.TOML.parsefile(joinpath(ine.output_dir, "merger_ic.toml"))
+        @test meta["tidal"]["velocity_frame"] == "inertial" && meta["tidal"]["omega_kms_pc"] ≈ Ω
+        @test 0 < meta["orbit"]["apocentre_over_jacobi_pair"] < 0.5
+        # An apocentre beyond the pair Jacobi radius is refused
+        @test_throws ErrorException gen("rotating"; orbit = "apocentre = 500.0\neccentricity = 0.5")
     end
 end

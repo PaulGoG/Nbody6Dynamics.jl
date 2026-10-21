@@ -47,6 +47,13 @@ entries say so.
   period, orbital energy and angular momentum, j_orb, the Peebles spin parameter, v_p/σ₁, the Roche-lobe
   filling at apocentre and the truncated mass per cluster (`two_cluster_orbit_quantities`). Existing
   configurations generate the same `dat.10` and `.inp` as before.
+- Tidal frame of generated configurations: under `kz14 = 1, 2` the engine integrates in the frame rotating
+  with the circular Galactic orbit (Ω along +z) and takes the `dat.10` velocities as velocities in that frame.
+  `[merger.tidal] velocity_frame = "rotating"` (default, the earlier output) keeps that reading,
+  `"inertial"` writes v − Ω × r. A Kepler pair whose apocentre reaches its pair Jacobi radius is refused (warned
+  above half of it); `tidal_frame_rotation`, `pair_jacobi_radius`, `to_rotating_frame!`. The IC record gains Ω,
+  the apocentre over the pair Jacobi radius and the bound 4u·max|x|/RS0 on the FP32 regular-force error from the
+  coordinate offset, warned above 10⁻⁴.
 - Binary spans from the event records (`binary_spans`, `BinarySpan`,
   `write_binary_spans`): the KS episodes of each pair of component names,
   joined when the gap is at most `n_p` periods or a chain or hierarchy holding

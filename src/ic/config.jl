@@ -531,7 +531,8 @@ Base.@kwdef struct StellarSpec
 end
 
 """
-    TidalSpec(; kz14 = 0, gmg = 0.0, rg0 = 0.0, rg = zeros(3), vg = zeros(3))
+    TidalSpec(; kz14 = 0, gmg = 0.0, rg0 = 0.0, rg = zeros(3), vg = zeros(3),
+              velocity_frame = "rotating")
 
 External galactic field of `merger.inp` (`[merger.tidal]`, `KZ(14)` and the
 `&INXTRNL0` namelist):
@@ -548,6 +549,14 @@ External galactic field of `merger.inp` (`[merger.tidal]`, `KZ(14)` and the
 - `rg0`: galactocentric distance of the circular orbit [kpc] (`kz14 = 2`); > 0
 - `rg`, `vg`: galactocentric position [kpc] and velocity [km s⁻¹] of the
   configuration's centre of mass (`kz14 = 5`); both non-zero
+- `velocity_frame`: `"rotating"` or `"inertial"`. Under `kz14 = 1, 2` the
+  engine integrates in the frame that rotates with the circular Galactic
+  orbit, Ω = Ω ẑ (Ω = A − B = 26.4 km s⁻¹ kpc⁻¹ for `kz14 = 1`, V_G/R_G
+  for `kz14 = 2`), and takes the `dat.10` velocities as velocities in that
+  frame (`xtrnl0.F`, `xtrnld.f`). `"rotating"` (the default) writes the
+  generated velocities as they are: clusters non-rotating and a Kepler orbit
+  of the pair in the rotating frame. `"inertial"` takes them as inertial and
+  writes v − Ω × r for every body. Only `kz14 = 1, 2` accept `"inertial"`.
 
 The `&INSCALE` tidal radius stays 0 so the engine derives it from the field
 with the generator's `RBAR` (a non-zero value would override `RBAR`).
@@ -558,6 +567,7 @@ Base.@kwdef struct TidalSpec
     rg0::Float64 = 0.0
     rg::Vector{Float64} = zeros(3)
     vg::Vector{Float64} = zeros(3)
+    velocity_frame::String = "rotating"
 end
 
 # -----------------------------------------------------------------------------
@@ -1066,7 +1076,16 @@ function _validate_tidal(t::TidalSpec)
             _config_error("merger.tidal.gmg", "must be > 0 [M☉] for kz14 = 2; got $(t.gmg)")
         t.rg0 > 0 ||
             _config_error("merger.tidal.rg0", "must be > 0 [kpc] for kz14 = 2; got $(t.rg0)")
-    elseif t.kz14 == 5
+    end
+    t.velocity_frame in ("rotating", "inertial") || _config_error(
+        "merger.tidal.velocity_frame",
+        "must be \"rotating\" or \"inertial\"; got \"$(t.velocity_frame)\"",
+    )
+    (t.velocity_frame == "inertial" && !(t.kz14 in (1, 2))) && _config_error(
+        "merger.tidal.velocity_frame",
+        "= \"inertial\" needs the rotating frame of kz14 = 1 or 2; got kz14 = $(t.kz14)",
+    )
+    if t.kz14 == 5
         any(!=(0.0), t.rg) ||
             _config_error("merger.tidal.rg", "must be non-zero [kpc] for kz14 = 5")
         any(!=(0.0), t.vg) ||

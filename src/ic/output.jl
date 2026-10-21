@@ -305,6 +305,8 @@ end
 # "Feasibility and limitations").
 const _Q_COLD_COLLAPSE = 0.3
 const _RBAR_OVER_RHM_UNRESOLVED = 5.0
+# Per-pair relative FP32 regular-force error from the coordinate offset above which a warning is given
+const _FP32_OFFSET_WARN = 1.0e-4
 
 """
     _check_multicluster_regime(q_virial, rbar_over_rhm_min, nbody6, r_h_min_nb;
@@ -317,8 +319,11 @@ warn when the combined virial ratio is below `$(_Q_COLD_COLLAPSE)`
 (cold-collapse regime, global diagnostics meaningless until the remnant
 forms), when the length unit exceeds `$(_RBAR_OVER_RHM_UNRESOLVED)`
 member half-mass radii (members unresolved by the single-centre
-diagnostics), and when the snapshot interval `deltat` exceeds the smallest
-member crossing time (member dynamics undersampled).
+diagnostics), when the snapshot interval `deltat` exceeds the smallest
+member crossing time (member dynamics undersampled), and when the bound
+`fp32_offset_bound` = 4u·max|x|/RS0 (u = 2⁻²⁴) on the per-pair relative error
+of the single-precision regular force from the coordinate offset exceeds
+`$(_FP32_OFFSET_WARN)`.
 """
 function _check_multicluster_regime(
     q_virial::Float64,
@@ -327,6 +332,7 @@ function _check_multicluster_regime(
     r_h_min_nb::Float64;
     deltat::Float64 = 0.0,
     t_cr_member_min_nb::Float64 = NaN,
+    fp32_offset_bound::Float64 = 0.0,
 )
     nbody6.rs0 ≤ r_h_min_nb || error(
         "merger.nbody6.rs0 = $(nbody6.rs0) exceeds the smallest member half-mass radius " *
@@ -344,6 +350,11 @@ function _check_multicluster_regime(
         @warn "RBAR/r_hm,min = $(round(rbar_over_rhm_min; digits = 1)) > $(_RBAR_OVER_RHM_UNRESOLVED): " *
               "member clusters are unresolved by the engine's single-centre diagnostics; use " *
               "the per-cluster snapshot analysis (cluster_ranges) for cluster-level results"
+    end
+    if fp32_offset_bound > _FP32_OFFSET_WARN
+        @warn "FP32 offset bound 4u·max|x|/RS0 = $(round(fp32_offset_bound; sigdigits = 2)) > " *
+              "$(_FP32_OFFSET_WARN): the single-precision regular force of a GPU build loses " *
+              "accuracy on the outermost bodies; centre the configuration or raise rs0"
     end
     if !isnan(t_cr_member_min_nb) && deltat > t_cr_member_min_nb
         @warn "Snapshot interval deltat = $deltat exceeds the smallest member crossing time " *
@@ -877,6 +888,19 @@ function generate_merger_ic(
     else
         nothing
     end
+    # A bound pair in a rotating-frame tide must stay inside its pair Jacobi radius.
+    if orbit_derived !== nothing && cfg.tidal.kz14 in (1, 2)
+        r_j = pair_jacobi_radius(sum(mass_combined), cfg.tidal)
+        ratio = d_apo / r_j
+        ratio < 1 || error(
+            "merger.orbit: apocentre $(round(d_apo; sigdigits = 3)) pc reaches the pair Jacobi " *
+            "radius $(round(r_j; sigdigits = 3)) pc of the tide (kz14 = $(cfg.tidal.kz14)): the pair " *
+            "is not bound to itself; choose a smaller orbit",
+        )
+        ratio > 0.5 && @warn "Apocentre is $(round(ratio; digits = 2)) of the pair Jacobi radius " *
+              "$(round(r_j; sigdigits = 3)) pc: the tide strips the pair orbit"
+        orbit_derived = merge(orbit_derived, (apocentre_over_jacobi_pair = ratio,))
+    end
 
     # Expand primordial pairs into bodies: every cluster's pairs first, then
     # the singles (the engine's convention for the first 2·NBIN0 bodies).
@@ -890,6 +914,15 @@ function generate_merger_ic(
         rng = per_cluster ? cluster_rngs : use_rng,
     )
     pos_combined, vel_combined, mass_combined = expanded.pos, expanded.vel, expanded.mass
+    # Inertial velocities into the engine's rotating frame (kz14 = 1, 2): v − Ω × r,
+    # with Ω converted to the code velocity unit per pc.
+    if cfg.tidal.velocity_frame == "inertial"
+        to_rotating_frame!(
+            pos_combined,
+            vel_combined,
+            tidal_frame_rotation(cfg.tidal) / _CODE_VSTAR_KMS,
+        )
+    end
     cluster_blocks = expanded.cluster_blocks
     cluster_ranges = [_members_from_blocks(b) for b in cluster_blocks]
     n_pairs = expanded.n_pairs
@@ -908,6 +941,15 @@ function generate_merger_ic(
     r_h_min_pc = minimum(c.rbar for c in cfg.clusters)
     rbar_over_rhm_min = rbar / r_h_min_pc
     nbody6 = resolve_nbody6_parameters(cfg.nbody6, cfg.clusters, cluster_ranges, N_total, rbar)
+    # Bound on the per-pair relative error of the FP32 regular force from the
+    # coordinate offset: 4 u X / RS0, u = 2⁻²⁴, X the largest |x| [NB]
+    # (literature/2026-10-02-numerical-validity §4 of the workspace notes).
+    x_max_nb =
+        maximum(
+            sqrt(pos_combined[1, i]^2 + pos_combined[2, i]^2 + pos_combined[3, i]^2) for
+            i in axes(pos_combined, 2)
+        ) / rbar
+    fp32_offset_bound = 4 * 2.0^-24 * x_max_nb / nbody6.rs0
     # Time parameters: physical values are converted with the realised T*.
     out = cfg.output
     tcrit_nb = out.tcrit_myr > 0 ? out.tcrit_myr / t_star_myr : out.tcrit
@@ -942,6 +984,7 @@ function generate_merger_ic(
         r_h_min_pc / rbar;
         deltat = deltat_nb,
         t_cr_member_min_nb = t_cr_member_code * code_to_nb,
+        fp32_offset_bound = fp32_offset_bound,
     )
     regime = (
         q_virial = q_virial,
@@ -960,6 +1003,7 @@ function generate_merger_ic(
         t_cr_member_min_nb = t_cr_member_code * code_to_nb,
         t_cr_member_min_myr = t_cr_member_code * _CODE_TIME_MYR,
         t_star_myr = t_star_myr,
+        fp32_offset_bound = fp32_offset_bound,
     )
     @info @sprintf(
         "Combined system: Q = %.3f, RBAR/r_hm,min = %.2f, t_cr = %.3g NB (%.3g Myr), smallest member t_cr = %.3g NB; RS0 = %.3g, RMIN = %.3g, DTMIN = %.3g, NNBOPT = %d",
@@ -1124,10 +1168,14 @@ function _write_merger_ic_metadata(
             "t_cr_member_min_myr" => regime.t_cr_member_min_myr,
             "t_star_myr" => regime.t_star_myr,
             "nbin0" => regime.nbin0,
+            "fp32_offset_bound" => regime.fp32_offset_bound,
         ),
         "nbody6" => _nbody6_table(regime.nbody6),
         "stellar" => _struct_to_dict(cfg.stellar),
-        "tidal" => _struct_to_dict(cfg.tidal),
+        "tidal" => merge(
+            _struct_to_dict(cfg.tidal),
+            Dict{String,Any}("omega_kms_pc" => tidal_frame_rotation(cfg.tidal)),
+        ),
         "hardware" => _hardware_fingerprint(),
         "orbit_mode" => cfg.orbit_mode,
         "orbit" => orbit_table,

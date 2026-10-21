@@ -496,3 +496,61 @@ function combine_single_cluster(cluster_data::NamedTuple)
 
     return pos, vel, mass, UnitRange{Int}[1:N], [collect(1:N)]
 end
+
+# Oort constants of the engine's solar-neighbourhood tide (xtrnl0.F, KZ(14) = 1) [km s⁻¹ pc⁻¹]
+const _OORT_A_KMS_PC = 14.4e-3
+const _OORT_B_KMS_PC = -12.0e-3
+
+"""
+    tidal_frame_rotation(tidal::TidalSpec) -> Float64
+
+Angular velocity Ω [km s⁻¹ pc⁻¹] of the frame in which the engine integrates
+under `tidal.kz14`, along +z: `A − B` with the Oort constants of `xtrnl0.F`
+(A = 14.4, B = −12.0 km s⁻¹ kpc⁻¹) for `kz14 = 1`, `√(G M_G / R_G³)` of the
+circular orbit in the point-mass galaxy for `kz14 = 2` (`gmg` [M☉], `rg0`
+[kpc]); 0 for the inertial integrations (`kz14 = 0, 5`). The Coriolis terms
+of `xtrnld.f` (F_x += 2Ω ẏ, F_y −= 2Ω ẋ) fix the sense: a pair orbit with its
+angular momentum along +z is prograde with respect to the Galactic rotation.
+"""
+function tidal_frame_rotation(tidal::TidalSpec)::Float64
+    tidal.kz14 == 1 && return _OORT_A_KMS_PC - _OORT_B_KMS_PC
+    tidal.kz14 == 2 && return sqrt(_G_PC_KMS2_MSUN * tidal.gmg / (1000 * tidal.rg0)^3)
+    return 0.0
+end
+
+"""
+    pair_jacobi_radius(M, tidal::TidalSpec) -> Float64
+
+Jacobi radius [pc] of a bound system of total mass `M` [M☉] in the
+linearised tide of the engine (Hill problem): `(G M / (4A(A − B)))^{1/3}` for
+`kz14 = 1` (≈ 1.41 (M/M☉)^{1/3} pc) and `(G M / (3Ω²))^{1/3}` for the
+point-mass galaxy of `kz14 = 2` (A = 3Ω/4, B = −Ω/4); `Inf` without a
+rotating-frame tide. A pair whose apocentre reaches it is not bound to itself.
+"""
+function pair_jacobi_radius(M::Real, tidal::TidalSpec)::Float64
+    M > 0 || throw(ArgumentError("pair_jacobi_radius: M must be > 0; got $M"))
+    if tidal.kz14 == 1
+        A, B = _OORT_A_KMS_PC, _OORT_B_KMS_PC
+        return cbrt(_G_PC_KMS2_MSUN * M / (4A * (A - B)))
+    elseif tidal.kz14 == 2
+        Ω = tidal_frame_rotation(tidal)
+        return cbrt(_G_PC_KMS2_MSUN * M / (3Ω^2))
+    end
+    return Inf
+end
+
+"""
+    to_rotating_frame!(pos, vel, Ω)
+
+Replace inertial velocities `vel` [km s⁻¹] of bodies at `pos` [pc] (3 × N,
+about the rotation axis through the origin) by the velocities in the frame
+rotating with Ω ẑ [km s⁻¹ pc⁻¹]: v − Ω × r, i.e. vₓ + Ω y, v_y − Ω x.
+"""
+function to_rotating_frame!(pos::AbstractMatrix{Float64}, vel::AbstractMatrix{Float64}, Ω::Real)
+    size(pos) == size(vel) || throw(DimensionMismatch("pos is $(size(pos)), vel is $(size(vel))"))
+    for i in axes(pos, 2)
+        vel[1, i] += Ω * pos[2, i]
+        vel[2, i] -= Ω * pos[1, i]
+    end
+    return vel
+end
