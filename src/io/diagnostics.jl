@@ -37,7 +37,8 @@ The first `OPTIONS` echo gives `kz`, the 50 option values, left empty when
 the capture lacks the echo or its value row does not hold 50 integers.
 The `TIDAL PARAMETERS:` echo gives `tidal`, the four coefficients
 `TIDAL(1:4)` in N-body units, zeros when the capture lacks it.
-`nbin0` from the `&INDATA` echo (`-1` when absent).
+`nbin0` from the `&INDATA` echo, `nzero` (N) from the value row under the
+`N  NFIX  NCRIT` header of the `&ININPUT` echo (`-1` when absent).
 """
 function read_diagnostics(path::AbstractString)::DiagnosticsData
     isfile(path) || error("Diagnostics file not found: $path")
@@ -73,9 +74,21 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     options_seen = false
     options_pending = 0   # non-empty lines after OPTIONS still to read; the second holds the values
     nbin0 = -1
+    nzero = -1
+    nzero_pending = false   # the N NFIX NCRIT header was seen, its value row is next
 
     for line in eachline(path)
         stripped = lstrip(line)
+
+        # ── N of the &ININPUT echo: first non-empty row after its header ──
+        if nzero_pending && !isempty(stripped)
+            m = match(r"^(\d+)\s", stripped)
+            m === nothing || (nzero = parse(Int, something(m.captures[1])))
+            nzero_pending = false
+        elseif nzero < 0 && startswith(stripped, "N  NFIX  NCRIT")
+            nzero_pending = true
+            continue
+        end
 
         # ── NBIN0 of the &INDATA echo; no `continue`, the line may serve other branches ──
         if nbin0 < 0
@@ -220,7 +233,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     # particle count so plots don't show sawtooth artefacts.
     _forward_fill_particle_counts!(adjust_records)
 
-    return DiagnosticsData(adjust_records, scaling, kz, tidal, nbin0)
+    return DiagnosticsData(adjust_records, scaling, kz, tidal, nbin0, nzero)
 end
 
 # ---------------------------------------------------------------------------

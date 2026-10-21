@@ -198,6 +198,7 @@ format = "pdf"
             "postprocess.stellar_evo_pattern",
         ),
         ("pair_sum_max_n", "[postprocess]\npair_sum_max_n = -1\n", "postprocess.pair_sum_max_n"),
+        ("span_n_periods", "[postprocess]\nspan_n_periods = 0.0\n", "postprocess.span_n_periods"),
         (
             "bound_max_passes",
             "[postprocess]\nbound_max_passes = 0\n",

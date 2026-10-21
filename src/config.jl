@@ -538,6 +538,10 @@ function _validate_estimators(pp::PostprocessConfig)
         "postprocess.equipartition_n_min",
         "must be ≥ 2; got $(pp.equipartition_n_min)",
     )
+    (isfinite(pp.span_n_periods) && pp.span_n_periods > 0) || _config_error(
+        "postprocess.span_n_periods",
+        "must be finite and > 0; got $(pp.span_n_periods)",
+    )
     pp.validity_interval_de > 0 || _config_error(
         "postprocess.validity_interval_de",
         "must be > 0; got $(pp.validity_interval_de)",

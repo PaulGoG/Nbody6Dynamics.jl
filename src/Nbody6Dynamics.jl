@@ -423,6 +423,29 @@ function postprocess(
         end
     end
     lap!("equipartition")
+    # Engine-regularised binary spans from the binary lines of the stdout capture
+    if pp.binary_spans && haskey(results, :diagnostics)
+        diag = results[:diagnostics]
+        if diag.nzero > 0
+            @info "Binary spans from the KS, few-body and GW records..."
+            coll_path = joinpath(sim_dir, "coll.13")
+            coal_path = joinpath(sim_dir, "coal.24")
+            results[:binary_spans] = binary_spans(
+                read_binary_events(joinpath(sim_dir, pp.stdout_file));
+                listings = read_all_ks_pair_listings(sim_dir),
+                collisions = isfile(coll_path) ? read_collision_log(coll_path) : CollisionRecord[],
+                coalescences = isfile(coal_path) ? read_coalescence_log(coal_path) :
+                               CoalescenceRecord[],
+                nzero = diag.nzero,
+                nbin0 = max(diag.nbin0, 0),
+                tstar_myr = extract_scaling(diag).tscale,
+                n_p = pp.span_n_periods,
+            )
+        else
+            @warn "No N in the input echo of $(pp.stdout_file): binary spans skipped"
+        end
+    end
+    lap!("binary_spans")
     # Validity record: built from the products above, with the build record of
     # the output directory and the run record of its parent.
     if pp.validity
@@ -713,6 +736,9 @@ function _finish_pipeline(
     end
     if haskey(results, :merger_tree) && !isempty(products_dir)
         write_merger_tree(joinpath(products_dir, "merger_tree.csv"), results[:merger_tree])
+    end
+    if haskey(results, :binary_spans) && !isempty(products_dir)
+        write_binary_spans(joinpath(products_dir, "binary_spans.csv"), results[:binary_spans])
     end
     if haskey(results, :progenitor_budget) && !isempty(products_dir)
         write_progenitor_budget(

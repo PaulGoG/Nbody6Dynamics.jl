@@ -224,6 +224,8 @@ Base.@kwdef struct PostprocessConfig
     equipartition_bin_width::Float64 = 0.1
     equipartition_n_min::Int = 50
     merger_tree::Bool = true
+    binary_spans::Bool = false
+    span_n_periods::Float64 = 2.0
     validity::Bool = true
     validity_interval_de::Float64 = 1.0e-4
     validity_cumulative_de::Float64 = 1.0e-3
@@ -757,8 +759,10 @@ the `PHYSICAL SCALING` values, the engine options `kz` (the 50 values of the
 field `tidal` (`TIDAL(1:4)` of the `TIDAL PARAMETERS` echo, N-body units;
 zeros when absent, i.e. no external field of `KZ(14) ≤ 2`). The two-argument
 constructor leaves `kz` empty and `tidal` zero. `nbin0` is NBIN0 of the
-`&INDATA` echo (`NBIN0 = …` on the line that starts with `ALPHAS`), `-1` when
-absent; the two- and four-argument constructors set it to `-1`.
+`&INDATA` echo (`NBIN0 = …` on the line that starts with `ALPHAS`), `nzero`
+N of the `&ININPUT` echo (the value row under `N  NFIX  NCRIT`), each `-1`
+when absent; the two-, four- and five-argument constructors set the missing
+ones to `-1`.
 """
 struct DiagnosticsData
     adjust::Vector{AdjustRecord}
@@ -766,10 +770,21 @@ struct DiagnosticsData
     kz::Vector{Int}
     tidal::NTuple{4,Float64}
     nbin0::Int
+    nzero::Int
 end
 
 function DiagnosticsData(adjust::Vector{AdjustRecord}, physical_scaling::Dict{String,Float64})
-    return DiagnosticsData(adjust, physical_scaling, Int[], (0.0, 0.0, 0.0, 0.0), -1)
+    return DiagnosticsData(adjust, physical_scaling, Int[], (0.0, 0.0, 0.0, 0.0), -1, -1)
+end
+
+function DiagnosticsData(
+    adjust::Vector{AdjustRecord},
+    physical_scaling::Dict{String,Float64},
+    kz::Vector{Int},
+    tidal::NTuple{4,Float64},
+    nbin0::Int,
+)
+    return DiagnosticsData(adjust, physical_scaling, kz, tidal, nbin0, -1)
 end
 
 function DiagnosticsData(

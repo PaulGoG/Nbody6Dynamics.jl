@@ -33,7 +33,17 @@ entries say so.
   (`escbin.31`), `read_hardest_binary_log` (`hbin.39`). Formatted records are
   read by their FORMAT's field widths (`read_fixed`), since the engine glues
   fields together; values the engine prints under a wrong label or unit are
-  stored under their true meaning, as each record type documents.
+  stored under their true meaning, as each record type documents. The
+  `GR CAPTURE` and `GR FLYBY` lines of hyperbolic NS/BH passages (engine fork
+  v2026.07.8) are `GWEvent` kinds `:gw_capture` and `:gw_flyby`.
+- Binary spans from the event records (`binary_spans`, `BinarySpan`,
+  `write_binary_spans`): the KS episodes of each pair of component names,
+  joined when the gap is at most `n_p` periods or a chain or hierarchy holding
+  both components covers it, with the origin (primordial by the name-parity
+  rule, reformed, exchange, dynamical with GW or tidal capture and three-body
+  sublabels), the end class (GW merger, stellar merger, collision, escape,
+  exchange, supernova disruption, flyby, disruption, unresolved, censored)
+  and the elements of the opening and closing records.
 - `binary_physics = "inherited" | "full"` in `[merger.nbody6]`: the
   few-body and binary options of the generated input. `"inherited"` (the
   default) keeps the block written so far, without the chain, stable
