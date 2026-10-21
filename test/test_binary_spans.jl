@@ -279,6 +279,41 @@
     @test !only(filter(s -> (s.name1, s.name2) == (2, 3), s10)).primordial
     @test only(filter(s -> (s.name1, s.name2) == (3, 4), s10)).primordial
 
+    # 12. A hyperbolic encounter is a flyby; a bound pair that leaves KS unbound is a disruption
+    hyp = (semi = -1.0e-3, ecc = 1.5, eb = 1.0e-4, p_nb = 0.3)
+    s12 =
+        spans(eventlog(; ks = [ks(:ks_new, 1.0, 71, 72; hyp...), ks(:ks_end, 1.2, 71, 72; hyp...)]))
+    @test only(s12).end_class === :flyby && only(s12).ecc_form == 1.5
+    s12b = spans(eventlog(; ks = [ks(:ks_new, 1.0, 71, 72), ks(:ks_end, 1.2, 71, 72; hyp...)]))
+    @test only(s12b).end_class === :disruption
+
+    # 13. A GW capture at the pericentre of a hyperbolic NS/BH encounter, then the GW merger
+    capture = GWEvent(;
+        line = 100,
+        interval = 1,
+        time_nb = 2.003,
+        kind = :gw_capture,
+        name1 = 82,
+        name2 = 81,
+        kstar1 = 14,
+        kstar2 = 14,
+    )
+    trigger13 = GWEvent(; line = 101, interval = 1, time_nb = 2.004, kind = :gw_unpert_coll)
+    coll13 =
+        filled(CollisionRecord; time_nb = 2.004, name1 = 81, name2 = 82, kstar1 = 14, kstar2 = 14)
+    s13 = spans(
+        eventlog(;
+            ks = [
+                ks(:ks_new, 2.0, 81, 82; k1 = 14, k2 = 14, hyp...),
+                ks(:ks_end, 2.004, 81, 82; k1 = 14, k2 = 14),
+            ],
+            gw = [capture, trigger13],
+        );
+        collisions = [coll13],
+    )
+    @test only(s13).origin === :dynamical && only(s13).origin_sublabel === :gw_capture
+    @test only(s13).end_class === :gw_merger
+
     # 11. Bad arguments
     @test_throws ArgumentError binary_spans(BinaryEventLog(); nzero = 0, nbin0 = 0, tstar_myr = 1.0)
     @test_throws ArgumentError binary_spans(

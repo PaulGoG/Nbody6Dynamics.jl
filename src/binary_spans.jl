@@ -49,7 +49,7 @@ ends it, with the KS episodes in between joined.
 | `primordial` | the pair is (2k − 1, 2k) with 2k ≤ 2·NBIN0 | — |
 | `hierarchy_outer` | a name is ≤ 0 or > NZERO: outer orbit of a merged hierarchy | — |
 | `origin` | `:primordial`, `:primordial_reformed`, `:exchange` or `:dynamical` | — |
-| `origin_sublabel` | `:capture` or `:three_body` for a dynamical origin, `:none` otherwise | — |
+| `origin_sublabel` | `:gw_capture`, `:capture` or `:three_body` for a dynamical origin, `:none` otherwise | — |
 | `mixed` | origin not `:primordial`, and a component was earlier in a span of another primordial pair | — |
 | `t_form_nb`, `t_end_nb` | start and end of the span | NB |
 | `t_form_myr`, `t_end_myr` | the same | Myr |
@@ -209,6 +209,7 @@ struct _SpanLookup
     mergers::Dict{Tuple{Int,Int},Vector{Float64}}
     escapes::Dict{Tuple{Int,Int},Vector{Float64}}
     captures::Dict{Tuple{Int,Int},Vector{Float64}}
+    gw_captures::Dict{Tuple{Int,Int},Vector{Float64}}
     listed::Dict{Tuple{Int,Int},Vector{Float64}}
     exchanges_of_name::Dict{Int,Vector{Int}}
     chain_binaries_of_name::Dict{Int,Vector{Int}}
@@ -229,6 +230,13 @@ _span_primordial(key::Tuple{Int,Int}, nbin0::Int)::Bool =
 _span_simultaneous(a::Float64, b::Float64)::Bool = abs(a - b) <= _SPAN_DUP_RTOL * max(1.0, abs(a))
 
 _span_near(times::Vector{Float64}, t::Float64)::Bool = any(x -> abs(x - t) <= _SPAN_JOIN_TOL, times)
+
+# A time stamp within [t_open, t_close] of an episode, widened by the join tolerance
+_span_within(times::Vector{Float64}, t_open::Float64, t_close::Float64)::Bool =
+    any(x -> t_open - _SPAN_JOIN_TOL <= x <= t_close + _SPAN_JOIN_TOL, times)
+
+# Unbound elements: binding energy > 0 (μH of a hyperbolic pair) or a < 0
+_span_unbound(e::_SpanElements)::Bool = e.eb_nb > 0 || e.semi_nb < 0
 
 _span_covers(s::Float64, f::Float64, t_c::Float64, t_o::Float64)::Bool =
     s <= t_c + _SPAN_JOIN_TOL && f >= t_o - _SPAN_JOIN_TOL
@@ -701,6 +709,10 @@ function _span_lookup(
     for r in log.tidal
         r.kind === :capture && _span_push_time!(captures, r.name1, r.name2, r.time_nb)
     end
+    gw_captures = Dict{Tuple{Int,Int},Vector{Float64}}()
+    for r in log.gw
+        r.kind === :gw_capture && _span_push_time!(gw_captures, r.name1, r.name2, r.time_nb)
+    end
     exchanges_of_name = Dict{Int,Vector{Int}}()
     for (i, r) in enumerate(log.exchange)
         isfinite(r.time_nb) || continue
@@ -732,6 +744,7 @@ function _span_lookup(
         mergers,
         escapes,
         captures,
+        gw_captures,
         listed,
         exchanges_of_name,
         chain_binaries_of_name,
@@ -764,6 +777,7 @@ end
 
 function _span_origin(
     s::_SpanRaw,
+    t_first_close::Float64,
     primordial::Bool,
     first_of_key::Bool,
     before::Bool,
@@ -782,7 +796,11 @@ function _span_origin(
         return (first_of_key && at_start ? :primordial : :primordial_reformed, :none)
     end
     before && _span_exchange_formed(key, t, lookup, log) && return (:exchange, :none)
-    _span_near(get(lookup.captures, key, Float64[]), t) && return (:dynamical, :capture)
+    # A capture at a pericentre of the first episode (opened by the hyperbolic NEW KSREG)
+    _span_within(get(lookup.gw_captures, key, Float64[]), t, t_first_close) &&
+        return (:dynamical, :gw_capture)
+    _span_within(get(lookup.captures, key, Float64[]), t, t_first_close) &&
+        return (:dynamical, :capture)
     for j in get(lookup.three_body_of_name, key[1], Int[])
         r = log.fewbody[j]
         abs(r.time_nb - t) <= _SPAN_JOIN_TOL &&
@@ -828,6 +846,7 @@ end
 
 function _span_end_class(
     ep::_SpanEpisode,
+    form::_SpanElements,
     key::Tuple{Int,Int},
     t_next::Float64,
     lookup::_SpanLookup,
@@ -842,7 +861,10 @@ function _span_end_class(
     _span_near(get(lookup.escapes, key, Float64[]), t_c) && return :escape_bound
     _span_exchange_ended(key, t_c, t_next, lookup, log) && return :exchange
     ep.kind_end === :ks_end_mass_loss && return :sn_disruption
-    ep.kind_end === :ks_end && (ep.final.eb_nb > 0 || ep.final.semi_nb < 0) && return :disruption
+    if ep.kind_end === :ks_end && _span_unbound(ep.final)
+        # Unbound at both ends: a hyperbolic encounter, not a disrupted binary
+        return _span_unbound(form) ? :flyby : :disruption
+    end
     return :unresolved
 end
 
@@ -877,9 +899,19 @@ function _span_record(
         before = true
         before_primordial |= _span_primordial(o.key, nbin0)
     end
-    origin, sublabel =
-        _span_origin(s, primordial, first_of_key, before, lookup, log, t_start, nzero)
-    end_class = _span_end_class(last_ep, key, t_next, lookup, log)
+    t_first_close = first_ep.open_at_end ? s.t_end_nb : first_ep.t_close
+    origin, sublabel = _span_origin(
+        s,
+        t_first_close,
+        primordial,
+        first_of_key,
+        before,
+        lookup,
+        log,
+        t_start,
+        nzero,
+    )
+    end_class = _span_end_class(last_ep, first_ep.form, key, t_next, lookup, log)
 
     t_end = s.t_end_nb
     ks_time = 0.0
@@ -1000,9 +1032,10 @@ are ignored.
    `:primordial_reformed` for its later spans; `:exchange` when an EXCHANGE or
    CHAIN BINARY line leaves the pair bound at the formation time and a
    component was in a span of another pair before; `:dynamical` otherwise, with
-   the sublabel `:capture` (NEW CAPTURE of the pair) or `:three_body` (END
-   CHAIN, CHTERM or CHAIN BINARY with both components as members) at the
-   formation time. `mixed` marks a non-primordial origin with a component that
+   the sublabel `:gw_capture` (GR CAPTURE of the pair) or `:capture` (NEW
+   CAPTURE, tidal) at a pericentre of the first episode, which the hyperbolic
+   NEW KSREG opened, else `:three_body` (END CHAIN, CHTERM or CHAIN BINARY
+   with both components as members) at the formation time. `mixed` marks a non-primordial origin with a component that
    was earlier in a span of another primordial pair.
 
 The end class is that of the last episode, the first that applies of:
@@ -1018,8 +1051,10 @@ The end class is that of the last episode, the first that applies of:
    whose initial pair is this one or whose final pair holds one of its
    components, or a CHAIN BINARY line holding one of its components;
 7. `:sn_disruption`: closed by MDEND KSREG;
-8. `:disruption`: closed by END KSREG with a positive binding energy or a < 0;
-9. `:unresolved`: none of these.
+8. `:flyby`: closed by END KSREG unbound (positive binding energy or a < 0)
+   and opened unbound: a hyperbolic encounter that never was a binary;
+9. `:disruption`: closed by END KSREG unbound after a bound opening;
+10. `:unresolved`: none of these.
 
 Tolerances: records of one family are simultaneous within a relative 10⁻⁹
 (E17.10 stamps); records of different files or families
