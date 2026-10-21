@@ -42,6 +42,8 @@ entries say so.
   plus every KS pair of the snapshot; spans over the snapshot sequence bridge single misses of a pair that stays
   bound, with interval-censored formation and end times. On a development run of 10⁴ stars 98.6 % of the bound
   engine-regularised spans lie inside one bound span, and a third of the bound spans are never regularised.
+  The stage `[postprocess] bound_spans` (default `false`; `bound_gamma_max`, `bound_n_miss`) writes
+  `bound_spans.csv`.
 - Two-cluster orbits (`orbit_mode = "kepler"`) by pericentre or apocentre, absolute or in units of the
   half-mass radius of cluster 1 (`[merger.orbit]` `pericentre`, `pericentre_rh`, `apocentre_rh`; one size key
   per config), oriented by `orbit_normal` (the direction of the orbital angular momentum; default [0, 0, −1],

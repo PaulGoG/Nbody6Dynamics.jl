@@ -542,6 +542,12 @@ function _validate_estimators(pp::PostprocessConfig)
         "postprocess.span_n_periods",
         "must be finite and > 0; got $(pp.span_n_periods)",
     )
+    (isfinite(pp.bound_gamma_max) && pp.bound_gamma_max > 0) || _config_error(
+        "postprocess.bound_gamma_max",
+        "must be finite and > 0; got $(pp.bound_gamma_max)",
+    )
+    pp.bound_n_miss ≥ 0 ||
+        _config_error("postprocess.bound_n_miss", "must be ≥ 0; got $(pp.bound_n_miss)")
     pp.validity_interval_de > 0 || _config_error(
         "postprocess.validity_interval_de",
         "must be > 0; got $(pp.validity_interval_de)",

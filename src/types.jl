@@ -226,6 +226,9 @@ Base.@kwdef struct PostprocessConfig
     merger_tree::Bool = true
     binary_spans::Bool = false
     span_n_periods::Float64 = 2.0
+    bound_spans::Bool = false
+    bound_gamma_max::Float64 = 0.1
+    bound_n_miss::Int = 1
     validity::Bool = true
     validity_interval_de::Float64 = 1.0e-4
     validity_cumulative_de::Float64 = 1.0e-3

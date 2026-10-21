@@ -447,6 +447,18 @@ function postprocess(
         end
     end
     lap!("binary_spans")
+    # Physically bound pairs and their spans over the snapshots (level P)
+    if pp.bound_spans && haskey(results, :snapshots)
+        @info "Bound pairs and their spans over $(length(results[:snapshots])) snapshots..."
+        nbin0 = haskey(results, :diagnostics) ? max(results[:diagnostics].nbin0, 0) : 0
+        results[:bound_spans] = bound_spans(
+            results[:snapshots];
+            nbin0 = nbin0,
+            gamma_max = pp.bound_gamma_max,
+            n_miss = pp.bound_n_miss,
+        )
+    end
+    lap!("bound_spans")
     # Validity record: built from the products above, with the build record of
     # the output directory and the run record of its parent.
     if pp.validity
@@ -740,6 +752,9 @@ function _finish_pipeline(
     end
     if haskey(results, :binary_spans) && !isempty(products_dir)
         write_binary_spans(joinpath(products_dir, "binary_spans.csv"), results[:binary_spans])
+    end
+    if haskey(results, :bound_spans) && !isempty(products_dir)
+        write_bound_spans(joinpath(products_dir, "bound_spans.csv"), results[:bound_spans])
     end
     if haskey(results, :progenitor_budget) && !isempty(products_dir)
         write_progenitor_budget(
