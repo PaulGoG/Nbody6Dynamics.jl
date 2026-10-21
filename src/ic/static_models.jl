@@ -4,9 +4,8 @@
 # Osipkov–Merritt anisotropic Plummer sphere (Merritt 1985,
 # DOI 10.1086/113810), Lynden-Bell rotation by sign flips (Lynden-Bell 1960,
 # DOI 10.1093/mnras/120.3.204), stretched positions for the shape estimator
-# (Zemp et al. 2011, DOI 10.1088/0067-0049/197/2/30) and energy-ranked mass
-# segregation (Šubr, Kroupa & Baumgardt 2008,
-# DOI 10.1111/j.1365-2966.2008.13161.x). Each model has a known answer for one
+# (Zemp et al. 2011, DOI 10.1088/0067-0049/197/2/30) and an energy-ranked mass
+# segregation of tunable degree (a calibration model of its own). Each model has a known answer for one
 # estimator; all of them are also usable as initial conditions. Units as in
 # `sample_plummer`: G = 1, total mass 1, lengths in units of the scale radius.
 
@@ -249,9 +248,12 @@ end
 """
     rank_masses_by_energy!(mass, energy, S; rng = Random.default_rng()) -> mass
 
-Mass segregation of tunable degree `S`, the model of Šubr, Kroupa &
-Baumgardt (2008, DOI 10.1111/j.1365-2966.2008.13161.x) in its simplest form.
-A random fraction `S` of the particles (`round(Int, S n)` of `n`) receives
+Mass segregation of tunable degree `S` for the estimator calibration, a scheme
+of its own: it is neither the `S` of Šubr, Kroupa & Baumgardt (2008, DOI
+10.1111/j.1365-2966.2008.12993.x) nor that of Baumgardt, De Marchi & Kroupa
+(2008, DOI 10.1086/590488), and with positions kept and masses permuted it
+changes the mass-density profile, so it is not an initial-condition
+segregation method. A random fraction `S` of the particles (`round(Int, S n)` of `n`) receives
 the largest masses, ranked so that the most bound of them (lowest `energy`)
 carries the largest mass; the remaining masses go to the remaining particles
 in random order. `S = 0` is a random permutation of the masses, `S = 1` the
