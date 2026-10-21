@@ -13,6 +13,8 @@
 #   :gr_brake             GR BRAKE T DTGR STEP                     mdot.F
 #   :gr_brake_roche       GR BRAKE T DTGW STEP                     roche.f
 #   :gr_brake3            GR BRAKE3 T M1 M2 K1 K2 ...              brake3.f
+#   :gw_capture           GR CAPTURE T[NB]                         ksint.f (GWCAPT)
+#   :gw_flyby             GR FLYBY   T[NB]                         ksint.f (GWCAPT)
 #   :binary_escape        BINARY ESCAPE  IP,N,NCORR =              escape.F
 #   :hierarchy_escape     HIARCH ESCAPE    NM =                    escape.F
 #   :quad_escape          QUAD ESCAPE    KS =                      escape.F
@@ -38,7 +40,7 @@
 The kinds returned by `_evolution_line_kind`: the gravitational-radiation
 kinds of [`GWEvent`](@ref) (`:gw_decay_step`, `:gw_ksint`, `:gw_ksint_coll`,
 `:gw_tides`, `:gw_unpert_coll`, `:gw_recoil`, `:gr_brake`, `:gr_brake_roche`,
-`:gr_brake3`), the escapes of [`BinaryEscapeEvent`](@ref) (`:binary_escape`,
+`:gr_brake3`, `:gw_capture`, `:gw_flyby`), the escapes of [`BinaryEscapeEvent`](@ref) (`:binary_escape`,
 `:hierarchy_escape`, `:quad_escape`), the mass-loss lines of
 [`MassLossEvent`](@ref) (`:ks_end_mass_loss`, `:ks_new_mass_loss`,
 `:binary_kick`), the tidal lines of [`TidalEvent`](@ref) (`:circ_new`,
@@ -55,6 +57,8 @@ const EVOLUTION_EVENT_KINDS = (
     :gr_brake,
     :gr_brake_roche,
     :gr_brake3,
+    :gw_capture,
+    :gw_flyby,
     :binary_escape,
     :hierarchy_escape,
     :quad_escape,
@@ -70,11 +74,11 @@ const EVOLUTION_EVENT_KINDS = (
     :roche_end,
 )
 
-const _EVO_GW_KINDS = EVOLUTION_EVENT_KINDS[1:9]
-const _EVO_ESCAPE_KINDS = EVOLUTION_EVENT_KINDS[10:12]
-const _EVO_MASS_LOSS_KINDS = EVOLUTION_EVENT_KINDS[13:15]
-const _EVO_TIDAL_KINDS = EVOLUTION_EVENT_KINDS[16:19]
-const _EVO_ROCHE_KINDS = EVOLUTION_EVENT_KINDS[20:22]
+const _EVO_GW_KINDS = EVOLUTION_EVENT_KINDS[1:11]
+const _EVO_ESCAPE_KINDS = EVOLUTION_EVENT_KINDS[12:14]
+const _EVO_MASS_LOSS_KINDS = EVOLUTION_EVENT_KINDS[15:17]
+const _EVO_TIDAL_KINDS = EVOLUTION_EVENT_KINDS[18:21]
+const _EVO_ROCHE_KINDS = EVOLUTION_EVENT_KINDS[22:24]
 
 """Absent Cartesian triple."""
 const _EVO_NAN3 = (NaN, NaN, NaN)
@@ -98,6 +102,8 @@ One gravitational-radiation or GR-braking line of the engine log, built by
 | `:gw_tides` | `unpert.f` | `GR TIDES RES KMIN …`, unperturbed twin of `:gw_ksint` |
 | `:gw_unpert_coll` | `unpert.f` | `COLL DUE TO GW UNPERT`, list-directed merger trigger |
 | `:gw_recoil` | `kickGW.f` | `GW recoil:`, from `mix.f`/`coal.f` for two NS/BH |
+| `:gw_capture` | `ksint.f` (GWCAPT) | `GR CAPTURE T[NB]`, a hyperbolic NS/BH passage that ends bound |
+| `:gw_flyby` | `ksint.f` (GWCAPT) | `GR FLYBY   T[NB]`, the same passage left unbound |
 | `:gr_brake` | `mdot.F` | `GR BRAKE T DTGR STEP`, BSE look-up, DJGR > 10⁻⁶ |
 | `:gr_brake_roche` | `roche.f` | `GR BRAKE T DTGW STEP`, inside a Roche stage |
 | `:gr_brake3` | `brake3.f` | `GR BRAKE3 T M1 M2 …`, hierarchy with an NS/BH inner pair |
@@ -149,6 +155,11 @@ Fields, with the kinds that carry them (absent: `NaN`, `0`, `KSTAR_ABSENT`):
 | `v_kick_kms`, `v_kick_xyz_kms` | km s⁻¹ | `:gw_recoil` kick speed and components |
 | `v_esc_kms`, `v_dis_kms`, `r_over_semi`, `eb_nb`, `r_nb` | | `:gw_recoil`, see below |
 | `x1_pc`, `v1_kms`, `x2_pc`, `v2_kms` | pc, km s⁻¹ | `:gw_recoil`, absolute frame, pre-kick |
+| `v_inf_kms` | km s⁻¹ | capture kinds: v∞ = √(2H₀)·V* before the passage |
+| `ecc_minus_1` | — | capture kinds: e − 1 of the incoming hyperbola |
+| `r_capture_nb` | NB | capture kinds: Quinlan–Shapiro capture pericentre (RPMAX) |
+| `h_after_nb` | NB | capture kinds: H after the passage (`h_nb` before it) |
+| `one_minus_e_after` | — | capture kinds: 1 − e = r_p/a after the passage (< 0: still unbound) |
 | `overflow` | — | a field was printed as asterisks (read as absent) |
 
 Corrections and hazards. The K*S field of `:gw_decay_step`, `:gw_ksint` and
@@ -162,7 +173,11 @@ in NB, its TGR is dimensionless; its DELET1 is read as the change of e over
 DTM0 (not settled from the code). `:gw_unpert_coll` has no rank test in
 `unpert.f`: an MPI run writes one copy per rank, each read as its own record.
 The COLL lines carry neither names nor time; the merger they trigger is the
-following `CMBODY` collision (IQCOLL = −2). The `:gw_recoil` VESC, VDIS,
+following `CMBODY` collision (IQCOLL = −2). The capture kinds are written at
+the pericentre (`time_nb` is the pericentre time, `qperi_nb` the pericentre
+distance, `d_energy_nb` the radiated energy of the passage, `npert` the
+perturbers after it); a passage that changes the orbital energy by less than
+10⁻⁴ is not written. The `:gw_recoil` VESC, VDIS,
 R/SEMI, EB and R use IPAIR = KVEC(I1) after `KSTERM` and probably refer to a
 terminated pair: they are stored as printed and are not reliable.
 """
@@ -231,6 +246,11 @@ Base.@kwdef struct GWEvent
     r_over_semi::Float64 = NaN
     eb_nb::Float64 = NaN
     r_nb::Float64 = NaN
+    v_inf_kms::Float64 = NaN
+    ecc_minus_1::Float64 = NaN
+    r_capture_nb::Float64 = NaN
+    h_after_nb::Float64 = NaN
+    one_minus_e_after::Float64 = NaN
     x1_pc::NTuple{3,Float64} = _EVO_NAN3
     v1_kms::NTuple{3,Float64} = _EVO_NAN3
     x2_pc::NTuple{3,Float64} = _EVO_NAN3
@@ -696,6 +716,40 @@ const _EVO_GR_BRAKE3_FORMAT = vcat(
     fmt_real(5, 14),
 )
 
+# ksint.f GWCAPT 20: 1X,A10 (WHICH = 'GR CAPTURE' or 'GR FLYBY'),' T[NB]',1P,E17.10,
+# ' NM1,2=',2I10,' KW1,2=',2I4,' M1,2[M*]',2E12.4,' VINF[km/s]',E12.4,' E-1',E15.7,
+# ' QP,RCAP[NB]',E15.7,E12.4,' DE[NB]',E15.7,' H0,H1[NB]',2E15.7,' 1-E1',E15.7,' NP',I6
+function _evo_gr_capture_format(which::String)::Vector{FortranItem}
+    return vcat(
+        fmt_lit(" " * rpad(which, 10)),
+        fmt_lit(" T[NB]"),
+        fmt_real(1, 17),
+        fmt_lit(" NM1,2="),
+        fmt_int(2, 10),
+        fmt_lit(" KW1,2="),
+        fmt_int(2, 4),
+        fmt_lit(" M1,2[M*]"),
+        fmt_real(2, 12),
+        fmt_lit(" VINF[km/s]"),
+        fmt_real(1, 12),
+        fmt_lit(" E-1"),
+        fmt_real(1, 15),
+        fmt_lit(" QP,RCAP[NB]"),
+        fmt_real(1, 15),
+        fmt_real(1, 12),
+        fmt_lit(" DE[NB]"),
+        fmt_real(1, 15),
+        fmt_lit(" H0,H1[NB]"),
+        fmt_real(2, 15),
+        fmt_lit(" 1-E1"),
+        fmt_real(1, 15),
+        fmt_lit(" NP"),
+        fmt_int(1, 6),
+    )
+end
+const _EVO_GR_CAPTURE_FORMAT = _evo_gr_capture_format("GR CAPTURE")
+const _EVO_GR_FLYBY_FORMAT = _evo_gr_capture_format("GR FLYBY")
+
 # kickGW.f 310: A15 (WHICH = ' GW recoil:    '),' TIME[NB] I12 N12 K12 ',1P,E17.9,4I10,3I4,
 # ' TIME[Myr] M012[M*] M12[M*] ',5E13.5,' ASPN12,QR,XJSPIN12,SPNFAC ',6E13.5,
 # ' VKICK GW[km/s] (V,vx,vy,vz)',4E13.5,' VESC[km/s] VDIS[km/s] R/SEMI EB R ',5E13.5,
@@ -1030,6 +1084,8 @@ function _evolution_line_kind(s::AbstractString)::Symbol
     startswith(s, "GR BRAKE T DTGR STEP") && return :gr_brake
     startswith(s, "GR BRAKE T DTGW STEP") && return :gr_brake_roche
     startswith(s, "GR BRAKE3 T M1 M2 K1 K2") && return :gr_brake3
+    startswith(s, "GR CAPTURE T[NB]") && return :gw_capture
+    startswith(s, "GR FLYBY   T[NB]") && return :gw_flyby
     startswith(s, "BINARY ESCAPE  IP,N,NCORR =") && return :binary_escape
     startswith(s, "HIARCH ESCAPE    NM =") && return :hierarchy_escape
     startswith(s, "QUAD ESCAPE    KS =") && return :quad_escape
@@ -1338,6 +1394,29 @@ function _evo_parse_gw(kind::Symbol, line::AbstractString, i::Int, interval::Int
             j_orb = v[8],
             dj_dt = v[9],
             dt_gr_yr = v[10],
+            overflow = r.overflow,
+        )
+    elseif kind === :gw_capture || kind === :gw_flyby
+        r = read_fixed(line, kind === :gw_capture ? _EVO_GR_CAPTURE_FORMAT : _EVO_GR_FLYBY_FORMAT)
+        v = r.values
+        return GWEvent(;
+            base...,
+            time_nb = v[1],
+            name1 = _evo_int(v, 2),
+            name2 = _evo_int(v, 3),
+            kstar1 = _evo_kstar(v, 4),
+            kstar2 = _evo_kstar(v, 5),
+            m1_msun = v[6],
+            m2_msun = v[7],
+            v_inf_kms = v[8],
+            ecc_minus_1 = v[9],
+            qperi_nb = v[10],
+            r_capture_nb = v[11],
+            d_energy_nb = v[12],
+            h_nb = v[13],
+            h_after_nb = v[14],
+            one_minus_e_after = v[15],
+            npert = _evo_int(v, 16),
             overflow = r.overflow,
         )
     end

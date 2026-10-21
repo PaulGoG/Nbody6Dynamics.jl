@@ -70,7 +70,7 @@
         fw(13, "-3.00000E-06", "-1.00000E-03", "6.10000E-06")
 
     @testset "Kinds and classifier" begin
-        @test length(E.EVOLUTION_EVENT_KINDS) == 22
+        @test length(E.EVOLUTION_EVENT_KINDS) == 24
         @test allunique(E.EVOLUTION_EVENT_KINDS)
         @test kind_of(kstide) === :gw_decay_step
         # Lines of the other family, the escape summary and coal.f lines.
@@ -209,6 +209,29 @@
         @test r.eb_nb == -2.0e-3 && r.r_nb == 1.0e-7
         @test r.x1_pc == (1.0, 2.0, -3.0) && r.v1_kms == (4.0, 5.0, 6.0)
         @test r.x2_pc == (1.5, 2.5, -3.5) && r.v2_kms == (-4.0, -5.0, -6.0)
+    end
+
+    @testset "GR CAPTURE and GR FLYBY (GWCAPT)" begin
+        # Lines of the planted encounters of 9.13 (r_p = 0.5 and 2 r_cap at v∞ = 10 km/s)
+        capture =
+            " GR CAPTURE T[NB] 2.6530168590E-03 NM1,2=         1         2 KW1,2=  14  14" *
+            " M1,2[M*]  3.0000E+01  3.0000E+01 VINF[km/s]  1.0000E+01 E-1  3.6263319E-07" *
+            " QP,RCAP[NB]  1.8783723E-09  3.7567E-09 DE[NB]  2.4747501E+00" *
+            " H0,H1[NB]  9.1901839E+00 -9.4783402E+01 1-E1  3.7400348E-06 NP     0"
+        flyby =
+            " GR FLYBY   T[NB] 2.6530179105E-03 NM1,2=         1         2 KW1,2=  14  14" *
+            " M1,2[M*]  3.0000E+01  3.0000E+01 VINF[km/s]  1.0000E+01 E-1  1.4505328E-06" *
+            " QP,RCAP[NB]  7.5134892E-09  3.7567E-09 DE[NB]  1.9333984E-02" *
+            " H0,H1[NB]  9.1901839E+00  8.3778903E+00 1-E1 -1.3223244E-06 NP     1"
+        r = first(parse_one(capture))
+        @test r.kind === :gw_capture && r.time_nb == 2.6530168590e-3
+        @test (r.name1, r.name2, r.kstar1, r.kstar2) == (1, 2, 14, 14)
+        @test r.m1_msun == 30.0 && r.v_inf_kms == 10.0 && r.ecc_minus_1 == 3.6263319e-7
+        @test r.qperi_nb == 1.8783723e-9 && r.r_capture_nb == 3.7567e-9
+        @test r.d_energy_nb == 2.4747501 && r.h_nb == 9.1901839 && r.h_after_nb == -94.783402
+        @test r.one_minus_e_after == 3.7400348e-6 && r.npert == 0 && !r.overflow
+        f = first(parse_one(flyby))
+        @test f.kind === :gw_flyby && f.h_after_nb > 0 && f.one_minus_e_after < 0 && f.npert == 1
     end
 
     @testset "GR BRAKE (mdot.F, roche.f) and GR BRAKE3" begin

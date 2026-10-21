@@ -23,7 +23,7 @@ log, by family, each vector in file order:
 | `hierarchy` | [`HierarchyEvent`](@ref) | NEW/END MERGER and variants |
 | `exchange` | [`ExchangeEvent`](@ref) | EXCHANGE |
 | `termination` | [`TerminationEvent`](@ref) | END RUN DEFERRED, ENFORCED CHAIN TINY STEPS |
-| `gw` | [`GWEvent`](@ref) | GR KSTIDE/KSINT/TIDES/BRAKE, GW mergers, GW recoil |
+| `gw` | [`GWEvent`](@ref) | GR KSTIDE/KSINT/TIDES/BRAKE, GW mergers, GW recoil, GR CAPTURE/FLYBY |
 | `escape` | [`BinaryEscapeEvent`](@ref) | BINARY/HIARCH/QUAD ESCAPE |
 | `mass_loss` | [`MassLossEvent`](@ref) | MDEND/MDNEW KSREG, BINARY KICK |
 | `tidal` | [`TidalEvent`](@ref) | NEW/END CIRC, CIRCULARIZED, NEW CAPTURE |
