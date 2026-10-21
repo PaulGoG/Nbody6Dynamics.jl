@@ -225,19 +225,81 @@ expected_mass(imf::EqualMassIMF, N::Int) = N * imf.particle_mass
 # -----------------------------------------------------------------------------
 
 """
-    OrbitSpec(; apocentre = 15.0, eccentricity = 0.7)
+    OrbitSpec(; apocentre = 15.0, eccentricity = 0.7, apocentre_rh = 0.0, pericentre = 0.0,
+                pericentre_rh = 0.0, orbit_normal = [0.0, 0.0, -1.0], apocentre_angle = 0.0)
 
 Orbital parameters for the 2-cluster Kepler convenience mode. Ignored for
-`orbit_mode = "explicit"`.
+`orbit_mode = "explicit"` and `"single"`. The clusters start at apocentre.
+
+# Fields
+- `apocentre::Float64`: apocentre separation [pc]; used when none of the
+  three keys below is positive.
+- `eccentricity::Float64`: orbital eccentricity, `0 ≤ e < 1`.
+- `apocentre_rh::Float64`: apocentre separation in units of the input
+  half-mass radius `r_h,1` of cluster 1 (`0` = unused).
+- `pericentre::Float64`: pericentre separation [pc] (`0` = unused); the
+  apocentre is `r_p (1 + e) / (1 − e)`.
+- `pericentre_rh::Float64`: pericentre separation in units of `r_h,1`
+  (`0` = unused).
+- `orbit_normal::Vector{Float64}`: direction of the orbital angular momentum
+  of the pair (three components, any non-zero norm).
+- `apocentre_angle::Float64`: rotation of the apocentre direction about
+  `orbit_normal` [degrees].
+
+At most one of the TOML keys `apocentre`, `apocentre_rh`, `pericentre`,
+`pericentre_rh` may be given; none falls back to `apocentre = 15.0`.
+[`orbit_apocentre`](@ref) resolves the apocentre in pc.
+
+Orientation: with `n` the unit `orbit_normal`, the reference direction `u`
+is the projection of `x̂` onto the plane normal to `n` (of `ŷ` when `n ∥ x̂`);
+the separation vector cluster 2 − cluster 1 at the start points along
+`e_apo = u cos φ + (n × u) sin φ`, `φ = apocentre_angle`, and the relative
+velocity along `n × e_apo`, so the orbital angular momentum is along `n`.
+The default `[0, 0, −1]` with `φ = 0` is the orbit of earlier versions: in
+the x–y plane, cluster 2 on +x at apocentre and moving towards −y.
 """
 Base.@kwdef struct OrbitSpec
     apocentre::Float64 = 15.0
     eccentricity::Float64 = 0.7
+    apocentre_rh::Float64 = 0.0
+    pericentre::Float64 = 0.0
+    pericentre_rh::Float64 = 0.0
+    orbit_normal::Vector{Float64} = [0.0, 0.0, -1.0]
+    apocentre_angle::Float64 = 0.0
+end
+
+"""Keys of `[merger.orbit]` that set the orbit size; at most one may be given."""
+const _ORBIT_SIZE_KEYS = ("apocentre", "apocentre_rh", "pericentre", "pericentre_rh")
+
+"""
+    orbit_apocentre(orbit::OrbitSpec, rh1::Real) -> Float64
+
+Apocentre separation [pc] of a Kepler-mode orbit, with `rh1` the input
+half-mass radius of cluster 1 [pc] and `e = orbit.eccentricity`:
+`apocentre_rh > 0` gives `apocentre_rh rh1`; else `pericentre > 0` gives
+`pericentre (1 + e) / (1 − e)`; else `pericentre_rh > 0` gives
+`pericentre_rh rh1 (1 + e) / (1 − e)`; else `apocentre`. Throws an
+`ArgumentError` for `rh1 ≤ 0`.
+
+# Example
+```julia
+orbit_apocentre(OrbitSpec(; pericentre_rh = 2.0, eccentricity = 0.5), 2.0)   # 12.0
+```
+"""
+function orbit_apocentre(orbit::OrbitSpec, rh1::Real)::Float64
+    rh1 > 0 || throw(ArgumentError("orbit_apocentre: rh1 must be > 0 [pc]; got $rh1"))
+    r_h = Float64(rh1)
+    e = orbit.eccentricity
+    orbit.apocentre_rh > 0 && return orbit.apocentre_rh * r_h
+    orbit.pericentre > 0 && return orbit.pericentre * (1 + e) / (1 - e)
+    orbit.pericentre_rh > 0 && return orbit.pericentre_rh * r_h * (1 + e) / (1 - e)
+    return orbit.apocentre
 end
 
 """
     MergerOutputSpec(; format = "nbody", truncate_jacobi = true,
-                       output_dir = "", tcrit = 100.0, dtadj = 1.0, deltat = 1.0)
+                       output_dir = "", tcrit = 100.0, dtadj = 1.0, deltat = 1.0,
+                       truncate_radius_rh = 0.0)
 
 Output and integration parameters for merger ICs.
 
@@ -245,6 +307,10 @@ Output and integration parameters for merger ICs.
 - `format::String`: `"nbody"` (KZ(22)=2, N-body units) — the only supported format.
 - `truncate_jacobi::Bool`: truncate each cluster at the nearest-neighbour
   Jacobi radius before combining.
+- `truncate_radius_rh::Float64`: with `truncate_jacobi = true` and a
+  positive value, every cluster is truncated at `truncate_radius_rh` times
+  its own input half-mass radius instead of the orbit-dependent Jacobi
+  radius (kepler and explicit modes); `0` keeps the Jacobi radius; ≥ 0.
 - `output_dir::String`: directory for generated files; empty (the default)
   leaves the choice to the caller — `run_merger_pipeline` then creates a
   `runs/merger_<timestamp>/` under the working directory, and the main
@@ -271,6 +337,7 @@ Base.@kwdef struct MergerOutputSpec
     tcrit_myr::Float64 = 0.0
     dtadj_myr::Float64 = 0.0
     deltat_myr::Float64 = 0.0
+    truncate_radius_rh::Float64 = 0.0
 end
 
 """Integration-parameter presets of `[merger.nbody6]` (the `preset` key)."""
@@ -498,7 +565,8 @@ end
 # -----------------------------------------------------------------------------
 
 """
-    MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, stellar, tidal, seed, virial_max_n])
+    MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, stellar, tidal, seed, virial_max_n,
+                 seed_streams])
 
 Top-level configuration for multi-cluster merger initial conditions.
 
@@ -526,6 +594,11 @@ Top-level configuration for multi-cluster merger initial conditions.
 - `virial_max_n::Int`: largest N, per cluster and for the combined system, for which the exact
   O(N²) potential is evaluated (virialisation of each cluster, combined virial ratio); default
   `_VIRIAL_NMAX` (200 000)
+- `seed_streams::String`: `"shared"` (default) draws every cluster and its
+  pairs from one `MersenneTwister(seed)` stream; `"per_cluster"` gives cluster
+  `i` its own stream seeded by `(seed, i)`, which samples and expands its
+  pairs, so a cluster's realisation does not depend on the other clusters or
+  on the orbit
 """
 struct MergerConfig
     clusters::Vector{ClusterSpec}
@@ -537,7 +610,11 @@ struct MergerConfig
     tidal::TidalSpec
     seed::Union{Int,Nothing}
     virial_max_n::Int
+    seed_streams::String
 end
+
+"""Values of `[merger] seed_streams`."""
+const _SEED_STREAMS = ("shared", "per_cluster")
 
 # Convenience form: derived integration parameters, default stellar
 # evolution, and a non-deterministic seed (the drawn seed is still recorded
@@ -552,6 +629,7 @@ MergerConfig(
     tidal::TidalSpec = TidalSpec(),
     seed::Union{Int,Nothing} = nothing,
     virial_max_n::Int = _VIRIAL_NMAX,
+    seed_streams::AbstractString = "shared",
 ) = MergerConfig(
     clusters,
     String(orbit_mode),
@@ -562,6 +640,7 @@ MergerConfig(
     tidal,
     seed,
     virial_max_n,
+    String(seed_streams),
 )
 
 MergerConfig(
@@ -573,6 +652,7 @@ MergerConfig(
     stellar::StellarSpec,
     tidal::TidalSpec,
     seed::Union{Int,Nothing},
+    seed_streams::AbstractString = "shared",
 ) = MergerConfig(
     clusters,
     String(orbit_mode),
@@ -583,6 +663,31 @@ MergerConfig(
     tidal,
     seed,
     _VIRIAL_NMAX,
+    String(seed_streams),
+)
+
+# The nine-field form of earlier versions (before `seed_streams`).
+MergerConfig(
+    clusters::Vector{ClusterSpec},
+    orbit_mode::AbstractString,
+    orbit::OrbitSpec,
+    output::MergerOutputSpec,
+    nbody6::Nbody6ParameterSpec,
+    stellar::StellarSpec,
+    tidal::TidalSpec,
+    seed::Union{Int,Nothing},
+    virial_max_n::Int,
+) = MergerConfig(
+    clusters,
+    String(orbit_mode),
+    orbit,
+    output,
+    nbody6,
+    stellar,
+    tidal,
+    seed,
+    virial_max_n,
+    "shared",
 )
 
 # -----------------------------------------------------------------------------
@@ -697,6 +802,11 @@ function load_merger_config(path::AbstractString)::MergerConfig
     )
     virial_max_n = _typed(get(m, "virial_max_n", _VIRIAL_NMAX), Int, "merger.virial_max_n")
     virial_max_n ≥ 1 || _config_error("merger.virial_max_n", "must be ≥ 1; got $virial_max_n")
+    seed_streams = _typed(get(m, "seed_streams", "shared"), String, "merger.seed_streams")
+    seed_streams in _SEED_STREAMS || _config_error(
+        "merger.seed_streams",
+        "must be \"shared\" or \"per_cluster\", got \"$seed_streams\"",
+    )
 
     cluster_keys = ["cluster$k" for k in 1:max(n_clusters, 0)]
     for k in sort!(collect(String, keys(m)))
@@ -710,6 +820,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
                 "n_clusters",
                 "orbit_mode",
                 "seed",
+                "seed_streams",
                 "virial_max_n",
                 "orbit",
                 "output",
@@ -747,6 +858,12 @@ function load_merger_config(path::AbstractString)::MergerConfig
         @warn "[merger.orbit] is defined but orbit_mode=\"$orbit_mode\" — the orbit section will be ignored."
     end
     orbit = _parse_section(OrbitSpec, orbit_raw, "merger.orbit")
+    size_keys = String[k for k in _ORBIT_SIZE_KEYS if haskey(orbit_raw, k)]
+    length(size_keys) ≤ 1 || _config_error(
+        "merger.orbit",
+        "give one of apocentre, apocentre_rh, pericentre, pericentre_rh; got " *
+        join(size_keys, ", "),
+    )
 
     out_raw = get(m, "output", Dict{String,Any}())
     output = _parse_section(MergerOutputSpec, out_raw, "merger.output")
@@ -799,11 +916,47 @@ function load_merger_config(path::AbstractString)::MergerConfig
         _typed(seed_raw, Int, "merger.seed")   # any integer is a real seed, including 0
     end
 
+    # density_ratio: rbar of cluster i from the mean density inside the
+    # half-mass radius relative to cluster 1, ρ̄ ∝ M / r_h³. Cluster 1 and the
+    # cluster itself are validated first (the expected masses need valid IMFs).
+    prevalidated = falses(max(n_clusters, 0))
+    for i in 1:n_clusters
+        c = m["cluster$i"]
+        haskey(c, "density_ratio") || continue
+        key = "merger.cluster$i.density_ratio"
+        i == 1 && _config_error(
+            key,
+            "is the density relative to cluster 1 and is allowed in [merger.cluster2] and later only",
+        )
+        ratio = _typed(c["density_ratio"], Float64, key)
+        (isfinite(ratio) && ratio > 0) || _config_error(key, "must be finite and > 0; got $ratio")
+        haskey(c, "rbar") && _config_error(
+            key,
+            "and merger.cluster$i.rbar are mutually exclusive (density_ratio derives rbar)",
+        )
+        for j in (1, i)
+            prevalidated[j] && continue
+            _validate_cluster_spec(clusters[j], j)
+            prevalidated[j] = true
+        end
+        spec = clusters[i]
+        M_ratio = expected_mass(spec.imf, spec.N) / expected_mass(clusters[1].imf, clusters[1].N)
+        clusters[i] = ClusterSpec(;
+            N = spec.N,
+            rbar = clusters[1].rbar * cbrt(M_ratio / ratio),
+            profile = spec.profile,
+            imf = spec.imf,
+            position = spec.position,
+            velocity = spec.velocity,
+            binaries = spec.binaries,
+        )
+    end
+
     # Fail-fast validation of the parsed values (bounds documented in the
     # config comments and the manual). kepler_velocity re-checks the orbit
     # parameters at run time for programmatically constructed configs.
     for (i, spec) in enumerate(clusters)
-        _validate_cluster_spec(spec, i)
+        prevalidated[i] || _validate_cluster_spec(spec, i)
     end
     for (i, spec) in enumerate(clusters)
         spec.N ≤ virial_max_n || _config_error(
@@ -815,11 +968,22 @@ function load_merger_config(path::AbstractString)::MergerConfig
         )
     end
     if orbit_mode == "kepler"
-        orbit.apocentre > 0 ||
-            _config_error("merger.orbit.apocentre", "must be > 0; got $(orbit.apocentre)")
+        size_key = isempty(size_keys) ? "apocentre" : size_keys[1]
+        size_value = getfield(orbit, Symbol(size_key))::Float64
+        (isfinite(size_value) && size_value > 0) ||
+            _config_error("merger.orbit.$size_key", "must be > 0; got $size_value")
         (0 ≤ orbit.eccentricity < 1) || _config_error(
             "merger.orbit.eccentricity",
             "must satisfy 0 ≤ e < 1; got $(orbit.eccentricity)",
+        )
+        n = orbit.orbit_normal
+        (length(n) == 3 && all(isfinite, n) && sqrt(sum(abs2, n)) > 0) || _config_error(
+            "merger.orbit.orbit_normal",
+            "must be three finite components of non-zero norm; got $n",
+        )
+        isfinite(orbit.apocentre_angle) || _config_error(
+            "merger.orbit.apocentre_angle",
+            "must be finite [degrees]; got $(orbit.apocentre_angle)",
         )
     end
     output.tcrit > 0 || _config_error("merger.output.tcrit", "must be > 0; got $(output.tcrit)")
@@ -831,6 +995,10 @@ function load_merger_config(path::AbstractString)::MergerConfig
         _config_error("merger.output.dtadj_myr", "must be ≥ 0; got $(output.dtadj_myr)")
     output.deltat_myr ≥ 0 ||
         _config_error("merger.output.deltat_myr", "must be ≥ 0; got $(output.deltat_myr)")
+    (isfinite(output.truncate_radius_rh) && output.truncate_radius_rh ≥ 0) || _config_error(
+        "merger.output.truncate_radius_rh",
+        "must be finite and ≥ 0 (0 = Jacobi radius); got $(output.truncate_radius_rh)",
+    )
     _validate_nbody6(nbody6)
     _validate_stellar(stellar, output)
     _validate_binary_physics(nbody6, stellar)
@@ -847,6 +1015,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
         tidal,
         seed,
         virial_max_n,
+        seed_streams,
     )
 end
 
@@ -1036,6 +1205,7 @@ const _CLUSTER_TABLE_KEYS = (
     "mass_total",
     "profile",
     "binaries",
+    "density_ratio",
 )
 
 # Parse one [merger.clusterN] table handling both flat and structured forms.

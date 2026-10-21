@@ -190,6 +190,9 @@ index of sampled system `j`, 0 for a single, plus `m1`, `m2`, `a_pc`, `e`).
 (its pairs block and its singles block), `n_pairs[i]` its number of pairs,
 and `hard_fraction[i]` the fraction of its pairs with binding energy above
 `⟨m⟩ σ²` of the cluster's systems.
+
+`rng` is one `AbstractRNG` for all clusters, drawn from cluster by cluster,
+or a vector of one RNG per cluster, cluster `i` drawing from `rng[i]`.
 """
 function expand_binaries(
     pos::AbstractMatrix{Float64},
@@ -198,9 +201,11 @@ function expand_binaries(
     system_ranges::AbstractVector{<:AbstractVector{Int}},
     cluster_binaries::AbstractVector,
     kept::AbstractVector{<:AbstractVector{Int}};
-    rng::AbstractRNG = Random.default_rng(),
+    rng::Union{AbstractRNG,AbstractVector{<:AbstractRNG}} = Random.default_rng(),
 )
     n_cl = length(system_ranges)
+    (rng isa AbstractRNG || length(rng) == n_cl) ||
+        throw(DimensionMismatch("expand_binaries: $(length(rng)) RNGs for $n_cl clusters"))
     pairs = [Int[] for _ in 1:n_cl]     # combined-array system index of each surviving pair
     pair_ids = [Int[] for _ in 1:n_cl]  # its index in the cluster's pair table
     singles = [Int[] for _ in 1:n_cl]
@@ -227,6 +232,7 @@ function expand_binaries(
     b = 0
     for i in 1:n_cl
         cb = cluster_binaries[i]
+        rng_i = rng isa AbstractRNG ? rng : rng[i]
         # 1-D velocity dispersion of the cluster's systems for the hard/soft boundary
         idx_sys = system_ranges[i]
         M_sys = sum(mass[idx_sys])
@@ -238,7 +244,7 @@ function expand_binaries(
         for (sys, p) in zip(pairs[i], pair_ids[i])
             m1, m2, a, e = cb.m1[p], cb.m2[p], cb.a_pc[p], cb.e[p]
             M = m1 + m2
-            r_rel, v_rel = _kepler_relative_orbit(M, a, e, rng)
+            r_rel, v_rel = _kepler_relative_orbit(M, a, e, rng_i)
             n_hard += (m1 * m2 / (2a) > m_mean * σ2) ? 1 : 0
             for (body, m, f) in ((b + 1, m1, m2 / M), (b + 2, m2, -m1 / M))
                 mass_b[body] = m

@@ -155,14 +155,24 @@ For the full option catalogue see the Nbody6++ manual (Khalisi & Spurzem, Heidel
 | `n_clusters` | Int | `2` | Number of `[merger.clusterN]` tables to read (N = 1…n_clusters, all required) |
 | `orbit_mode` | String | `"kepler"` | `"kepler"` (exactly 2 clusters, placement auto-computed), `"explicit"` (≥ 2 clusters, per-cluster `position`/`velocity` required) or `"single"` (exactly 1 cluster at the origin, at rest; `position`/`velocity` refused, `truncate_jacobi` and `[merger.orbit]` ignored) |
 | `seed` | Int | *absent* | RNG seed; see [Seed semantics](@ref) |
+| `seed_streams` | String | `"shared"` | `"shared"`: every cluster and its pairs are drawn from one `MersenneTwister(seed)` stream; `"per_cluster"`: cluster `i` is sampled and its pairs expanded from its own stream seeded by `(seed, i)`, so its realisation depends neither on the other clusters nor on the orbit. One of `"shared"`, `"per_cluster"`; with an external `rng` passed to `generate_merger_ic` the external stream is used for every cluster (warned) |
 | `virial_max_n` | Int | `200000` | Largest N, per cluster and for the combined system, for which the exact O(N²) potential is evaluated (virialisation of each cluster, combined virial ratio). A cluster above it is refused at load, naming the key; raise the value deliberately for large initial conditions. The pair sum is threaded and costs ≈ N²/2 evaluations: 11 s at N = 2×10⁵ on twelve threads, quadratic from there |
 
 ### `[merger.orbit]` (Kepler mode only)
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `apocentre` | Float | `15.0` | Apocentre separation [pc] |
+| `apocentre` | Float | `15.0` | Apocentre separation [pc]; > 0 |
+| `apocentre_rh` | Float | `0.0` | Apocentre separation in units of the input half-mass radius `r_h,1` of cluster 1; > 0 when given |
+| `pericentre` | Float | `0.0` | Pericentre separation [pc]; the apocentre is `r_p (1 + e) / (1 − e)`; > 0 when given |
+| `pericentre_rh` | Float | `0.0` | Pericentre separation in units of `r_h,1`; > 0 when given |
 | `eccentricity` | Float | `0.7` | Orbital eccentricity, `0 ≤ e < 1` |
+| `orbit_normal` | [Float] | `[0, 0, -1]` | Direction of the orbital angular momentum of the pair; three finite components, non-zero norm |
+| `apocentre_angle` | Float | `0.0` | Rotation of the apocentre direction about `orbit_normal` [degrees]; finite |
+
+The size of the orbit is given by exactly one of `apocentre`, `apocentre_rh`, `pericentre`, `pericentre_rh`; two or more in the same table are refused, none falls back to `apocentre = 15.0`. The clusters start at apocentre. The orbital angular momentum of the pair is along `orbit_normal`; the default `[0, 0, −1]` is the orbit of earlier versions, in the x–y plane with cluster 2 on +x at apocentre. For another normal `n`, the apocentre direction is the projection of x̂ onto the plane normal to `n` (of ŷ when `n` is along x̂), rotated by `apocentre_angle` about `n`.
+
+`merger_ic.toml` records the configured keys, the resolved apocentre (`apocentre_resolved`) and the derived orbit quantities: semi-major axis, pericentre (in pc and `r_h,1`), period, orbital energy and angular momentum, `j_orb = √(p / r_h,1)` (the specific orbital angular momentum in units of `√(G M r_h,1)`, `p` the semi-latus rectum), the pericentre speed over the velocity dispersion of cluster 1, the spin parameter λ of [Peebles (1969)](https://doi.org/10.1086/149876) of the orbital angular momentum, and the Roche-lobe radii at apocentre after [Eggleton (1983)](https://doi.org/10.1086/160960) with the filling factor of each cluster's outermost kept system.
 
 In `"explicit"` mode this section is ignored (a warning is emitted if present).
 
@@ -172,6 +182,7 @@ In `"explicit"` mode this section is ignored (a warning is emitted if present).
 |---|---|---|---|
 | `format` | String | `"nbody"` | `dat.10` in N-body units, `KZ(22)=2` (only supported value) |
 | `truncate_jacobi` | Bool | `true` | Truncate each cluster at its nearest-neighbour Jacobi radius before combining; ignored in single mode |
+| `truncate_radius_rh` | Float | `0.0` | With `truncate_jacobi = true` and a positive value, every cluster is truncated at `truncate_radius_rh` times its own input half-mass radius instead of the orbit-dependent Jacobi radius (kepler and explicit modes); `0` keeps the Jacobi radius; finite, ≥ 0. The mass removed per cluster is recorded as `mass_truncated` [M☉] in `merger_ic.toml` |
 | `output_dir` | String | `""` | Output directory; a relative path resolves against the TOML's own directory. Empty leaves the choice to the caller: `run_merger_pipeline` creates `runs/merger_<timestamp>/` under the working directory, and the main pipeline always writes into `runs/merger_.../output/` |
 | `tcrit` | Float | `100.0` | Simulation end time (NB units for `"nbody"`) |
 | `dtadj` | Float | `1.0` | ADJUST diagnostic interval |
@@ -316,6 +327,12 @@ deltat          = 0.5
 - `imf = "kroupa_rescaled"` → same as above but explicit (documents intent; the same bounds apply); requires `mass_total`
 - `imf = "equal"` → all bodies get mass `mass_total / N`; requires `mass_total`
 
+A cluster table from `[merger.cluster2]` on may set its size by density instead of `rbar`:
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `density_ratio` | Float | *absent* | Mean density inside the half-mass radius of this cluster over that of cluster 1; derives `rbar = rbar_1 ((M / M_1) / density_ratio)^{1/3}` with the expected masses of the two IMF specifications. Finite, > 0; refused in `[merger.cluster1]` and together with `rbar` in the same table |
+
 In `"explicit"` orbit mode each cluster table additionally requires:
 
 ```toml
@@ -386,6 +403,9 @@ The density sampler places *systems* (a pair by its centre of mass), which are v
 - `seed = n` (nonzero) → deterministic sampling with `MersenneTwister(n)`
 - The effective seed also feeds the `NRAND` parameter of the generated `merger.inp`, so the Nbody6++ run inherits it
 - If a caller passes an explicit `rng` to `generate_merger_ic`, sampling is **not** reproducible from the recorded seed; the metadata records this honestly via `meta.external_rng = true` (the seed still feeds `NRAND`)
+- `meta.seed_streams` records the stream layout
+
+Reproducible orbit grids: with `seed_streams = "per_cluster"` and either `truncate_jacobi = false` or `truncate_radius_rh > 0`, the progenitors of a two-cluster grid over apocentre, pericentre, eccentricity or orientation are identical at a fixed seed, body for body in their own centre-of-mass frames, so differences between grid points come from the orbit alone. With the shared stream, or with the orbit-dependent Jacobi truncation, each grid point draws or keeps a different realisation.
 
 ---
 

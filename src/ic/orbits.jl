@@ -97,22 +97,34 @@ end
 
 """
     setup_two_cluster_orbit(pos1, vel1, mass1, pos2, vel2, mass2,
-                            d_apo, ecc; truncate_jacobi_flag=true)
+                            d_apo, ecc; truncate_jacobi_flag = true,
+                            truncation_radii = (0.0, 0.0),
+                            orbit_normal = [0.0, 0.0, -1.0], apocentre_angle = 0.0)
         -> (pos, vel, mass, cluster_ranges, kept)
 
-Place two clusters on a Keplerian orbit at apocentre.
+Place two clusters on a Keplerian orbit at apocentre (code units, `G = 1`).
 
-Cluster 1 is placed at `(-d1, 0, 0)` with velocity `(0, +v1, 0)`,
-cluster 2 at `(+d2, 0, 0)` with velocity `(0, -v2, 0)`, where
-`d1, d2` are the CM distances and `v1, v2` are the apocentre speeds.
+With `n = orbit_normal / |orbit_normal|`, the reference direction
+`u ∝ x̂ − (x̂·n) n` (`ŷ` in place of `x̂` when `n ∥ x̂`) and
+`φ = apocentre_angle` [degrees], the apocentre direction is
+`e_apo = u cos φ + (n × u) sin φ` and the velocity direction
+`e_vel = n × e_apo`. Cluster 1 is shifted by `−d1 e_apo` in position and by
+`−v1 e_vel` in velocity, cluster 2 by `+d2 e_apo` and `+v2 e_vel`, where
+`d1, d2` are the CM distances and `v1, v2` the apocentre speeds
+([`kepler_velocity`](@ref)). The separation of the two centres at the start
+is `d_apo e_apo` and the orbital angular momentum of the pair is along `n`.
+The defaults give `e_apo = x̂`, `e_vel = −ŷ`: cluster 1 at `(−d1, 0, 0)`
+moving along `+ŷ`, cluster 2 at `(+d2, 0, 0)` moving along `−ŷ`, bit for bit
+the layout of earlier versions.
 
-If `truncate_jacobi_flag=true`, each cluster is truncated at its
-instantaneous Jacobi radius before combining.
+If `truncate_jacobi_flag = true`, cluster `i` is truncated before combining
+at `truncation_radii[i]` when that is positive, else at its instantaneous
+Jacobi radius ([`jacobi_radius`](@ref)).
 
 Returns combined `(pos, vel, mass)` arrays in the system CM frame plus a
 vector of `UnitRange{Int}` giving each cluster's (post-truncation) particle
-index range in the output — the same contract as
-[`combine_clusters_explicit`](@ref).
+index range in the output and the indices of the kept particles in each
+input set — the same contract as [`combine_clusters_explicit`](@ref).
 """
 function setup_two_cluster_orbit(
     pos1::Matrix{Float64},
@@ -124,19 +136,23 @@ function setup_two_cluster_orbit(
     d_apo::Float64,
     ecc::Float64;
     truncate_jacobi_flag::Bool = true,
+    truncation_radii::Tuple{Float64,Float64} = (0.0, 0.0),
+    orbit_normal::AbstractVector{<:Real} = [0.0, 0.0, -1.0],
+    apocentre_angle::Real = 0.0,
 )
+    e_apo, e_vel = _orbit_directions(orbit_normal, apocentre_angle)
     M1 = sum(mass1)
     M2 = sum(mass2)
     M_total = M1 + M2
 
-    # Optional Jacobi truncation
+    # Optional truncation: fixed radii where given, else the Jacobi radii
     kept1 = collect(1:length(mass1))
     kept2 = collect(1:length(mass2))
     if truncate_jacobi_flag
-        r_jacobi_1 = jacobi_radius(d_apo, M1, M2)
-        r_jacobi_2 = jacobi_radius(d_apo, M2, M1)
-        pos1, vel1, mass1, kept1 = truncate_jacobi(pos1, vel1, mass1, r_jacobi_1)
-        pos2, vel2, mass2, kept2 = truncate_jacobi(pos2, vel2, mass2, r_jacobi_2)
+        r_trunc_1 = truncation_radii[1] > 0 ? truncation_radii[1] : jacobi_radius(d_apo, M1, M2)
+        r_trunc_2 = truncation_radii[2] > 0 ? truncation_radii[2] : jacobi_radius(d_apo, M2, M1)
+        pos1, vel1, mass1, kept1 = truncate_jacobi(pos1, vel1, mass1, r_trunc_1)
+        pos2, vel2, mass2, kept2 = truncate_jacobi(pos2, vel2, mass2, r_trunc_2)
         # Update totals after truncation
         M1 = sum(mass1)
         M2 = sum(mass2)
@@ -158,26 +174,23 @@ function setup_two_cluster_orbit(
     vel_out = zeros(Float64, 3, N_total)
     mass_out = zeros(Float64, N_total)
 
-    # Cluster 1: shift to (-d1, 0, 0) with velocity (0, +v1, 0)
+    # Cluster 1: shift by −d1 e_apo with velocity −v1 e_vel; with the default
+    # orientation the products are by ±1 and ±0, so the result is exact.
     for i in 1:N1
-        pos_out[1, i] = pos1[1, i] - d1
-        pos_out[2, i] = pos1[2, i]
-        pos_out[3, i] = pos1[3, i]
-        vel_out[1, i] = vel1[1, i]
-        vel_out[2, i] = vel1[2, i] + v1
-        vel_out[3, i] = vel1[3, i]
+        for k in 1:3
+            pos_out[k, i] = pos1[k, i] - d1 * e_apo[k]
+            vel_out[k, i] = vel1[k, i] - v1 * e_vel[k]
+        end
         mass_out[i] = mass1[i]
     end
 
-    # Cluster 2: shift to (+d2, 0, 0) with velocity (0, -v2, 0)
+    # Cluster 2: shift by +d2 e_apo with velocity +v2 e_vel
     for i in 1:N2
         j = N1 + i
-        pos_out[1, j] = pos2[1, i] + d2
-        pos_out[2, j] = pos2[2, i]
-        pos_out[3, j] = pos2[3, i]
-        vel_out[1, j] = vel2[1, i]
-        vel_out[2, j] = vel2[2, i] - v2
-        vel_out[3, j] = vel2[3, i]
+        for k in 1:3
+            pos_out[k, j] = pos2[k, i] + d2 * e_apo[k]
+            vel_out[k, j] = vel2[k, i] + v2 * e_vel[k]
+        end
         mass_out[j] = mass2[i]
     end
 
@@ -185,7 +198,147 @@ function setup_two_cluster_orbit(
 end
 
 """
-    combine_clusters_explicit(cluster_data, specs; truncate_jacobi_flag=true)
+    _orbit_directions(orbit_normal, apocentre_angle) -> (e_apo, e_vel)
+
+Unit apocentre direction `e_apo = u cos φ + (n × u) sin φ` and velocity
+direction `e_vel = n × e_apo` of a two-cluster orbit with unit normal
+`n = orbit_normal / |orbit_normal|`, reference direction `u ∝ x̂ − (x̂·n) n`
+(`ŷ − (ŷ·n) n` when that is shorter than 10⁻⁸) and `φ = apocentre_angle`
+[degrees], as 3-tuples. The defaults `[0, 0, −1]`, `0` give exactly
+`(1, 0, 0)` and `(0, −1, 0)`. Throws an `ArgumentError` unless the normal has
+three finite components of non-zero norm and the angle is finite.
+"""
+function _orbit_directions(orbit_normal::AbstractVector{<:Real}, apocentre_angle::Real)
+    length(orbit_normal) == 3 ||
+        throw(ArgumentError("orbit_normal must have 3 components; got $(length(orbit_normal))"))
+    nx, ny, nz = Float64(orbit_normal[1]), Float64(orbit_normal[2]), Float64(orbit_normal[3])
+    n_norm = sqrt(nx^2 + ny^2 + nz^2)
+    (isfinite(n_norm) && n_norm > 0) ||
+        throw(ArgumentError("orbit_normal must be finite with non-zero norm; got $orbit_normal"))
+    isfinite(apocentre_angle) ||
+        throw(ArgumentError("apocentre_angle must be finite; got $apocentre_angle"))
+    nx, ny, nz = nx / n_norm, ny / n_norm, nz / n_norm
+    # u = x̂ − (x̂·n) n, or ŷ − (ŷ·n) n for a normal along x̂
+    ux, uy, uz = 1.0 - nx * nx, 0.0 - nx * ny, 0.0 - nx * nz
+    if sqrt(ux^2 + uy^2 + uz^2) < 1e-8
+        ux, uy, uz = 0.0 - ny * nx, 1.0 - ny * ny, 0.0 - ny * nz
+    end
+    u_norm = sqrt(ux^2 + uy^2 + uz^2)
+    ux, uy, uz = ux / u_norm, uy / u_norm, uz / u_norm
+    # w = n × u
+    wx, wy, wz = ny * uz - nz * uy, nz * ux - nx * uz, nx * uy - ny * ux
+    φ = deg2rad(Float64(apocentre_angle))
+    c, s = cos(φ), sin(φ)
+    e_apo = (ux * c + wx * s, uy * c + wy * s, uz * c + wz * s)
+    e_vel = (
+        ny * e_apo[3] - nz * e_apo[2],
+        nz * e_apo[1] - nx * e_apo[3],
+        nx * e_apo[2] - ny * e_apo[1],
+    )
+    return e_apo, e_vel
+end
+
+"""
+    two_cluster_orbit_quantities(M1, M2, d_apo, ecc, rh1; sigma1 = NaN, e_total = NaN,
+                                 r_out = (NaN, NaN)) -> NamedTuple
+
+Derived quantities of a two-cluster Kepler orbit started at apocentre, in pc,
+km s⁻¹, M☉ and Myr with `G = _G_PC_KMS2_MSUN` [pc km² s⁻² M☉⁻¹].
+
+# Arguments
+- `M1`, `M2`: cluster masses [M☉]; > 0
+- `d_apo`: apocentre separation [pc]; > 0
+- `ecc`: eccentricity, `0 ≤ e < 1`
+- `rh1`: half-mass radius of cluster 1 [pc]; > 0
+- `sigma1`: velocity dispersion of cluster 1 [km s⁻¹] (3-D, mass-weighted rms
+  speed about the mean)
+- `e_total`: total energy of the configuration, internal plus orbital
+  [M☉ km² s⁻²]
+- `r_out`: outer radii of the two clusters [pc]
+
+# Returns
+With `M = M1 + M2`, `μ = M1 M2 / M`, `a = d_apo / (1 + e)`, `r_p = a (1 − e)`,
+`p = a (1 − e²)`:
+- `a_pc = a`, `apocentre_pc = d_apo`, `pericentre_pc = r_p` [pc]
+- `apocentre_rh = d_apo / rh1`, `pericentre_rh = r_p / rh1`
+- `period_myr = 2π √(a³ / (G M))`, converted from pc / (km s⁻¹) to Myr
+- `e_orb = −G M1 M2 / (2a)`, orbital energy [M☉ km² s⁻²]
+- `l_orb = μ √(G M p)`, orbital angular momentum [M☉ pc km s⁻¹]
+- `j_orb = √(p / rh1)`, specific orbital angular momentum in units of
+  `√(G M rh1)`
+- `v_peri_kms = √(G M (1 + e) / r_p)`, relative speed at pericentre [km s⁻¹]
+- `v_peri_over_sigma = v_peri_kms / sigma1`
+- `lambda_peebles = l_orb √|e_total| / (G M^{5/2})`, the spin parameter of
+  Peebles (1969, DOI 10.1086/149876) of the orbital angular momentum; with
+  `l` in M☉ pc km s⁻¹, `E` in M☉ km² s⁻² and `G` in pc km² s⁻² M☉⁻¹ the
+  numerator and the denominator both carry M☉^{3/2} pc km² s⁻², so it is
+  dimensionless; `NaN` when `e_total` is `NaN`
+- `roche_lobe_pc = (R_L,1, R_L,2)`, Roche-lobe radii at apocentre after
+  Eggleton (1983, DOI 10.1086/160960),
+  `R_L,i = d_apo 0.49 q^{2/3} / (0.6 q^{2/3} + ln(1 + q^{1/3}))` with
+  `q = M_i / M_other` [pc]
+- `roche_filling = (r_out[1] / R_L,1, r_out[2] / R_L,2)`
+
+Throws an `ArgumentError` for non-positive masses, `d_apo` or `rh1`, and for
+`e` outside `[0, 1)`.
+
+# Example
+```julia
+q = two_cluster_orbit_quantities(1000.0, 1000.0, 12.0, 0.5, 2.0; sigma1 = 2.0)
+q.pericentre_pc   # 4.0
+```
+"""
+function two_cluster_orbit_quantities(
+    M1::Real,
+    M2::Real,
+    d_apo::Real,
+    ecc::Real,
+    rh1::Real;
+    sigma1::Real = NaN,
+    e_total::Real = NaN,
+    r_out::Tuple{Real,Real} = (NaN, NaN),
+)::NamedTuple
+    M1 > 0 || throw(ArgumentError("two_cluster_orbit_quantities: M1 must be > 0; got $M1"))
+    M2 > 0 || throw(ArgumentError("two_cluster_orbit_quantities: M2 must be > 0; got $M2"))
+    d_apo > 0 || throw(ArgumentError("two_cluster_orbit_quantities: d_apo must be > 0; got $d_apo"))
+    rh1 > 0 || throw(ArgumentError("two_cluster_orbit_quantities: rh1 must be > 0; got $rh1"))
+    0 ≤ ecc < 1 || throw(
+        ArgumentError("two_cluster_orbit_quantities: eccentricity must be in [0, 1); got $ecc"),
+    )
+    G = _G_PC_KMS2_MSUN
+    m1, m2, d, e, r_h = Float64(M1), Float64(M2), Float64(d_apo), Float64(ecc), Float64(rh1)
+    M = m1 + m2
+    μ = m1 * m2 / M
+    a = d / (1 + e)
+    r_p = a * (1 - e)
+    p = a * (1 - e^2)
+    l_orb = μ * sqrt(G * M * p)
+    v_peri = sqrt(G * M * (1 + e) / r_p)
+    E = Float64(e_total)
+    λ = isnan(E) ? NaN : l_orb * sqrt(abs(E)) / (G * M^2.5)
+    roche(q) = d * 0.49 * cbrt(q)^2 / (0.6 * cbrt(q)^2 + log(1 + cbrt(q)))
+    R_L1, R_L2 = roche(m1 / m2), roche(m2 / m1)
+    return (
+        a_pc = a,
+        apocentre_pc = d,
+        pericentre_pc = r_p,
+        apocentre_rh = d / r_h,
+        pericentre_rh = r_p / r_h,
+        period_myr = 2π * sqrt(a^3 / (G * M)) * (_PC_KM / _MYR_S),
+        e_orb = -G * m1 * m2 / (2a),
+        l_orb = l_orb,
+        j_orb = sqrt(p / r_h),
+        v_peri_kms = v_peri,
+        v_peri_over_sigma = v_peri / Float64(sigma1),
+        lambda_peebles = λ,
+        roche_lobe_pc = (R_L1, R_L2),
+        roche_filling = (Float64(r_out[1]) / R_L1, Float64(r_out[2]) / R_L2),
+    )
+end
+
+"""
+    combine_clusters_explicit(cluster_data, specs; truncate_jacobi_flag = true,
+                              truncation_radii = Float64[])
         -> (pos, vel, mass, cluster_ranges, kept)
 
 Combine N ≥ 2 clusters using explicit per-cluster position/velocity offsets.
@@ -194,7 +347,9 @@ Each `ClusterSpec` in `specs` must have `position` and `velocity` vectors set.
 Particles in each cluster are shifted by the cluster's CM offset.
 
 If `truncate_jacobi_flag=true`, each cluster is truncated at the Jacobi radius
-with respect to its nearest neighbour before combining.
+with respect to its nearest neighbour before combining; when
+`truncation_radii` is non-empty (one entry per cluster) and its `i`-th entry
+is positive, cluster `i` is truncated at that radius instead.
 
 Returns combined `(pos, vel, mass)` arrays and a vector of `UnitRange{Int}`
 giving the particle index range for each cluster in the output.
@@ -203,9 +358,15 @@ function combine_clusters_explicit(
     cluster_data::Vector{<:NamedTuple},
     specs::Vector{ClusterSpec};
     truncate_jacobi_flag::Bool = true,
+    truncation_radii::AbstractVector{Float64} = Float64[],
 )
     n = length(cluster_data)
     n == length(specs) || error("cluster_data and specs must have same length")
+    (isempty(truncation_radii) || length(truncation_radii) == n) || throw(
+        DimensionMismatch(
+            "truncation_radii has $(length(truncation_radii)) entries for $n clusters",
+        ),
+    )
 
     # Optional Jacobi truncation against nearest neighbour
     truncated = Vector{
@@ -217,7 +378,12 @@ function combine_clusters_explicit(
         # Keep only the particle arrays; sampled cluster data may carry
         # extra fields (energies) that the truncated vector does not hold.
         cd = (pos = cluster_data[i].pos, vel = cluster_data[i].vel, mass = cluster_data[i].mass)
-        if truncate_jacobi_flag && n ≥ 2
+        if truncate_jacobi_flag && !isempty(truncation_radii) && truncation_radii[i] > 0
+            pos_t, vel_t, mass_t, idx_t =
+                truncate_jacobi(cd.pos, cd.vel, cd.mass, Float64(truncation_radii[i]))
+            push!(truncated, (pos = pos_t, vel = vel_t, mass = mass_t))
+            push!(kept, idx_t)
+        elseif truncate_jacobi_flag && n ≥ 2
             M_self = sum(cd.mass)
             pos_i = specs[i].position
 

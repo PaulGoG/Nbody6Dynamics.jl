@@ -7,6 +7,7 @@
 # quantities of the IC record.
 
 @testset "Two-cluster orbit (6.3)" begin
+    using StableRNGs
     nd = Nbody6Dynamics
     G = nd._G_PC_KMS2_MSUN
 
@@ -125,6 +126,11 @@ $output
         p2 = randn(rng, 3, 30)
         v2 = randn(rng, 3, 30)
         m2 = rand(rng, 30) .+ 0.5
+        # Each set about its own centre of mass, as the generator samples them
+        for (p, v, m) in ((p1, v1, m1), (p2, v2, m2))
+            p .-= sum(m' .* p; dims = 2) ./ sum(m)
+            v .-= sum(m' .* v; dims = 2) ./ sum(m)
+        end
         d_apo, e = 20.0, 0.5
         pos, vel, mass, ranges, _ = nd.setup_two_cluster_orbit(
             p1,
@@ -244,7 +250,8 @@ $output
         trunc = "truncate_jacobi = true\ntruncate_radius_rh = 8.0"
         ma, xa, ra = cluster1("apocentre = 12.0\neccentricity = 0.5", "per_cluster", trunc)
         mb, xb, _ = cluster1("pericentre_rh = 1.0\neccentricity = 0.9", "per_cluster", trunc)
-        @test ma == mb && xa ≈ xb atol = 1e-12
+        @test ma == mb
+        @test xa ≈ xb atol = 1e-12
         meta = Nbody6Dynamics.TOML.parsefile(joinpath(ra.output_dir, "merger_ic.toml"))
         @test meta["meta"]["schema_version"] == 4 && meta["meta"]["seed_streams"] == "per_cluster"
         @test meta["orbit"]["apocentre_resolved"] == 12.0

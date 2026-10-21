@@ -36,6 +36,17 @@ entries say so.
   stored under their true meaning, as each record type documents. The
   `GR CAPTURE` and `GR FLYBY` lines of hyperbolic NS/BH passages (engine fork
   v2026.07.8) are `GWEvent` kinds `:gw_capture` and `:gw_flyby`.
+- Two-cluster orbits (`orbit_mode = "kepler"`) by pericentre or apocentre, absolute or in units of the
+  half-mass radius of cluster 1 (`[merger.orbit]` `pericentre`, `pericentre_rh`, `apocentre_rh`; one size key
+  per config), oriented by `orbit_normal` (the direction of the orbital angular momentum; default [0, 0, −1],
+  the earlier layout) and `apocentre_angle`. `[merger.output] truncate_radius_rh` truncates every cluster at a
+  fixed multiple of its own half-mass radius instead of the orbit-dependent Jacobi radius; the cluster key
+  `density_ratio` derives the half-mass radius of cluster N ≥ 2 from its mean density relative to cluster 1;
+  `[merger] seed_streams = "per_cluster"` gives every cluster its own random stream, so progenitors are
+  identical across an orbit grid. `merger_ic.toml` (schema 4) records the resolved apocentre, a, r_p, the
+  period, orbital energy and angular momentum, j_orb, the Peebles spin parameter, v_p/σ₁, the Roche-lobe
+  filling at apocentre and the truncated mass per cluster (`two_cluster_orbit_quantities`). Existing
+  configurations generate the same `dat.10` and `.inp` as before.
 - Binary spans from the event records (`binary_spans`, `BinarySpan`,
   `write_binary_spans`): the KS episodes of each pair of component names,
   joined when the gap is at most `n_p` periods or a chain or hierarchy holding

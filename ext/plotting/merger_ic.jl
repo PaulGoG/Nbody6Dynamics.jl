@@ -121,7 +121,7 @@ All plots use the publication theme and are saved to `vis.output_dir`.
     own_ylabels = vis.column != "single"
 
     orbit_annot = if result.orbit_mode == "kepler"
-        d_apo = result.orbit_spec.apocentre
+        d_apo = Nbody6Dynamics.orbit_apocentre(result.orbit_spec, result.cluster_specs[1].rbar)
         ecc = result.orbit_spec.eccentricity
         latexstring(
             "d_\\mathrm{apo} = $(round(d_apo; digits=1))\\;\\mathrm{pc},\\; e = $(round(ecc; digits=2))",

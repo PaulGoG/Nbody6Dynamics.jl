@@ -622,6 +622,108 @@ function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rn
 end
 
 """
+    _cluster_rng(seed::Int, i::Int) -> MersenneTwister
+
+Random stream of cluster `i` under `seed_streams = "per_cluster"`: a
+`MersenneTwister` seeded with the two 32-bit halves of `seed` and the cluster
+index, so each cluster's stream depends on the seed and its index only.
+"""
+_cluster_rng(seed::Int, i::Int) = Random.MersenneTwister(
+    UInt32[
+        UInt32(reinterpret(UInt64, seed) & 0xffffffff),
+        UInt32(reinterpret(UInt64, seed) >> 32),
+        UInt32(i),
+    ],
+)
+
+"""Mass-weighted rms speed [input velocity unit] of `vel` (3×N) about the mass-weighted mean velocity."""
+function _rms_speed_about_mean(mass::AbstractVector{Float64}, vel::AbstractMatrix{Float64})::Float64
+    M = sum(mass)
+    v̄ = zeros(3)
+    for i in eachindex(mass), k in 1:3
+        v̄[k] += mass[i] * vel[k, i]
+    end
+    v̄ ./= M
+    s = 0.0
+    for i in eachindex(mass)
+        s += mass[i] * ((vel[1, i] - v̄[1])^2 + (vel[2, i] - v̄[2])^2 + (vel[3, i] - v̄[3])^2)
+    end
+    return sqrt(s / M)
+end
+
+"""Largest distance of the systems `idx` of `pos` (3×N) from their mass-weighted centre; `NaN` for an empty set."""
+function _outer_radius(
+    pos::AbstractMatrix{Float64},
+    mass::AbstractVector{Float64},
+    idx::AbstractVector{Int},
+)::Float64
+    isempty(idx) && return NaN
+    M = 0.0
+    c = zeros(3)
+    for j in idx
+        M += mass[j]
+        for k in 1:3
+            c[k] += mass[j] * pos[k, j]
+        end
+    end
+    c ./= M
+    r2_max = 0.0
+    for j in idx
+        r2 = (pos[1, j] - c[1])^2 + (pos[2, j] - c[2])^2 + (pos[3, j] - c[3])^2
+        r2_max = max(r2_max, r2)
+    end
+    return sqrt(r2_max)
+end
+
+"""
+    _two_cluster_derived(cfg, cluster_data, pos, mass, system_ranges, d_apo, e_total) -> NamedTuple
+
+[`two_cluster_orbit_quantities`](@ref) of a placed Kepler-mode pair: masses
+and outer radii of the kept systems (`system_ranges` into the combined
+system arrays `pos` [pc], `mass` [M☉], before pair expansion), σ₁ from the
+sampled systems of cluster 1 (code-unit velocities converted to km s⁻¹) and
+the configuration energy `e_total` [M☉ km² s⁻²].
+"""
+function _two_cluster_derived(
+    cfg::MergerConfig,
+    cluster_data::AbstractVector,
+    pos::AbstractMatrix{Float64},
+    mass::AbstractVector{Float64},
+    system_ranges::AbstractVector{<:AbstractVector{Int}},
+    d_apo::Float64,
+    e_total::Float64,
+)::NamedTuple
+    M1 = sum(mass[system_ranges[1]])
+    M2 = sum(mass[system_ranges[2]])
+    c1 = cluster_data[1]
+    σ1 = _rms_speed_about_mean(c1.mass, c1.vel) * _CODE_VSTAR_KMS
+    r_out = (_outer_radius(pos, mass, system_ranges[1]), _outer_radius(pos, mass, system_ranges[2]))
+    return two_cluster_orbit_quantities(
+        M1,
+        M2,
+        d_apo,
+        cfg.orbit.eccentricity,
+        cfg.clusters[1].rbar;
+        sigma1 = σ1,
+        e_total = e_total,
+        r_out = r_out,
+    )
+end
+
+"""Sampled minus kept system mass [M☉] of every cluster (`0` in single mode, which does not truncate)."""
+function _truncated_masses(
+    orbit_mode::AbstractString,
+    cluster_data::AbstractVector,
+    mass::AbstractVector{Float64},
+    system_ranges::AbstractVector{<:AbstractVector{Int}},
+)::Vector{Float64}
+    orbit_mode == "single" && return zeros(length(cluster_data))
+    return Float64[
+        sum(cluster_data[i].mass) - sum(mass[system_ranges[i]]) for i in eachindex(cluster_data)
+    ]
+end
+
+"""
     generate_merger_ic(cfg::MergerConfig; rng=Random.default_rng(),
                        output_dir="") -> MergerICResult
 
@@ -632,6 +734,10 @@ Supports three orbit modes:
 - `"kepler"`: 2 clusters on a Keplerian orbit (positions/velocities auto-computed)
 - `"explicit"`: N clusters with user-specified CM positions and velocities
 - `"single"`: one cluster at the origin, at rest (no truncation)
+
+With `cfg.seed_streams = "per_cluster"` and no external `rng`, cluster `i` is
+sampled and its pairs expanded from its own stream (`_cluster_rng(seed, i)`);
+an external `rng` replaces every stream.
 
 Returns a [`MergerICResult`](@ref) for downstream plotting and inspection.
 """
@@ -656,6 +762,11 @@ function generate_merger_ic(
     _validate_binary_physics(cfg.nbody6, cfg.stellar)
     _validate_tidal(cfg.tidal)
     _validate_tidal_tolerance(cfg.tidal, cfg.nbody6)
+    cfg.seed_streams in _SEED_STREAMS || throw(
+        ArgumentError(
+            "seed_streams must be \"shared\" or \"per_cluster\"; got \"$(cfg.seed_streams)\"",
+        ),
+    )
 
     # Resolve RNG and effective seed. When the caller supplies an RNG the
     # sampling is NOT reproducible from `effective_seed`; the metadata records
@@ -663,6 +774,17 @@ function generate_merger_ic(
     external_rng = rng !== nothing
     effective_seed::Int = cfg.seed === nothing ? Int(rand(UInt32) % typemax(Int32)) : cfg.seed
     use_rng = external_rng ? rng : Random.MersenneTwister(effective_seed)
+    # Per-cluster streams: cluster i is sampled and its pairs expanded from
+    # its own stream, independent of the other clusters and of the orbit.
+    per_cluster = cfg.seed_streams == "per_cluster" && !external_rng
+    (external_rng && cfg.seed_streams == "per_cluster") &&
+        @warn "seed_streams = \"per_cluster\" needs the configured seed; " *
+              "the external RNG is used for every cluster"
+    cluster_rngs = if per_cluster
+        [_cluster_rng(effective_seed, i) for i in 1:n_clusters]
+    else
+        Random.MersenneTwister[]
+    end
 
     seed_note = external_rng ? "external RNG (seed not reproducible)" : "seed=$effective_seed"
     @info "Generating merger ICs for $n_clusters clusters ($(cfg.orbit_mode) mode, $seed_note)..."
@@ -672,15 +794,25 @@ function generate_merger_ic(
         begin
             @info "  Cluster $i: $(profile_name(spec.profile)) profile, N=$(spec.N), " *
                   "imf=$(imf_name(spec.imf)), M≈$(round(expected_mass(spec.imf, spec.N); digits=1)) M☉"
-            _sample_cluster(spec; rng = use_rng, nmax = cfg.virial_max_n)
+            _sample_cluster(
+                spec;
+                rng = per_cluster ? cluster_rngs[i] : use_rng,
+                nmax = cfg.virial_max_n,
+            )
         end for (i, spec) in enumerate(cfg.clusters)
     ]
+
+    # Kepler apocentre from the configured size key; fixed truncation radii
+    # (0 = Jacobi radius) in units of each cluster's input half-mass radius.
+    d_apo = cfg.orbit_mode == "kepler" ? orbit_apocentre(cfg.orbit, cfg.clusters[1].rbar) : NaN
+    r_trunc_rh = cfg.output.truncate_radius_rh
 
     # Combine clusters (as systems) according to orbit mode; both paths
     # return the combined arrays, the per-cluster index ranges of the systems
     # that survived truncation, and their indices in each sampled set.
     pos_combined, vel_combined, mass_combined, system_ranges, kept = if cfg.orbit_mode == "kepler"
         c1, c2 = cluster_data[1], cluster_data[2]
+        r_trunc = (r_trunc_rh * cfg.clusters[1].rbar, r_trunc_rh * cfg.clusters[2].rbar)
         setup_two_cluster_orbit(
             c1.pos,
             c1.vel,
@@ -688,15 +820,20 @@ function generate_merger_ic(
             c2.pos,
             c2.vel,
             c2.mass,
-            cfg.orbit.apocentre,
+            d_apo,
             cfg.orbit.eccentricity;
             truncate_jacobi_flag = cfg.output.truncate_jacobi,
+            truncation_radii = r_trunc,
+            orbit_normal = cfg.orbit.orbit_normal,
+            apocentre_angle = cfg.orbit.apocentre_angle,
         )
     elseif cfg.orbit_mode == "explicit"
         combine_clusters_explicit(
             cluster_data,
             cfg.clusters;
             truncate_jacobi_flag = cfg.output.truncate_jacobi,
+            truncation_radii = r_trunc_rh > 0 ?
+                               Float64[r_trunc_rh * c.rbar for c in cfg.clusters] : Float64[],
         )
     elseif cfg.orbit_mode == "single"
         combine_single_cluster(cluster_data[1])
@@ -715,12 +852,30 @@ function generate_merger_ic(
     # binding energies excluded): the virial ratio of the whole
     # configuration, the resolution of the members by the length unit, and
     # the integration parameters scaled to the smallest member.
-    q_virial, t_cr_config_code = if N_systems ≤ cfg.virial_max_n
+    q_virial, t_cr_config_code, e_config_code = if N_systems ≤ cfg.virial_max_n
         T, W = _kinetic_and_potential(mass_combined, pos_combined, vel_combined)
-        (W < 0 ? T / abs(W) : NaN, crossing_time(M_total, T + W))
+        (W < 0 ? T / abs(W) : NaN, crossing_time(M_total, T + W), T + W)
     else
         @warn "Combined virial ratio not evaluated: N = $N_systems systems exceed merger.virial_max_n = $(cfg.virial_max_n) (O(N²) pair sum)"
-        (NaN, NaN)
+        (NaN, NaN, NaN)
+    end
+
+    # Mass removed by truncation and, in Kepler mode, the derived orbit
+    # quantities, from the system arrays before pair expansion. The code
+    # energy unit G M☉²/pc is _G_PC_KMS2_MSUN M☉ km² s⁻².
+    mass_truncated = _truncated_masses(cfg.orbit_mode, cluster_data, mass_combined, system_ranges)
+    orbit_derived = if cfg.orbit_mode == "kepler"
+        _two_cluster_derived(
+            cfg,
+            cluster_data,
+            pos_combined,
+            mass_combined,
+            system_ranges,
+            d_apo,
+            e_config_code * _G_PC_KMS2_MSUN,
+        )
+    else
+        nothing
     end
 
     # Expand primordial pairs into bodies: every cluster's pairs first, then
@@ -732,7 +887,7 @@ function generate_merger_ic(
         system_ranges,
         [cd.binaries for cd in cluster_data],
         kept;
-        rng = use_rng,
+        rng = per_cluster ? cluster_rngs : use_rng,
     )
     pos_combined, vel_combined, mass_combined = expanded.pos, expanded.vel, expanded.mass
     cluster_blocks = expanded.cluster_blocks
@@ -865,7 +1020,10 @@ function generate_merger_ic(
         M_total,
         rbar,
         zmbar,
-        regime,
+        regime;
+        d_apo = d_apo,
+        orbit_derived = orbit_derived,
+        mass_truncated = mass_truncated,
     )
 
     # Structured metadata for post-hoc regeneration of IC plots
@@ -879,7 +1037,10 @@ function generate_merger_ic(
         M_total,
         rbar,
         zmbar,
-        regime,
+        regime;
+        d_apo = d_apo,
+        orbit_derived = orbit_derived,
+        mass_truncated = mass_truncated,
     )
 
     return MergerICResult(
@@ -901,14 +1062,22 @@ end
 
 """
     _write_merger_ic_metadata(path, cfg, cluster_ranges, seed, external_rng,
-                              N_total, M_total, rbar, zmbar, regime)
+                              N_total, M_total, rbar, zmbar, regime;
+                              d_apo = NaN, orbit_derived = nothing,
+                              mass_truncated = Float64[])
 
-Write a machine-readable TOML snapshot of the IC generation (schema version 3),
+Write a machine-readable TOML snapshot of the IC generation (schema version 4),
 sufficient to reconstruct a [`MergerICResult`](@ref) from the `dat.10` file
 later (so `plot_merger_ic` can be re-run after code fixes without
 re-sampling). Cluster specs are stored in the structured form
 (`profile = {type=...}`, `imf = {type=...}`) that
 [`_parse_cluster_table`](@ref) also accepts, so the file round-trips.
+
+The `[orbit]` table holds every [`OrbitSpec`](@ref) field as configured; in
+Kepler mode also `apocentre_resolved` (`d_apo` [pc]) and every field of
+`orbit_derived` ([`two_cluster_orbit_quantities`](@ref), pairs as 2-element
+arrays). `mass_truncated[i]` [M☉], the sampled minus the kept mass, goes to
+the table of cluster `i` when given.
 """
 function _write_merger_ic_metadata(
     path::AbstractString,
@@ -920,14 +1089,28 @@ function _write_merger_ic_metadata(
     M_total::Float64,
     rbar::Float64,
     zmbar::Float64,
-    regime::NamedTuple,
+    regime::NamedTuple;
+    d_apo::Float64 = NaN,
+    orbit_derived::Union{NamedTuple,Nothing} = nothing,
+    mass_truncated::AbstractVector{Float64} = Float64[],
 )
+    orbit_table =
+        Dict{String,Any}(String(k) => getfield(cfg.orbit, k) for k in fieldnames(OrbitSpec))
+    if orbit_derived !== nothing
+        orbit_table["apocentre_resolved"] = d_apo
+        for (k, v) in pairs(orbit_derived)
+            orbit_table[String(k)] = v isa Tuple ? collect(v) : v
+        end
+    end
     d = Dict{String,Any}(
         "meta" => Dict{String,Any}(
             "generated_at" => Dates.format(now(), "yyyy-mm-dd HH:MM:SS"),
-            "schema_version" => 3,   # 3: explicit-orbit velocities in km s⁻¹
+            # 3: explicit-orbit velocities in km s⁻¹; 4: orbit size keys and
+            # orientation, derived orbit quantities, seed streams
+            "schema_version" => 4,
             "commit" => _source_stamp(_PACKAGE_ROOT),
             "seed" => seed,
+            "seed_streams" => cfg.seed_streams,
             "external_rng" => external_rng,
             "N_total" => N_total,
             "M_total" => M_total,
@@ -947,13 +1130,11 @@ function _write_merger_ic_metadata(
         "tidal" => _struct_to_dict(cfg.tidal),
         "hardware" => _hardware_fingerprint(),
         "orbit_mode" => cfg.orbit_mode,
-        "orbit" => Dict{String,Any}(
-            "apocentre" => cfg.orbit.apocentre,
-            "eccentricity" => cfg.orbit.eccentricity,
-        ),
+        "orbit" => orbit_table,
         "output" => Dict{String,Any}(
             "format" => cfg.output.format,
             "truncate_jacobi" => cfg.output.truncate_jacobi,
+            "truncate_radius_rh" => cfg.output.truncate_radius_rh,
             "tcrit" => regime.tcrit_nb,
             "dtadj" => regime.dtadj_nb,
             "deltat" => regime.deltat_nb,
@@ -968,7 +1149,7 @@ function _write_merger_ic_metadata(
 
     # One table per cluster so spec + post-truncation count are co-located
     for (i, spec) in enumerate(cfg.clusters)
-        d["cluster$i"] = Dict{String,Any}(
+        cluster_table = Dict{String,Any}(
             "N" => spec.N,
             "rbar" => spec.rbar,
             "profile" => _profile_table(spec.profile),
@@ -980,6 +1161,8 @@ function _write_merger_ic_metadata(
             "N_pairs" => regime.n_pairs[i],
             "hard_fraction" => regime.hard_fraction[i],
         )
+        isempty(mass_truncated) || (cluster_table["mass_truncated"] = mass_truncated[i])
+        d["cluster$i"] = cluster_table
     end
 
     _backup_existing(path)
@@ -1036,10 +1219,19 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
         _members_from_blocks([Int(b[1]):Int(b[2]) for b in blocks]) for
         blocks in raw["cluster_blocks"]
     ]
+    # Schema 3 files carry apocentre and eccentricity only; the keys of
+    # schema 4 take their defaults when absent.
     orbit_raw = raw["orbit"]::Dict
+    normal_raw = get(orbit_raw, "orbit_normal", nothing)
     orbit = OrbitSpec(;
         apocentre = Float64(orbit_raw["apocentre"]),
         eccentricity = Float64(orbit_raw["eccentricity"]),
+        apocentre_rh = Float64(get(orbit_raw, "apocentre_rh", 0.0)),
+        pericentre = Float64(get(orbit_raw, "pericentre", 0.0)),
+        pericentre_rh = Float64(get(orbit_raw, "pericentre_rh", 0.0)),
+        orbit_normal = normal_raw isa AbstractVector ? Float64[Float64(x) for x in normal_raw] :
+                       [0.0, 0.0, -1.0],
+        apocentre_angle = Float64(get(orbit_raw, "apocentre_angle", 0.0)),
     )
 
     # Read dat.10 (NB units, the only supported output format) and
@@ -1093,7 +1285,10 @@ function _write_merger_summary(
     M_total,
     rbar,
     zmbar,
-    regime,
+    regime;
+    d_apo::Float64 = NaN,
+    orbit_derived::Union{NamedTuple,Nothing} = nothing,
+    mass_truncated::AbstractVector{Float64} = Float64[],
 )
     n_clusters = length(cfg.clusters)
     _backup_existing(path)
@@ -1156,14 +1351,47 @@ function _write_merger_summary(
         end
         println(io)
         if cfg.orbit_mode == "kepler"
+            rh1 = cfg.clusters[1].rbar
+            ecc = cfg.orbit.eccentricity
+            d_orb = isnan(d_apo) ? orbit_apocentre(cfg.orbit, rh1) : d_apo
+            r_p = d_orb * (1.0 - ecc) / (1.0 + ecc)
             @printf(
                 io,
-                "Orbit: d_apo = %.2f pc, e = %.3f\n",
-                cfg.orbit.apocentre,
-                cfg.orbit.eccentricity
+                "Orbit: d_apo = %.2f pc (%.2f r_h,1), r_p = %.2f pc (%.2f r_h,1), e = %.3f\n",
+                d_orb,
+                d_orb / rh1,
+                r_p,
+                r_p / rh1,
+                ecc
             )
-            a_orb = cfg.orbit.apocentre / (1.0 + cfg.orbit.eccentricity)
-            @printf(io, "       a = %.2f pc (semi-major axis)\n", a_orb)
+            if orbit_derived !== nothing
+                q = orbit_derived
+                @printf(
+                    io,
+                    "       a = %.2f pc, P = %.3g Myr, j_orb = %.3f, λ = %.3g, v_p/σ₁ = %.3g\n",
+                    q.a_pc,
+                    q.period_myr,
+                    q.j_orb,
+                    q.lambda_peebles,
+                    q.v_peri_over_sigma
+                )
+                @printf(
+                    io,
+                    "       Roche filling at apocentre: %.3f, %.3f\n",
+                    q.roche_filling[1],
+                    q.roche_filling[2]
+                )
+            end
+            n_orb = cfg.orbit.orbit_normal
+            @printf(io, "       orbit normal = [%.3g, %.3g, %.3g]\n", n_orb[1], n_orb[2], n_orb[3])
+            if any(>(0), mass_truncated)
+                @printf(
+                    io,
+                    "       truncated mass: %.1f M☉ (cluster 1), %.1f M☉ (cluster 2)\n",
+                    mass_truncated[1],
+                    mass_truncated[2]
+                )
+            end
             println(io)
         end
         if regime.nbin0 > 0
