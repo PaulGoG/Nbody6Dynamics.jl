@@ -44,6 +44,10 @@ entries say so.
   engine-regularised spans lie inside one bound span, and a third of the bound spans are never regularised.
   The stage `[postprocess] bound_spans` (default `false`; `bound_gamma_max`, `bound_n_miss`) writes
   `bound_spans.csv`.
+- Binary census (`binary_census`, `CensusSpan`, `write_binary_census`): the union per pair of the overlapping or
+  adjacent engine-regularised and bound spans, with both levels' limits and counts, the origin of the earlier and
+  the end class of the later level; written as `binary_census.csv` when both span stages run. On a development
+  run: 4450 binaries, 2630 seen by both levels, 1114 only bound (never regularised), 706 only regularised.
 - Two-cluster orbits (`orbit_mode = "kepler"`) by pericentre or apocentre, absolute or in units of the
   half-mass radius of cluster 1 (`[merger.orbit]` `pericentre`, `pericentre_rh`, `apocentre_rh`; one size key
   per config), oriented by `orbit_normal` (the direction of the orbital angular momentum; default [0, 0, −1],

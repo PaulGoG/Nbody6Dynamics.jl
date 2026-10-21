@@ -98,6 +98,7 @@ end
     include("test_binary_files.jl")
     include("test_binary_spans.jl")
     include("test_bound_spans.jl")
+    include("test_binary_census.jl")
     include("test_diagnostics.jl")
     include("test_potential.jl")
     include("test_energy_budget.jl")

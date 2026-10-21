@@ -132,6 +132,7 @@ include("merger_tree.jl")
 include("validity.jl")
 include("binary_spans.jl")
 include("bound_spans.jl")
+include("binary_census.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -459,6 +460,13 @@ function postprocess(
         )
     end
     lap!("bound_spans")
+    if haskey(results, :binary_spans) && haskey(results, :bound_spans)
+        results[:binary_census] = binary_census(
+            results[:binary_spans],
+            results[:bound_spans];
+            nbin0 = max(results[:diagnostics].nbin0, 0),
+        )
+    end
     # Validity record: built from the products above, with the build record of
     # the output directory and the run record of its parent.
     if pp.validity
@@ -756,6 +764,9 @@ function _finish_pipeline(
     if haskey(results, :bound_spans) && !isempty(products_dir)
         write_bound_spans(joinpath(products_dir, "bound_spans.csv"), results[:bound_spans])
     end
+    if haskey(results, :binary_census) && !isempty(products_dir)
+        write_binary_census(joinpath(products_dir, "binary_census.csv"), results[:binary_census])
+    end
     if haskey(results, :progenitor_budget) && !isempty(products_dir)
         write_progenitor_budget(
             joinpath(products_dir, "progenitor_budget.csv"),
@@ -963,6 +974,7 @@ export ValidityRecord, ValidityEpoch, ValiditySnapshot, validity_record
 export write_validity, write_validity_snapshots
 export BinarySpan, binary_spans, write_binary_spans
 export BoundPair, BoundSpan, bound_pairs, bound_spans, write_bound_spans
+export CensusSpan, binary_census, write_binary_census
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep

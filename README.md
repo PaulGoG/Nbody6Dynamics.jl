@@ -286,6 +286,7 @@ Nbody6Dynamics/
 │   ├── validity.jl                  # Validity record of a run and the calibration-table lookup; validity.toml, validity_snapshots.csv
 │   ├── binary_spans.jl              # Engine-regularised binary spans: KS episodes joined per pair, origin, end class; binary_spans.csv
 │   ├── bound_spans.jl               # Physically bound pairs at the snapshots and their spans; bound_spans.csv
+│   ├── binary_census.jl             # Union of the regularised and the bound spans per pair; binary_census.csv
 │   ├── sweep.jl                     # Parameter sweeps: grid × seeds, concurrent worker processes, index and summary
 │   ├── ensemble.jl                  # Seeded ensembles: series extractors, common-grid percentiles (median, 68/95 %)
 │   ├── io/

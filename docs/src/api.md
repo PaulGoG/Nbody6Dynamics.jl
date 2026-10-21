@@ -325,6 +325,14 @@ binary_spans
 write_binary_spans
 ```
 
+## Binary Census
+
+```@docs
+CensusSpan
+binary_census
+write_binary_census
+```
+
 ## Bound Spans
 
 ```@docs
