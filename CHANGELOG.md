@@ -194,7 +194,7 @@ entries say so.
   fraction and mass class, a pair sum per call that it did not use.
 - The engine is cloned from the package's fork,
   [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing),
-  at the tag `v2026.07.7` by default (`install.source_url`,
+  at the tag `v2026.07.8` by default (`install.source_url`,
   `install.ref`; the shipped pipeline configurations pin the same tag). The
   fork's branch `main` (named `campaign` until its tags `v2026.07-campaign.1`
   to `.6`; later tags are `v2026.07.N`) carries the three source amendments and the CUDA 13
@@ -237,7 +237,11 @@ entries say so.
   corrects the KS orbit and books its energy: below 10⁻⁸ N-body mass units the
   binding energy of a hard pair changed without a counterpart, which in a
   metal-poor cluster of 10⁴ stars cost up to 7×10⁻³ of the cluster energy per
-  adjustment. The fork's `NOTICE.md` lists
+  adjustment. From `v2026.07.8` a hyperbolic passage of two neutron stars or
+  black holes radiates the quadrupole energy of the passage at its pericentre
+  and is captured when that exceeds the orbital energy (`GR CAPTURE`,
+  `GR FLYBY` lines), and small mass changes in KS pairs of merged hierarchies
+  are booked as well. The fork's `NOTICE.md` lists
   the corrections by tag and states the provenance, the credit and the
   licensing. An existing
   engine checkout under `install.install_dir` is reused as it is; set
