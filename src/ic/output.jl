@@ -586,7 +586,13 @@ end
 # ---------------------------------------------------------------------------
 # Internal: sample a single cluster from its spec
 # ---------------------------------------------------------------------------
-function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rng(), nmax::Int)
+# `zmet` sets the ZAMS radii of the Roche guard (`binaries.roche_fill_max > 0`).
+function _sample_cluster(
+    spec::ClusterSpec;
+    rng::AbstractRNG = Random.default_rng(),
+    nmax::Int,
+    zmet::Real = NaN,
+)
     # Total-mass handling is delegated to the IMFSpec subtype (natural Kroupa
     # keeps the sampled sum; rescaled/equal enforce their targets).
     masses = sample_masses(spec.imf, spec.N, rng)
@@ -594,7 +600,7 @@ function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rn
     # Primordial pairs: the density sampler places *systems* (pairs by their
     # centre of mass); pairs are expanded into bodies after the clusters are
     # combined and truncated. Systems are ordered pairs first, then singles.
-    bins = sample_binaries(spec.binaries, masses, rng)
+    bins = sample_binaries(spec.binaries, masses, rng; zmet = zmet)
     n_b = length(bins.primary)
     paired = falses(spec.N)
     paired[bins.primary] .= true
@@ -868,7 +874,7 @@ function _complex_energy(
     rngs::AbstractVector{<:AbstractRNG},
 )::NamedTuple
     cluster_data = [
-        _sample_cluster(s; rng = rngs[i], nmax = cfg.virial_max_n) for
+        _sample_cluster(s; rng = rngs[i], nmax = cfg.virial_max_n, zmet = cfg.stellar.zmet) for
         (i, s) in enumerate(members.specs)
     ]
     specs = _scale_complex_members(cfg.complex, members, cluster_data).specs
@@ -1098,6 +1104,7 @@ function generate_merger_ic(
                 spec;
                 rng = per_cluster ? cluster_rngs[i] : use_rng,
                 nmax = cfg.virial_max_n,
+                zmet = cfg.stellar.zmet,
             )
         end for (i, spec) in enumerate(specs)
     ]

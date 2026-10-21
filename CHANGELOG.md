@@ -80,6 +80,13 @@ entries say so.
   energy-ranked phase-space slices of the unsegregated Plummer or King model handed out by cumulative mass — with
   the partial ordering of McLuster (Küpper et al. 2011, Eq. A1); the mass-density profile is preserved. Configurations
   without the table generate the same files as before.
+- Massive primordial binaries (`[merger.clusterN.binaries.massive] model = "sana2012"`, `MassiveBinarySpec`): the
+  stars above `m_min` are paired first with the period, mass-ratio and eccentricity power laws of Sana et al. (2012),
+  the partner taken from the star list (`pairing = "pool"`, the IMF multiset kept) or given the mass q m₁
+  (`"replace"`); the low-mass keys then apply to the remaining stars below `m_min`. `roche_fill_max` truncates the
+  period and eccentricity laws of every pair so that neither component fills more than that fraction of its Roche
+  lobe (Eggleton 1983) at periastron, with the engine's ZAMS radii at `merger.stellar.zmet` (`zams_radius`, the
+  Tout et al. 1996 fit of SSE). Configurations without the new keys generate the same files as before.
 - Complexes from one star list and their controls: `[merger.complex] imf_partition = "global"` draws one star
   list from the member IMF and deals it out to the members (`ExplicitMassesIMF` carries a member's stars), so the
   IMF realisation is the same across arms; `control = "monolithic"` (C-E: one virial Plummer cluster of the same

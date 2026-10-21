@@ -397,6 +397,24 @@ The metadata file `merger_ic.toml` written next to `dat.10` stores cluster specs
 | `a_min`, `a_max` | Float | `0.01`, `100.0` | Semi-major axis bounds [AU] for `"loguniform"`; `0 < a_min < a_max` |
 | `q_min` | Float | `0.1` | Lower mass-ratio bound for `"uniform_q"`; `0 < q_min < 1` |
 | `eccentricity` | String | `"thermal"` | `"thermal"` (`f(e) = 2e`) or `"circular"` |
+| `roche_fill_max` | Float | `0.0` | Roche-lobe guard at periastron for every pair: the largest admitted `R_i / (r_L(q_i) a (1 − e))` of either component; `0` (no guard) or `0 < roche_fill_max ≤ 1` |
+
+The subtable `[merger.clusterN.binaries.massive]` adds a branch for the massive primaries; with it, the keys above describe the stars below `m_min` only.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `model` | String | `"none"` | `"none"` (no massive branch) or `"sana2012"` |
+| `m_min` | Float | `5.0` | Primary-mass threshold [M☉]; `> 0` |
+| `fraction` | Float | `0.69` | Binary fraction of the massive primaries; `0 ≤ fraction ≤ 1` |
+| `pairing` | String | `"pool"` | `"pool"`: the partner is the unpaired star of mass `≤ m₁` closest to `q m₁`; `"replace"`: a random unpaired star below `m_min` takes the mass `q m₁` |
+| `log_period_min`, `log_period_max` | Float | `0.15`, `3.5` | Period range [log₁₀ d]; `0 ≤ log_period_min < log_period_max ≤ 8.43` |
+| `period_exponent` | Float | `-0.55` | π of `f(log P) ∝ (log P)^π`; finite (`≤ −1` needs `log_period_min > 0`) |
+| `q_min` | Float | `0.1` | Lower mass-ratio bound; `0 < q_min < 1` |
+| `q_exponent` | Float | `-0.1` | κ of `f(q) ∝ q^κ` on `[q_min, 1]`; finite |
+| `ecc_exponent` | Float | `-0.45` | η of `f(e) ∝ e^η` on `[0, ecc_max]`; `> −1` |
+| `ecc_max` | Float | `0.9` | Upper eccentricity bound; `0 < ecc_max < 1` |
+
+The defaults are the O-star distributions of [Sana2012](@cite): π = −0.55 ± 0.22, κ = −0.10 ± 0.58 and `f_bin = 0.69 ± 0.09` are read in the paper, while η = −0.45 ± 0.17 and the domains `0.15 ≤ log(P/d) ≤ 3.5`, `0.1 ≤ q ≤ 1`, `0 ≤ e ≤ 0.9` are quoted from secondary sources, since the supplementary material that holds them could not be consulted. The stars are walked in descending mass; each unpaired star of mass `≥ m_min` becomes a primary with probability `fraction` and draws `log P`, `q` and `e` from the truncated power laws, and a primary without an available partner stays single. `"pool"` keeps the multiset of IMF masses (the realised `q` is that of the partner found), `"replace"` alters it. The low-mass keys then pair the unpaired stars below `m_min` with their own `fraction`. The guard takes the zero-age main-sequence radii `R_i` of the engine's SSE fits (Tout et al. 1996, [doi:10.1093/mnras/281.1.257](https://doi.org/10.1093/mnras/281.1.257)) at `merger.stellar.zmet` and the Roche-lobe radius `r_L` of Eggleton (1983, [doi:10.1086/160960](https://doi.org/10.1086/160960)); it truncates the period (or axis) law of each pair at `a ≥ a_RL = max_i R_i / (roche_fill_max · r_L(q_i))` and its eccentricity law at `e ≤ 1 − a_RL/a`, so the binary fraction is kept, and a pair whose `a_RL` lies beyond the period range stops the generator with an error naming its masses.
 
 The density sampler places *systems* (a pair by its centre of mass), which are virialised and truncated as such; each pair is then expanded into two bodies on a Keplerian orbit with a random phase and orientation. The engine reads primordial pairs as bodies `2i − 1, 2i` for `i ≤ NBIN0`, so the pairs of all clusters are written first, cluster by cluster, followed by every cluster's singles; `NBIN0` and `KZ(8) = 2` are set in `merger.inp`, and a cluster's members are then two contiguous blocks recorded in `merger_ic.toml` (`cluster_blocks`) and recoverable from `merger_summary.txt` (`binaries: N` per cluster). The summary also reports the hard fraction of each cluster's pairs (`G m₁ m₂ / 2a > ⟨m⟩ σ²` of the cluster's systems). Binary-rich runs carry a larger energy error per adjustment interval (regularised pairs, chains): the two-cluster demo with 20 % binaries reached 4×10⁻³ over its first time unit, so set `merger.nbody6.qe` accordingly (10⁻³ to 10⁻²) or the engine halts at the first adjustment that exceeds the default 2×10⁻⁴.
 

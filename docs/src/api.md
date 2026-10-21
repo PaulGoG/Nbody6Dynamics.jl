@@ -501,6 +501,7 @@ kroupa_mean_mass
 ClusterSpec
 SegregationSpec
 BinarySpec
+MassiveBinarySpec
 OrbitSpec
 ComplexSpec
 MergerOutputSpec
@@ -549,6 +550,7 @@ write_dat10
 generate_merger_inp
 engine_interval
 sample_binaries
+Nbody6Dynamics.zams_radius
 expand_binaries
 crossing_time
 resolve_nbody6_parameters

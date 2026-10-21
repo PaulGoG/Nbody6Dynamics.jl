@@ -189,13 +189,91 @@ ClusterSpec(
     binaries::BinarySpec,
 ) = ClusterSpec(N, rbar, profile, imf, position, velocity, binaries, SegregationSpec())
 
-"""`BinarySpec` as a TOML table (metadata round trip)."""
-_binaries_table(b::BinarySpec) =
-    Dict{String,Any}(String(k) => getfield(b, k) for k in fieldnames(BinarySpec))
+"""`BinarySpec` as a TOML table (metadata round trip); `massive` as a subtable."""
+function _binaries_table(b::BinarySpec)
+    d = Dict{String,Any}(
+        String(k) => getfield(b, k) for k in fieldnames(BinarySpec) if k !== :massive
+    )
+    d["massive"] =
+        Dict{String,Any}(String(k) => getfield(b.massive, k) for k in fieldnames(MassiveBinarySpec))
+    return d
+end
 
-"""`[merger.cluster<idx>.binaries]` as a [`BinarySpec`](@ref)."""
-_parse_binaries_table(d::AbstractDict, idx::Int)::BinarySpec =
-    _parse_section(BinarySpec, d, "merger.cluster$idx.binaries")
+"""
+`[merger.cluster<idx>.binaries]` as a [`BinarySpec`](@ref), with the subtable
+`[merger.cluster<idx>.binaries.massive]` as its [`MassiveBinarySpec`](@ref).
+"""
+function _parse_binaries_table(d::AbstractDict, idx::Int)::BinarySpec
+    section = "merger.cluster$idx.binaries"
+    b = _parse_section(BinarySpec, d, section; skip = ("massive",))
+    haskey(d, "massive") || return b
+    raw = d["massive"]
+    raw isa AbstractDict || _config_error("$section.massive", "must be a table")
+    massive = _parse_section(MassiveBinarySpec, raw, "$section.massive")
+    return BinarySpec(;
+        fraction = b.fraction,
+        pairing = b.pairing,
+        period = b.period,
+        a_min = b.a_min,
+        a_max = b.a_max,
+        q_min = b.q_min,
+        eccentricity = b.eccentricity,
+        roche_fill_max = b.roche_fill_max,
+        massive = massive,
+    )
+end
+
+const _MASSIVE_BINARY_MODELS = ("none", "sana2012")
+const _MASSIVE_BINARY_PAIRINGS = ("pool", "replace")
+
+"""
+    _validate_binary_extensions(b::BinarySpec, key::String)
+
+Fail-fast bounds of the Roche guard (`roche_fill_max`) and of the massive branch
+(`massive`) of a [`BinarySpec`](@ref); `key` names the owning cluster table.
+Raises an `ArgumentError` naming the offending key.
+"""
+function _validate_binary_extensions(b::BinarySpec, key::String)
+    kb = "$key.binaries"
+    φ = b.roche_fill_max
+    (φ == 0 || 0 < φ ≤ 1) || _config_error(
+        "$kb.roche_fill_max",
+        "must be 0 (no guard) or satisfy 0 < roche_fill_max ≤ 1; got $φ",
+    )
+    s = b.massive
+    km = "$kb.massive"
+    s.model in _MASSIVE_BINARY_MODELS ||
+        _config_error("$km.model", "must be one of \"none\", \"sana2012\"; got \"$(s.model)\"")
+    s.pairing in _MASSIVE_BINARY_PAIRINGS ||
+        _config_error("$km.pairing", "must be one of \"pool\", \"replace\"; got \"$(s.pairing)\"")
+    (isfinite(s.m_min) && s.m_min > 0) ||
+        _config_error("$km.m_min", "must be finite and > 0 [M☉]; got $(s.m_min)")
+    (0 ≤ s.fraction ≤ 1) ||
+        _config_error("$km.fraction", "must satisfy 0 ≤ fraction ≤ 1; got $(s.fraction)")
+    (0 ≤ s.log_period_min < s.log_period_max) || _config_error(
+        "$km.log_period_min",
+        "must satisfy 0 ≤ log_period_min < log_period_max [log10 d]; " *
+        "got $(s.log_period_min), $(s.log_period_max)",
+    )
+    s.log_period_max ≤ _KROUPA95_LOGP_MAX || _config_error(
+        "$km.log_period_max",
+        "must be ≤ $_KROUPA95_LOGP_MAX [log10 d]; got $(s.log_period_max)",
+    )
+    isfinite(s.period_exponent) ||
+        _config_error("$km.period_exponent", "must be finite; got $(s.period_exponent)")
+    (s.period_exponent > -1 || s.log_period_min > 0) || _config_error(
+        "$km.period_exponent",
+        "≤ −1 needs log_period_min > 0 (the law is not normalisable at 0); " *
+        "got $(s.period_exponent) with log_period_min = $(s.log_period_min)",
+    )
+    (0 < s.q_min < 1) || _config_error("$km.q_min", "must satisfy 0 < q_min < 1; got $(s.q_min)")
+    isfinite(s.q_exponent) || _config_error("$km.q_exponent", "must be finite; got $(s.q_exponent)")
+    (isfinite(s.ecc_exponent) && s.ecc_exponent > -1) ||
+        _config_error("$km.ecc_exponent", "must be finite and > −1; got $(s.ecc_exponent)")
+    (0 < s.ecc_max < 1) ||
+        _config_error("$km.ecc_max", "must satisfy 0 < ecc_max < 1; got $(s.ecc_max)")
+    return nothing
+end
 
 # -----------------------------------------------------------------------------
 # Tag-type serialisation (metadata TOML round-trip)
@@ -1560,6 +1638,7 @@ function _validate_cluster_spec(spec::ClusterSpec, idx::Int)
     _validate_profile(spec.profile, key)
     _validate_imf(spec.imf, spec.N, key)
     _validate_binaries(spec.binaries, key)
+    _validate_binary_extensions(spec.binaries, key)
     _validate_segregation(spec.segregation, key)
     return nothing
 end

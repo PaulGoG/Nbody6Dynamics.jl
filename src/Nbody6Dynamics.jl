@@ -994,6 +994,7 @@ export control_merger_dict, write_control_merger_config
 export ClusterSpec,
     SegregationSpec,
     BinarySpec,
+    MassiveBinarySpec,
     OrbitSpec,
     ComplexSpec,
     MergerOutputSpec,

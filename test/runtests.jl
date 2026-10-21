@@ -111,6 +111,7 @@ end
     include("test_cluster_complex.jl")
     include("test_complex_controls.jl")
     include("test_segregation.jl")
+    include("test_massive_binaries.jl")
     include("test_validity.jl")
     include("test_sweep_ensemble.jl")
     include("test_plotting.jl")
