@@ -497,6 +497,11 @@ virialise!
 ```@docs
 kepler_velocity
 jacobi_radius
+Nbody6Dynamics.orbit_apocentre
+Nbody6Dynamics.two_cluster_orbit_quantities
+Nbody6Dynamics.tidal_frame_rotation
+Nbody6Dynamics.pair_jacobi_radius
+Nbody6Dynamics.to_rotating_frame!
 ```
 
 ### Output
