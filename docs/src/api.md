@@ -317,6 +317,14 @@ progenitor_budget
 write_progenitor_budget
 ```
 
+## Binary Spans
+
+```@docs
+BinarySpan
+binary_spans
+write_binary_spans
+```
+
 ## Validity Record
 
 ```@docs

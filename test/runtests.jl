@@ -96,6 +96,7 @@ end
     include("test_events_dynamics.jl")
     include("test_events_evolution.jl")
     include("test_binary_files.jl")
+    include("test_binary_spans.jl")
     include("test_diagnostics.jl")
     include("test_potential.jl")
     include("test_energy_budget.jl")
