@@ -134,6 +134,7 @@ include("binary_spans.jl")
 include("bound_spans.jl")
 include("binary_census.jl")
 include("gw_observables.jl")
+include("binary_population_series.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -468,6 +469,27 @@ function postprocess(
             nbin0 = max(results[:diagnostics].nbin0, 0),
         )
     end
+    # Binary fractions per shell, class and census level (design W8)
+    if pp.binary_population && haskey(results, :snapshots)
+        @info "Binary population over $(length(results[:snapshots])) snapshots..."
+        kstar =
+            haskey(results, :stellar_evo) ?
+            _bpop_pipeline_kstar(
+                results[:snapshots],
+                results[:stellar_evo],
+                get(results, :binary_evo, BinaryEvolutionSnapshot[]),
+            ) : nothing
+        results[:binary_population] = binary_population_series(
+            results[:snapshots];
+            radius_frame = Symbol(pp.population_frame),
+            centre_kwargs = _centre_keywords(pp),
+            kstar = kstar,
+            q_min = pp.population_q_min,
+            primary_window_msun = (pp.population_m1_min, pp.population_m1_max),
+            gamma_max = pp.bound_gamma_max,
+        )
+    end
+    lap!("binary_population")
     # Validity record: built from the products above, with the build record of
     # the output directory and the run record of its parent.
     if pp.validity
@@ -768,6 +790,12 @@ function _finish_pipeline(
     if haskey(results, :binary_census) && !isempty(products_dir)
         write_binary_census(joinpath(products_dir, "binary_census.csv"), results[:binary_census])
     end
+    if haskey(results, :binary_population) && !isempty(products_dir)
+        write_binary_population(
+            joinpath(products_dir, "binary_population.csv"),
+            results[:binary_population],
+        )
+    end
     if haskey(results, :progenitor_budget) && !isempty(products_dir)
         write_progenitor_budget(
             joinpath(products_dir, "progenitor_budget.csv"),
@@ -985,6 +1013,7 @@ export gw_enhancement,
     orbital_frequency,
     gw_frequency,
     eccentricity_at_frequency
+export BinaryPopulationRow, binary_population_series, write_binary_population, stellar_type_map
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep

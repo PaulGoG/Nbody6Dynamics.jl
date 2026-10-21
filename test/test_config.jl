@@ -206,6 +206,16 @@ format = "pdf"
         ),
         ("bound_n_miss", "[postprocess]\nbound_n_miss = -1\n", "postprocess.bound_n_miss"),
         (
+            "population_frame",
+            "[postprocess]\npopulation_frame = \"shells\"\n",
+            "postprocess.population_frame",
+        ),
+        (
+            "population_m1_max",
+            "[postprocess]\npopulation_m1_min = 0.9\npopulation_m1_max = 0.5\n",
+            "postprocess.population_m1_max",
+        ),
+        (
             "bound_max_passes",
             "[postprocess]\nbound_max_passes = 0\n",
             "postprocess.bound_max_passes",

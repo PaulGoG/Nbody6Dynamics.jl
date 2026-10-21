@@ -548,6 +548,20 @@ function _validate_estimators(pp::PostprocessConfig)
     )
     pp.bound_n_miss ≥ 0 ||
         _config_error("postprocess.bound_n_miss", "must be ≥ 0; got $(pp.bound_n_miss)")
+    pp.population_frame in ("lagrangian", "rh") || _config_error(
+        "postprocess.population_frame",
+        "must be one of \"lagrangian\", \"rh\"; got \"$(pp.population_frame)\"",
+    )
+    0 < pp.population_q_min < 1 || _config_error(
+        "postprocess.population_q_min",
+        "must lie in (0, 1); got $(pp.population_q_min)",
+    )
+    0 ≤ pp.population_m1_min ||
+        _config_error("postprocess.population_m1_min", "must be ≥ 0; got $(pp.population_m1_min)")
+    pp.population_m1_min < pp.population_m1_max || _config_error(
+        "postprocess.population_m1_max",
+        "must exceed population_m1_min = $(pp.population_m1_min); got $(pp.population_m1_max)",
+    )
     pp.validity_interval_de > 0 || _config_error(
         "postprocess.validity_interval_de",
         "must be > 0; got $(pp.validity_interval_de)",

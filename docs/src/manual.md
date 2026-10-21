@@ -178,6 +178,10 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `bound_spans`         | Bool   | `false`  | Write `bound_spans.csv`: the physically bound pairs at the snapshots and their spans |
 | `bound_gamma_max`     | Float  | `0.1`    | Largest apocentre perturbation Σ 2(m_l/m_b)(a(1 + e)/d_l)³ of a bound pair by its nearest bodies; > 0 |
 | `bound_n_miss`        | Int    | `1`      | Consecutive snapshots a pair that stays bound may fail the perturbation test within one span; ≥ 0 |
+| `binary_population`   | Bool   | `false`  | Write `binary_population.csv`: number, star and mass binary fractions per radial shell, stellar class (from `sev.83`/`bev.82` when read) and census level (KS pairs; bound pairs) at every snapshot |
+| `population_frame`    | String | `"lagrangian"` | Radial shells: `"lagrangian"` (0, 0.1, 0.25, 0.5, 0.75, 0.9, 1 of the system mass) or `"rh"` (0, 0.5, 1, 2, 4, ∞ times the half-mass radius of the systems) |
+| `population_q_min`    | Float  | `0.5`    | Mass-ratio limit of the q-restricted fraction; 0 < q_min < 1 |
+| `population_m1_min`, `population_m1_max` | Float | `0.5`, `0.9` | Primary-mass window of the q-restricted fraction [M☉]; 0 ≤ m1_min < m1_max |
 | `validity`            | Bool   | `true`   | Write `validity.toml` and `validity_snapshots.csv`, the validity record of the run (section 9) |
 | `validity_interval_de` | Float | `1.0e-4` | Per-interval relative energy change above which an adjustment interval is flagged; > 0 |
 | `validity_cumulative_de` | Float | `1.0e-3` | `|DETOT / E₀|` above which the run is flagged; > 0 |

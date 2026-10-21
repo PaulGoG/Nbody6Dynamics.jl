@@ -55,6 +55,12 @@ entries say so.
   adjacent engine-regularised and bound spans, with both levels' limits and counts, the origin of the earlier and
   the end class of the later level; written as `binary_census.csv` when both span stages run. On a development
   run: 4450 binaries, 2630 seen by both levels, 1114 only bound (never regularised), 706 only regularised.
+- Binary population series (`binary_population_series`, `BinaryPopulationRow`, `write_binary_population`,
+  `stellar_type_map`; `[postprocess] binary_population`, off by default, writes `binary_population.csv`): at every
+  snapshot and for both census levels (KS pairs; bound pairs), the binary fractions by systems, stars and mass, their
+  binomial error and a q-restricted fraction in a primary-mass window, over all radii and per Lagrangian or r/r_h
+  shell about the shrinking-sphere centre, for all stars and per stellar class (binaries by the class of the
+  primary, star and mass fractions per object) with the types of `sev.83`/`bev.82`.
 - Two-cluster orbits (`orbit_mode = "kepler"`) by pericentre or apocentre, absolute or in units of the
   half-mass radius of cluster 1 (`[merger.orbit]` `pericentre`, `pericentre_rh`, `apocentre_rh`; one size key
   per config), oriented by `orbit_normal` (the direction of the orbital angular momentum; default [0, 0, −1],

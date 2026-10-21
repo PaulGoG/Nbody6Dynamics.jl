@@ -196,15 +196,55 @@
         @test c(:black_hole).n_singles == count(isbh, (2n_b + 1):length(bodies))
         @test c(:black_hole).f_b_stars ≈ n_bh_in_bin / 40
         @test c(:all).n_binaries == n_b
-        # A body without a stellar type is an error naming it
+        # More untyped bodies than max_untyped_fraction (default 1 %) means mismatched epochs: an error
         bad = copy(kmap)
-        delete!(bad, Int(s_ks.name[end]))
+        for nm in s_ks.name[(end - 59):end]
+            delete!(bad, Int(nm))
+        end
         @test_throws ArgumentError nd.binary_population_series(
             [s_ks];
             levels = (:ks,),
             centre = :origin,
             kstar = [bad],
         )
+        # A few untyped bodies (outer bodies of merged hierarchies, chain representatives) count under :all
+        # only; a massless ghost is no system at all
+        few = copy(kmap)
+        delete!(few, Int(s_ks.name[end]))
+        ghost = (Int32(99_999), 0.0f0, [0.0, 0.0, 0.0], zeros(3))
+        s_g = snap(0.0, vcat(bodies, [ghost]); npairs = n_b)
+        orows = nd.binary_population_series([s_g]; levels = (:ks,), centre = :origin, kstar = [few])
+        o(cl) = only(filter(r -> r.bin == 0 && r.class == cl, orows))
+        @test o(:all).n_singles == n_sys - n_b
+        @test o(:main_sequence).n_singles + o(:black_hole).n_singles == n_sys - n_b - 1
+        # A component of a merged hierarchy (negative pair name, as the engine writes it to conf.3) is flagged
+        pn = Int32.(collect(1:n_b) .+ 100_000)
+        pn[1] = -pn[1]
+        s_h = Snapshot(
+            s_ks.header,
+            s_ks.name,
+            s_ks.mass,
+            s_ks.pos,
+            s_ks.vel,
+            Float32[],
+            Float32[],
+            n_b,
+            pn,
+        )
+        hmap = copy(kmap)
+        delete!(hmap, Int(s_ks.name[1]))
+        hrows = nd.binary_population_series(
+            [s_h];
+            levels = (:ks,),
+            radius_frame = :rh,
+            edges = edges,
+            centre = :origin,
+            kstar = [hmap],
+        )
+        h(cl) = only(filter(r -> r.bin == 0 && r.class == cl, hrows))
+        @test h(:all).n_binaries == n_b && h(:all).n_in_binaries == 2n_b
+        @test sum(h(cl).n_in_binaries for cl in (:main_sequence, :black_hole)) == 2n_b - 1
+        @test h(:all).n_hierarchies == 1
     end
 
     @testset "Arguments and writer" begin

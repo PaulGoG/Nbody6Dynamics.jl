@@ -347,6 +347,15 @@ gw_frequency
 eccentricity_at_frequency
 ```
 
+## Binary Population Series
+
+```@docs
+BinaryPopulationRow
+binary_population_series
+write_binary_population
+stellar_type_map
+```
+
 ## Bound Spans
 
 ```@docs

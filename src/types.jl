@@ -229,6 +229,11 @@ Base.@kwdef struct PostprocessConfig
     bound_spans::Bool = false
     bound_gamma_max::Float64 = 0.1
     bound_n_miss::Int = 1
+    binary_population::Bool = false
+    population_frame::String = "lagrangian"   # "lagrangian" | "rh"
+    population_q_min::Float64 = 0.5
+    population_m1_min::Float64 = 0.5          # M☉
+    population_m1_max::Float64 = 0.9          # M☉
     validity::Bool = true
     validity_interval_de::Float64 = 1.0e-4
     validity_cumulative_de::Float64 = 1.0e-3
