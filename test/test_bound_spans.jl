@@ -43,7 +43,8 @@
         s = snap(0.0, vcat(pair(1, 2), field))
         bp = nd.bound_pairs(s)
         p = only(filter(q -> (q.name1, q.name2) == (1, 2), bp))
-        @test p.a ≈ 1.0e-3 rtol = 1e-4 && p.e < 1e-3 && p.gamma_apo < 1e-6 && !p.ks && !p.hierarchy
+        @test p.a ≈ 1.0e-3 rtol = 1e-4
+        @test p.e < 1e-3 && p.gamma_apo < 1e-6 && !p.ks && !p.hierarchy
         # A close fly-by fails the perturbation test
         @test isempty(
             filter(

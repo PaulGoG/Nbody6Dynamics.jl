@@ -131,6 +131,7 @@ include("angular_momentum.jl")
 include("merger_tree.jl")
 include("validity.jl")
 include("binary_spans.jl")
+include("bound_spans.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -946,6 +947,7 @@ export ProgenitorBudgetRow, progenitor_budget, write_progenitor_budget
 export ValidityRecord, ValidityEpoch, ValiditySnapshot, validity_record
 export write_validity, write_validity_snapshots
 export BinarySpan, binary_spans, write_binary_spans
+export BoundPair, BoundSpan, bound_pairs, bound_spans, write_bound_spans
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep

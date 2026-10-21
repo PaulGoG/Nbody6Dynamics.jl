@@ -36,6 +36,12 @@ entries say so.
   stored under their true meaning, as each record type documents. The
   `GR CAPTURE` and `GR FLYBY` lines of hyperbolic NS/BH passages (engine fork
   v2026.07.8) are `GWEvent` kinds `:gw_capture` and `:gw_flyby`.
+- Physically bound pairs and their spans from snapshots (`bound_pairs`, `bound_spans`, `BoundPair`,
+  `BoundSpan`, `write_bound_spans`): mutual most-bound pairs whose apocentre perturbation by the nearest bodies is
+  below 0.1, or whose dominant perturber is the bound outer body of a Mardling & Aarseth (2001) stable triple,
+  plus every KS pair of the snapshot; spans over the snapshot sequence bridge single misses of a pair that stays
+  bound, with interval-censored formation and end times. On a development run of 10⁴ stars 98.6 % of the bound
+  engine-regularised spans lie inside one bound span, and a third of the bound spans are never regularised.
 - Two-cluster orbits (`orbit_mode = "kepler"`) by pericentre or apocentre, absolute or in units of the
   half-mass radius of cluster 1 (`[merger.orbit]` `pericentre`, `pericentre_rh`, `apocentre_rh`; one size key
   per config), oriented by `orbit_normal` (the direction of the orbital angular momentum; default [0, 0, −1],

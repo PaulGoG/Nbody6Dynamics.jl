@@ -325,6 +325,16 @@ binary_spans
 write_binary_spans
 ```
 
+## Bound Spans
+
+```@docs
+BoundPair
+BoundSpan
+bound_pairs
+bound_spans
+write_bound_spans
+```
+
 ## Validity Record
 
 ```@docs
