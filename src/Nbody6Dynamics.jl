@@ -955,6 +955,7 @@ export control_merger_dict, write_control_merger_config
 export ClusterSpec,
     BinarySpec,
     OrbitSpec,
+    ComplexSpec,
     MergerOutputSpec,
     Nbody6ParameterSpec,
     StellarSpec,

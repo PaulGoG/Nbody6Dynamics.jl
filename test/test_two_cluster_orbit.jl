@@ -308,4 +308,13 @@ $output
         # An apocentre beyond the pair Jacobi radius is refused
         @test_throws ErrorException gen("rotating"; orbit = "apocentre = 500.0\neccentricity = 0.5")
     end
+
+    @testset "Control derivation with the new size keys" begin
+        ca(d) = nd._control_apocentre(d, 2.0)
+        @test ca(Dict("apocentre" => 12.0)) == 12.0
+        @test ca(Dict("apocentre_rh" => 6.0)) == 12.0
+        @test ca(Dict("pericentre" => 4.0, "eccentricity" => 0.5)) ≈ 12.0
+        @test ca(Dict("pericentre_rh" => 2.0, "eccentricity" => 0.5)) ≈ 12.0
+        @test ca(Dict{String,Any}()) == 15.0
+    end
 end

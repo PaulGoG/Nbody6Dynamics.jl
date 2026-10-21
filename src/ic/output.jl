@@ -735,20 +735,78 @@ function _truncated_masses(
 end
 
 """
+    _complex_members(spec::ComplexSpec, template::ClusterSpec, rng::AbstractRNG) -> NamedTuple
+
+Members of a cluster complex before sampling: masses `M` [M☉]
+([`complex_member_masses`](@ref)), star counts `Nᵢ = round(Mᵢ / ⟨m⟩)` with the
+mean stellar mass of the template IMF, half-mass radii
+`r_h,i = complex_member_radius(spec, Mᵢ) 10^(size_scatter_dex gᵢ)` [pc] (`gᵢ`
+standard normal, one draw per member after the masses), centres and raw
+velocities ([`complex_centres`](@ref)), and the member `ClusterSpec`s (the
+template with `N = Nᵢ`, `rbar = r_h,i`, `position` the centre, a zero
+`velocity` placeholder). Every draw comes from `rng`. Throws an
+`ArgumentError` for fewer than two members or a member below
+`spec.member_n_min` stars.
+"""
+function _complex_members(spec::ComplexSpec, template::ClusterSpec, rng::AbstractRNG)
+    M = complex_member_masses(spec, rng)
+    n = length(M)
+    n ≥ 2 || throw(
+        ArgumentError(
+            "merger.complex: the mass function gave $n member(s); a complex needs at least 2",
+        ),
+    )
+    m̄ = expected_mass(template.imf, 1)
+    N = Int[round(Int, Mi / m̄) for Mi in M]
+    for i in 1:n
+        N[i] ≥ spec.member_n_min || throw(
+            ArgumentError(
+                "merger.complex: member $i of mass $(round(M[i]; sigdigits = 4)) M☉ has " *
+                "N = $(N[i]) stars (mean stellar mass $(round(m̄; sigdigits = 4)) M☉), below " *
+                "member_n_min = $(spec.member_n_min)",
+            ),
+        )
+    end
+    r_h = Float64[
+        complex_member_radius(spec, M[i]) * 10.0^(spec.size_scatter_dex * randn(rng)) for i in 1:n
+    ]
+    x, v = complex_centres(spec, n, rng)
+    specs = ClusterSpec[
+        ClusterSpec(;
+            N = N[i],
+            rbar = r_h[i],
+            profile = template.profile,
+            imf = template.imf,
+            position = x[:, i],
+            velocity = zeros(3),
+            binaries = template.binaries,
+        ) for i in 1:n
+    ]
+    return (masses = M, r_h = r_h, pos = x, vel = v, specs = specs)
+end
+
+"""
     generate_merger_ic(cfg::MergerConfig; rng=Random.default_rng(),
                        output_dir="") -> MergerICResult
 
 Generate complete merger initial conditions from a [`MergerConfig`](@ref).
 Produces `dat.10`, `merger.inp`, and `merger_summary.txt`.
 
-Supports three orbit modes:
+Supports four orbit modes:
 - `"kepler"`: 2 clusters on a Keplerian orbit (positions/velocities auto-computed)
 - `"explicit"`: N clusters with user-specified CM positions and velocities
 - `"single"`: one cluster at the origin, at rest (no truncation)
+- `"complex"`: the members of a cluster complex (`cfg.complex`): masses,
+  radii and centres drawn from the complex's own stream `_cluster_rng(seed, 0)`,
+  member `i` sampled from `_cluster_rng(seed, i)`; after sampling, the centres
+  and bulk velocities are scaled to the target virial ratio of the realised
+  member masses as softened point masses (`complex_scale_velocities!`,
+  softening `cfg.complex.softening` or the mean member half-mass radius), and
+  the members are combined as in explicit mode
 
-With `cfg.seed_streams = "per_cluster"` and no external `rng`, cluster `i` is
-sampled and its pairs expanded from its own stream (`_cluster_rng(seed, i)`);
-an external `rng` replaces every stream.
+With `cfg.seed_streams = "per_cluster"` (always in complex mode) and no
+external `rng`, cluster `i` is sampled and its pairs expanded from its own
+stream (`_cluster_rng(seed, i)`); an external `rng` replaces every stream.
 
 Returns a [`MergerICResult`](@ref) for downstream plotting and inspection.
 """
@@ -765,6 +823,10 @@ function generate_merger_ic(
     n_clusters ≥ 1 || error("Need at least 1 cluster, got $n_clusters")
     (cfg.orbit_mode == "kepler" && n_clusters != 2) &&
         error("Kepler orbit mode requires exactly 2 clusters, got $n_clusters")
+    complex_mode = cfg.orbit_mode == "complex"
+    (complex_mode && n_clusters != 1) &&
+        error("Complex mode takes exactly one member template in cfg.clusters, got $n_clusters")
+    complex_mode && _validate_complex(cfg.complex)
     for (i, spec) in enumerate(cfg.clusters)
         _validate_cluster_spec(spec, i)
     end
@@ -785,9 +847,19 @@ function generate_merger_ic(
     external_rng = rng !== nothing
     effective_seed::Int = cfg.seed === nothing ? Int(rand(UInt32) % typemax(Int32)) : cfg.seed
     use_rng = external_rng ? rng : Random.MersenneTwister(effective_seed)
+    # Complex mode: member masses, radii and centres from the complex's own
+    # stream (index 0); the members then take the place of cfg.clusters.
+    members = if complex_mode
+        rng0::AbstractRNG = rng === nothing ? _cluster_rng(effective_seed, 0) : rng
+        _complex_members(cfg.complex, cfg.clusters[1], rng0)
+    else
+        nothing
+    end
+    specs::Vector{ClusterSpec} = members === nothing ? cfg.clusters : members.specs
+    n_clusters = length(specs)
     # Per-cluster streams: cluster i is sampled and its pairs expanded from
     # its own stream, independent of the other clusters and of the orbit.
-    per_cluster = cfg.seed_streams == "per_cluster" && !external_rng
+    per_cluster = (cfg.seed_streams == "per_cluster" || complex_mode) && !external_rng
     (external_rng && cfg.seed_streams == "per_cluster") &&
         @warn "seed_streams = \"per_cluster\" needs the configured seed; " *
               "the external RNG is used for every cluster"
@@ -810,8 +882,50 @@ function generate_merger_ic(
                 rng = per_cluster ? cluster_rngs[i] : use_rng,
                 nmax = cfg.virial_max_n,
             )
-        end for (i, spec) in enumerate(cfg.clusters)
+        end for (i, spec) in enumerate(specs)
     ]
+
+    # Complex mode: centres and bulk velocities [km s⁻¹] scaled to the target
+    # virial ratio of the realised member masses as softened point masses.
+    complex_info = nothing
+    if members !== nothing
+        cs = cfg.complex
+        x_c, v_c = members.pos, members.vel
+        m_c = Float64[sum(cd.mass) for cd in cluster_data]
+        ε = cs.softening > 0 ? cs.softening : sum(members.r_h) / length(members.r_h)
+        scaling = complex_scale_velocities!(
+            v_c,
+            x_c,
+            m_c;
+            virial_ratio = cs.virial_ratio,
+            rotation_fraction = cs.rotation_fraction,
+            softening = ε,
+        )
+        specs = ClusterSpec[
+            ClusterSpec(;
+                N = s.N,
+                rbar = s.rbar,
+                profile = s.profile,
+                imf = s.imf,
+                position = x_c[:, i],
+                velocity = v_c[:, i],
+                binaries = s.binaries,
+            ) for (i, s) in enumerate(specs)
+        ]
+        M_c = sum(m_c)
+        λ_c =
+            sqrt(sum(abs2, scaling.l_total)) * sqrt(abs(scaling.e_total)) /
+            (_G_PC_KMS2_MSUN * M_c^2.5)
+        complex_info = (scaling = scaling, masses = m_c, r_h = members.r_h, lambda_peebles = λ_c)
+        @info @sprintf(
+            "Complex: %d members, M = %.4g M☉, Q_cc = %.3f, λ = %.3g, ε = %.3g pc",
+            length(m_c),
+            M_c,
+            scaling.virial_ratio,
+            λ_c,
+            ε
+        )
+    end
 
     # Kepler apocentre from the configured size key; fixed truncation radii
     # (0 = Jacobi radius) in units of each cluster's input half-mass radius.
@@ -838,13 +952,13 @@ function generate_merger_ic(
             orbit_normal = cfg.orbit.orbit_normal,
             apocentre_angle = cfg.orbit.apocentre_angle,
         )
-    elseif cfg.orbit_mode == "explicit"
+    elseif cfg.orbit_mode == "explicit" || complex_mode
         combine_clusters_explicit(
             cluster_data,
-            cfg.clusters;
+            specs;
             truncate_jacobi_flag = cfg.output.truncate_jacobi,
-            truncation_radii = r_trunc_rh > 0 ?
-                               Float64[r_trunc_rh * c.rbar for c in cfg.clusters] : Float64[],
+            truncation_radii = r_trunc_rh > 0 ? Float64[r_trunc_rh * c.rbar for c in specs] :
+                               Float64[],
         )
     elseif cfg.orbit_mode == "single"
         combine_single_cluster(cluster_data[1])
@@ -938,9 +1052,9 @@ function generate_merger_ic(
     t_star_myr = _nbody_time_myr(M_total, rbar)
     code_to_nb = _CODE_TIME_MYR / t_star_myr
     t_cr_member_code = minimum(crossing_time(sum(c.mass), c.T + c.W) for c in cluster_data)
-    r_h_min_pc = minimum(c.rbar for c in cfg.clusters)
+    r_h_min_pc = minimum(c.rbar for c in specs)
     rbar_over_rhm_min = rbar / r_h_min_pc
-    nbody6 = resolve_nbody6_parameters(cfg.nbody6, cfg.clusters, cluster_ranges, N_total, rbar)
+    nbody6 = resolve_nbody6_parameters(cfg.nbody6, specs, cluster_ranges, N_total, rbar)
     # Bound on the per-pair relative error of the FP32 regular force from the
     # coordinate offset: 4 u X / RS0, u = 2⁻²⁴, X the largest |x| [NB]
     # (literature/2026-10-02-numerical-validity §4 of the workspace notes).
@@ -1048,8 +1162,8 @@ function generate_merger_ic(
         deltat = deltat_nb,
         nrand = effective_seed,
         mass_bounds = (
-            minimum(_imf_mass_bounds(c.imf)[1] for c in cfg.clusters),
-            maximum(_imf_mass_bounds(c.imf)[2] for c in cfg.clusters),
+            minimum(_imf_mass_bounds(c.imf)[1] for c in specs),
+            maximum(_imf_mass_bounds(c.imf)[2] for c in specs),
         ),
         nbin0 = nbin0,
     )
@@ -1068,6 +1182,8 @@ function generate_merger_ic(
         d_apo = d_apo,
         orbit_derived = orbit_derived,
         mass_truncated = mass_truncated,
+        cluster_specs = specs,
+        complex_info = complex_info,
     )
 
     # Structured metadata for post-hoc regeneration of IC plots
@@ -1085,6 +1201,8 @@ function generate_merger_ic(
         d_apo = d_apo,
         orbit_derived = orbit_derived,
         mass_truncated = mass_truncated,
+        cluster_specs = specs,
+        complex_info = complex_info,
     )
 
     return MergerICResult(
@@ -1095,7 +1213,7 @@ function generate_merger_ic(
         zmbar,
         cluster_ranges,
         n_pairs,
-        collect(cfg.clusters),
+        collect(specs),
         cfg.orbit_mode,
         cfg.orbit,
         mass_phys,
@@ -1108,7 +1226,8 @@ end
     _write_merger_ic_metadata(path, cfg, cluster_ranges, seed, external_rng,
                               N_total, M_total, rbar, zmbar, regime;
                               d_apo = NaN, orbit_derived = nothing,
-                              mass_truncated = Float64[])
+                              mass_truncated = Float64[], cluster_specs = cfg.clusters,
+                              complex_info = nothing)
 
 Write a machine-readable TOML snapshot of the IC generation (schema version 4),
 sufficient to reconstruct a [`MergerICResult`](@ref) from the `dat.10` file
@@ -1122,6 +1241,13 @@ Kepler mode also `apocentre_resolved` (`d_apo` [pc]) and every field of
 `orbit_derived` ([`two_cluster_orbit_quantities`](@ref), pairs as 2-element
 arrays). `mass_truncated[i]` [M☉], the sampled minus the kept mass, goes to
 the table of cluster `i` when given.
+
+One `cluster<i>` table is written per entry of `cluster_specs` (the members
+in complex mode). With `complex_info` (complex mode) a `[complex]` table holds
+every [`ComplexSpec`](@ref) field and a `[complex.realised]` subtable the
+realised `n_members`, `mass_total` [M☉], `virial_ratio`, `e_total`
+[M☉ km² s⁻²], `l_total` [M☉ pc km s⁻¹], `rotation_fraction`, `softening` [pc]
+and `lambda_peebles` = |L| √|E| / (G M^{5/2}) of the member centres.
 """
 function _write_merger_ic_metadata(
     path::AbstractString,
@@ -1137,6 +1263,8 @@ function _write_merger_ic_metadata(
     d_apo::Float64 = NaN,
     orbit_derived::Union{NamedTuple,Nothing} = nothing,
     mass_truncated::AbstractVector{Float64} = Float64[],
+    cluster_specs::AbstractVector{ClusterSpec} = cfg.clusters,
+    complex_info::Union{NamedTuple,Nothing} = nothing,
 )
     orbit_table =
         Dict{String,Any}(String(k) => getfield(cfg.orbit, k) for k in fieldnames(OrbitSpec))
@@ -1195,8 +1323,25 @@ function _write_merger_ic_metadata(
             [[[first(r), last(r)] for r in blocks] for blocks in regime.cluster_blocks],
     )
 
+    if complex_info !== nothing
+        sc = complex_info.scaling
+        complex_table =
+            Dict{String,Any}(String(k) => getfield(cfg.complex, k) for k in fieldnames(ComplexSpec))
+        complex_table["realised"] = Dict{String,Any}(
+            "n_members" => length(cluster_specs),
+            "mass_total" => sum(complex_info.masses),
+            "virial_ratio" => sc.virial_ratio,
+            "e_total" => sc.e_total,
+            "l_total" => collect(sc.l_total),
+            "rotation_fraction" => sc.rotation_fraction,
+            "softening" => sc.softening,
+            "lambda_peebles" => complex_info.lambda_peebles,
+        )
+        d["complex"] = complex_table
+    end
+
     # One table per cluster so spec + post-truncation count are co-located
-    for (i, spec) in enumerate(cfg.clusters)
+    for (i, spec) in enumerate(cluster_specs)
         cluster_table = Dict{String,Any}(
             "N" => spec.N,
             "rbar" => spec.rbar,
@@ -1337,8 +1482,10 @@ function _write_merger_summary(
     d_apo::Float64 = NaN,
     orbit_derived::Union{NamedTuple,Nothing} = nothing,
     mass_truncated::AbstractVector{Float64} = Float64[],
+    cluster_specs::AbstractVector{ClusterSpec} = cfg.clusters,
+    complex_info::Union{NamedTuple,Nothing} = nothing,
 )
-    n_clusters = length(cfg.clusters)
+    n_clusters = length(cluster_specs)
     _backup_existing(path)
     open(path, "w") do io
         println(io, "=" ^ 60)
@@ -1361,7 +1508,7 @@ function _write_merger_summary(
             regime.deltat_nb,
         )
         println(io)
-        for (i, spec) in enumerate(cfg.clusters)
+        for (i, spec) in enumerate(cluster_specs)
             Ni = length(cluster_ranges[i])
             M_sampled = sum(cluster_data[i].mass)  # pre-truncation sampled mass
             @printf(
@@ -1398,6 +1545,40 @@ function _write_merger_summary(
             println(io)
         end
         println(io)
+        if complex_info !== nothing
+            cs = cfg.complex
+            sc = complex_info.scaling
+            m_c = complex_info.masses
+            r_c = complex_info.r_h
+            @printf(
+                io,
+                "Complex: %d members, M = %.4g–%.4g M☉ (total %.4g M☉), r_h = %.3g–%.3g pc\n",
+                length(m_c),
+                minimum(m_c),
+                maximum(m_c),
+                sum(m_c),
+                minimum(r_c),
+                maximum(r_c)
+            )
+            @printf(
+                io,
+                "         centres %s (radius %.3g pc), mass function %s, size–mass %s\n",
+                cs.centres,
+                cs.radius,
+                cs.mass_function,
+                cs.size_mass
+            )
+            @printf(
+                io,
+                "         realised Q_cc = %.4f (target %.4f), rotation fraction %.3f, λ = %.3g, ε = %.3g pc\n",
+                sc.virial_ratio,
+                cs.virial_ratio,
+                sc.rotation_fraction,
+                complex_info.lambda_peebles,
+                sc.softening
+            )
+            println(io)
+        end
         if cfg.orbit_mode == "kepler"
             rh1 = cfg.clusters[1].rbar
             ecc = cfg.orbit.eccentricity

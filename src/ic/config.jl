@@ -576,7 +576,7 @@ end
 
 """
     MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, stellar, tidal, seed, virial_max_n,
-                 seed_streams])
+                 seed_streams, complex])
 
 Top-level configuration for multi-cluster merger initial conditions.
 
@@ -591,10 +591,18 @@ Top-level configuration for multi-cluster merger initial conditions.
 - `"single"` — one cluster at the origin, at rest (`n_clusters = 1`), without
   truncation. `position` and `velocity` are refused; the `orbit` section is
   ignored (with a warning if it appears in TOML).
+- `"complex"` — a cluster complex built from a `ComplexSpec`: member
+  masses from a mass function, half-mass radii from a size–mass relation,
+  centres from a distribution and the bulk velocities scaled to a target
+  virial ratio of the members as softened point masses. `clusters` holds the
+  member template (`[merger.complex.member]`, `N` and `rbar` placeholders);
+  the members are assembled as in explicit mode. `n_clusters` and
+  `[merger.clusterN]` tables are refused; the `orbit` section is ignored
+  (with a warning if it appears in TOML).
 
 # Fields
 - `clusters::Vector{ClusterSpec}`
-- `orbit_mode::String`: `"kepler"`, `"explicit"` or `"single"`
+- `orbit_mode::String`: `"kepler"`, `"explicit"`, `"single"` or `"complex"`
 - `orbit::OrbitSpec`
 - `output::MergerOutputSpec`
 - `nbody6::Nbody6ParameterSpec`: integration and run-control parameters
@@ -609,6 +617,8 @@ Top-level configuration for multi-cluster merger initial conditions.
   `i` its own stream seeded by `(seed, i)`, which samples and expands its
   pairs, so a cluster's realisation does not depend on the other clusters or
   on the orbit
+- `complex::ComplexSpec`: parameters of `orbit_mode = "complex"`; default
+  `ComplexSpec()`, unused in the other modes
 """
 struct MergerConfig
     clusters::Vector{ClusterSpec}
@@ -621,6 +631,7 @@ struct MergerConfig
     seed::Union{Int,Nothing}
     virial_max_n::Int
     seed_streams::String
+    complex::ComplexSpec
 end
 
 """Values of `[merger] seed_streams`."""
@@ -640,6 +651,7 @@ MergerConfig(
     seed::Union{Int,Nothing} = nothing,
     virial_max_n::Int = _VIRIAL_NMAX,
     seed_streams::AbstractString = "shared",
+    complex::ComplexSpec = ComplexSpec(),
 ) = MergerConfig(
     clusters,
     String(orbit_mode),
@@ -651,6 +663,7 @@ MergerConfig(
     seed,
     virial_max_n,
     String(seed_streams),
+    complex,
 )
 
 MergerConfig(
@@ -674,6 +687,33 @@ MergerConfig(
     seed,
     _VIRIAL_NMAX,
     String(seed_streams),
+    ComplexSpec(),
+)
+
+# The ten-field form of earlier versions (before `complex`).
+MergerConfig(
+    clusters::Vector{ClusterSpec},
+    orbit_mode::AbstractString,
+    orbit::OrbitSpec,
+    output::MergerOutputSpec,
+    nbody6::Nbody6ParameterSpec,
+    stellar::StellarSpec,
+    tidal::TidalSpec,
+    seed::Union{Int,Nothing},
+    virial_max_n::Int,
+    seed_streams::AbstractString,
+) = MergerConfig(
+    clusters,
+    String(orbit_mode),
+    orbit,
+    output,
+    nbody6,
+    stellar,
+    tidal,
+    seed,
+    virial_max_n,
+    String(seed_streams),
+    ComplexSpec(),
 )
 
 # The nine-field form of earlier versions (before `seed_streams`).
@@ -698,6 +738,7 @@ MergerConfig(
     seed,
     virial_max_n,
     "shared",
+    ComplexSpec(),
 )
 
 # -----------------------------------------------------------------------------
@@ -806,10 +847,32 @@ function load_merger_config(path::AbstractString)::MergerConfig
 
     n_clusters = _typed(get(m, "n_clusters", 2), Int, "merger.n_clusters")
     orbit_mode = _typed(get(m, "orbit_mode", "kepler"), String, "merger.orbit_mode")
-    orbit_mode in ("kepler", "explicit", "single") || _config_error(
+    orbit_mode in ("kepler", "explicit", "single", "complex") || _config_error(
         "merger.orbit_mode",
-        "must be \"kepler\", \"explicit\" or \"single\", got \"$orbit_mode\"",
+        "must be \"kepler\", \"explicit\", \"single\" or \"complex\", got \"$orbit_mode\"",
     )
+    complex_mode = orbit_mode == "complex"
+    if complex_mode
+        haskey(m, "n_clusters") && _config_error(
+            "merger.n_clusters",
+            "is not used with orbit_mode = \"complex\" (the members come from [merger.complex]); remove it",
+        )
+        for k in sort!(collect(String, keys(m)))
+            occursin(r"^cluster\d+$", k) && _config_error(
+                "merger.$k",
+                "is not used with orbit_mode = \"complex\" (the members are built from " *
+                "[merger.complex.member]); remove it",
+            )
+        end
+        haskey(m, "complex") ||
+            _config_error("merger.complex", "table is missing in $path (orbit_mode = \"complex\")")
+        n_clusters = 0
+    else
+        haskey(m, "complex") && _config_error(
+            "merger.complex",
+            "is used with orbit_mode = \"complex\" only; got orbit_mode = \"$orbit_mode\"",
+        )
+    end
     virial_max_n = _typed(get(m, "virial_max_n", _VIRIAL_NMAX), Int, "merger.virial_max_n")
     virial_max_n ≥ 1 || _config_error("merger.virial_max_n", "must be ≥ 1; got $virial_max_n")
     seed_streams = _typed(get(m, "seed_streams", "shared"), String, "merger.seed_streams")
@@ -837,6 +900,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
                 "nbody6",
                 "stellar",
                 "tidal",
+                "complex",
             ],
             cluster_keys,
         ),
@@ -848,6 +912,12 @@ function load_merger_config(path::AbstractString)::MergerConfig
         key = "cluster$i"
         haskey(m, key) || _config_error("merger.$key", "table is missing in $path")
         push!(clusters, _parse_cluster_table(m[key], i, orbit_mode))
+    end
+    # The member template joins `clusters` after the per-cluster checks below.
+    complex_spec, complex_template = if complex_mode
+        _parse_complex_section(m["complex"])
+    else
+        (ComplexSpec(), nothing)
     end
 
     if orbit_mode == "kepler"
@@ -864,7 +934,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
     end
 
     orbit_raw = get(m, "orbit", Dict{String,Any}())
-    if orbit_mode in ("explicit", "single") && !isempty(orbit_raw)
+    if orbit_mode in ("explicit", "single", "complex") && !isempty(orbit_raw)
         @warn "[merger.orbit] is defined but orbit_mode=\"$orbit_mode\" — the orbit section will be ignored."
     end
     orbit = _parse_section(OrbitSpec, orbit_raw, "merger.orbit")
@@ -977,6 +1047,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
             "raise merger.virial_max_n to accept that cost",
         )
     end
+    complex_template === nothing || push!(clusters, complex_template)
     if orbit_mode == "kepler"
         size_key = isempty(size_keys) ? "apocentre" : size_keys[1]
         size_value = getfield(orbit, Symbol(size_key))::Float64
@@ -1026,7 +1097,136 @@ function load_merger_config(path::AbstractString)::MergerConfig
         seed,
         virial_max_n,
         seed_streams,
+        complex_spec,
     )
+end
+
+"""Keys of the member template `[merger.complex.member]` that the complex sets itself and that are therefore refused."""
+const _COMPLEX_MEMBER_REFUSED = ("N", "rbar", "position", "velocity", "density_ratio")
+
+"""
+    _parse_complex_section(c::AbstractDict) -> (ComplexSpec, ClusterSpec)
+
+`[merger.complex]` as a validated [`ComplexSpec`](@ref) and its member template
+`[merger.complex.member]` as a `ClusterSpec` (parsed as a cluster table of index 0)
+with the placeholders `N = member_n_min`, `rbar = 1.0`. The template refuses
+`N`, `rbar`, `position`, `velocity` and `density_ratio`, which the complex
+sets, and an IMF with a target mass (`mass_total`, `target_mass`): the member
+masses come from the mass function.
+"""
+function _parse_complex_section(c)::Tuple{ComplexSpec,ClusterSpec}
+    c isa AbstractDict || _config_error("merger.complex", "must be a table")
+    spec = _parse_section(ComplexSpec, c, "merger.complex"; skip = ("member",))
+    _validate_complex(spec)
+    t = get(c, "member", nothing)
+    t isa AbstractDict || _config_error(
+        "merger.complex.member",
+        "table is missing (the member template of orbit_mode = \"complex\")",
+    )
+    for k in _COMPLEX_MEMBER_REFUSED
+        haskey(t, k) && _config_error(
+            "merger.complex.member.$k",
+            "is set by the complex (mass function, size–mass relation, centres); remove it",
+        )
+    end
+    imf_raw = get(t, "imf", nothing)
+    (haskey(t, "mass_total") || (imf_raw isa AbstractDict && haskey(imf_raw, "target_mass"))) &&
+        _config_error(
+            "merger.complex.member.mass_total",
+            "is refused: the member masses come from merger.complex.mass_function",
+        )
+    parsed = _parse_cluster_table(t, 0, "complex")
+    parsed.imf isa RescaledKroupaIMF && _config_error(
+        "merger.complex.member.imf",
+        "must not be a rescaled Kroupa IMF: the member masses come from merger.complex.mass_function",
+    )
+    template = ClusterSpec(;
+        N = spec.member_n_min,
+        rbar = 1.0,
+        profile = parsed.profile,
+        imf = parsed.imf,
+        binaries = parsed.binaries,
+    )
+    _validate_cluster_spec(template, 0)
+    return spec, template
+end
+
+"""
+    _validate_complex(s::ComplexSpec)
+
+Fail-fast bounds of `[merger.complex]` (the table of [`ComplexSpec`](@ref)),
+raising an `ArgumentError` that names `merger.complex.<key>`.
+"""
+function _validate_complex(s::ComplexSpec)
+    key(k) = "merger.complex.$k"
+    s.mass_function in _COMPLEX_MASS_FUNCTIONS || _config_error(
+        key("mass_function"),
+        "must be one of \"equal\", \"power_law\"; got \"$(s.mass_function)\"",
+    )
+    s.size_mass in _COMPLEX_SIZE_MASS || _config_error(
+        key("size_mass"),
+        "must be one of \"constant\", \"marks_kroupa\", \"frost\", \"dobbs\"; got \"$(s.size_mass)\"",
+    )
+    s.centres in _COMPLEX_CENTRES || _config_error(
+        key("centres"),
+        "must be one of \"uniform_sphere\", \"plummer\", \"fractal\", \"filament\"; got \"$(s.centres)\"",
+    )
+    (s.n_members == 0 || s.n_members ≥ 2) ||
+        _config_error(key("n_members"), "must be ≥ 2 (or 0 = unused); got $(s.n_members)")
+    (isfinite(s.mass_total) && s.mass_total ≥ 0) || _config_error(
+        key("mass_total"),
+        "must be finite and > 0 [M☉] (or 0 = unused); got $(s.mass_total)",
+    )
+    has_n, has_m = s.n_members > 0, s.mass_total > 0
+    if s.mass_function == "equal"
+        has_n || _config_error(key("n_members"), "must be > 0 for mass_function = \"equal\"")
+        has_m || _config_error(key("mass_total"), "must be > 0 [M☉] for mass_function = \"equal\"")
+    else
+        xor(has_n, has_m) || _config_error(
+            key("n_members"),
+            "and merger.complex.mass_total: mass_function = \"power_law\" takes exactly one " *
+            "of them; got n_members = $(s.n_members), mass_total = $(s.mass_total)",
+        )
+        isfinite(s.beta) || _config_error(key("beta"), "must be finite; got $(s.beta)")
+        (isfinite(s.mass_hi) && 0 < s.mass_lo < s.mass_hi) || _config_error(
+            key("mass_lo"),
+            "and merger.complex.mass_hi must satisfy 0 < mass_lo < mass_hi [M☉]; " *
+            "got $(s.mass_lo), $(s.mass_hi)",
+        )
+    end
+    (isfinite(s.rh) && s.rh > 0) || _config_error(key("rh"), "must be > 0 [pc]; got $(s.rh)")
+    (isfinite(s.size_scatter_dex) && s.size_scatter_dex ≥ 0) ||
+        _config_error(key("size_scatter_dex"), "must be ≥ 0 [dex]; got $(s.size_scatter_dex)")
+    (isfinite(s.radius) && s.radius > 0) ||
+        _config_error(key("radius"), "must be > 0 [pc]; got $(s.radius)")
+    (isfinite(s.plummer_cutoff) && s.plummer_cutoff > 1) || _config_error(
+        key("plummer_cutoff"),
+        "must be > 1 (units of the Plummer scale a); got $(s.plummer_cutoff)",
+    )
+    (1 ≤ s.fractal_dimension ≤ 3) || _config_error(
+        key("fractal_dimension"),
+        "must satisfy 1 ≤ D ≤ 3; got $(s.fractal_dimension)",
+    )
+    (isfinite(s.filament_length) && s.filament_length > 0) ||
+        _config_error(key("filament_length"), "must be > 0 [pc]; got $(s.filament_length)")
+    (isfinite(s.filament_width) && s.filament_width > 0) ||
+        _config_error(key("filament_width"), "must be > 0 [pc]; got $(s.filament_width)")
+    (isfinite(s.virial_ratio) && s.virial_ratio ≥ 0) ||
+        _config_error(key("virial_ratio"), "must be ≥ 0; got $(s.virial_ratio)")
+    (0 ≤ s.rotation_fraction < 1) || _config_error(
+        key("rotation_fraction"),
+        "must satisfy 0 ≤ f < 1; got $(s.rotation_fraction)",
+    )
+    (s.virial_ratio == 0 && s.rotation_fraction != 0) && _config_error(
+        key("rotation_fraction"),
+        "must be 0 with merger.complex.virial_ratio = 0 (a cold start); got $(s.rotation_fraction)",
+    )
+    (isfinite(s.softening) && s.softening ≥ 0) || _config_error(
+        key("softening"),
+        "must be ≥ 0 [pc] (0 = the mean member r_h); got $(s.softening)",
+    )
+    s.member_n_min ≥ 2 || _config_error(key("member_n_min"), "must be ≥ 2; got $(s.member_n_min)")
+    return nothing
 end
 
 # Energy tolerance below which a tidal-field run halts at its first adjustment:

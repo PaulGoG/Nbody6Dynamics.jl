@@ -47,6 +47,15 @@ entries say so.
   period, orbital energy and angular momentum, j_orb, the Peebles spin parameter, v_p/σ₁, the Roche-lobe
   filling at apocentre and the truncated mass per cluster (`two_cluster_orbit_quantities`). Existing
   configurations generate the same `dat.10` and `.inp` as before.
+- Cluster complexes (`orbit_mode = "complex"`, `[merger.complex]` with a member template
+  `[merger.complex.member]`, `ComplexSpec`): member masses equal or from dN/dM ∝ M^−β, half-mass radii from a
+  constant or the Marks & Kroupa (2012), FROST-CLUSTERS (Rantala et al. 2024) or Dobbs et al. (2022) size–mass
+  relation with optional log-normal scatter, centres in a uniform sphere, a truncated Plummer distribution with
+  Aarseth–Hénon–Wielen velocities, a Goodwin & Whitworth (2004) box fractal with inherited velocities or a
+  filament, and the bulk velocities scaled to a target virial ratio of the members as softened point masses, with
+  an optional solid-body rotation about +z. Every member has its own random stream; the record holds the realised
+  Q, E, L and Peebles λ of the centres. The derived control of a merger configuration (`control_merger_dict`)
+  resolves the new orbit size keys and `density_ratio`.
 - Tidal frame of generated configurations: under `kz14 = 1, 2` the engine integrates in the frame rotating
   with the circular Galactic orbit (Ω along +z) and takes the `dat.10` velocities as velocities in that frame.
   `[merger.tidal] velocity_frame = "rotating"` (default, the earlier output) keeps that reading,

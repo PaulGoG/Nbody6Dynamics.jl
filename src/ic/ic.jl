@@ -8,6 +8,7 @@ using Random
 using SpecialFunctions: erf
 
 include("binaries.jl")
+include("complex.jl")   # ComplexSpec is a field type of MergerConfig (config.jl)
 include("config.jl")
 include("control.jl")
 include("models.jl")

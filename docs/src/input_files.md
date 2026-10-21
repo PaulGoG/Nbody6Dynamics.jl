@@ -153,7 +153,7 @@ For the full option catalogue see the Nbody6++ manual (Khalisi & Spurzem, Heidel
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `n_clusters` | Int | `2` | Number of `[merger.clusterN]` tables to read (N = 1…n_clusters, all required) |
-| `orbit_mode` | String | `"kepler"` | `"kepler"` (exactly 2 clusters, placement auto-computed), `"explicit"` (≥ 2 clusters, per-cluster `position`/`velocity` required) or `"single"` (exactly 1 cluster at the origin, at rest; `position`/`velocity` refused, `truncate_jacobi` and `[merger.orbit]` ignored) |
+| `orbit_mode` | String | `"kepler"` | `"kepler"` (exactly 2 clusters, placement auto-computed), `"explicit"` (≥ 2 clusters, per-cluster `position`/`velocity` required), `"single"` (exactly 1 cluster at the origin, at rest; `position`/`velocity` refused, `truncate_jacobi` and `[merger.orbit]` ignored) or `"complex"` (a cluster complex from `[merger.complex]`, below; `n_clusters` and `[merger.clusterN]` refused, `[merger.orbit]` ignored) |
 | `seed` | Int | *absent* | RNG seed; see [Seed semantics](@ref) |
 | `seed_streams` | String | `"shared"` | `"shared"`: every cluster and its pairs are drawn from one `MersenneTwister(seed)` stream; `"per_cluster"`: cluster `i` is sampled and its pairs expanded from its own stream seeded by `(seed, i)`, so its realisation depends neither on the other clusters nor on the orbit. One of `"shared"`, `"per_cluster"`; with an external `rng` passed to `generate_merger_ic` the external stream is used for every cluster (warned) |
 | `virial_max_n` | Int | `200000` | Largest N, per cluster and for the combined system, for which the exact O(N²) potential is evaluated (virialisation of each cluster, combined virial ratio). A cluster above it is refused at load, naming the key; raise the value deliberately for large initial conditions. The pair sum is threaded and costs ≈ N²/2 evaluations: 11 s at N = 2×10⁵ on twelve threads, quadratic from there |
@@ -399,6 +399,64 @@ The metadata file `merger_ic.toml` written next to `dat.10` stores cluster specs
 | `eccentricity` | String | `"thermal"` | `"thermal"` (`f(e) = 2e`) or `"circular"` |
 
 The density sampler places *systems* (a pair by its centre of mass), which are virialised and truncated as such; each pair is then expanded into two bodies on a Keplerian orbit with a random phase and orientation. The engine reads primordial pairs as bodies `2i − 1, 2i` for `i ≤ NBIN0`, so the pairs of all clusters are written first, cluster by cluster, followed by every cluster's singles; `NBIN0` and `KZ(8) = 2` are set in `merger.inp`, and a cluster's members are then two contiguous blocks recorded in `merger_ic.toml` (`cluster_blocks`) and recoverable from `merger_summary.txt` (`binaries: N` per cluster). The summary also reports the hard fraction of each cluster's pairs (`G m₁ m₂ / 2a > ⟨m⟩ σ²` of the cluster's systems). Binary-rich runs carry a larger energy error per adjustment interval (regularised pairs, chains): the two-cluster demo with 20 % binaries reached 4×10⁻³ over its first time unit, so set `merger.nbody6.qe` accordingly (10⁻³ to 10⁻²) or the engine halts at the first adjustment that exceeds the default 2×10⁻⁴.
+
+### `[merger.complex]` — cluster complexes
+
+With `orbit_mode = "complex"` the generator builds a complex of member clusters from distribution parameters instead of per-cluster tables. Masses in M☉, lengths in pc, speeds in km s⁻¹.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `n_members` | Int | `0` | Number of members; ≥ 2 when > 0 |
+| `mass_total` | Float | `0.0` | Target total mass [M☉]; > 0 when used |
+| `mass_function` | String | `"equal"` | `"equal"` (needs `n_members` and `mass_total`, every member `mass_total / n_members`) or `"power_law"` (exactly one of `n_members`, `mass_total`) |
+| `beta` | Float | `2.0` | Slope of dN/dM ∝ M^−β; finite (`"power_law"`) |
+| `mass_lo`, `mass_hi` | Float | `100.0`, `1.0e4` | Mass bounds [M☉]; 0 < `mass_lo` < `mass_hi` (`"power_law"`) |
+| `size_mass` | String | `"constant"` | Size–mass relation: `"constant"`, `"marks_kroupa"`, `"frost"`, `"dobbs"` |
+| `rh` | Float | `1.0` | Half-mass radius for `"constant"` [pc]; > 0 |
+| `size_scatter_dex` | Float | `0.0` | Log-normal scatter of r_h [dex]; ≥ 0 |
+| `centres` | String | `"uniform_sphere"` | Centre distribution: `"uniform_sphere"`, `"plummer"`, `"fractal"`, `"filament"` |
+| `radius` | Float | `5.0` | Sphere radius, Plummer scale a, or fractal radius [pc]; > 0 |
+| `plummer_cutoff` | Float | `5.0` | Plummer truncation in units of a; > 1 |
+| `fractal_dimension` | Float | `1.6` | Box-fractal dimension D; 1 ≤ D ≤ 3 |
+| `filament_length` | Float | `20.0` | Filament length [pc]; > 0 |
+| `filament_width` | Float | `1.0` | Gaussian transverse σ of the filament [pc]; > 0 |
+| `virial_ratio` | Float | `0.5` | Target Q_cc = T/\|W\| of the member centres; ≥ 0 |
+| `rotation_fraction` | Float | `0.0` | T_rot/T of a solid-body rotation about +z; 0 ≤ f < 1; must be 0 when `virial_ratio = 0` |
+| `softening` | Float | `0.0` | Plummer softening ε of the point-mass energy [pc]; `0` = the mean member r_h; ≥ 0 |
+| `member_n_min` | Int | `50` | Smallest allowed member star count; ≥ 2 |
+
+The member template `[merger.complex.member]` is a cluster table in the flat or structured form above (`model`, `W0`, `imf`, `bodyn`, `body1`, `profile`, `binaries`). `N`, `rbar`, `position`, `velocity` and `density_ratio` are refused, since the complex sets them, and so is an IMF with a target mass (`mass_total`, `target_mass`): the member masses come from the mass function. Member i has `Nᵢ = round(Mᵢ / ⟨m⟩)` stars, ⟨m⟩ the mean stellar mass of the template IMF; a member below `member_n_min` stops the generation with an error naming it.
+
+```toml
+[merger]
+orbit_mode = "complex"
+seed = 65
+
+[merger.complex]
+mass_function = "power_law"
+mass_total = 2.0e4
+beta = 2.0
+mass_lo = 300.0
+mass_hi = 3000.0
+size_mass = "marks_kroupa"
+centres = "fractal"
+radius = 5.0
+virial_ratio = 0.3
+
+[merger.complex.member]
+model = "plummer"
+imf = "kroupa"
+bodyn = 0.08
+body1 = 100.0
+```
+
+A power-law mass function is sampled by the inverse CDF, `M = (lo^(1−β) + u (hi^(1−β) − lo^(1−β)))^(1/(1−β))` (`M = lo (hi/lo)^u` for β = 1), either `n_members` times or until the running sum reaches `mass_total`, the last draw kept. The size–mass relations are `r_h = 0.10 pc (M/M☉)^0.13` after [Marks & Kroupa (2012, Eq. 7)](https://doi.org/10.1051/0004-6361/201118231), `r_h = (2.365/8) pc (M/10⁴ M☉)^0.18` after the FROST-CLUSTERS models of [Rantala, Naab & Lahén (2024)](https://doi.org/10.1093/mnras/stae1413) (0.45 pc at 10⁵ M☉), and `r_h = 2.26 pc (M/10⁴ M☉)^0.27` after [Dobbs et al. (2022)](https://doi.org/10.1093/mnras/stac2474), each multiplied by `10^(size_scatter_dex g)` with `g` standard normal.
+
+The centres follow one of four distributions. `"uniform_sphere"` fills a sphere of radius `radius` uniformly. `"plummer"` draws a Plummer sphere of scale `a = radius` truncated at `plummer_cutoff a`, with the speeds of the isotropic Plummer distribution function by the rejection method of Aarseth, Hénon & Wielen (1974, A&A 37, 183). `"fractal"` is the box fractal of [Goodwin & Whitworth (2004)](https://doi.org/10.1051/0004-6361:20031529): each parent cube spawns eight children, each of which survives as a parent of the next generation with probability 2^(D − 3) and inherits its parent's velocity plus a random component that shrinks with generation; `n` of the parents of the first generation with enough of them inside the unit sphere are kept and scaled to `radius`. `"filament"` spreads the centres uniformly along x over `filament_length` with Gaussian transverse offsets of σ = `filament_width`. The uniform sphere and the filament start from Gaussian random velocities.
+
+The velocity field is scaled after the members are sampled, with their realised masses: centres and velocities are shifted to the mass-weighted mean, the potential energy `W = −Σ_{i<j} G mᵢ mⱼ / √(|rᵢ − rⱼ|² + ε²)` of the members as softened point masses is evaluated, and the velocities, stripped of their mass-weighted projection on the solid-body field `ẑ × r`, are rescaled so that `T = virial_ratio |W|`, with the fraction `rotation_fraction` of `T` in rotation about +z. `virial_ratio = 0` is a cold start with the centres at rest. The members are then assembled as in explicit mode (truncation included) with their own random streams: the complex draws its masses, radii and centres from the stream `(seed, 0)`, member i is sampled from `(seed, i)`.
+
+`merger_ic.toml` records one `cluster<i>` table per member and a `[complex]` table with every key above; its subtable `[complex.realised]` holds the realised `n_members`, `mass_total`, `virial_ratio`, `e_total` [M☉ km² s⁻²], `l_total` [M☉ pc km s⁻¹], `rotation_fraction`, `softening` and the spin parameter λ = |L| √|E| / (G M^{5/2}) of [Peebles (1969)](https://doi.org/10.1086/149876) of the member centres. `merger_summary.txt` reports the same under `Complex:`.
 
 ### Seed semantics
 

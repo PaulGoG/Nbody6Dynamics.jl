@@ -39,8 +39,7 @@ function _control_time_factor(
     rbar_mean = sum(Ns .* rbars) / N_total
     mode = String(get(m, "orbit_mode", "kepler"))
     r_centres = if mode == "kepler"
-        d = Float64(get(get(m, "orbit", Dict{String,Any}()), "apocentre", 15.0))
-        d * minimum(Ns) / N_total
+        _control_apocentre(get(m, "orbit", Dict{String,Any}()), rbars[1]) * minimum(Ns) / N_total
     else
         n = length(Ns)
         pos = [Float64.(get(m["cluster$i"], "position", [0.0, 0.0, 0.0])) for i in 1:n]
@@ -48,6 +47,22 @@ function _control_time_factor(
         sqrt(sum(Ns[i] * sum((pos[i] .- centre) .^ 2) for i in 1:n) / N_total)
     end
     return ((r_centres + rbar_mean) / rbar_control)^1.5
+end
+
+"""
+    _control_apocentre(orbit::AbstractDict, rh1) -> Float64
+
+Apocentre [pc] of a `[merger.orbit]` table: the one size key it holds
+(`apocentre`, `apocentre_rh`, `pericentre`, `pericentre_rh`, the latter in
+units of `rh1`), as [`orbit_apocentre`](@ref); 15 pc without one.
+"""
+function _control_apocentre(orbit::AbstractDict, rh1::Real)::Float64
+    e = Float64(get(orbit, "eccentricity", 0.7))
+    haskey(orbit, "apocentre_rh") && return Float64(orbit["apocentre_rh"]) * rh1
+    haskey(orbit, "pericentre") && return Float64(orbit["pericentre"]) * (1 + e) / (1 - e)
+    haskey(orbit, "pericentre_rh") &&
+        return Float64(orbit["pericentre_rh"]) * rh1 * (1 + e) / (1 - e)
+    return Float64(get(orbit, "apocentre", 15.0))
 end
 
 """
@@ -77,6 +92,11 @@ function control_merger_dict(raw::AbstractDict)
     )
     Ns = [Int(get(t, "N", 50000)) for t in tables]
     rbars = [Float64(get(t, "rbar", 2.0)) for t in tables]
+    # A member sized by its density ratio to cluster 1, at equal mean stellar mass
+    for i in 2:n
+        ratio = Float64(get(tables[i], "density_ratio", 0.0))
+        ratio > 0 && (rbars[i] = rbars[1] * cbrt((Ns[i] / Ns[1]) / ratio))
+    end
     N_total = sum(Ns)
     control = deepcopy(tables[1])
     control["N"] = N_total

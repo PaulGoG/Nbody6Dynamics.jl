@@ -469,6 +469,7 @@ kroupa_mean_mass
 ClusterSpec
 BinarySpec
 OrbitSpec
+ComplexSpec
 MergerOutputSpec
 Nbody6ParameterSpec
 StellarSpec
@@ -502,6 +503,10 @@ Nbody6Dynamics.two_cluster_orbit_quantities
 Nbody6Dynamics.tidal_frame_rotation
 Nbody6Dynamics.pair_jacobi_radius
 Nbody6Dynamics.to_rotating_frame!
+Nbody6Dynamics.complex_member_masses
+Nbody6Dynamics.complex_member_radius
+Nbody6Dynamics.complex_centres
+Nbody6Dynamics.complex_scale_velocities!
 ```
 
 ### Output
