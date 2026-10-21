@@ -18,7 +18,7 @@ snapshot, masses in M☉.
 | `radius_frame` | `:lagrangian` (enclosed-mass bins) or `:rh` (bins in r/r_h) | — |
 | `bin` | 0 for all systems, else the shell index 1, 2, … | — |
 | `edge_lo`, `edge_hi` | shell edges: mass fractions (`:lagrangian`) or multiples of r_h (`:rh`) | — |
-| `r_lo_nb`, `r_hi_nb` | shell radii; `NaN` for an empty Lagrangian shell | NB |
+| `r_lo_nb`, `r_hi_nb` | shell radii; `r_hi_nb` is `NaN` for an empty Lagrangian shell, whose `r_lo_nb` is the outer radius of the last non-empty shell inside it | NB |
 | `class` | `:all` or the `key` of a [`STELLAR_CLASSES`](@ref) entry | — |
 | `n_singles` | single stars (of the class) | — |
 | `n_binaries` | binaries (with a primary of the class) | — |
@@ -231,6 +231,16 @@ function binary_population_series(
         ),
     )
     untyped = Float64(max_untyped_fraction)
+    # The classes present anywhere in the sequence, so that every snapshot has
+    # the same rows (a class that dies out keeps its zero rows)
+    classes = Int[]
+    if kmaps !== nothing
+        present = falses(length(STELLAR_CLASSES))
+        for (j, snap) in enumerate(snapshots), c in _bpop_classes(snap, kmaps[j], j, untyped)
+            c > 0 && (present[c] = true)
+        end
+        classes = findall(present)
+    end
 
     rows = BinaryPopulationRow[]
     for (j, snap) in enumerate(snapshots)
@@ -253,6 +263,7 @@ function binary_population_series(
                 shells,
                 mass,
                 kcls,
+                classes,
                 j,
                 t_nb,
                 t_myr,
@@ -269,10 +280,10 @@ end
 
 function _bpop_levels(levels)::Vector{Symbol}
     levs = Symbol[]
-    for l in levels
-        (l isa Symbol && l in _BPOP_LEVELS) || throw(
+    for l in (levels isa Symbol ? (levels,) : levels)
+        (l isa Symbol && l in _BPOP_LEVELS && !(l in levs)) || throw(
             ArgumentError(
-                "binary_population_series: levels must be drawn from (:ks, :bound); got $(repr(l))",
+                "binary_population_series: levels must be distinct entries of (:ks, :bound); got $(repr(levels))",
             ),
         )
         push!(levs, l)
@@ -335,21 +346,25 @@ function _bpop_classes(snap::Snapshot, kmap, j::Int, max_untyped::Float64)::Vect
         throw(ArgumentError("binary_population_series: kstar[$j] must be a name → K* dictionary"))
     cls = Vector{Int}(undef, length(snap.name))
     n_untyped = 0
+    n_massive = 0
     first_untyped = 0
     for i in eachindex(snap.name)
         nm = Int(snap.name[i])
         kt = get(kmap, nm, nothing)
+        # Massless ghosts are no systems: neither typed nor counted
+        snap.mass[i] == 0 || (n_massive += 1)
         if kt === nothing
             cls[i] = 0
+            snap.mass[i] == 0 && continue
             n_untyped += 1
             first_untyped == 0 && (first_untyped = nm)
             continue
         end
         cls[i] = stellar_class_index(kt)
     end
-    n_untyped > max_untyped * length(cls) && throw(
+    n_untyped > max_untyped * n_massive && throw(
         ArgumentError(
-            "binary_population_series: $n_untyped of the $(length(cls)) stars of snapshot $j " *
+            "binary_population_series: $n_untyped of the $n_massive stars of snapshot $j " *
             "(e.g. $first_untyped) have no stellar type in kstar, more than the fraction " *
             "max_untyped_fraction = $max_untyped",
         ),
@@ -367,7 +382,7 @@ function _bpop_components(
     if level === :ks
         comps = pair_indices(snap)
         # Merged hierarchies: KS pairs with a negative centre-of-mass name
-        merged = [!isempty(snap.pair_name) && snap.pair_name[k] < 0 for k in eachindex(comps)]
+        merged = [!isempty(snap.pair_name) && snap.pair_name[p] < 0 for p in eachindex(comps)]
         return comps, merged
     end
     pairs = bound_pairs(snap; k, n_perturbers, gamma_max)
@@ -564,6 +579,7 @@ function _bpop_rows!(
     shells,
     mass::Vector{Float64},
     kcls::Vector{Int},
+    classes::Vector{Int},
     j::Int,
     t_nb::Float64,
     t_myr::Float64,
@@ -574,14 +590,7 @@ function _bpop_rows!(
     q_min::Float64,
 )
     n_cls = length(STELLAR_CLASSES)
-    cols = [0]
-    if !isempty(kcls)
-        present = falses(n_cls)
-        for c in kcls
-            c > 0 && (present[c] = true)
-        end
-        append!(cols, findall(present))
-    end
+    cols = isempty(kcls) ? [0] : [0; classes]
     colof = zeros(Int, n_cls)
     for (q, c) in enumerate(cols)
         c > 0 && (colof[c] = q)
@@ -721,7 +730,8 @@ function _bpop_nearest_epoch(
 end
 
 # Name → K* maps aligned with `snapshots` from the sev.83 and bev.82 epochs of
-# the same time, or `nothing` (warned) when a snapshot has no sev.83 epoch.
+# the same time, or `nothing` (warned) when a snapshot has no sev.83 epoch or,
+# with KS pairs, no bev.82 epoch (sev.83 omits the KS components).
 function _bpop_pipeline_kstar(
     snapshots::AbstractVector{Snapshot},
     sevs::AbstractVector{StellarEvolutionSnapshot},
@@ -737,6 +747,11 @@ function _bpop_pipeline_kstar(
             return nothing
         end
         ib = _bpop_nearest_epoch(bevs, t)
+        if ib === nothing && snap.npairs > 0
+            @warn "Binary population: snapshot $j (t = $t NB) has KS pairs but no bev.82 epoch at its " *
+                  "time; stellar classes omitted"
+            return nothing
+        end
         push!(maps, stellar_type_map(sevs[i], ib === nothing ? nothing : bevs[ib]))
     end
     return maps

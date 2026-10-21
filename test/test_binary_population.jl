@@ -196,6 +196,19 @@
         @test c(:black_hole).n_singles == count(isbh, (2n_b + 1):length(bodies))
         @test c(:black_hole).f_b_stars ≈ n_bh_in_bin / 40
         @test c(:all).n_binaries == n_b
+        # The class rows are those of the whole sequence: a class absent from one snapshot keeps zero rows
+        ms_only = Dict(k => 1 for k in keys(kmap))
+        two = nd.binary_population_series(
+            [s_ks, s_ks];
+            levels = (:ks,),
+            radius_frame = :rh,
+            edges = edges,
+            centre = :origin,
+            kstar = [kmap, ms_only],
+        )
+        @test length(two) == 2 * 5 * 3
+        bh2 = only(filter(r -> r.snapshot == 2 && r.bin == 0 && r.class == :black_hole, two))
+        @test bh2.n_singles == 0 && bh2.n_binaries == 0 && isnan(bh2.f_b_number)
         # More untyped bodies than max_untyped_fraction (default 1 %) means mismatched epochs: an error
         bad = copy(kmap)
         for nm in s_ks.name[(end - 59):end]
@@ -249,6 +262,8 @@
 
     @testset "Arguments and writer" begin
         @test_throws ArgumentError nd.binary_population_series([s_ks]; levels = (:other,))
+        @test_throws ArgumentError nd.binary_population_series([s_ks]; levels = (:ks, :ks))
+        @test length(nd.binary_population_series([s_ks]; levels = :ks, centre = :origin)) == 7
         @test_throws ArgumentError nd.binary_population_series([s_ks]; radius_frame = :other)
         @test_throws ArgumentError nd.binary_population_series(
             [s_ks];

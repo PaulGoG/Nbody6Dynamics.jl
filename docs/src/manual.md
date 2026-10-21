@@ -182,6 +182,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `population_frame`    | String | `"lagrangian"` | Radial shells: `"lagrangian"` (0, 0.1, 0.25, 0.5, 0.75, 0.9, 1 of the system mass) or `"rh"` (0, 0.5, 1, 2, 4, ∞ times the half-mass radius of the systems) |
 | `population_q_min`    | Float  | `0.5`    | Mass-ratio limit of the q-restricted fraction; 0 < q_min < 1 |
 | `population_m1_min`, `population_m1_max` | Float | `0.5`, `0.9` | Primary-mass window of the q-restricted fraction [M☉]; 0 ≤ m1_min < m1_max |
+| `population_edges`    | [Float] | `[]`    | Shell edges replacing the frame's default: mass fractions from 0 to 1 (`"lagrangian"`) or multiples of r_h from 0 (`"rh"`, `inf` allowed); strictly increasing |
 | `validity`            | Bool   | `true`   | Write `validity.toml` and `validity_snapshots.csv`, the validity record of the run (section 9) |
 | `validity_interval_de` | Float | `1.0e-4` | Per-interval relative energy change above which an adjustment interval is flagged; > 0 |
 | `validity_cumulative_de` | Float | `1.0e-3` | `|DETOT / E₀|` above which the run is flagged; > 0 |

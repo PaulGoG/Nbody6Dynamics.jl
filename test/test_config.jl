@@ -216,6 +216,11 @@ format = "pdf"
             "postprocess.population_m1_max",
         ),
         (
+            "population_edges",
+            "[postprocess]\npopulation_edges = [0.0, 0.6, 0.5, 1.0]\n",
+            "postprocess.population_edges",
+        ),
+        (
             "bound_max_passes",
             "[postprocess]\nbound_max_passes = 0\n",
             "postprocess.bound_max_passes",

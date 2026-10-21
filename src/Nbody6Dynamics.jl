@@ -482,6 +482,7 @@ function postprocess(
         results[:binary_population] = binary_population_series(
             results[:snapshots];
             radius_frame = Symbol(pp.population_frame),
+            edges = isempty(pp.population_edges) ? nothing : pp.population_edges,
             centre_kwargs = _centre_keywords(pp),
             kstar = kstar,
             q_min = pp.population_q_min,

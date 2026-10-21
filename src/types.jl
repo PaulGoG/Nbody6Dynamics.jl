@@ -234,6 +234,7 @@ Base.@kwdef struct PostprocessConfig
     population_q_min::Float64 = 0.5
     population_m1_min::Float64 = 0.5          # M☉
     population_m1_max::Float64 = 0.9          # M☉
+    population_edges::Vector{Float64} = Float64[]   # empty: the frame's default shells
     validity::Bool = true
     validity_interval_de::Float64 = 1.0e-4
     validity_cumulative_de::Float64 = 1.0e-3

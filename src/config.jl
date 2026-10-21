@@ -562,6 +562,19 @@ function _validate_estimators(pp::PostprocessConfig)
         "postprocess.population_m1_max",
         "must exceed population_m1_min = $(pp.population_m1_min); got $(pp.population_m1_max)",
     )
+    pe = pp.population_edges
+    isempty(pe) ||
+        (
+            length(pe) ≥ 2 &&
+            pe[1] == 0 &&
+            all(diff(pe) .> 0) &&
+            (pp.population_frame == "rh" || pe[end] == 1)
+        ) ||
+        _config_error(
+            "postprocess.population_edges",
+            "must be empty (the frame's default) or strictly increasing from 0, ending at 1 for " *
+            "population_frame = \"lagrangian\"; got $pe",
+        )
     pp.validity_interval_de > 0 || _config_error(
         "postprocess.validity_interval_de",
         "must be > 0; got $(pp.validity_interval_de)",
