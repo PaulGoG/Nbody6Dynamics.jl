@@ -400,6 +400,15 @@ The metadata file `merger_ic.toml` written next to `dat.10` stores cluster specs
 
 The density sampler places *systems* (a pair by its centre of mass), which are virialised and truncated as such; each pair is then expanded into two bodies on a Keplerian orbit with a random phase and orientation. The engine reads primordial pairs as bodies `2i − 1, 2i` for `i ≤ NBIN0`, so the pairs of all clusters are written first, cluster by cluster, followed by every cluster's singles; `NBIN0` and `KZ(8) = 2` are set in `merger.inp`, and a cluster's members are then two contiguous blocks recorded in `merger_ic.toml` (`cluster_blocks`) and recoverable from `merger_summary.txt` (`binaries: N` per cluster). The summary also reports the hard fraction of each cluster's pairs (`G m₁ m₂ / 2a > ⟨m⟩ σ²` of the cluster's systems). Binary-rich runs carry a larger energy error per adjustment interval (regularised pairs, chains): the two-cluster demo with 20 % binaries reached 4×10⁻³ over its first time unit, so set `merger.nbody6.qe` accordingly (10⁻³ to 10⁻²) or the engine halts at the first adjustment that exceeds the default 2×10⁻⁴.
 
+### `[merger.clusterN.segregation]` — primordial mass segregation
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `method` | String | `"none"` | `"none"`: unsegregated sampling; `"bdk08"`: the scheme of Baumgardt, De Marchi & Kroupa (2008) |
+| `degree` | Float | `0.0` | Degree of segregation `S`, `0 ≤ S ≤ 1`; `0` random assignment, `1` complete ordering |
+
+With `method = "bdk08"` the generator follows Appendix A of [Baumgardt, De Marchi & Kroupa (2008)](https://doi.org/10.1086/590488). It samples `N′ = max(N, ⌈N ⟨m⟩/m_min⌉)` phase-space points of the unsegregated Plummer or King model and ranks them by specific energy, most bound first. The systems, sorted by mass in descending order, are permuted by the slot order of McLuster ([Kupper2011](@cite), Eq. A1, [DOI 10.1111/j.1365-2966.2011.19412.x](https://doi.org/10.1111/j.1365-2966.2011.19412.x)): the `i`-th most massive takes the free slot of rank `⌊(N − i + 1)(1 − X^{1−S})⌋`, `X` uniform. In that order each system takes one point from its own energy slice of `N′ m/M` points. Every system thus draws from the model's own phase-space distribution, so the mass-density profile and the virial equilibrium of the model are preserved, and the half-mass rescaling and virialisation that follow are unchanged. The scheme acts on system masses: a primordial pair is placed as its centre of mass before it is expanded. Complex members inherit the table of `[merger.complex.member]`. `rank_masses_by_energy!` of the static models is a different scheme: it permutes masses over fixed positions for the estimator calibration and changes the mass-density profile.
+
 ### `[merger.complex]` — cluster complexes
 
 With `orbit_mode = "complex"` the generator builds a complex of member clusters from distribution parameters instead of per-cluster tables. Masses in M☉, lengths in pc, speeds in km s⁻¹.

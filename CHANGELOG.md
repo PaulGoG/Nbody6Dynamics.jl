@@ -75,6 +75,11 @@ entries say so.
   an optional solid-body rotation about +z. Every member has its own random stream; the record holds the realised
   Q, E, L and Peebles λ of the centres. The derived control of a merger configuration (`control_merger_dict`)
   resolves the new orbit size keys and `density_ratio`.
+- Primordial mass segregation (`[merger.clusterN.segregation] method = "bdk08"`, `degree` S ∈ [0, 1];
+  `SegregationSpec`): the scheme of Baumgardt, De Marchi & Kroupa (2008) on the systems before virialisation —
+  energy-ranked phase-space slices of the unsegregated Plummer or King model handed out by cumulative mass — with
+  the partial ordering of McLuster (Küpper et al. 2011, Eq. A1); the mass-density profile is preserved. Configurations
+  without the table generate the same files as before.
 - Complexes from one star list and their controls: `[merger.complex] imf_partition = "global"` draws one star
   list from the member IMF and deals it out to the members (`ExplicitMassesIMF` carries a member's stars), so the
   IMF realisation is the same across arms; `control = "monolithic"` (C-E: one virial Plummer cluster of the same

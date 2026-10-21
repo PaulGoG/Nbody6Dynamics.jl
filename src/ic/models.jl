@@ -213,6 +213,24 @@ Returns `(pos::Matrix{Float64}, vel::Matrix{Float64})` each `3 × N`,
 in units where the tidal radius equals `rt`.
 """
 function sample_king(N::Int, W0::Float64, rt::Float64; rng::AbstractRNG = Random.default_rng())
+    pos, vel, _ = _sample_king_with_energy(N, W0, rt; rng = rng)
+    return pos, vel
+end
+
+"""
+    _sample_king_with_energy(N, W0, rt; rng) -> (pos, vel, energy)
+
+[`sample_king`](@ref) with the dimensionless specific energy of every
+particle, `E = v²/2 − Ŵ(r̂)` in units of σ² (velocities in units of σ, as
+sampled), the quantity by which the mass-segregation scheme ranks the points.
+Positions, velocities and the random-number use are those of `sample_king`.
+"""
+function _sample_king_with_energy(
+    N::Int,
+    W0::Float64,
+    rt::Float64;
+    rng::AbstractRNG = Random.default_rng(),
+)
     W0 > 0.0 || throw(ArgumentError("W0 must be positive, got $W0"))
     rt > 0.0 || throw(ArgumentError("rt must be positive, got $rt"))
 
@@ -264,6 +282,7 @@ function sample_king(N::Int, W0::Float64, rt::Float64; rng::AbstractRNG = Random
 
     pos = zeros(Float64, 3, N)
     vel = zeros(Float64, 3, N)
+    energy = zeros(Float64, N)
 
     for i in 1:N
         # Sample radius from CDF
@@ -291,6 +310,7 @@ function sample_king(N::Int, W0::Float64, rt::Float64; rng::AbstractRNG = Random
         if W_local ≤ 1e-10
             # Near tidal radius: essentially zero velocity
             vel[:, i] .= 0.0
+            energy[i] = -W_local
             continue
         end
 
@@ -307,6 +327,7 @@ function sample_king(N::Int, W0::Float64, rt::Float64; rng::AbstractRNG = Random
                 vel[1, i] = v * sinθv * cos(φv)
                 vel[2, i] = v * sinθv * sin(φv)
                 vel[3, i] = v * cosθv
+                energy[i] = 0.5 * v^2 - W_local
                 break
             end
         end
@@ -316,7 +337,7 @@ function sample_king(N::Int, W0::Float64, rt::Float64; rng::AbstractRNG = Random
     # absolute scale is set by the caller's `virialise!` pass (Q = 0.5),
     # which is how `_sample_cluster` consumes this sampler.
 
-    return pos, vel
+    return pos, vel, energy
 end
 
 """

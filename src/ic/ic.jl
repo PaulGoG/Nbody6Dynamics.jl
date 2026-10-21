@@ -9,6 +9,7 @@ using SpecialFunctions: erf
 
 include("binaries.jl")
 include("complex.jl")   # ComplexSpec is a field type of MergerConfig (config.jl)
+include("segregation.jl")   # SegregationSpec is a field type of ClusterSpec (config.jl)
 include("config.jl")
 include("control.jl")
 include("models.jl")

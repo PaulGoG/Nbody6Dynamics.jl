@@ -992,6 +992,7 @@ export sweep_summary, write_sweep_summary, sweep_visualization
 export EnsembleStatistics, ensemble_statistics, sweep_ensembles
 export control_merger_dict, write_control_merger_config
 export ClusterSpec,
+    SegregationSpec,
     BinarySpec,
     OrbitSpec,
     ComplexSpec,

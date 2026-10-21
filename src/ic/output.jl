@@ -604,7 +604,17 @@ function _sample_cluster(spec::ClusterSpec; rng::AbstractRNG = Random.default_rn
     system_binary = vcat(collect(1:n_b), zeros(Int, length(singles)))
     N_sys = length(sys_mass)
 
-    pos, vel = if spec.profile isa PlummerProfile
+    pos, vel = if spec.segregation.method == "bdk08"
+        # Primordial mass segregation of the systems on the same model and scaling
+        seg_pos, seg_vel, _ = segregate_systems(
+            spec.profile,
+            sys_mass,
+            spec.rbar;
+            degree = spec.segregation.degree,
+            rng = rng,
+        )
+        (seg_pos, seg_vel)
+    elseif spec.profile isa PlummerProfile
         # Scale radius from the target half-mass radius (r_hm = 1.305 a)
         sample_plummer(N_sys, spec.rbar / _PLUMMER_RHM_OVER_A; rng = rng)
     elseif spec.profile isa KingProfile
@@ -795,6 +805,7 @@ function _complex_members(spec::ComplexSpec, template::ClusterSpec, rng::Abstrac
             position = x[:, i],
             velocity = zeros(3),
             binaries = template.binaries,
+            segregation = template.segregation,
         ) for i in 1:n
     ]
     return (masses = M, r_h = r_h, pos = x, vel = v, specs = specs)
@@ -835,6 +846,7 @@ function _scale_complex_members(
             position = x_c[:, i],
             velocity = v_c[:, i],
             binaries = s.binaries,
+            segregation = s.segregation,
         ) for (i, s) in enumerate(members.specs)
     ]
     return (specs = specs, scaling = scaling, masses = m_c, softening = ε)
@@ -1605,6 +1617,7 @@ function _write_merger_ic_metadata(
             "position" => spec.position,
             "velocity" => spec.velocity,
             "binaries" => _binaries_table(spec.binaries),
+            "segregation" => _segregation_table(spec.segregation),
             "N_after_trunc" => length(cluster_ranges[i]),
             "N_pairs" => regime.n_pairs[i],
             "hard_fraction" => regime.hard_fraction[i],
@@ -1728,6 +1741,7 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
             s.position,
             s.velocity,
             s.binaries,
+            s.segregation,
         )
     end
 

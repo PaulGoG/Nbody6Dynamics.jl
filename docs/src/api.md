@@ -499,6 +499,7 @@ kroupa_mean_mass
 
 ```@docs
 ClusterSpec
+SegregationSpec
 BinarySpec
 OrbitSpec
 ComplexSpec

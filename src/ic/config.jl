@@ -137,10 +137,13 @@ Specification for a single star cluster.
 - `velocity::Vector{Float64}`: centre-of-mass velocity [km s⁻¹]. For
   `orbit_mode = "kepler"` and `"single"` this is left empty.
 - `binaries::BinarySpec`: primordial binary population (none by default).
+- `segregation::SegregationSpec`: primordial mass segregation of the systems
+  (`SegregationSpec`; none by default).
 
 The keyword constructor takes the structured (tag-typed) fields only; the
 flat TOML schema is the concern of [`load_merger_config`](@ref), which
-translates it into these types.
+translates it into these types. The seven-argument positional form of
+earlier versions (without `segregation`) remains valid.
 """
 struct ClusterSpec
     N::Int
@@ -150,6 +153,7 @@ struct ClusterSpec
     position::Vector{Float64}
     velocity::Vector{Float64}
     binaries::BinarySpec
+    segregation::SegregationSpec
 end
 
 function ClusterSpec(;
@@ -160,6 +164,7 @@ function ClusterSpec(;
     position::AbstractVector = Float64[],
     velocity::AbstractVector = Float64[],
     binaries::BinarySpec = BinarySpec(),
+    segregation::SegregationSpec = SegregationSpec(),
 )
     return ClusterSpec(
         N,
@@ -169,8 +174,20 @@ function ClusterSpec(;
         Float64.(position),
         Float64.(velocity),
         binaries,
+        segregation,
     )
 end
+
+# The seven-field form of earlier versions (before `segregation`).
+ClusterSpec(
+    N::Integer,
+    rbar::Real,
+    profile::DensityProfile,
+    imf::IMFSpec,
+    position::AbstractVector,
+    velocity::AbstractVector,
+    binaries::BinarySpec,
+) = ClusterSpec(N, rbar, profile, imf, position, velocity, binaries, SegregationSpec())
 
 """`BinarySpec` as a TOML table (metadata round trip)."""
 _binaries_table(b::BinarySpec) =
@@ -1029,6 +1046,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
             position = spec.position,
             velocity = spec.velocity,
             binaries = spec.binaries,
+            segregation = spec.segregation,
         )
     end
 
@@ -1146,6 +1164,7 @@ function _parse_complex_section(c)::Tuple{ComplexSpec,ClusterSpec}
         profile = parsed.profile,
         imf = parsed.imf,
         binaries = parsed.binaries,
+        segregation = parsed.segregation,
     )
     _validate_cluster_spec(template, 0)
     return spec, template
@@ -1437,6 +1456,7 @@ const _CLUSTER_TABLE_KEYS = (
     "mass_total",
     "profile",
     "binaries",
+    "segregation",
     "density_ratio",
 )
 
@@ -1512,7 +1532,15 @@ function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractStr
         BinarySpec()
     end
 
-    return ClusterSpec(N, rbar, profile, imf, position, velocity, binaries)
+    segregation = if haskey(c, "segregation")
+        seg_raw = c["segregation"]
+        seg_raw isa AbstractDict || _config_error("$key.segregation", "must be a table")
+        _parse_segregation_table(seg_raw, idx)
+    else
+        SegregationSpec()
+    end
+
+    return ClusterSpec(N, rbar, profile, imf, position, velocity, binaries, segregation)
 end
 
 # ---------------------------------------------------------------------------
@@ -1532,6 +1560,7 @@ function _validate_cluster_spec(spec::ClusterSpec, idx::Int)
     _validate_profile(spec.profile, key)
     _validate_imf(spec.imf, spec.N, key)
     _validate_binaries(spec.binaries, key)
+    _validate_segregation(spec.segregation, key)
     return nothing
 end
 
