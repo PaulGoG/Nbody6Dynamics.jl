@@ -228,8 +228,8 @@ _guard_range_error(m₁::Float64, m₂::Float64, a_rl::Float64, φ::Float64, ran
 
 Semi-major axis [AU] and eccentricity of a pair of the low-mass population with
 the period (or axis) law truncated to `a ≥ a_rl` and the eccentricity law to
-`e ≤ 1 − a_rl/a`; `truncated` flags a pair whose period or eccentricity domain
-the guard reduced.
+`e ≤ 1 − a_rl/a`; `truncated` flags a pair whose period (or axis) range the guard
+raised.
 """
 function _guarded_orbit(
     spec::BinarySpec,
@@ -262,7 +262,6 @@ function _guarded_orbit(
     e = 0.0
     if spec.eccentricity == "thermal"
         e_hi = clamp(1 - a_rl / a_au, 0.0, 1.0)
-        truncated |= e_hi < 1
         e = e_hi * sqrt(rand(rng))
     end
     return a_au, e, truncated
@@ -275,7 +274,7 @@ Semi-major axis [AU] and eccentricity of a massive pair from its uniform
 variates `u_P` (period) and `u_e` (eccentricity); `φ` is the fill limit that
 set `a_rl` (for the error message). For `a_rl > 0` the period law
 is truncated to `a ≥ a_rl` and the eccentricity law to `e ≤ min(ecc_max, 1 − a_rl/a)`;
-`truncated` flags a pair whose domain the guard reduced.
+`truncated` flags a pair whose period range the guard raised.
 """
 function _sana_orbit(
     spec::MassiveBinarySpec,
@@ -306,7 +305,6 @@ function _sana_orbit(
         e_rl = max(1 - a_rl / a_au, 0.0)
         if e_rl < e_hi
             e_hi = e_rl
-            truncated = true
         end
     end
     return a_au, _power_law_quantile(u_e, 0.0, e_hi, spec.ecc_exponent), truncated
@@ -465,8 +463,9 @@ period range raises an `ArgumentError`.
 Returns the (possibly modified, for `"uniform_q"` and `"replace"`) mass vector,
 the star indices of the primaries and secondaries (massive pairs first), the
 component masses [M☉] with `m1 ≥ m2`, the semi-major axes [pc], the
-eccentricities, and `n_guarded`, the number of pairs whose period or
-eccentricity domain the guard reduced. Every star belongs to at most one pair.
+eccentricities, and `n_guarded`, the number of pairs whose period (or axis)
+range the guard raised (its eccentricity cap acts on every pair). Every star
+belongs to at most one pair.
 Without the massive branch and the guard the draws are those of earlier
 versions.
 """
