@@ -133,6 +133,7 @@ include("validity.jl")
 include("binary_spans.jl")
 include("bound_spans.jl")
 include("binary_census.jl")
+include("gw_observables.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -975,6 +976,15 @@ export write_validity, write_validity_snapshots
 export BinarySpan, binary_spans, write_binary_spans
 export BoundPair, BoundSpan, bound_pairs, bound_spans, write_bound_spans
 export CensusSpan, binary_census, write_binary_census
+export gw_enhancement,
+    gw_time_factor,
+    gw_inspiral_time,
+    gw_inspiral_time_mandel,
+    gw_zwick_factor,
+    chirp_mass,
+    orbital_frequency,
+    gw_frequency,
+    eccentricity_at_frequency
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep

@@ -333,6 +333,20 @@ binary_census
 write_binary_census
 ```
 
+## Gravitational-Wave Observables
+
+```@docs
+gw_enhancement
+gw_time_factor
+gw_inspiral_time
+gw_inspiral_time_mandel
+gw_zwick_factor
+chirp_mass
+orbital_frequency
+gw_frequency
+eccentricity_at_frequency
+```
+
 ## Bound Spans
 
 ```@docs

@@ -79,7 +79,8 @@
 
     @testset "Eccentricity at a reference frequency" begin
         r = eccentricity_at_frequency(30.0, 30.0, 1.0, 0.999, 10.0; definition = :wen)
-        @test r.e ≈ 4.42e-4 rtol = 0.01 && !r.above_at_record
+        @test r.e ≈ 4.42e-4 rtol = 0.01
+        @test !r.above_at_record
         for d in (:f22, :peri)
             @test eccentricity_at_frequency(30.0, 30.0, 1.0, 0.999, 10.0; definition = d).e ≈
                   4.42e-4 rtol = 0.01

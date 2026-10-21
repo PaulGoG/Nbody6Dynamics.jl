@@ -44,6 +44,13 @@ entries say so.
   engine-regularised spans lie inside one bound span, and a third of the bound spans are never regularised.
   The stage `[postprocess] bound_spans` (default `false`; `bound_gamma_max`, `bound_n_miss`) writes
   `bound_spans.csv`.
+- Gravitational-wave observables of a binary: `gw_inspiral_time` (Peters 1964 orbit average by singularity-free
+  quadratures of the time factor, `gw_time_factor`, exact to 10⁻⁶ against the reference table and to 768/425 as
+  e → 1, checked against an integration of the Peters equations), `gw_inspiral_time_mandel` (Mandel 2021 fit),
+  `gw_zwick_factor` (the 1PN-recalibrated factor of Zwick et al. 2020, reported separately), `gw_enhancement`,
+  `chirp_mass`, `orbital_frequency`, `gw_frequency` (f₂₂, Wen 2003 peak, pericentre) and
+  `eccentricity_at_frequency` (the eccentricity and time at a reference frequency along the Peters track).
+  QuadGK is a new direct dependency (it was already in the dependency tree).
 - Binary census (`binary_census`, `CensusSpan`, `write_binary_census`): the union per pair of the overlapping or
   adjacent engine-regularised and bound spans, with both levels' limits and counts, the origin of the earlier and
   the end class of the later level; written as `binary_census.csv` when both span stages run. On a development
