@@ -56,6 +56,12 @@ entries say so.
   an optional solid-body rotation about +z. Every member has its own random stream; the record holds the realised
   Q, E, L and Peebles λ of the centres. The derived control of a merger configuration (`control_merger_dict`)
   resolves the new orbit size keys and `density_ratio`.
+- Complexes from one star list and their controls: `[merger.complex] imf_partition = "global"` draws one star
+  list from the member IMF and deals it out to the members (`ExplicitMassesIMF` carries a member's stars), so the
+  IMF realisation is the same across arms; `control = "monolithic"` (C-E: one virial Plummer cluster of the same
+  stars with the complex's total energy) and `control = "cold"` (C-cold: the same energy and global virial ratio)
+  replace the complex by its control for the same seed; the record holds the matched E and Q. With primordial
+  binaries the control's energy differs from the target by the internal energy of its re-drawn pairs.
 - Tidal frame of generated configurations: under `kz14 = 1, 2` the engine integrates in the frame rotating
   with the circular Galactic orbit (Ω along +z) and takes the `dat.10` velocities as velocities in that frame.
   `[merger.tidal] velocity_frame = "rotating"` (default, the earlier output) keeps that reading,

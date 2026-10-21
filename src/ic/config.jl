@@ -1226,6 +1226,19 @@ function _validate_complex(s::ComplexSpec)
         "must be ≥ 0 [pc] (0 = the mean member r_h); got $(s.softening)",
     )
     s.member_n_min ≥ 2 || _config_error(key("member_n_min"), "must be ≥ 2; got $(s.member_n_min)")
+    s.imf_partition in _COMPLEX_IMF_PARTITIONS || _config_error(
+        key("imf_partition"),
+        "must be one of \"member\", \"global\"; got \"$(s.imf_partition)\"",
+    )
+    s.control in _COMPLEX_CONTROLS || _config_error(
+        key("control"),
+        "must be one of \"none\", \"monolithic\", \"cold\"; got \"$(s.control)\"",
+    )
+    (s.control != "none" && s.imf_partition != "global") && _config_error(
+        key("control"),
+        "= \"$(s.control)\" needs merger.complex.imf_partition = \"global\" (the control " *
+        "takes the complex's star list); got \"$(s.imf_partition)\"",
+    )
     return nothing
 end
 

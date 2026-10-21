@@ -24,6 +24,7 @@ _nbody_time_myr(M_total::Real, rbar_pc::Real)::Float64 = _CODE_TIME_MYR * sqrt(r
 _imf_mass_bounds(i::KroupaIMF) = (i.bodyn, i.body1)
 _imf_mass_bounds(i::RescaledKroupaIMF) = (i.bodyn, i.body1)
 _imf_mass_bounds(i::EqualMassIMF) = (i.particle_mass, i.particle_mass)
+_imf_mass_bounds(i::ExplicitMassesIMF) = extrema(i.masses)
 
 """
     write_dat10(path, mass, pos, vel)
@@ -744,20 +745,34 @@ mean stellar mass of the template IMF, half-mass radii
 standard normal, one draw per member after the masses), centres and raw
 velocities ([`complex_centres`](@ref)), and the member `ClusterSpec`s (the
 template with `N = Nᵢ`, `rbar = r_h,i`, `position` the centre, a zero
-`velocity` placeholder). Every draw comes from `rng`. Throws an
-`ArgumentError` for fewer than two members or a member below
-`spec.member_n_min` stars.
+`velocity` placeholder). With `spec.imf_partition = "global"` one star list is
+drawn and partitioned after the masses (`_complex_partition_stars`): member i
+carries its share as an `ExplicitMassesIMF`, `Nᵢ` is the share's
+count, and `Mᵢ` (returned as `masses` and used in the size–mass relation) its
+realised sum. Every draw comes from `rng`. Throws an `ArgumentError` for fewer
+than two members or a member below `spec.member_n_min` stars.
 """
 function _complex_members(spec::ComplexSpec, template::ClusterSpec, rng::AbstractRNG)
-    M = complex_member_masses(spec, rng)
-    n = length(M)
+    M_drawn = complex_member_masses(spec, rng)
+    n = length(M_drawn)
     n ≥ 2 || throw(
         ArgumentError(
             "merger.complex: the mass function gave $n member(s); a complex needs at least 2",
         ),
     )
     m̄ = expected_mass(template.imf, 1)
-    N = Int[round(Int, Mi / m̄) for Mi in M]
+    global_partition = spec.imf_partition == "global"
+    stars = if global_partition
+        _complex_partition_stars(template.imf, M_drawn, rng)
+    else
+        Vector{Float64}[]
+    end
+    N = if global_partition
+        Int[length(s) for s in stars]
+    else
+        Int[round(Int, Mi / m̄) for Mi in M_drawn]
+    end
+    M::Vector{Float64} = global_partition ? Float64[sum(s) for s in stars] : M_drawn
     for i in 1:n
         N[i] ≥ spec.member_n_min || throw(
             ArgumentError(
@@ -776,13 +791,157 @@ function _complex_members(spec::ComplexSpec, template::ClusterSpec, rng::Abstrac
             N = N[i],
             rbar = r_h[i],
             profile = template.profile,
-            imf = template.imf,
+            imf = global_partition ? ExplicitMassesIMF(stars[i]) : template.imf,
             position = x[:, i],
             velocity = zeros(3),
             binaries = template.binaries,
         ) for i in 1:n
     ]
     return (masses = M, r_h = r_h, pos = x, vel = v, specs = specs)
+end
+
+"""
+    _scale_complex_members(cs::ComplexSpec, members::NamedTuple, cluster_data) -> NamedTuple
+
+Bulk velocities of the sampled members of a complex: the centres `members.pos`
+and raw velocities `members.vel` (modified in place) are scaled by
+[`complex_scale_velocities!`](@ref) with the realised member masses, softening
+`cs.softening` or the mean member half-mass radius. Returns the member specs
+with their centres and velocities [km s⁻¹] (`specs`), the scaling result
+(`scaling`), the member masses (`masses`, M☉) and the softening (`softening`, pc).
+"""
+function _scale_complex_members(
+    cs::ComplexSpec,
+    members::NamedTuple,
+    cluster_data::AbstractVector,
+)::NamedTuple
+    x_c, v_c = members.pos, members.vel
+    m_c = Float64[sum(cd.mass) for cd in cluster_data]
+    ε = cs.softening > 0 ? cs.softening : sum(members.r_h) / length(members.r_h)
+    scaling = complex_scale_velocities!(
+        v_c,
+        x_c,
+        m_c;
+        virial_ratio = cs.virial_ratio,
+        rotation_fraction = cs.rotation_fraction,
+        softening = ε,
+    )
+    specs = ClusterSpec[
+        ClusterSpec(;
+            N = s.N,
+            rbar = s.rbar,
+            profile = s.profile,
+            imf = s.imf,
+            position = x_c[:, i],
+            velocity = v_c[:, i],
+            binaries = s.binaries,
+        ) for (i, s) in enumerate(members.specs)
+    ]
+    return (specs = specs, scaling = scaling, masses = m_c, softening = ε)
+end
+
+"""
+    _complex_energy(cfg::MergerConfig, members::NamedTuple, rngs) -> NamedTuple
+
+All-star energies of the complex `members` as `generate_merger_ic` builds it
+without a control: member i sampled from `rngs[i]`, the bulk velocities scaled
+(`_scale_complex_members`), the members combined as in explicit mode
+and their pairs expanded. Returns `T`, `W` (code units, G = 1) and the star
+count `n_stars`. Nothing is written. Throws an `ArgumentError` when the
+combined system exceeds `cfg.virial_max_n`.
+"""
+function _complex_energy(
+    cfg::MergerConfig,
+    members::NamedTuple,
+    rngs::AbstractVector{<:AbstractRNG},
+)::NamedTuple
+    cluster_data = [
+        _sample_cluster(s; rng = rngs[i], nmax = cfg.virial_max_n) for
+        (i, s) in enumerate(members.specs)
+    ]
+    specs = _scale_complex_members(cfg.complex, members, cluster_data).specs
+    r_trunc_rh = cfg.output.truncate_radius_rh
+    pos, vel, mass, ranges, kept = combine_clusters_explicit(
+        cluster_data,
+        specs;
+        truncate_jacobi_flag = cfg.output.truncate_jacobi,
+        truncation_radii = r_trunc_rh > 0 ? Float64[r_trunc_rh * c.rbar for c in specs] : Float64[],
+    )
+    expanded = expand_binaries(
+        pos,
+        vel,
+        mass,
+        ranges,
+        [cd.binaries for cd in cluster_data],
+        kept;
+        rng = rngs,
+    )
+    n_stars = length(expanded.mass)
+    n_stars ≤ cfg.virial_max_n || throw(
+        ArgumentError(
+            "merger.complex.control: the complex has N = $n_stars stars, above " *
+            "merger.virial_max_n = $(cfg.virial_max_n); its energy is an exact O(N²) pair sum",
+        ),
+    )
+    T, W = _kinetic_and_potential(expanded.mass, expanded.pos, expanded.vel)
+    return (T = T, W = W, n_stars = n_stars)
+end
+
+"""
+    _rescale_about_centre(mass, pos, vel, s, k) -> (pos, vel)
+
+Copies of `pos` and `vel` (3 × N) scaled about the mass-weighted centre of
+mass: positions by `s`, velocities by `k`.
+"""
+function _rescale_about_centre(
+    mass::AbstractVector{Float64},
+    pos::AbstractMatrix{Float64},
+    vel::AbstractMatrix{Float64},
+    s::Float64,
+    k::Float64,
+)::Tuple{Matrix{Float64},Matrix{Float64}}
+    M = sum(mass)
+    c = zeros(3)
+    u = zeros(3)
+    for i in eachindex(mass), d in 1:3
+        c[d] += mass[i] * pos[d, i]
+        u[d] += mass[i] * vel[d, i]
+    end
+    c ./= M
+    u ./= M
+    pos_s = Matrix{Float64}(undef, 3, length(mass))
+    vel_s = Matrix{Float64}(undef, 3, length(mass))
+    for i in eachindex(mass), d in 1:3
+        pos_s[d, i] = c[d] + s * (pos[d, i] - c[d])
+        vel_s[d, i] = u[d] + k * (vel[d, i] - u[d])
+    end
+    return pos_s, vel_s
+end
+
+"""
+    _control_scales(kind, T_c, W_c, E_cx, Q_cx) -> (s, k, q_target)
+
+Length and velocity factors of an energy-matched control (code units, G = 1)
+from the energies `T_c`, `W_c` of the sampled Plummer cluster and the total
+energy `E_cx < 0` and virial ratio `Q_cx` of the complex. `"monolithic"`
+(C-E): `s = E_c / E_cx`, `k = 1/√s`, so `E = E_cx` at the cluster's Q.
+`"cold"` (C-cold): `|W| = |E_cx| / (1 − Q_cx)`, `T = Q_cx |W|`,
+`s = |W_c| / |W|`, `k = √(T / T_c)`, so `E = E_cx` and `Q = Q_cx`.
+"""
+function _control_scales(
+    kind::String,
+    T_c::Float64,
+    W_c::Float64,
+    E_cx::Float64,
+    Q_cx::Float64,
+)::NTuple{3,Float64}
+    if kind == "monolithic"
+        s = (T_c + W_c) / E_cx
+        return (s, 1 / sqrt(s), 0.5)
+    end
+    W_target = abs(E_cx) / (1 - Q_cx)
+    T_target = Q_cx * W_target
+    return (abs(W_c) / W_target, sqrt(T_target / T_c), Q_cx)
 end
 
 """
@@ -803,6 +962,14 @@ Supports four orbit modes:
   member masses as softened point masses (`complex_scale_velocities!`,
   softening `cfg.complex.softening` or the mean member half-mass radius), and
   the members are combined as in explicit mode
+
+With `cfg.complex.control = "monolithic"` or `"cold"` the complex is built
+first as without the control (same streams, nothing written) and its all-star
+energies are evaluated after pair expansion; one Plummer cluster of the union
+of the members' star lists, sampled and virialised from `_cluster_rng(seed, 1)`
+at r_h = 1 pc, is then rescaled about its centre of mass to the complex's total
+energy (C-E, Q = 0.5) or to its total energy and virial ratio (C-cold), and is
+written instead as a single cluster at the origin, at rest.
 
 With `cfg.seed_streams = "per_cluster"` (always in complex mode) and no
 external `rng`, cluster `i` is sampled and its pairs expanded from its own
@@ -855,7 +1022,45 @@ function generate_merger_ic(
     else
         nothing
     end
-    specs::Vector{ClusterSpec} = members === nothing ? cfg.clusters : members.specs
+    # Controls (C-E, C-cold): the all-star energy of the complex as built
+    # without the control, then one cluster of the union star list instead.
+    control = complex_mode ? cfg.complex.control : "none"
+    control_spec = nothing
+    control_target = nothing
+    if control != "none"
+        cm = members::NamedTuple
+        n_m = length(cm.specs)
+        member_rngs = if external_rng
+            AbstractRNG[rng::AbstractRNG for _ in 1:n_m]
+        else
+            AbstractRNG[_cluster_rng(effective_seed, i) for i in 1:n_m]
+        end
+        cx = _complex_energy(cfg, cm, member_rngs)
+        E_cx = cx.T + cx.W
+        (cx.W < 0 && E_cx < 0) || throw(
+            ArgumentError(
+                "merger.complex.control: the complex is unbound (E = $E_cx, W = $(cx.W) in " *
+                "code units); an energy-matched control needs E < 0",
+            ),
+        )
+        stars = Float64[m for s in cm.specs for m in (s.imf::ExplicitMassesIMF).masses]
+        control_spec = ClusterSpec(;
+            N = length(stars),
+            rbar = 1.0,
+            profile = PlummerProfile(),
+            imf = ExplicitMassesIMF(stars),
+            binaries = cfg.clusters[1].binaries,
+        )
+        control_target = (e = E_cx, q = cx.T / abs(cx.W))
+        members = nothing
+    end
+    specs::Vector{ClusterSpec} = if control_spec !== nothing
+        ClusterSpec[control_spec]
+    elseif members === nothing
+        cfg.clusters
+    else
+        members.specs
+    end
     n_clusters = length(specs)
     # Per-cluster streams: cluster i is sampled and its pairs expanded from
     # its own stream, independent of the other clusters and of the orbit.
@@ -889,29 +1094,11 @@ function generate_merger_ic(
     # virial ratio of the realised member masses as softened point masses.
     complex_info = nothing
     if members !== nothing
-        cs = cfg.complex
-        x_c, v_c = members.pos, members.vel
-        m_c = Float64[sum(cd.mass) for cd in cluster_data]
-        ε = cs.softening > 0 ? cs.softening : sum(members.r_h) / length(members.r_h)
-        scaling = complex_scale_velocities!(
-            v_c,
-            x_c,
-            m_c;
-            virial_ratio = cs.virial_ratio,
-            rotation_fraction = cs.rotation_fraction,
-            softening = ε,
-        )
-        specs = ClusterSpec[
-            ClusterSpec(;
-                N = s.N,
-                rbar = s.rbar,
-                profile = s.profile,
-                imf = s.imf,
-                position = x_c[:, i],
-                velocity = v_c[:, i],
-                binaries = s.binaries,
-            ) for (i, s) in enumerate(specs)
-        ]
+        scaled = _scale_complex_members(cfg.complex, members, cluster_data)
+        specs = scaled.specs
+        scaling = scaled.scaling
+        m_c = scaled.masses
+        ε = scaled.softening
         M_c = sum(m_c)
         λ_c =
             sqrt(sum(abs2, scaling.l_total)) * sqrt(abs(scaling.e_total)) /
@@ -924,6 +1111,43 @@ function generate_merger_ic(
             scaling.virial_ratio,
             λ_c,
             ε
+        )
+    end
+
+    # Control: the virialised Plummer cluster rescaled about its centre of
+    # mass to the energy (and, for C-cold, the virial ratio) of the complex.
+    control_info = nothing
+    if control_target !== nothing
+        sampled = cluster_data[1]
+        T_c, W_c = _kinetic_and_potential(sampled.mass, sampled.pos, sampled.vel)
+        s_len, k_vel, q_target =
+            _control_scales(control, T_c, W_c, control_target.e, control_target.q)
+        pos_s, vel_s = _rescale_about_centre(sampled.mass, sampled.pos, sampled.vel, s_len, k_vel)
+        scaled_data = (
+            pos = pos_s,
+            vel = vel_s,
+            mass = sampled.mass,
+            T = k_vel^2 * T_c,
+            W = W_c / s_len,
+            binaries = sampled.binaries,
+        )
+        cluster_data = [scaled_data]
+        sampled_spec = specs[1]
+        control_cluster = ClusterSpec(;
+            N = sampled_spec.N,
+            rbar = s_len * sampled_spec.rbar,
+            profile = sampled_spec.profile,
+            imf = sampled_spec.imf,
+            binaries = sampled_spec.binaries,
+        )
+        specs = ClusterSpec[control_cluster]
+        control_info = (kind = control, e_target = control_target.e, q_target = q_target)
+        @info @sprintf(
+            "Control %s: E = %.6g, Q = %.4f matched (code units), r_h = %.3g pc",
+            control,
+            control_target.e,
+            q_target,
+            specs[1].rbar
         )
     end
 
@@ -952,6 +1176,9 @@ function generate_merger_ic(
             orbit_normal = cfg.orbit.orbit_normal,
             apocentre_angle = cfg.orbit.apocentre_angle,
         )
+    elseif control_info !== nothing
+        # The control is written as a single cluster: origin, at rest
+        combine_single_cluster(cluster_data[1])
     elseif cfg.orbit_mode == "explicit" || complex_mode
         combine_clusters_explicit(
             cluster_data,
@@ -1028,6 +1255,11 @@ function generate_merger_ic(
         rng = per_cluster ? cluster_rngs : use_rng,
     )
     pos_combined, vel_combined, mass_combined = expanded.pos, expanded.vel, expanded.mass
+    # Realised all-star energy of the control, on the same footing as the complex's
+    if control_info !== nothing
+        T_r, W_r = _kinetic_and_potential(mass_combined, pos_combined, vel_combined)
+        control_info = merge(control_info, (e_realised = T_r + W_r, q_realised = T_r / abs(W_r)))
+    end
     # Inertial velocities into the engine's rotating frame (kz14 = 1, 2): v − Ω × r,
     # with Ω converted to the code velocity unit per pc.
     if cfg.tidal.velocity_frame == "inertial"
@@ -1184,6 +1416,7 @@ function generate_merger_ic(
         mass_truncated = mass_truncated,
         cluster_specs = specs,
         complex_info = complex_info,
+        control_info = control_info,
     )
 
     # Structured metadata for post-hoc regeneration of IC plots
@@ -1203,6 +1436,7 @@ function generate_merger_ic(
         mass_truncated = mass_truncated,
         cluster_specs = specs,
         complex_info = complex_info,
+        control_info = control_info,
     )
 
     return MergerICResult(
@@ -1248,6 +1482,12 @@ every [`ComplexSpec`](@ref) field and a `[complex.realised]` subtable the
 realised `n_members`, `mass_total` [M☉], `virial_ratio`, `e_total`
 [M☉ km² s⁻²], `l_total` [M☉ pc km s⁻¹], `rotation_fraction`, `softening` [pc]
 and `lambda_peebles` = |L| √|E| / (G M^{5/2}) of the member centres.
+
+With `control_info` (a monolithic control) the `[complex]` table holds the
+[`ComplexSpec`](@ref) fields only, and a `[control]` table the `kind`, the
+targets `e_target` [M☉ km² s⁻²] and `q_target` from the complex, the realised
+all-star `e_realised` and `q_realised`, `r_h_pc` [pc], `n_stars` and
+`mass_total` [M☉] of the control.
 """
 function _write_merger_ic_metadata(
     path::AbstractString,
@@ -1265,6 +1505,7 @@ function _write_merger_ic_metadata(
     mass_truncated::AbstractVector{Float64} = Float64[],
     cluster_specs::AbstractVector{ClusterSpec} = cfg.clusters,
     complex_info::Union{NamedTuple,Nothing} = nothing,
+    control_info::Union{NamedTuple,Nothing} = nothing,
 )
     orbit_table =
         Dict{String,Any}(String(k) => getfield(cfg.orbit, k) for k in fieldnames(OrbitSpec))
@@ -1339,6 +1580,20 @@ function _write_merger_ic_metadata(
         )
         d["complex"] = complex_table
     end
+    if control_info !== nothing
+        d["complex"] =
+            Dict{String,Any}(String(k) => getfield(cfg.complex, k) for k in fieldnames(ComplexSpec))
+        d["control"] = Dict{String,Any}(
+            "kind" => control_info.kind,
+            "e_target" => control_info.e_target * _G_PC_KMS2_MSUN,
+            "q_target" => control_info.q_target,
+            "e_realised" => control_info.e_realised * _G_PC_KMS2_MSUN,
+            "q_realised" => control_info.q_realised,
+            "r_h_pc" => cluster_specs[1].rbar,
+            "n_stars" => N_total,
+            "mass_total" => M_total,
+        )
+    end
 
     # One table per cluster so spec + post-truncation count are co-located
     for (i, spec) in enumerate(cluster_specs)
@@ -1375,6 +1630,8 @@ The particle positions and velocities in the returned result are in
 **physical units** (pc and km/s), matching what `plot_merger_ic` expects.
 Conversion from the NB-unit `dat.10` uses the stored `rbar` and the mass
 scaling (G = 1 in the (M☉, pc, km/s) system with the bundled scaling).
+A cluster recorded with an explicit star list (`imf.type = "explicit"`) gets
+an `ExplicitMassesIMF` of its masses read back from `dat.10`, with `N` their count.
 """
 function load_merger_ic_result(dir::AbstractString)::MergerICResult
     meta_path = joinpath(dir, "merger_ic.toml")
@@ -1398,12 +1655,20 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
     # for kepler mode).
     cluster_specs = ClusterSpec[]
     n_pairs = Int[]
+    # Clusters with an explicit star list (complex members of a global
+    # partition, controls): restored from the dat.10 masses below.
+    explicit = Int[]
     i = 1
     while haskey(raw, "cluster$i")
         c = raw["cluster$i"]::Dict
         # The metadata table carries the specification plus the realised
         # counts; only the specification keys go to the parser.
         spec_table = Dict{String,Any}(k => v for (k, v) in c if k in _CLUSTER_TABLE_KEYS)
+        imf_raw = get(spec_table, "imf", nothing)
+        if imf_raw isa AbstractDict && get(imf_raw, "type", "") == "explicit"
+            spec_table["imf"] = Dict{String,Any}("type" => "equal", "particle_mass" => 1.0)
+            push!(explicit, i)
+        end
         push!(cluster_specs, _parse_cluster_table(spec_table, i, "kepler"))
         push!(n_pairs, Int(get(c, "N_pairs", 0)))
         i += 1
@@ -1452,6 +1717,20 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
     pos_phys = pos .* rbar                                   # NB length → pc
     vel_phys = vel .* (_CODE_VSTAR_KMS * sqrt(M_total / rbar))  # NB velocity → km/s
 
+    for j in explicit
+        s = cluster_specs[j]
+        m = mass_phys[cluster_ranges[j]]
+        cluster_specs[j] = ClusterSpec(
+            length(m),
+            s.rbar,
+            s.profile,
+            ExplicitMassesIMF(m),
+            s.position,
+            s.velocity,
+            s.binaries,
+        )
+    end
+
     return MergerICResult(
         abspath(dir),
         N_total,
@@ -1484,6 +1763,7 @@ function _write_merger_summary(
     mass_truncated::AbstractVector{Float64} = Float64[],
     cluster_specs::AbstractVector{ClusterSpec} = cfg.clusters,
     complex_info::Union{NamedTuple,Nothing} = nothing,
+    control_info::Union{NamedTuple,Nothing} = nothing,
 )
     n_clusters = length(cluster_specs)
     _backup_existing(path)
@@ -1576,6 +1856,18 @@ function _write_merger_summary(
                 sc.rotation_fraction,
                 complex_info.lambda_peebles,
                 sc.softening
+            )
+            println(io)
+        end
+        if control_info !== nothing
+            @printf(
+                io,
+                "Control: %s, matched E = %.6g M☉ km² s⁻² (realised %.6g), Q = %.4f (realised %.4f)\n",
+                control_info.kind == "monolithic" ? "monolithic (C-E)" : "cold (C-cold)",
+                control_info.e_target * _G_PC_KMS2_MSUN,
+                control_info.e_realised * _G_PC_KMS2_MSUN,
+                control_info.q_target,
+                control_info.q_realised
             )
             println(io)
         end

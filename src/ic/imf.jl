@@ -163,3 +163,65 @@ function sample_masses(imf::RescaledKroupaIMF, N::Int, rng::AbstractRNG)
     end
     raw .* c
 end
+
+# -----------------------------------------------------------------------------
+# Explicit star list
+# -----------------------------------------------------------------------------
+
+"""
+    ExplicitMassesIMF(masses::Vector{Float64})
+
+A fixed list of body masses [M☉] instead of a mass function: the share of a
+global star list that a member of a cluster complex receives
+(`imf_partition = "global"`), or the union of all members' lists for the
+monolithic controls. `sample_masses(imf, N, rng)` returns a copy of `masses`
+without drawing from `rng` and throws an `ArgumentError` unless
+`N == length(masses)`; `expected_mass(imf, N)` is `sum(masses)` under the same
+condition. In `merger_ic.toml` the list is summarised (`type = "explicit"`,
+`n`, `mass_total`, `mass_min`, `mass_max`); [`load_merger_ic_result`](@ref)
+restores it from `dat.10`.
+
+# Example
+```julia
+imf = ExplicitMassesIMF([0.5, 1.0, 2.0])
+sample_masses(imf, 3, rng)   # [0.5, 1.0, 2.0]
+```
+"""
+struct ExplicitMassesIMF <: IMFSpec
+    masses::Vector{Float64}
+end
+
+imf_name(::ExplicitMassesIMF) = "explicit"
+
+function _check_explicit_count(imf::ExplicitMassesIMF, N::Int, caller::String)
+    N == length(imf.masses) || throw(
+        ArgumentError("$caller: ExplicitMassesIMF holds $(length(imf.masses)) masses; got N = $N"),
+    )
+    return nothing
+end
+
+function sample_masses(imf::ExplicitMassesIMF, N::Int, ::AbstractRNG)
+    _check_explicit_count(imf, N, "sample_masses")
+    return copy(imf.masses)
+end
+
+function expected_mass(imf::ExplicitMassesIMF, N::Int)
+    _check_explicit_count(imf, N, "expected_mass")
+    return sum(imf.masses)
+end
+
+_imf_table(i::ExplicitMassesIMF) = Dict{String,Any}(
+    "type" => "explicit",
+    "n" => length(i.masses),
+    "mass_total" => sum(i.masses),
+    "mass_min" => minimum(i.masses),
+    "mass_max" => maximum(i.masses),
+)
+
+function _validate_imf(i::ExplicitMassesIMF, N::Int, key::String)
+    length(i.masses) == N ||
+        _config_error("$key.imf", "holds $(length(i.masses)) explicit masses for N = $N")
+    all(m -> isfinite(m) && m > 0, i.masses) ||
+        _config_error("$key.imf", "explicit masses must be finite and > 0 [M☉]")
+    return nothing
+end

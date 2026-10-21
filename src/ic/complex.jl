@@ -16,7 +16,8 @@
                   size_scatter_dex = 0.0, centres = "uniform_sphere", radius = 5.0,
                   plummer_cutoff = 5.0, fractal_dimension = 1.6, filament_length = 20.0,
                   filament_width = 1.0, virial_ratio = 0.5, rotation_fraction = 0.0,
-                  softening = 0.0, member_n_min = 50)
+                  softening = 0.0, member_n_min = 50, imf_partition = "member",
+                  control = "none")
 
 Parameters of a cluster complex (`[merger.complex]`, `orbit_mode = "complex"`). Masses in
 M☉, lengths in pc, speeds in km s⁻¹.
@@ -41,6 +42,8 @@ M☉, lengths in pc, speeds in km s⁻¹.
 | `rotation_fraction` | Float64 | 0.0 | T_rot/T of a solid-body rotation about +z; 0 ≤ f < 1; 0 when virial_ratio = 0 |
 | `softening` | Float64 | 0.0 | Plummer softening ε of the point-mass energy [pc]; 0 = the mean member r_h; ≥ 0 |
 | `member_n_min` | Int | 50 | smallest allowed member star count; ≥ 2 |
+| `imf_partition` | String | "member" | "member" (each member samples its own IMF) or "global" (one star list partitioned) |
+| `control` | String | "none" | "none", "monolithic" (C-E) or "cold" (C-cold); needs `imf_partition = "global"` |
 
 # Member masses
 `"equal"` needs `n_members > 0` and `mass_total > 0` and gives every member
@@ -58,6 +61,22 @@ Kroupa 2012, Eq. 7, DOI 10.1051/0004-6361/201118231); `r_h = (2.365/8) pc
 `r_h = 2.26 pc (M/10⁴ M☉)^0.27` (`"dobbs"`, Dobbs et al. 2022, DOI
 10.1093/mnras/stac2474). Each radius is multiplied by `10^(size_scatter_dex g)`,
 `g` standard normal.
+
+# IMF partition
+`"member"`: member i has `Nᵢ = round(Mᵢ / ⟨m⟩)` stars drawn from the template
+IMF. `"global"`: one star list is drawn from the template IMF in batches of
+`max(1000, ⌈1.1 ΣMᵢ / ⟨m⟩⌉)` until its sum reaches ΣMᵢ, shuffled, and dealt
+out in order: member i takes stars until its sum reaches or exceeds Mᵢ, the
+last member until the running total reaches ΣMᵢ, and the rest of the list is
+dropped (`_complex_partition_stars`). Each member then carries its
+share as an `ExplicitMassesIMF`, and its radius follows from its realised mass.
+
+# Controls
+`"monolithic"` (C-E) and `"cold"` (C-cold) replace the complex by one Plummer
+cluster of the same star list, built from the same seed, whose positions and
+velocities are rescaled about the centre of mass to the total energy E of the
+complex (all stars, pairs expanded), keeping Q = 0.5 (C-E) or matching also
+the global Q = T/|W| of the complex (C-cold).
 
 # Centre distributions
 - `"uniform_sphere"`: `r = radius u^(1/3)`, isotropic direction; velocities
@@ -106,10 +125,18 @@ Base.@kwdef struct ComplexSpec
     rotation_fraction::Float64 = 0.0
     softening::Float64 = 0.0
     member_n_min::Int = 50
+    imf_partition::String = "member"
+    control::String = "none"
 end
 
 """Mass functions of `[merger.complex]` (the `mass_function` key)."""
 const _COMPLEX_MASS_FUNCTIONS = ("equal", "power_law")
+
+"""IMF partitions of `[merger.complex]` (the `imf_partition` key)."""
+const _COMPLEX_IMF_PARTITIONS = ("member", "global")
+
+"""Monolithic controls of `[merger.complex]` (the `control` key)."""
+const _COMPLEX_CONTROLS = ("none", "monolithic", "cold")
 
 """Size–mass relations of `[merger.complex]` (the `size_mass` key)."""
 const _COMPLEX_SIZE_MASS = ("constant", "marks_kroupa", "frost", "dobbs")
@@ -205,6 +232,47 @@ function complex_member_radius(spec::ComplexSpec, M::Real)::Float64
             join(_COMPLEX_SIZE_MASS, ", "),
         ),
     )
+end
+
+"""
+    _complex_partition_stars(imf, M::Vector{Float64}, rng::AbstractRNG) -> Vector{Vector{Float64}}
+
+Global IMF partition of a complex with member masses `M` [M☉]: batches of
+`max(1000, ⌈1.1 ΣM / ⟨m⟩⌉)` stars are drawn from the IMF specification `imf`
+(`⟨m⟩ = expected_mass(imf, 1)`) and appended until the list sum reaches ΣM; the
+list is shuffled and dealt out in order. Member i < n takes stars until its sum
+reaches or exceeds `M[i]`; the last member takes stars until the running total
+of the list reaches ΣM. Stars beyond that point are dropped, and a member
+reached after the list is exhausted keeps what it has. All draws come from `rng`.
+"""
+function _complex_partition_stars(imf, M::Vector{Float64}, rng::AbstractRNG)
+    n = length(M)
+    M_sum = sum(M)
+    n_batch = max(1000, ceil(Int, 1.1 * M_sum / expected_mass(imf, 1)))
+    list = Float64[]
+    total = 0.0
+    while total < M_sum
+        batch::Vector{Float64} = sample_masses(imf, n_batch, rng)
+        append!(list, batch)
+        total += sum(batch)
+    end
+    Random.shuffle!(rng, list)
+    shares = Vector{Vector{Float64}}(undef, n)
+    j = 1
+    running = 0.0
+    for i in 1:n
+        share = Float64[]
+        own = 0.0
+        while j ≤ length(list) && (i < n ? own < M[i] : running < M_sum)
+            m = list[j]
+            push!(share, m)
+            own += m
+            running += m
+            j += 1
+        end
+        shares[i] = share
+    end
+    return shares
 end
 
 """Isotropic unit vector: cos θ uniform in [−1, 1], φ uniform in [0, 2π)."""
