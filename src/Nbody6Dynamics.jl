@@ -362,6 +362,8 @@ function postprocess(
                 results[:diagnostics],
                 extract_scaling(results[:diagnostics]);
                 bevs = get(results, :binary_evo, BinaryEvolutionSnapshot[]),
+                # The integrals are those of the snapshots, in their order
+                snapshots = get(results, :snapshots, Snapshot[]),
             )
             @info "Energy budget: " * energy_budget_summary(results[:energy_budget])
         else
@@ -427,33 +429,71 @@ function postprocess(
         end
     end
     lap!("equipartition")
+    # NBIN0 of the primordial name rule: the &INDATA echo, else the IC record
+    # of a generated run (output/merger_ic.toml), else none (labels off)
+    nbin0 = haskey(results, :diagnostics) ? results[:diagnostics].nbin0 : -1
+    if nbin0 < 0 && (pp.binary_spans || pp.bound_spans)
+        ic_path = joinpath(sim_dir, "merger_ic.toml")
+        if isfile(ic_path)
+            ic = try
+                TOML.parsefile(ic_path)
+            catch e
+                e isa Base.TOML.ParserError || rethrow()
+                Dict{String,Any}()
+            end
+            meta = get(ic, "meta", Dict{String,Any}())
+            v = meta isa AbstractDict ? get(meta, "nbin0", get(meta, "n_pairs", nothing)) : nothing
+            v isa Integer && v ≥ 0 && (nbin0 = Int(v))
+        end
+        nbin0 < 0 &&
+            @warn "No NBIN0 in the stdout capture or in output/merger_ic.toml: primordial pair " *
+                  "labels of the binary spans are off (NBIN0 taken as 0)"
+    end
+    nbin0 = max(nbin0, 0)
     # Engine-regularised binary spans from the binary lines of the stdout capture
-    if pp.binary_spans && haskey(results, :diagnostics)
+    if pp.binary_spans && !pp.parse_stdout
+        @warn "postprocess.binary_spans needs the stdout capture, but parse_stdout = false: " *
+              "binary spans skipped"
+    elseif pp.binary_spans && haskey(results, :diagnostics)
         diag = results[:diagnostics]
-        if diag.nzero > 0
+        kz10 = length(diag.kz) ≥ 10 ? diag.kz[10] : -1
+        tstar = extract_scaling(diag).tscale
+        if kz10 < 2
+            @warn "KZ(10) = $(kz10 < 0 ? "unknown (no OPTIONS echo)" : kz10): the engine writes " *
+                  "END KSREG lines only for KZ(10) > 1, so no KS episode can be closed; binary " *
+                  "spans skipped"
+        elseif diag.nzero <= 0
+            @warn "No N in the input echo of $(pp.stdout_file): binary spans skipped"
+        elseif !(isfinite(tstar) && tstar > 0)
+            @warn "No T* in the stdout capture: KS periods cannot be converted, binary spans skipped"
+        else
             @info "Binary spans from the KS, few-body and GW records..."
             coll_path = joinpath(sim_dir, "coll.13")
             coal_path = joinpath(sim_dir, "coal.24")
+            collisions = isfile(coll_path) ? read_collision_log(coll_path) : CollisionRecord[]
+            coalescences = isfile(coal_path) ? read_coalescence_log(coal_path) : CoalescenceRecord[]
+            # A restarted segment appends its re-run of the interval after its dump
+            restarts = _span_restart_starts(
+                _read_toml_or_empty(joinpath(dirname(sim_dir), "RUN_INFO.toml")),
+            )
+            collisions = _span_restart_dedup(collisions, restarts)
+            coalescences = _span_restart_dedup(coalescences, restarts)
             results[:binary_spans] = binary_spans(
                 read_binary_events(joinpath(sim_dir, pp.stdout_file));
                 listings = read_all_ks_pair_listings(sim_dir),
-                collisions = isfile(coll_path) ? read_collision_log(coll_path) : CollisionRecord[],
-                coalescences = isfile(coal_path) ? read_coalescence_log(coal_path) :
-                               CoalescenceRecord[],
+                collisions = collisions,
+                coalescences = coalescences,
                 nzero = diag.nzero,
-                nbin0 = max(diag.nbin0, 0),
-                tstar_myr = extract_scaling(diag).tscale,
+                nbin0 = nbin0,
+                tstar_myr = tstar,
                 n_p = pp.span_n_periods,
             )
-        else
-            @warn "No N in the input echo of $(pp.stdout_file): binary spans skipped"
         end
     end
     lap!("binary_spans")
     # Physically bound pairs and their spans over the snapshots (level P)
     if pp.bound_spans && haskey(results, :snapshots)
         @info "Bound pairs and their spans over $(length(results[:snapshots])) snapshots..."
-        nbin0 = haskey(results, :diagnostics) ? max(results[:diagnostics].nbin0, 0) : 0
         results[:bound_spans] = bound_spans(
             results[:snapshots];
             nbin0 = nbin0,
@@ -463,12 +503,10 @@ function postprocess(
     end
     lap!("bound_spans")
     if haskey(results, :binary_spans) && haskey(results, :bound_spans)
-        results[:binary_census] = binary_census(
-            results[:binary_spans],
-            results[:bound_spans];
-            nbin0 = max(results[:diagnostics].nbin0, 0),
-        )
+        results[:binary_census] =
+            binary_census(results[:binary_spans], results[:bound_spans]; nbin0 = nbin0)
     end
+    lap!("binary_census")
     # Binary fractions per shell, class and census level (design W8)
     if pp.binary_population && haskey(results, :snapshots)
         @info "Binary population over $(length(results[:snapshots])) snapshots..."
@@ -593,6 +631,10 @@ If `data_dir` is empty but `run_test = false`, the most recent run in
 
 `run_id` fixes the run directory name (`<runs_dir>/<run_id>`); when empty,
 `generate_run_id` derives it from `simulation.run_id_prefix` and the time.
+An explicit `run_id` whose run directory already holds a `RUN_INFO.toml` (a
+run that was started or finished) is refused with an `ArgumentError` before
+anything is built or written; such a run is continued with
+[`resume_pipeline`](@ref).
 
 `base_dir` is the project directory: every relative path of the configuration
 (`install.install_dir`, `simulation.input_file`, `simulation.runs_dir`,
@@ -623,6 +665,18 @@ function run_pipeline(
         :run_pipeline,
         "Set `[visualization] enabled = false` to run the pipeline without figures.",
     )
+    # An explicit run ID must not reuse the directory of a started or finished
+    # run: its generator and engine phases would overwrite that run's files.
+    if !isempty(run_id)
+        existing = joinpath(_resolve_path(base_dir, cfg.simulation.runs_dir), run_id)
+        isfile(joinpath(existing, "RUN_INFO.toml")) && throw(
+            ArgumentError(
+                "run_pipeline: the run directory $existing already holds a RUN_INFO.toml " *
+                "(a started or finished run); choose another run_id, or continue that run " *
+                "with resume_pipeline(\"$existing\")",
+            ),
+        )
+    end
 
     # Phases actually performed, stamped into RUN_INFO.toml at the end so an
     # interrupted pipeline is distinguishable from a finished one.
@@ -731,8 +785,11 @@ function _finish_pipeline(
 
     # Directory that receives the derived products of this data set
     products_dir = if !isempty(cfg.postprocess.data_dir)
-        # normpath strips any trailing slash so dirname yields the parent
-        dirname(_resolve_path(base_dir, cfg.postprocess.data_dir))
+        # An absolute data_dir is not normalised by _resolve_path: normpath and
+        # strip a trailing separator so that dirname yields the parent
+        data_path = normpath(_resolve_path(base_dir, cfg.postprocess.data_dir))
+        length(data_path) > 1 && (data_path = rstrip(data_path, ['/', '\\']))
+        dirname(data_path)
     else
         run_dir
     end
@@ -1062,7 +1119,8 @@ public stellar_class_index, class_counts, classes_present
 public run_sweep_point, read_sweep_index, write_sweep_index
 public profile_name, imf_name, expected_mass, sample_masses, kroupa_mean_mass
 public sample_plummer, sample_king, sample_kroupa, sample_binaries, expand_binaries
-public virialise!, kepler_velocity, jacobi_radius, crossing_time, to_nbody_units!
+public virialise!,
+    kepler_velocity, jacobi_radius, roche_truncation_radius, crossing_time, to_nbody_units!
 public write_dat10, generate_merger_inp, resolve_nbody6_parameters
 public set_publication_theme!
 

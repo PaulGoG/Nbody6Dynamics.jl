@@ -1,17 +1,21 @@
 # =============================================================================
-# Adversarial tests for external post-processing (included from runtests.jl)
+# Adversarial tests for external post-processing (included from test_external.jl)
 # =============================================================================
 # Tests scan_output, postprocess_external, and run_pipeline with incomplete,
 # corrupt, and edge-case Nbody6++ output data. Uses the parent suite's
 # TESTDIR scratch directory (subdirectory names are disjoint from the
 # parent's).
 
+using StableRNGs
+
 # Helper: build a minimal conf.3 snapshot file (N particles, time t)
 # Matches the Nbody6++ bulk-array format:
 #   Record 1: NTOT, MODEL, NRUN, NK  (4 × Int32)
 #   Record 2: AS(1:NK) ++ BODYS(N) ++ RHOS(N) ++ XNS(N) ++ XS(3,N) ++ VS(3,N) ++ PHI(N) ++ NAME(N)
 #   All Float32 except NAME which is Int32.
+# The positions and velocities come from a stream seeded by N and t.
 function write_fake_conf3(path::String, N::Int, t::Float64)
+    rng = StableRNG(N + round(Int, 1000 * t))
     NK = Int32(20)
     open(path, "w") do io
         # Record 1: 4 × Int32
@@ -25,8 +29,8 @@ function write_fake_conf3(path::String, N::Int, t::Float64)
         mass = ones(Float32, N) ./ N
         rho = zeros(Float32, N)
         xns = zeros(Float32, N)
-        pos = randn(Float32, 3 * N) .* 5
-        vel = randn(Float32, 3 * N) .* 0.3f0
+        pos = randn(rng, Float32, 3 * N) .* 5
+        vel = randn(rng, Float32, 3 * N) .* 0.3f0
         phi = zeros(Float32, N)
         name = reinterpret(Float32, collect(Int32(1):Int32(N)))
 
@@ -134,10 +138,11 @@ end
         mkpath(d_trunc)
         write_fake_conf3(joinpath(d_trunc, "conf.3_0"), 100, 0.0)
         open(joinpath(d_trunc, "conf.3_1"), "w") do io
-            write(io, rand(UInt8, 20))
+            write(io, rand(StableRNG(137), UInt8, 20))
         end
         results = postprocess_external(d_trunc; make_plots = false)
-        @test haskey(results, :snapshots) || !haskey(results, :snapshots)
+        # The corrupt file is skipped with a warning; the intact one is read.
+        @test haskey(results, :snapshots) && length(results[:snapshots]) == 1
 
         # --- Empty stdout file ---
         d_empty_stdout = joinpath(TESTDIR, "empty_stdout")
@@ -290,6 +295,7 @@ end
             println(io, " ADJUST:    2.0   0.0   100.0 1e-8  -0.250   1000   0   0.0")
         end
         results = postprocess_external(d_wild_q; make_plots = false)
+        @test length(results[:diagnostics].adjust) == 2   # read, not dropped by the sanity check
     end
 
     # =====================================================================
@@ -345,7 +351,7 @@ end
             "budgets",
         ]
         @test labels[(end - 4):end] ==
-              ["equipartition", "binary_spans", "bound_spans", "binary_population", "validity"]
+              ["binary_spans", "bound_spans", "binary_census", "binary_population", "validity"]
         @test haskey(results, :validity) &&
               results[:validity].sections["energy"]["verdict"] in ("ok", "flag", "unavailable")
         @test all(≥(0), last.(results[:timings]))

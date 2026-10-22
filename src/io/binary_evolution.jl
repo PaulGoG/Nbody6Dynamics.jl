@@ -38,7 +38,7 @@ which `ms_lifetime1_myr`, `ms_lifetime2_myr`, `mass_core1`, `mass_core2`,
 `radius_core1`, `radius_core2`, `radius_envelope1` and `radius_envelope2` are
 filled with `NaN`. Lines with any other token count, or with unparseable
 fields (Fortran field overflow), are skipped and reported once per file as a
-warning.
+warning. Reals are read with `E` or `D` exponents.
 """
 function read_binary_evolution(path::AbstractString)::BinaryEvolutionSnapshot
     isfile(path) || error("Binary evolution file not found: $path")
@@ -49,7 +49,7 @@ function read_binary_evolution(path::AbstractString)::BinaryEvolutionSnapshot
     header_tokens = split(strip(lines[1]))
     length(header_tokens) ≥ 2 || error("Malformed bev.82 header in $path: \"$(strip(lines[1]))\"")
     n_pairs = parse(Int, header_tokens[1])
-    time_myr = parse(Float64, header_tokens[2])
+    time_myr = _parse_fortran_float(header_tokens[2])
 
     records = BinaryRecord[]
     sizehint!(records, max(n_pairs, 0))
@@ -70,14 +70,14 @@ function read_binary_evolution(path::AbstractString)::BinaryEvolutionSnapshot
         end
 
         try
-            t_nb = parse(Float64, tokens[1])
+            t_nb = _parse_fortran_float(tokens[1])
             ints = ntuple(k -> parse(Int32, tokens[1 + k]), 7)
             # The short layout stops at EPOCH(I1) EPOCH(I2): the eight trailing
             # SSE reals (TM, MC, RCC, RE per component) are unknown.
             reals = if length(tokens) == _BEV_TOKENS
-                ntuple(k -> parse(Float64, tokens[8 + k]), 24)
+                ntuple(k -> _parse_fortran_float(tokens[8 + k]), 24)
             else
-                (ntuple(k -> parse(Float64, tokens[8 + k]), 16)..., ntuple(_ -> NaN, 8)...)
+                (ntuple(k -> _parse_fortran_float(tokens[8 + k]), 16)..., ntuple(_ -> NaN, 8)...)
             end
             push!(records, BinaryRecord(t_nb, ints..., reals...))
         catch e
@@ -98,7 +98,8 @@ end
 
 Read all bev.82_* files matching `pattern` in `dir`, sorted by snapshot time.
 The default pattern matches what `hrplot.F` writes (`bev.82_<time>`, e.g.
-`bev.82_0`, `bev.82_0.5`).
+`bev.82_0`, `bev.82_0.5`). Files that cannot be read are skipped and
+reported in one warning with their count and the first path.
 """
 function read_all_binary_evolution(
     dir::AbstractString,
@@ -114,14 +115,22 @@ function read_all_binary_evolution(
     end)
 
     snapshots = BinaryEvolutionSnapshot[]
+    n_failed = 0
+    first_failed = ""
     @showprogress desc = "Reading binary evolution..." for f in files
         path = joinpath(dir, f)
         try
             push!(snapshots, read_binary_evolution(path))
         catch e
+            e isa InterruptException && rethrow()
+            n_failed += 1
+            n_failed == 1 && (first_failed = path)
             @debug "Skipping unreadable bev file" path exception = e
         end
     end
+    n_failed > 0 &&
+        @warn "$n_failed of $(length(files)) bev files could not be read and are skipped " *
+              "(first: $first_failed)"
 
     sort!(snapshots; by = s -> s.time_myr)
     return snapshots

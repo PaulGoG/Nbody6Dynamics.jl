@@ -5,10 +5,11 @@
 # Both utilities query a k-d tree built on the stellar positions, so the
 # neighbour searches cost O(n log n) instead of the O(n²) of a direct scan.
 # The local density is the Casertano & Hut (1985) estimator
-# (DOI 10.1086/163485). The binary finder joins mutually most-bound
-# neighbours, one level of the node joining of Bate (2009)
-# (DOI 10.1111/j.1365-2966.2009.14165.x), and classifies the pairs by the
-# hardness convention of Heggie (1975) (DOI 10.1093/mnras/173.3.729).
+# (DOI 10.1086/163485). The binary finder joins bound neighbours greedily in
+# order of their specific orbital energy, one level of node joining after Bate
+# (2009a, DOI 10.1111/j.1365-2966.2008.14106.x) ordered by energy instead of
+# separation, and classifies the pairs by the hardness convention of Heggie
+# (1975) (DOI 10.1093/mnras/173.3.729).
 
 using NearestNeighbors: KDTree, knn
 
@@ -117,7 +118,7 @@ function _density_from_neighbours(
 end
 
 # ---------------------------------------------------------------------------
-# Snapshot binary finder (Bate 2009 node joining, one level)
+# Snapshot binary finder (node joining after Bate 2009a, one level)
 # ---------------------------------------------------------------------------
 
 """
@@ -162,9 +163,13 @@ candidate the relative orbit gives the specific energy
 ``ε = |\\mathbf{v}|^2 / 2 - μ / |\\mathbf{r}|`` with ``μ = m_i + m_j``; a
 bound candidate (`ε < 0`) has ``a = -μ / (2ε)`` and
 ``e = \\sqrt{1 - h^2 / (a μ)}``, `h` the specific angular momentum. Bound
-candidates are joined in ascending `ε`, most bound first, and a pair is
-accepted only when neither star belongs to an accepted pair: the first level
-of the node joining of Bate (2009, DOI 10.1111/j.1365-2966.2009.14165.x).
+candidates are joined greedily in ascending ``ε = -(m_i + m_j)/2a``, most
+bound first, each star used once: a pair is accepted when neither star
+belongs to an accepted pair, so the first pairs accepted are mutually most
+bound, and a pair is accepted as well when the most-bound choice of one of
+its stars was already taken by another pair. This is one level of node
+joining after Bate (2009a, DOI 10.1111/j.1365-2966.2008.14106.x), who joins
+the closest bound pair of nodes, ordered by ε instead of separation.
 Hierarchical nodes (an accepted pair bound to a third body) are not built,
 so a triple appears as its inner pair. Coincident stars, whose relative
 orbit is undefined, are not paired.

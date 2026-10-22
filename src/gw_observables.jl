@@ -69,7 +69,7 @@ DOI 10.1103/PhysRev.131.435). Throws an `ArgumentError` unless `0 ≤ e < 1`.
 
 # Example
 ```julia
-gw_enhancement(0.5)   # ≈ 5.00
+gw_enhancement(0.5)   # ≈ 4.88
 ```
 """
 function gw_enhancement(e::Real)::Float64
@@ -194,8 +194,13 @@ end
 1PN-recalibrated correction factor Q_f = exp(2.5 r_S/p₀) of the Peters
 coalescence time (Zwick et al. 2020, DOI 10.1093/mnras/staa1314), with
 r_S = 2GM/c² the Schwarzschild radius of the total mass and p₀ = a(1 − e) the
-pericentre distance. Masses in M☉, `a` in au. The factor is reported on its
-own; [`gw_inspiral_time`](@ref) never applies it.
+pericentre distance. Masses in M☉, `a` in au. Zwick et al. fitted Q_f to
+inspirals evolved with the 3.5PN flux and state it as accurate within 1PN
+precision; they give no validity range, the uncertainties of the fitted
+coefficients overlap only for p₀ ≲ 35 r_S, and the factor is meaningless near
+the ISCO. Identifying their initial (a₀, e₀) with the Newtonian elements of the
+engine is ambiguous at O(r_S/p₀). The factor is therefore a sensitivity
+measure reported on its own; [`gw_inspiral_time`](@ref) never applies it.
 """
 function gw_zwick_factor(m1::Real, m2::Real, a::Real, e::Real)::Float64
     _gw_check_binary(m1, m2, a, e)

@@ -59,8 +59,11 @@ Read one record of `line` by the FORMAT `items` (a vector of
 starting at character `start`. Literals must match the line character for
 character (`ArgumentError` otherwise, naming the literal); with
 `strict_literals = false` only their non-blank characters are compared.
-A line shorter than the format ends the record early: the missing fields
-read as empty. Reals accept the D exponent and the three-digit exponents
+On a line shorter than the format, a value field cut by the end of the line
+is read from the characters present and a value field beyond it reads as
+empty (`NaN`); a literal beyond the end compares as the empty string, so it
+throws the `ArgumentError` unless `strict_literals = false` and the literal is
+blank. Reals accept the D exponent and the three-digit exponents
 Fortran writes without a letter (`1.234-105`); integers accept a trailing
 `.`-free decimal only.
 """

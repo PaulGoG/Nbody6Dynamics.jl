@@ -214,7 +214,10 @@ end
         -> (; m_mean, sigma_kms, n_stars)
 
 Per-epoch hard/soft energy scales and stellar counts for `bevs`, each taken
-from the snapshot in `snaps` closest in physical time. The scale of a
+from the snapshot in `snaps` closest in N-body time to the stamp of the
+epoch's records (the F9.1 Myr header is too coarse to tell neighbouring
+snapshots apart); an epoch without records is matched by its header time
+against the snapshots' times in Myr. The scale of a
 snapshot of at most `pair_sum_max_n` particles is taken over its bound
 systems ([`hardness_scale`](@ref) with `bound_only`), an O(N²) selection;
 above that limit it is taken over every system. Returns `nothing` when
@@ -226,13 +229,16 @@ function binary_scales(
     pair_sum_max_n::Integer = PostprocessConfig().pair_sum_max_n,
 )
     isempty(snaps) && return nothing
-    t_snap = [time_myr(s.header) for s in snaps]
+    t_snap_nb = [time_nb(s.header) for s in snaps]
+    t_snap_myr = [time_myr(s.header) for s in snaps]
     n = length(bevs)
     m_mean = Vector{Float64}(undef, n)
     sigma = Vector{Float64}(undef, n)
     n_stars = Vector{Int}(undef, n)
     for (i, b) in enumerate(bevs)
-        j = argmin(abs.(t_snap .- b.time_myr))
+        j =
+            isempty(b.records) ? argmin(abs.(t_snap_myr .- b.time_myr)) :
+            argmin(abs.(t_snap_nb .- b.records[1].time_nb))
         sc = hardness_scale(snaps[j], b; bound_only = nparticles(snaps[j]) ≤ pair_sum_max_n)
         m_mean[i] = sc.m_mean
         sigma[i] = sc.sigma_kms

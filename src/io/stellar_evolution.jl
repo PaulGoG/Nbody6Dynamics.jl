@@ -26,7 +26,8 @@ v2026.07+, ending at TM MC RCC RE) and the 11 tokens documented by the engine
 manual (ending at AGE EPOCH), for which `ms_lifetime_myr`, `mass_core`,
 `radius_core` and `radius_envelope` are filled with `NaN`. Lines with any
 other token count, or with unparseable fields (Fortran field overflow), are
-skipped and reported once per file as a warning.
+skipped and reported once per file as a warning. Reals are read with `E` or
+`D` exponents.
 """
 function read_stellar_evolution(path::AbstractString)::StellarEvolutionSnapshot
     isfile(path) || error("Stellar evolution file not found: $path")
@@ -37,7 +38,7 @@ function read_stellar_evolution(path::AbstractString)::StellarEvolutionSnapshot
     # Parse header — first non-empty line: "NS  TPHYS[Myr]"
     header_tokens = split(strip(lines[1]))
     n_stars = parse(Int, header_tokens[1])
-    time_myr = parse(Float64, header_tokens[2])
+    time_myr = _parse_fortran_float(header_tokens[2])
 
     records = StellarRecord[]
     sizehint!(records, n_stars)
@@ -58,22 +59,22 @@ function read_stellar_evolution(path::AbstractString)::StellarEvolutionSnapshot
         end
 
         try
-            t_nb = parse(Float64, tokens[1])
+            t_nb = _parse_fortran_float(tokens[1])
             idx = parse(Int32, tokens[2])
             name = parse(Int32, tokens[3])
             kstar = parse(Int32, tokens[4])
-            ri = parse(Float64, tokens[5])
-            mass = parse(Float64, tokens[6])
-            logl = parse(Float64, tokens[7])
-            logr = parse(Float64, tokens[8])
-            logt = parse(Float64, tokens[9])
+            ri = _parse_fortran_float(tokens[5])
+            mass = _parse_fortran_float(tokens[6])
+            logl = _parse_fortran_float(tokens[7])
+            logr = _parse_fortran_float(tokens[8])
+            logt = _parse_fortran_float(tokens[9])
             # The 11-token layout stops at AGE EPOCH: no SSE tail to read.
             tm, mc, rcc, re = if length(tokens) == 15
                 (
-                    parse(Float64, tokens[12]),
-                    parse(Float64, tokens[13]),
-                    parse(Float64, tokens[14]),
-                    parse(Float64, tokens[15]),
+                    _parse_fortran_float(tokens[12]),
+                    _parse_fortran_float(tokens[13]),
+                    _parse_fortran_float(tokens[14]),
+                    _parse_fortran_float(tokens[15]),
                 )
             else
                 (NaN, NaN, NaN, NaN)
@@ -100,7 +101,8 @@ end
 
 Read all sev.83_* files matching `pattern` in `dir`, sorted by snapshot time.
 The default pattern matches what this fork's `hrplot.F` actually writes
-(`sev.83_<time>`, e.g. `sev.83_0`, `sev.83_0.5`).
+(`sev.83_<time>`, e.g. `sev.83_0`, `sev.83_0.5`). Files that cannot be read
+are skipped and reported in one warning with their count and the first path.
 """
 function read_all_stellar_evolution(
     dir::AbstractString,
@@ -118,15 +120,23 @@ function read_all_stellar_evolution(
     end)
 
     snapshots = StellarEvolutionSnapshot[]
+    n_failed = 0
+    first_failed = ""
     @showprogress desc = "Reading stellar evolution..." for f in files
         path = joinpath(dir, f)
         try
             snap = read_stellar_evolution(path)
             push!(snapshots, snap)
         catch e
+            e isa InterruptException && rethrow()
+            n_failed += 1
+            n_failed == 1 && (first_failed = path)
             @debug "Skipping unreadable sev file" path exception = e
         end
     end
+    n_failed > 0 &&
+        @warn "$n_failed of $(length(files)) sev files could not be read and are skipped " *
+              "(first: $first_failed)"
 
     sort!(snapshots; by = s -> s.time_myr)
     return snapshots

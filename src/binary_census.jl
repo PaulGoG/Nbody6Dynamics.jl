@@ -51,11 +51,14 @@ Base.@kwdef struct CensusSpan
 end
 
 # Interval of a span for the union: level E from its opening to its close,
-# level P widened to its censoring envelope (the neighbouring snapshots), so that
-# adjacent spans of the two levels join.
+# level P widened to the midpoints between its boundary snapshots and their
+# neighbours, so that adjacent spans of the two levels join while two level-P
+# spans separated by one unexcused miss stay apart.
 _census_interval(s::BinarySpan) = (s.t_form_nb, s.t_end_nb)
-_census_interval(s::BoundSpan) =
-    (isnan(s.t_form_lo) ? s.t_form_hi : s.t_form_lo, isnan(s.t_end_hi) ? s.t_end_lo : s.t_end_hi)
+_census_interval(s::BoundSpan) = (
+    isnan(s.t_form_lo) ? s.t_form_hi : (s.t_form_lo + s.t_form_hi) / 2,
+    isnan(s.t_end_hi) ? s.t_end_lo : (s.t_end_lo + s.t_end_hi) / 2,
+)
 
 """
     binary_census(level_e::AbstractVector{BinarySpan}, level_p::AbstractVector{BoundSpan};
@@ -63,8 +66,9 @@ _census_interval(s::BoundSpan) =
 
 Union of the engine-regularised spans ([`binary_spans`](@ref)) and the
 physically bound spans ([`bound_spans`](@ref)) of each pair: spans of the same
-pair whose intervals overlap — a level-P span widened to the snapshots before
-its first and after its last member — are joined, transitively, into one
+pair whose intervals overlap — a level-P span widened to the midpoints between
+its first member snapshot and the one before, and between its last member
+snapshot and the one after — are joined, transitively, into one
 [`CensusSpan`](@ref). A pair can have several census spans (it separates and
 re-forms). Flyby spans of level E (`:flyby`, never bound) are left out.
 Returns the spans sorted by `(t_form_nb, name1, name2)`; `ArgumentError` for

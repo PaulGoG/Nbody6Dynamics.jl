@@ -19,8 +19,8 @@ const _SPAN_DUP_RTOL = 1.0e-9
 const _SPAN_JOIN_TOL = 1.0e-2
 # Log lines before a closing record searched for a GW merger trigger that carries no time.
 const _SPAN_TRIGGER_WINDOW = 200
-# Days per Myr (Julian year of 365.25 d).
-const _DAYS_PER_MYR = 3.6525e8
+# Days per Myr: the engine's 365.24 d per year (ksinit.F), with which the KS lines print periods.
+const _DAYS_PER_MYR = 3.6524e8
 
 # KS kinds that open an episode
 const _SPAN_KS_OPENING = (:ks_new, :ks_new_primordial, :ks_new_compact)
@@ -509,13 +509,26 @@ function _span_chains(
     log::BinaryEventLog,
     nzero::Int,
 )::Tuple{Vector{_SpanChain},Dict{Int,Vector{Int}}}
-    records = sort!(filter(r -> isfinite(r.time_nb), log.fewbody); by = r -> r.line)
+    # Line order, NaN-timed records kept in place with the time of the preceding record
+    records = sort(log.fewbody; by = r -> r.line)
     chains = _SpanChain[]
     current = 0
+    t_prev = NaN
     for r in records
+        t = isfinite(r.time_nb) ? Float64(r.time_nb) : t_prev
+        isfinite(t) || continue
+        t_prev = t
+        if current != 0 &&
+           r.kind in _SPAN_CHAIN_OPENING &&
+           !_span_intersects(r, chains[current].members, nzero)
+            # The engine integrates one chain at a time: a new chain of other
+            # members ends the open one, whose closing record was not read
+            chains[current].t_end = t
+            current = 0
+        end
         if current == 0
             r.kind in _SPAN_CHAIN_OPENING || continue
-            push!(chains, _SpanChain(r.time_nb, Inf, _span_members(r, nzero)))
+            push!(chains, _SpanChain(t, Inf, _span_members(r, nzero)))
             current = length(chains)
             continue
         end
@@ -523,10 +536,13 @@ function _span_chains(
         _span_intersects(r, chain.members, nzero) || continue
         union!(chain.members, _span_members(r, nzero))
         if r.kind in _SPAN_CHAIN_CLOSING
-            chain.t_end = r.time_nb
+            chain.t_end = t
             current = 0
         end
     end
+    # A chain still open at the end of the record ends at its last time stamp
+    current != 0 &&
+        (chains[current].t_end = _span_latest_time(log, CollisionRecord[], CoalescenceRecord[]))
     of_name = Dict{Int,Vector{Int}}()
     for (i, c) in enumerate(chains), n in c.members
         _span_push_index!(of_name, n, i)
@@ -822,24 +838,25 @@ function _span_gw_trigger(triggers::Vector{Tuple{Float64,Int}}, t_c::Float64, li
     return false
 end
 
-# An exchange or chain binary in [t_c − tol, t_next] that takes the pair apart
+# An exchange or chain binary within the join tolerance of the close t_c that
+# takes the pair apart
 function _span_exchange_ended(
     key::Tuple{Int,Int},
     t_c::Float64,
-    t_next::Float64,
     lookup::_SpanLookup,
     log::BinaryEventLog,
 )::Bool
-    lo = t_c - _SPAN_JOIN_TOL
     for n in key, j in get(lookup.exchanges_of_name, n, Int[])
         r = log.exchange[j]
-        lo <= r.time_nb <= t_next || continue
+        abs(r.time_nb - t_c) <= _SPAN_JOIN_TOL || continue
         _span_key(r.name1_initial, r.name2_initial) == key && return true
         _span_shares_one(key, r.name1_final, r.name2_final) && return true
     end
     for n in key, j in get(lookup.chain_binaries_of_name, n, Int[])
         r = log.fewbody[j]
-        lo <= r.time_nb <= t_next && _span_shares_one(key, r.names[1], r.names[2]) && return true
+        abs(r.time_nb - t_c) <= _SPAN_JOIN_TOL &&
+            _span_shares_one(key, r.names[1], r.names[2]) &&
+            return true
     end
     return false
 end
@@ -848,7 +865,6 @@ function _span_end_class(
     ep::_SpanEpisode,
     form::_SpanElements,
     key::Tuple{Int,Int},
-    t_next::Float64,
     lookup::_SpanLookup,
     log::BinaryEventLog,
 )::Symbol
@@ -859,7 +875,7 @@ function _span_end_class(
     _span_near(get(lookup.mergers, key, Float64[]), t_c) && return :stellar_merger
     collision && return :collision
     _span_near(get(lookup.escapes, key, Float64[]), t_c) && return :escape_bound
-    _span_exchange_ended(key, t_c, t_next, lookup, log) && return :exchange
+    _span_exchange_ended(key, t_c, lookup, log) && return :exchange
     ep.kind_end === :ks_end_mass_loss && return :sn_disruption
     if ep.kind_end === :ks_end && _span_unbound(ep.final)
         # Unbound at both ends: a hyperbolic encounter, not a disrupted binary
@@ -888,7 +904,6 @@ function _span_record(
     last_ep = eps[s.last_episode]
     primordial = _span_primordial(key, nbin0)
     first_of_key = i == 1 || raw[i - 1].key != key
-    t_next = i < length(raw) && raw[i + 1].key == key ? raw[i + 1].t_form_nb : Inf
 
     # Components that were in a span of another pair formed earlier
     before = false
@@ -911,7 +926,7 @@ function _span_record(
         t_start,
         nzero,
     )
-    end_class = _span_end_class(last_ep, first_ep.form, key, t_next, lookup, log)
+    end_class = _span_end_class(last_ep, first_ep.form, key, lookup, log)
 
     t_end = s.t_end_nb
     ks_time = 0.0
@@ -1017,11 +1032,16 @@ are ignored.
    is ignored within $(_SPAN_JOIN_TOL) NB of the last close, and otherwise closes a
    left-censored episode opened at the first listing that holds the pair after
    the last close, else at `t_start_nb` or the last close.
-2. Coverage. Chain episodes run from NEW CHAIN/TRIPLE/QUAD to the first END
-   CHAIN or CHTERM record whose members (names 1…NZERO) intersect theirs, and
-   collect the members of every record in between that intersects them;
-   hierarchy episodes run from NEW MERGER or NEW MERGE2 of an inner pair to the
-   next END MERGER of the same pair. Unclosed episodes run to the end.
+2. Coverage. Chain episodes run, in log-line order, from NEW CHAIN/TRIPLE/QUAD
+   to the first END CHAIN or CHTERM record whose members (names 1…NZERO)
+   intersect theirs, and collect the members of every record in between that
+   intersects them; an opening record whose members do not intersect those of
+   the open chain ends it (the engine integrates one chain at a time), and a
+   record without a time stamp takes that of the preceding record. A chain
+   still open at the end runs to the latest time stamp of the log. END TRIPLE
+   and END QUAD lines are not read. Hierarchy episodes run from NEW MERGER or
+   NEW MERGE2 of an inner pair to the next END MERGER of the same pair;
+   unclosed ones run to the end.
 3. Spans. Consecutive episodes of a pair are joined when the gap g between them
    is ≤ 0 or at most `n_p` periods of the earlier episode (its closing record,
    else its opening record), or when a chain holding both components or a
@@ -1047,9 +1067,9 @@ The end class is that of the last episode, the first that applies of:
 3. `:stellar_merger`: a coalescence (`coal.24`, ROCHE COAL) of the pair;
 4. `:collision`: a collision of the pair without a GW trigger;
 5. `:escape_bound`: a BINARY ESCAPE of the pair;
-6. `:exchange`: an EXCHANGE line between the close and the next span of the pair
+6. `:exchange`: an EXCHANGE line within $(_SPAN_JOIN_TOL) NB of the close
    whose initial pair is this one or whose final pair holds one of its
-   components, or a CHAIN BINARY line holding one of its components;
+   components, or a CHAIN BINARY line there holding one of its components;
 7. `:sn_disruption`: closed by MDEND KSREG;
 8. `:flyby`: closed by END KSREG unbound (positive binding energy or a < 0)
    and opened unbound: a hyperbolic encounter that never was a binary;
@@ -1153,6 +1173,79 @@ function binary_spans(
     ]
     sort!(spans; by = s -> (s.t_form_nb, s.name1, s.name2))
     return spans
+end
+
+"""
+    _span_restart_dedup(records, restart_starts) -> Vector
+
+The `coll.13` or `coal.24` records (fields `time_nb`, `name1`, `name2`, in file
+order) of a run restarted at the N-body times `restart_starts` (`t_start` of
+every segment after the first in `RUN_INFO.toml`), without the duplicates a
+restart appends. A restarted segment re-runs the interval from its dump onwards
+and appends to the file, so the records of that interval occur twice, the
+earlier ones belonging to the discarded tail of the interrupted segment. Where
+the time stamps fall back (a record earlier than the latest one before it) to a
+time at or after a restart start not yet used, the earlier records after that
+start are dropped; each start is used once, in increasing order. Records with
+the same time and names as a later one are dropped as well. A re-run whose
+first record is not earlier than the last record of the interrupted segment
+cannot be told from it and is kept.
+"""
+function _span_restart_dedup(
+    records::AbstractVector{T},
+    restart_starts::AbstractVector{<:Real},
+)::Vector{T} where {T}
+    starts = sort!(Float64[s for s in restart_starts if isfinite(s)])
+    kept = T[]
+    next_start = 1
+    t_max = -Inf
+    for r in records
+        t = Float64(r.time_nb)
+        if isfinite(t) && t < t_max
+            # Latest unused restart start at or before t
+            k = searchsortedlast(starts, t)
+            if k >= next_start
+                s = starts[k]
+                filter!(q -> !(isfinite(q.time_nb) && q.time_nb > s), kept)
+                next_start = k + 1
+                t_max = -Inf
+                for q in kept
+                    isfinite(q.time_nb) && (t_max = max(t_max, Float64(q.time_nb)))
+                end
+            end
+        end
+        push!(kept, r)
+        isfinite(t) && (t_max = max(t_max, t))
+    end
+    # Identical (time, names) records: keep the last occurrence
+    seen = Set{Tuple{Float64,Int,Int}}()
+    out = T[]
+    for r in Iterators.reverse(kept)
+        id = (Float64(r.time_nb), _span_key(Int(r.name1), Int(r.name2))...)
+        id in seen && continue
+        push!(seen, id)
+        push!(out, r)
+    end
+    return reverse!(out)
+end
+
+"""
+    _span_restart_starts(run_info::AbstractDict) -> Vector{Float64}
+
+`t_start` [NB] of every segment after the first in the `segments` of a run
+record (`RUN_INFO.toml`); empty for a run of one segment or without a record.
+"""
+function _span_restart_starts(run_info::AbstractDict)::Vector{Float64}
+    segments = get(run_info, "segments", nothing)
+    segments isa AbstractVector || return Float64[]
+    starts = Float64[]
+    for (k, seg) in enumerate(segments)
+        k == 1 && continue
+        seg isa AbstractDict || continue
+        t = get(seg, "t_start", nothing)
+        t isa Real && isfinite(t) && push!(starts, Float64(t))
+    end
+    return starts
 end
 
 """

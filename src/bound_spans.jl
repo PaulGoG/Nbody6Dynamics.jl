@@ -2,14 +2,17 @@
 # Bound spans: physically bound pairs of the snapshots joined across snapshots
 # =============================================================================
 #
-# Level P of the binary census. At every snapshot the mutually most-bound pairs
-# (one level of the node joining of Bate 2009, DOI 10.1111/j.1365-2966.2009.14165.x)
-# are kept when the tidal perturbation of their nearest neighbours at apocentre
-# is weak, or when the dominant perturber is the outer body of a triple that is
-# stable by the criterion of Mardling & Aarseth (2001, DOI
-# 10.1046/j.1365-8711.2001.03974.x). The engine's KS pairs are members
-# regardless, since single-precision snapshots cannot resolve hard pairs. The
-# memberships of a pair of names are then joined over the snapshot sequence.
+# Level P of the binary census. At every snapshot the bound pairs joined
+# greedily by specific orbital energy (one level of node joining after Bate
+# 2009a, DOI 10.1111/j.1365-2966.2008.14106.x, ordered by energy instead of
+# separation) are kept when the tidal perturbation of their nearest neighbours
+# at apocentre is weak, or when the dominant perturber is the outer body of a
+# triple that is stable by the criterion of Mardling & Aarseth (2001, DOI
+# 10.1046/j.1365-8711.2001.03974.x). The engine's KS pairs with a positive
+# centre-of-mass name are members regardless, since single-precision snapshots
+# cannot resolve hard pairs; the stars of a merged hierarchy (negative name) are
+# ordinary candidates. The memberships of a pair of names are then joined over
+# the snapshot sequence.
 
 # ---------------------------------------------------------------------------
 # Record types
@@ -29,7 +32,7 @@ N-body units of the snapshot (G = 1).
 | `gamma_apo` | apocentre perturbation ``γ_\\mathrm{apo}``; `NaN` for a KS pair kept only as such | — |
 | `hierarchy` | kept as the inner pair of a stable triple despite ``γ_\\mathrm{apo} ≥ γ_\\mathrm{max}`` | — |
 | `outer_name` | name of the outer body of that triple, 0 when none | — |
-| `ks` | the pair is a KS pair of the snapshot | — |
+| `ks` | the pair is a KS pair of the snapshot with a positive centre-of-mass name (not a merged hierarchy) | — |
 | `m1`, `m2` | masses of `name1` and `name2` | NB |
 """
 struct BoundPair
@@ -404,9 +407,10 @@ converted to `Float64`), sorted by `(name1, name2)`.
 - `gamma_max`: largest accepted ``γ_\\mathrm{apo}``
 
 # Method
-1. Candidates are the bound, mutually most-bound pairs of
-   [`snapshot_pairs`](@ref), the first level of the node joining of Bate
-   (2009, DOI 10.1111/j.1365-2966.2009.14165.x).
+1. Candidates are the bound pairs of [`snapshot_pairs`](@ref), joined
+   greedily in ascending specific orbital energy with every star used once:
+   one level of node joining after Bate (2009a,
+   DOI 10.1111/j.1365-2966.2008.14106.x), ordered by ε instead of separation.
 2. With ``m_b = m_1 + m_2`` and ``d_l`` the distances of the `n_perturbers`
    nearest other bodies from the pair's centre of mass, the apocentre
    perturbation is
@@ -423,11 +427,16 @@ converted to `Float64`), sorted by `(name1, name2)`.
    ``l^*`` about the pair's centre of mass and ``i`` [deg] the angle between
    the inner and outer orbital angular momenta (0 when one of them vanishes);
    it is rejected otherwise.
-3. Every KS pair of the snapshot is a member whatever steps 1 and 2 give, with
-   `ks = true`; a KS pair not accepted in step 2 carries the elements of its
-   relative state when bound (`NaN` when not), `gamma_apo = NaN` and
-   `hierarchy = false`. A candidate that joins a KS component to another star
-   is dropped.
+3. Every KS pair of the snapshot with a positive centre-of-mass name
+   (`pair_name`; every slot when the snapshot carries none) is a member
+   whatever steps 1 and 2 give, with `ks = true`; such a pair not accepted in
+   step 2 carries the elements of its relative state when bound (`NaN` when
+   not), `gamma_apo = NaN` and `hierarchy = false`. A candidate that joins a
+   component of such a pair to another star is dropped. A slot with a negative
+   name is a merged hierarchy: star 2k − 1 is the first inner component, star
+   2k the outer body, the second inner component sits among the singles. Its
+   stars are ordinary candidates, so the inner binary is found by step 1 and
+   the outer body enters the triple test of step 2.
 
 Throws `ArgumentError` for `n_perturbers < 0` or `gamma_max ≤ 0`, and as
 [`snapshot_pairs`](@ref) for `k < 1`.
@@ -453,8 +462,12 @@ function bound_pairs(
     n = length(mass)
     n_p = Int(n_perturbers)
     γ_max = Float64(gamma_max)
+    # KS partners of the slots reduced to a centre of mass; the stars of a
+    # merged hierarchy (negative pair_name) are ordinary candidates
+    reduced = [isempty(snap.pair_name) || snap.pair_name[p] > 0 for p in 1:(snap.npairs)]
     partner = zeros(Int, n)
     for p in 1:(snap.npairs)
+        reduced[p] || continue
         partner[2p - 1] = 2p
         partner[2p] = 2p - 1
     end
@@ -491,7 +504,7 @@ function bound_pairs(
         end
     end
     for p in 1:(snap.npairs)
-        ks_found[p] && continue
+        (ks_found[p] || !reduced[p]) && continue
         i, j = 2p - 1, 2p
         _, ε, a, e = _bound_orbit(pos, vel, mass, i, j)
         push!(pairs, _bound_pair(snap, mass, i, j, a, e, ε, NaN, false, 0, true))

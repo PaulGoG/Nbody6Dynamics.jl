@@ -51,6 +51,8 @@ six-digit rounding of the Myr stamps; the event lines carry exact N-body
 stamps and enter when their time is `≤ t` to round-off (`1e-9 × max(t, 1)`).
 Of `events` only the `:merged_star` and `:coalescence` lines (their mass loss
 `dmass_solar`) and the `:escape` lines (the engine's total mass) are used.
+A `NaN` `units.zmbar` or `units.tscale` (a stdout capture without `M*` or
+`T*`, see [`extract_scaling`](@ref)) makes the terms that need it `NaN`.
 Throws an `ArgumentError` without snapshots, for non-positive `units.zmbar`
 or `units.tscale`, or a negative `time_tolerance`.
 """
@@ -63,10 +65,14 @@ function mass_budget(
     time_tolerance::Real = 1.0e-5,
 )::Vector{MassBudgetRow}
     isempty(ints) && throw(ArgumentError("mass_budget needs at least one snapshot"))
-    units.zmbar > 0 || throw(ArgumentError("units.zmbar must be positive, got $(units.zmbar)"))
-    units.tscale > 0 || throw(ArgumentError("units.tscale must be positive, got $(units.tscale)"))
+    (isnan(units.zmbar) || units.zmbar > 0) ||
+        throw(ArgumentError("units.zmbar must be positive, got $(units.zmbar)"))
+    (isnan(units.tscale) || units.tscale > 0) ||
+        throw(ArgumentError("units.tscale must be positive, got $(units.tscale)"))
     time_tolerance >= 0 || throw(ArgumentError("time_tolerance must be ≥ 0, got $time_tolerance"))
     zmbar, tscale = units.zmbar, units.tscale
+    # Without M* or T* the converted terms are unknown, not zero
+    nan_units = isnan(zmbar) || isnan(tscale)
 
     # Escapers sorted by time with the cumulative escaped mass.
     t_esc_raw = Float64[e.time_myr / tscale for e in escapers]
@@ -101,11 +107,11 @@ function mass_budget(
     for (i, s) in enumerate(ints)
         bound_myr, bound_nb = _budget_bounds(s.time_nb, time_tolerance)
         j = searchsortedlast(t_esc, bound_myr)
-        m_escaped = j == 0 ? 0.0 : m_esc_cum[j]
+        m_escaped = nan_units && !isempty(escapers) ? NaN : j == 0 ? 0.0 : m_esc_cum[j]
         j = searchsortedlast(t_cnt, bound_myr)
-        m_stellar = j == 0 ? 0.0 : zmdot[j]
+        m_stellar = nan_units && !isempty(counters) ? NaN : j == 0 ? 0.0 : zmdot[j]
         j = searchsortedlast(t_coll, bound_nb)
-        m_collision = j == 0 ? 0.0 : m_coll_cum[j]
+        m_collision = isnan(zmbar) && !isempty(coll) ? NaN : j == 0 ? 0.0 : m_coll_cum[j]
         j = searchsortedlast(t_ev, bound_nb)
         m_engine = j == 0 ? NaN : m_ev[j]
         residual = m0 - (s.mass + m_escaped + m_stellar + m_collision)
@@ -185,6 +191,24 @@ function write_mass_budget(path::AbstractString, rows::AbstractVector{MassBudget
     return String(path)
 end
 
+"""
+    _budget_reduced_pairs(snap::Snapshot) -> Set{Tuple{Int,Int}}
+
+Name pairs `(min, max)` of the KS slots of `snap` that the snapshot reduces to
+their centres of mass: every slot with a positive centre-of-mass name, every
+slot when the snapshot carries no `pair_name`. A slot with a negative name is a
+merged hierarchy, whose stars 2k − 1 and 2k are the first inner component and
+the outer body.
+"""
+function _budget_reduced_pairs(snap::Snapshot)::Set{Tuple{Int,Int}}
+    slots = Set{Tuple{Int,Int}}()
+    for p in 1:(snap.npairs)
+        isempty(snap.pair_name) || snap.pair_name[p] > 0 || continue
+        push!(slots, minmax(Int(snap.name[2p - 1]), Int(snap.name[2p])))
+    end
+    return slots
+end
+
 """Upper time bounds of a snapshot at `t` for Myr-stamped records (`tol` relative) and for exact N-body stamps."""
 function _budget_bounds(t::Float64, tol::Real)::NTuple{2,Float64}
     return (t + Float64(tol) * max(t, 1.0), t + 1.0e-9 * max(t, 1.0))
@@ -242,7 +266,8 @@ end
 """
     energy_budget(ints::AbstractVector{SnapshotIntegrals}, escapers::AbstractVector{EscaperRecord},
                   counters::AbstractVector{EventCounters}, diag::DiagnosticsData,
-                  units::UnitScaling; bevs = BinaryEvolutionSnapshot[], time_tolerance = 1.0e-5)
+                  units::UnitScaling; bevs = BinaryEvolutionSnapshot[], snapshots = Snapshot[],
+                  time_tolerance = 1.0e-5)
         -> Vector{EnergyBudgetRow}
 
 Energy budget of every snapshot (see [`EnergyBudgetRow`](@ref)): the Jacobi
@@ -253,11 +278,19 @@ from `counters` (`event.35`, full precision) when given, else from
 `escapers` (`esc.11`) and the ADJUST records of `diag` (four digits); the
 pairs' internal energy from `bevs` (`bev.82`, matched by the N-body stamp
 of its records, the header time being rounded) at the snapshot times it
-covers. Times in Myr are converted with `units.tscale`, masses with
-`units.zmbar`, the `bev.82` energies with `units.zmbar × units.vstar²`;
-time bounds as in [`mass_budget`](@ref). Throws an `ArgumentError` without
-snapshots, for non-positive `units.zmbar`, `units.tscale` or `units.vstar`,
-or a negative `time_tolerance`.
+covers. With `snapshots` (aligned with `ints`) a `bev.82` record enters the
+pair energy of a snapshot only when its two names are the components of a KS
+slot of that snapshot with a positive centre-of-mass name, the pairs the
+snapshot reduces to their centres of mass: bev.82 lists the inner binary of a
+merged hierarchy, whose stars are single in the snapshot and already in
+T + W (all slots count when the snapshot carries no `pair_name`). Without
+`snapshots` every record counts. Times in Myr are converted with
+`units.tscale`, masses with `units.zmbar`, the `bev.82` energies with
+`units.zmbar × units.vstar²`; time bounds as in [`mass_budget`](@ref). A `NaN`
+unit ([`extract_scaling`](@ref) without `M*` or `T*`) makes the terms that
+need it `NaN`. Throws an `ArgumentError` without snapshots, for non-positive
+`units.zmbar`, `units.tscale` or `units.vstar`, a negative `time_tolerance`,
+or `snapshots` not aligned with `ints`.
 """
 function energy_budget(
     ints::AbstractVector{SnapshotIntegrals},
@@ -266,13 +299,22 @@ function energy_budget(
     diag::DiagnosticsData,
     units::UnitScaling;
     bevs::AbstractVector{BinaryEvolutionSnapshot} = BinaryEvolutionSnapshot[],
+    snapshots::AbstractVector{Snapshot} = Snapshot[],
     time_tolerance::Real = 1.0e-5,
 )::Vector{EnergyBudgetRow}
     isempty(ints) && throw(ArgumentError("energy_budget needs at least one snapshot"))
-    units.zmbar > 0 || throw(ArgumentError("units.zmbar must be positive, got $(units.zmbar)"))
-    units.tscale > 0 || throw(ArgumentError("units.tscale must be positive, got $(units.tscale)"))
-    units.vstar > 0 || throw(ArgumentError("units.vstar must be positive, got $(units.vstar)"))
+    (isnan(units.zmbar) || units.zmbar > 0) ||
+        throw(ArgumentError("units.zmbar must be positive, got $(units.zmbar)"))
+    (isnan(units.tscale) || units.tscale > 0) ||
+        throw(ArgumentError("units.tscale must be positive, got $(units.tscale)"))
+    (isnan(units.vstar) || units.vstar > 0) ||
+        throw(ArgumentError("units.vstar must be positive, got $(units.vstar)"))
     time_tolerance >= 0 || throw(ArgumentError("time_tolerance must be ≥ 0, got $time_tolerance"))
+    (isempty(snapshots) || length(snapshots) == length(ints)) || throw(
+        ArgumentError(
+            "energy_budget: $(length(snapshots)) snapshots for $(length(ints)) snapshot integrals",
+        ),
+    )
     zmbar, tscale = units.zmbar, units.tscale
 
     # Escaper energies and correction channels: event.35 at full precision
@@ -306,10 +348,13 @@ function energy_budget(
     bev_t(b) = isempty(b.records) ? b.time_myr / tscale : b.records[1].time_nb
     pb = sortperm(Float64[bev_t(b) for b in bevs])
     t_bev = Float64[bev_t(bevs[j]) for j in pb]
-    e_bev = Float64[
-        -sum(binding_energy(r) for r in bevs[j].records; init = 0.0) / (zmbar * units.vstar^2)
-        for j in pb
-    ]
+    e_scale = zmbar * units.vstar^2
+    e_bev =
+        Float64[-sum(binding_energy(r) for r in bevs[j].records; init = 0.0) / e_scale for j in pb]
+    # Without M* or T* the escaper energies (Myr stamps or M☉ masses) and the
+    # event.35 channels (Myr stamps) cannot be placed: NaN, not zero.
+    esc_unknown = source !== :none && (isnan(tscale) || (source === :escapers && isnan(zmbar)))
+    chan_unknown = source === :counters && isnan(tscale)
 
     rows = Vector{EnergyBudgetRow}(undef, length(ints))
     e_ref = NaN
@@ -317,14 +362,26 @@ function energy_budget(
         bound_myr, _ = _budget_bounds(s.time_nb, time_tolerance)
         lower_myr = s.time_nb - (bound_myr - s.time_nb)
         j = searchsortedlast(t_esc, bound_myr)
-        e_escaped = j == 0 ? 0.0 : e_esc[j]
+        e_escaped = esc_unknown ? NaN : j == 0 ? 0.0 : e_esc[j]
         j = searchsortedlast(t_chan, bound_myr)
-        e_channels = j == 0 ? NaN : e_chan[j]
+        e_channels = chan_unknown || j == 0 ? NaN : e_chan[j]
         j = searchsortedlast(t_adj, bound_myr)
         detot = j == 0 ? NaN : detot_adj[j]
         j = searchsortedlast(t_bev, bound_myr)
         pair_source = j > 0 && t_bev[j] >= lower_myr ? :bev : :snapshot
-        e_pairs = pair_source === :bev ? e_bev[j] : s.pair_internal
+        e_pairs = if pair_source === :snapshot
+            s.pair_internal
+        elseif isempty(snapshots)
+            e_bev[j]
+        else
+            # Only the pairs the snapshot reduces to their centres of mass
+            slots = _budget_reduced_pairs(snapshots[i])
+            -sum(
+                binding_energy(r) for
+                r in bevs[pb[j]].records if minmax(Int(r.name1), Int(r.name2)) in slots;
+                init = 0.0,
+            ) / e_scale
+        end
         e_snapshot = s.kinetic + s.potential + e_pairs + s.tidal_potential
         e_total = e_snapshot + e_escaped + e_channels
         i == 1 && (e_ref = e_total)

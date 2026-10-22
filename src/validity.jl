@@ -1004,7 +1004,10 @@ function validity_record(
             )
         end
     end
-    adj = diag === nothing ? AdjustRecord[] : diag.adjust
+    # The engine's DE is no error measure where the energy section's
+    # `engine_energy_valid` is false (verdict `not_applicable`): no threshold epochs.
+    de_valid = engine_energy_valid(mode; tidal_energy_amended = "tidal-energy-total" in amendments)
+    adj = diag === nothing || !de_valid ? AdjustRecord[] : diag.adjust
     for k in 2:length(adj)
         de_k = adj[k].de_rel
         (isfinite(de_k) && abs(de_k) > settings.validity_interval_de) || continue

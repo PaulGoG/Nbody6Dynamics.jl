@@ -28,7 +28,10 @@ Each ADJUST epoch in Nbody6++ output consists of up to three lines:
 2. `RMIN = … RSCALE = …` — scale radius (may appear between ADJUST and TIME[NB])
 3. `TIME[NB] … N … NPAIRS …` — particle counts
 
-These are merged into a single `AdjustRecord` per epoch.
+These are merged into a single `AdjustRecord` per epoch. An ADJUST line that
+does not parse (too few fields, an overflowed `****` field) is skipped
+together with its supplementary lines; the count is reported in one warning
+per file.
 
 The energy terms the key-value ADJUST line prints after `DETOT` (`EKIN`,
 `POT`, `ETIDE`, `EBIN`, `EMERGE`, `ESUB`, `ECOLL`, `EMDOT`, `ECDOT`) are kept
@@ -68,6 +71,7 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     pending_emdot = NaN
     pending_ecdot = NaN
     have_adjust = false   # true once we've seen ADJUST: for this epoch
+    n_unparsed = 0        # ADJUST lines skipped as unparseable
 
     kz = Int[]
     tidal = (0.0, 0.0, 0.0, 0.0)
@@ -147,8 +151,14 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
                     ),
                 )
             end
-            # Parse the new ADJUST line
+            # Parse the new ADJUST line; an unparseable one is skipped with
+            # its RSCALE and TIME[NB] lines, never kept as a zero record
             vals = _parse_adjust_fields(stripped)
+            if vals === nothing
+                n_unparsed += 1
+                have_adjust = false
+                continue
+            end
             pending_time_nb = vals.time_nb
             pending_time_myr = vals.time_myr
             pending_qvir = vals.qvir
@@ -232,6 +242,9 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     # ADJUST lines, so many records have n=0.  Carry forward the last known
     # particle count so plots don't show sawtooth artefacts.
     _forward_fill_particle_counts!(adjust_records)
+    n_unparsed > 0 &&
+        @warn "$path: $n_unparsed ADJUST lines skipped as unparseable (too few fields or a " *
+              "Fortran field overflow)"
 
     return DiagnosticsData(adjust_records, scaling, kz, tidal, nbin0, nzero)
 end
@@ -302,11 +315,14 @@ end
 Parse a single ADJUST line.  Supports two formats:
   - Positional:  T_NB  T_Myr  QV  DE  E_TOT  N  NPAIRS  RSCALE …
   - Key-value:   TIME val  T[Myr] val  Q val  DE val … ETOT val …
+Reals are read as Fortran reals (`E` or `D` exponent). Returns `nothing` for
+a line that does not parse (too few tokens, an overflowed `****` field), which
+the caller skips.
 """
-function _parse_adjust_fields(line::AbstractString)::_AdjustFields
+function _parse_adjust_fields(line::AbstractString)::Union{Nothing,_AdjustFields}
     body = replace(line, r"^ADJUST:\s*" => "")
     tokens = split(body)
-    length(tokens) < 4 && return _AdjustFields(0, 0, 0, 0, 0, 0, 0, 0, NaN, NaN)
+    length(tokens) < 4 && return nothing
 
     try
         if uppercase(tokens[1]) == "TIME"
@@ -315,8 +331,9 @@ function _parse_adjust_fields(line::AbstractString)::_AdjustFields
             return _parse_adjust_positional(tokens)
         end
     catch e
+        e isa Union{ArgumentError,ErrorException,InexactError} || rethrow()
         @debug "Skipping unparseable ADJUST line" line exception = e
-        return _AdjustFields(0, 0, 0, 0, 0, 0, 0, 0, NaN, NaN)
+        return nothing
     end
 end
 
@@ -324,14 +341,14 @@ end
 function _parse_adjust_positional(tokens)::_AdjustFields
     length(tokens) >= 8 || error("Too few tokens")
     _AdjustFields(
-        parse(Float64, tokens[1]),
-        parse(Float64, tokens[2]),
-        parse(Float64, tokens[3]),
-        parse(Float64, tokens[4]),
-        parse(Float64, tokens[5]),
+        _parse_fortran_float(tokens[1]),
+        _parse_fortran_float(tokens[2]),
+        _parse_fortran_float(tokens[3]),
+        _parse_fortran_float(tokens[4]),
+        _parse_fortran_float(tokens[5]),
         parse(Int, tokens[6]),
         parse(Int, tokens[7]),
-        parse(Float64, tokens[8]),
+        _parse_fortran_float(tokens[8]),
         NaN,
         NaN,
     )
@@ -351,25 +368,26 @@ function _parse_adjust_kv(tokens)::_AdjustFields
         end
     end
 
-    time_nb = parse(Float64, get(kv, "TIME", "0"))
-    time_myr = parse(Float64, get(kv, "T[MYR]", "0"))
-    qvir = parse(Float64, get(kv, "Q", "0"))
-    de_rel = parse(Float64, get(kv, "DE", "0"))
-    e_tot = parse(Float64, get(kv, "ETOT", get(kv, "E", "0")))
-    n = round(Int, parse(Float64, get(kv, "N", "0")))
-    npairs = round(Int, parse(Float64, get(kv, "NPAIRS", "0")))
-    rscale = parse(Float64, get(kv, "RSCALE", get(kv, "RSCL", "0")))
-    de_abs = parse(Float64, get(kv, "DELTA", "NaN"))
-    detot = parse(Float64, get(kv, "DETOT", "NaN"))
-    ekin = parse(Float64, get(kv, "EKIN", "NaN"))
-    pot = parse(Float64, get(kv, "POT", "NaN"))
-    etide = parse(Float64, get(kv, "ETIDE", "NaN"))
-    ebin = parse(Float64, get(kv, "EBIN", "NaN"))
-    emerge = parse(Float64, get(kv, "EMERGE", "NaN"))
-    esub = parse(Float64, get(kv, "ESUB", "NaN"))
-    ecoll = parse(Float64, get(kv, "ECOLL", "NaN"))
-    emdot = parse(Float64, get(kv, "EMDOT", "NaN"))
-    ecdot = parse(Float64, get(kv, "ECDOT", "NaN"))
+    kv_real(key, default) = _parse_fortran_float(get(kv, key, default))
+    time_nb = kv_real("TIME", "0")
+    time_myr = kv_real("T[MYR]", "0")
+    qvir = kv_real("Q", "0")
+    de_rel = kv_real("DE", "0")
+    e_tot = _parse_fortran_float(get(kv, "ETOT", get(kv, "E", "0")))
+    n = round(Int, kv_real("N", "0"))
+    npairs = round(Int, kv_real("NPAIRS", "0"))
+    rscale = _parse_fortran_float(get(kv, "RSCALE", get(kv, "RSCL", "0")))
+    de_abs = kv_real("DELTA", "NaN")
+    detot = kv_real("DETOT", "NaN")
+    ekin = kv_real("EKIN", "NaN")
+    pot = kv_real("POT", "NaN")
+    etide = kv_real("ETIDE", "NaN")
+    ebin = kv_real("EBIN", "NaN")
+    emerge = kv_real("EMERGE", "NaN")
+    esub = kv_real("ESUB", "NaN")
+    ecoll = kv_real("ECOLL", "NaN")
+    emdot = kv_real("EMDOT", "NaN")
+    ecdot = kv_real("ECDOT", "NaN")
 
     return _AdjustFields(
         time_nb,
@@ -531,8 +549,10 @@ end
 """
     extract_scaling(diag::DiagnosticsData) -> UnitScaling
 
-Build a `UnitScaling` from parsed physical scaling data.
-Falls back to unit values if keys are missing.
+Build a `UnitScaling` from parsed physical scaling data. A missing `M*` or
+`T*` gives `NaN` for that factor, with one warning, so that every quantity
+converted with it is `NaN` rather than a number in the wrong units; a missing
+`R*` or `V*` falls back to 1.
 
 The mass scale is `M*` (ZMBAR, the NB→M☉ conversion factor for the *total*
 mass) — NOT `<M>`, which is the mean stellar mass. Nbody6++ prints both in
@@ -541,7 +561,11 @@ factor at startup, and `units.f` converts masses as `ZMBAR*M`.
 """
 function extract_scaling(diag::DiagnosticsData)::UnitScaling
     s = diag.physical_scaling
-    UnitScaling(get(s, "R*", 1.0), get(s, "M*", 1.0), get(s, "T*", 1.0), get(s, "V*", 1.0))
+    missing_keys = filter(k -> !haskey(s, k), ["M*", "T*"])
+    isempty(missing_keys) ||
+        @warn "PHYSICAL SCALING without $(join(missing_keys, " and ")): the converted " *
+              "quantities (masses in M☉, times in Myr) are NaN" maxlog = 1
+    UnitScaling(get(s, "R*", 1.0), get(s, "M*", NaN), get(s, "T*", NaN), get(s, "V*", 1.0))
 end
 
 """

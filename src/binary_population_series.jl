@@ -23,14 +23,14 @@ snapshot, masses in M☉.
 | `n_singles` | single stars (of the class) | — |
 | `n_binaries` | binaries (with a primary of the class) | — |
 | `n_in_binaries` | binary components (of the class) | — |
-| `n_hierarchies` | binaries of `n_binaries` in a hierarchy: at `:bound` the inner pair of a stable triple, at `:ks` a KS pair with a merged inner binary (negative `pair_name`) | — |
+| `n_hierarchies` | binaries of `n_binaries` in a hierarchy: at `:bound` the inner pair of a stable triple, at `:ks` the inner binary of a merged hierarchy (KS slot with a negative `pair_name`) | — |
 | `m_singles_msun` | mass of the singles of `n_singles` | M☉ |
 | `m_binaries_msun` | mass of the binaries (`:all`) or of the components of the class in binaries | M☉ |
 | `f_b_number` | ``f_b = N_b / (N_s + N_b)`` | — |
 | `f_b_stars` | ``f_⋆ = N_\\mathrm{in} / (N_s + N_\\mathrm{in})`` | — |
 | `f_b_mass` | ``f_M = M_b / (M_s + M_b)`` | — |
 | `f_b_number_se` | binomial standard error ``\\sqrt{f_b (1 - f_b) / (N_s + N_b)}`` | — |
-| `f_b_q` | fraction of binaries with ``q > q_\\mathrm{min}`` among the systems with single or primary mass in the window | — |
+| `f_b_q` | fraction of binaries with ``q > q_\\mathrm{min}`` (and, with stellar types, two main-sequence components) among the systems with single or primary mass in the window | — |
 | `r_h_binaries_nb`, `r_h_singles_nb` | half-mass radii of the binaries and singles of the row; `NaN` on shells | NB |
 
 Fractions with a vanishing denominator are `NaN`.
@@ -108,7 +108,7 @@ _BpopTally(nr::Int, nc::Int) = _BpopTally(
                              radius_frame::Symbol = :lagrangian, edges = nothing,
                              centre = :shrinking_sphere, centre_kwargs::NamedTuple = (;),
                              kstar = nothing, q_min::Real = 0.5,
-                             primary_window_msun::Tuple{<:Real,<:Real} = (0.5, 0.9),
+                             primary_window_msun::Tuple{<:Real,<:Real} = (0.47, 0.76),
                              k::Integer = 10, n_perturbers::Integer = 4,
                              gamma_max::Real = 0.1, max_untyped_fraction::Real = 0.01)
         -> Vector{BinaryPopulationRow}
@@ -134,20 +134,30 @@ class, in that order.
   merged hierarchy (a KS pair with a negative `pair_name`) nor the body that
   represents a chain subsystem in sev.83 or bev.82
 - `q_min`, `primary_window_msun`: mass-ratio threshold and inclusive primary
-  mass window [M☉] of `f_b_q`
+  mass window [M☉] of `f_b_q`; the default window is that of Milone et al.
+  (2012, DOI 10.1051/0004-6361/201016384, §5), 0.47 < M < 0.76 M☉
 - `k`, `n_perturbers`, `gamma_max`: pair membership at level P, see
   [`bound_pairs`](@ref)
-- `max_untyped_fraction`: largest fraction of the stars of a snapshot without a
-  stellar type; more indicates mismatched epochs and raises an `ArgumentError`
+- `max_untyped_fraction`: largest fraction of the massive stars of a snapshot
+  without a stellar type; the untyped stars up to it count under `:all` only,
+  more indicates mismatched epochs and raises an `ArgumentError`
 
-Massless bodies (the ghosts of merged and chain subsystems) are left out of
-every count.
+Massless bodies are no systems: an unpaired massless star (the ghost of a
+merged or chain subsystem) is left out of every count, and a pair with a
+massless component (in particular one of summed mass 0) is not formed, its
+massive component, if any, counting as a single.
 
 # Method
 At a level the stars of a snapshot form systems. Level `:ks` takes the KS
-pairs (stars 2k − 1 and 2k), level `:bound` the pairs of [`bound_pairs`](@ref);
-the inner pair of a stable triple is a binary and its outer body a single.
-Every other star is a single. A binary has the mass m₁ + m₂ and the position
+pairs (stars 2k − 1 and 2k) whose centre-of-mass name is positive. A KS slot
+with a negative name is a merged hierarchy: star 2k − 1 is the first component
+of the inner binary, star 2k the outer body, and the second inner component is
+written among the single stars; the binary is then (2k − 1, j), j the star
+nearest to 2k − 1 (Euclidean distance, ties to the lower index) among the
+massive stars that are not KS components, counted in `n_hierarchies`, and the
+outer body 2k is a single. Level `:bound` takes the pairs of
+[`bound_pairs`](@ref); the inner pair of a stable triple is a binary and its
+outer body a single. Every other star is a single. A binary has the mass m₁ + m₂ and the position
 of its centre of mass; its primary is the heavier component and
 q = m₂/m₁ ≤ 1. Masses are converted to M☉ with [`zmbar`](@ref).
 
@@ -167,10 +177,15 @@ binaries whose primary belongs to it; its `n_in_binaries` and
 `m_binaries_msun` count the components of the class in any binary, so that its
 ``f_⋆`` is the fraction of the members of the class bound in pairs, whatever
 their partner. `f_b_q` is the fraction of binaries with q > `q_min` among the
-systems whose single or primary mass lies in `primary_window_msun`; on
-`:main_sequence` rows it is the analogue of the q-restricted fractions
+systems whose single or primary mass lies in `primary_window_msun`; with
+stellar types a binary enters its numerator only when both components are of
+class `:main_sequence`, since a photometric binary needs a luminous
+main-sequence companion (without types every binary with q > `q_min` does).
+On `:main_sequence` rows it is the analogue of the q-restricted fractions
 measured photometrically in globular clusters (Milone et al. 2012,
-DOI 10.1051/0004-6361/201016384).
+DOI 10.1051/0004-6361/201016384). Their mass window is set relative to the
+turn-off of each cluster, so the fixed default suits old globular clusters
+only; younger populations need a window of their own.
 
 A fraction is meaningful only together with the period range of its level:
 level E is restricted to the pairs the integrator regularised, level P extends
@@ -181,8 +196,9 @@ systems, which include chance superpositions, are not computed.
 
 Throws `ArgumentError` for an empty `snapshots`, empty or unknown `levels`, an
 unknown `radius_frame`, invalid `edges`, an unknown `centre`, a `kstar` not
-aligned with `snapshots` or lacking a star, `q_min` outside (0, 1), a window
-with lo ≥ hi or lo < 0, and for a star in two pairs.
+aligned with `snapshots` or leaving more than `max_untyped_fraction` of the
+massive stars of a snapshot untyped, `q_min` outside (0, 1), a window with
+lo ≥ hi or lo < 0, and for a star in two pairs.
 
 # Example
 ```julia
@@ -200,7 +216,7 @@ function binary_population_series(
     centre_kwargs::NamedTuple = (;),
     kstar = nothing,
     q_min::Real = 0.5,
-    primary_window_msun::Tuple{<:Real,<:Real} = (0.5, 0.9),
+    primary_window_msun::Tuple{<:Real,<:Real} = (0.47, 0.76),
     k::Integer = 10,
     n_perturbers::Integer = 4,
     gamma_max::Real = 0.1,
@@ -379,16 +395,60 @@ function _bpop_components(
     n_perturbers::Integer,
     gamma_max::Real,
 )::Tuple{Vector{NTuple{2,Int}},Vector{Bool}}
+    comps = NTuple{2,Int}[]
+    hierarchy = Bool[]
+    # A pair with a massless component is no binary
+    massive(a, b) = snap.mass[a] != 0 && snap.mass[b] != 0
     if level === :ks
-        comps = pair_indices(snap)
-        # Merged hierarchies: KS pairs with a negative centre-of-mass name
-        merged = [!isempty(snap.pair_name) && snap.pair_name[p] < 0 for p in eachindex(comps)]
-        return comps, merged
+        n_ks = 2 * snap.npairs
+        claimed = falses(length(snap.mass))
+        for p in 1:(snap.npairs)
+            a, b = 2p - 1, 2p
+            if isempty(snap.pair_name) || snap.pair_name[p] > 0
+                massive(a, b) || continue
+                push!(comps, (a, b))
+                push!(hierarchy, false)
+                continue
+            end
+            # Merged hierarchy: 2k − 1 is the first inner component, 2k the
+            # outer body (a single); the second inner component is the nearest
+            # massive star outside the KS slots
+            j = _bpop_nearest_single(snap, a, n_ks, claimed)
+            (j == 0 || !massive(a, j)) && continue
+            claimed[j] = true
+            push!(comps, (a, j))
+            push!(hierarchy, true)
+        end
+        return comps, hierarchy
     end
     pairs = bound_pairs(snap; k, n_perturbers, gamma_max)
     index = Dict{Int,Int}(Int(snap.name[i]) => i for i in eachindex(snap.name))
-    comps = NTuple{2,Int}[(index[p.name1], index[p.name2]) for p in pairs]
-    return comps, Bool[p.hierarchy for p in pairs]
+    for p in pairs
+        a, b = index[p.name1], index[p.name2]
+        massive(a, b) || continue
+        push!(comps, (a, b))
+        push!(hierarchy, p.hierarchy)
+    end
+    return comps, hierarchy
+end
+
+# Index of the massive, unclaimed star beyond the KS components (index > n_ks)
+# nearest to star `a` in the Float64 positions, ties to the lower index; 0 when none.
+function _bpop_nearest_single(snap::Snapshot, a::Int, n_ks::Int, claimed::BitVector)::Int
+    best = 0
+    d_best = Inf
+    @inbounds for j in (n_ks + 1):length(snap.mass)
+        (snap.mass[j] == 0 || claimed[j]) && continue
+        d2 = 0.0
+        for d in 1:3
+            d2 += (Float64(snap.pos[d, j]) - Float64(snap.pos[d, a]))^2
+        end
+        if d2 < d_best
+            best = j
+            d_best = d2
+        end
+    end
+    return best
 end
 
 function _bpop_systems(
@@ -542,6 +602,7 @@ function _bpop_tally!(
     m_unit::Float64,
     window::NTuple{2,Float64},
     q_min::Float64,
+    ms::Int,
 )
     p = sys.primary[s]
     sec = sys.secondary[s]
@@ -552,7 +613,8 @@ function _bpop_tally!(
         col > 0 && _bpop_add_single!(t, row, col, mass[p], in_window)
         return nothing
     end
-    q_above = mass[sec] / mass[p] > q_min
+    # With stellar types a photometric binary needs two main-sequence components
+    q_above = mass[sec] / mass[p] > q_min && (isempty(kcls) || (kcls[p] == ms && kcls[sec] == ms))
     _bpop_add_binary!(t, row, 1, sys.hierarchy[s], in_window, q_above)
     t.n_in_binaries[row, 1] += 2
     t.m_binaries[row, 1] += sys.mass[s]
@@ -600,10 +662,11 @@ function _bpop_rows!(
     t = _BpopTally(n_rows, n_cols)
     singles = [Int[] for _ in 1:n_cols]
     binaries = [Int[] for _ in 1:n_cols]
+    ms = something(findfirst(c -> c.key === :main_sequence, STELLAR_CLASSES), 0)
     for s in eachindex(sys.mass)
         b = shells.shell[s]
-        _bpop_tally!(t, 1, sys, s, mass, kcls, colof, m_unit, window, q_min)
-        b > 0 && _bpop_tally!(t, b + 1, sys, s, mass, kcls, colof, m_unit, window, q_min)
+        _bpop_tally!(t, 1, sys, s, mass, kcls, colof, m_unit, window, q_min, ms)
+        b > 0 && _bpop_tally!(t, b + 1, sys, s, mass, kcls, colof, m_unit, window, q_min, ms)
         members = sys.secondary[s] == 0 ? singles : binaries
         push!(members[1], s)
         col = _bpop_column(colof, kcls, sys.primary[s])
@@ -709,50 +772,72 @@ function stellar_type_map(
     return kmap
 end
 
-# Index of the epoch nearest to `t` [NB] within the matching tolerance, or
-# `nothing`. Epochs are timed by their records' N-body time: the file headers
-# carry the time in Myr with one decimal only. Epochs without records are skipped.
+# Epoch for the snapshot time `t` [NB] and its lag t − t_epoch [NB]: the epoch
+# nearest to `t` within the matching tolerance (lag 0), else the latest epoch at
+# or before `t`, since stellar types change on evolutionary time scales;
+# `(nothing, NaN)` when there is none. Epochs are timed by their records' N-body
+# time: the file headers carry the time in Myr with one decimal only. Epochs
+# without records are skipped.
 function _bpop_nearest_epoch(
     epochs::AbstractVector{<:Union{StellarEvolutionSnapshot,BinaryEvolutionSnapshot}},
     t::Float64,
-)::Union{Nothing,Int}
+)::Tuple{Union{Nothing,Int},Float64}
     best = 0
     d_best = Inf
+    before = 0
+    t_before = -Inf
     for (i, e) in enumerate(epochs)
         isempty(e.records) && continue
-        d = abs(e.records[1].time_nb - t)
+        te = e.records[1].time_nb
+        d = abs(te - t)
         if d < d_best
             best = i
             d_best = d
         end
+        if te ≤ t && te > t_before
+            before = i
+            t_before = te
+        end
     end
-    return (best > 0 && d_best ≤ _BPOP_EPOCH_RTOL * max(1.0, abs(t))) ? best : nothing
+    best > 0 && d_best ≤ _BPOP_EPOCH_RTOL * max(1.0, abs(t)) && return (best, 0.0)
+    before > 0 && return (before, t - t_before)
+    return (nothing, NaN)
 end
 
 # Name → K* maps aligned with `snapshots` from the sev.83 and bev.82 epochs of
-# the same time, or `nothing` (warned) when a snapshot has no sev.83 epoch or,
-# with KS pairs, no bev.82 epoch (sev.83 omits the KS components).
+# the same time or, failing that, the latest epochs before it (one @info with
+# the largest lag); `nothing` (warned) when a snapshot has no sev.83 epoch at
+# or before its time or, with KS pairs, no such bev.82 epoch (sev.83 omits the
+# KS components).
 function _bpop_pipeline_kstar(
     snapshots::AbstractVector{Snapshot},
     sevs::AbstractVector{StellarEvolutionSnapshot},
     bevs::AbstractVector{BinaryEvolutionSnapshot},
 )::Union{Nothing,Vector{Dict{Int,Int}}}
     maps = Dict{Int,Int}[]
+    n_lagged = 0
+    lag_max = 0.0
     for (j, snap) in enumerate(snapshots)
         t = time_nb(snap.header)
-        i = _bpop_nearest_epoch(sevs, t)
+        i, lag = _bpop_nearest_epoch(sevs, t)
         if i === nothing
-            @warn "Binary population: snapshot $j (t = $t NB) has no sev.83 epoch at its time; " *
-                  "stellar classes omitted"
+            @warn "Binary population: snapshot $j (t = $t NB) has no sev.83 epoch at or before " *
+                  "its time; stellar classes omitted"
             return nothing
         end
-        ib = _bpop_nearest_epoch(bevs, t)
+        ib, lag_b = _bpop_nearest_epoch(bevs, t)
         if ib === nothing && snap.npairs > 0
-            @warn "Binary population: snapshot $j (t = $t NB) has KS pairs but no bev.82 epoch at its " *
-                  "time; stellar classes omitted"
+            @warn "Binary population: snapshot $j (t = $t NB) has KS pairs but no bev.82 epoch at " *
+                  "or before its time; stellar classes omitted"
             return nothing
         end
+        lagged = lag > 0 || (ib !== nothing && lag_b > 0)
+        n_lagged += lagged
+        lagged && (lag_max = max(lag_max, lag, ib === nothing ? 0.0 : lag_b))
         push!(maps, stellar_type_map(sevs[i], ib === nothing ? nothing : bevs[ib]))
     end
+    n_lagged > 0 &&
+        @info "Binary population: $n_lagged of $(length(snapshots)) snapshots take their stellar " *
+              "types from the latest earlier sev.83/bev.82 epoch; largest lag $(lag_max) NB"
     return maps
 end

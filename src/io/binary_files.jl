@@ -1546,7 +1546,7 @@ by `adjust.F` to `hbin.39` (FORMAT 62, label text in every record), from
 | 1 | Time[Myr] | `time_nb` (TTOT) | NB |
 | 2–3 | NAME(I1), NAME(I2) | `name1`, `name2` | — |
 | 4 | K*(ICM) | `kstar_cm` | — |
-| 5 | NP | `n_neighbours` (LIST(1,I1)) | — |
+| 5 | NP | `n_neighbours`: the perturber count LIST(1,I1) of the pair, not a neighbour count | — |
 | 6 | ECC | `eccentricity` | — |
 | 7 | SEMI[NB] | `semi_major_axis_nb` | NB |
 | 8 | P[days] | `period_d` | d |
