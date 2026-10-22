@@ -119,7 +119,8 @@ function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = cfg.config_d
     np = build.nproc > 0 ? build.nproc : nproc_available()
 
     cd(makefile_dir) do
-        if install.clean_build
+        # A fresh tree has nothing to clean (and its clean target fails on it)
+        if install.clean_build && any(f -> endswith(f, ".o"), readdir(makefile_dir))
             @info "Running make clean..."
             try
                 _run_quiet(`make clean`; label = "clean")

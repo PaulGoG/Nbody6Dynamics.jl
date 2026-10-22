@@ -70,7 +70,7 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `ref`         | String | `"v2026.07.9"` | Commit, tag, or branch checked out after cloning (the default is the validated tag of the fork's `main` branch, on upstream v2026.07); `""` keeps the default branch. An existing source directory is left as is |
 | `install_dir` | String | `"backend/Nbody6PPGPU-beijing"` | Source directory, relative to the project directory (the configuration file's directory); must be nonempty |
 | `reinstall`   | Bool   | `false` | Delete and re-clone if `true` |
-| `clean_build` | Bool   | `true`  | Run `make clean` before building |
+| `clean_build` | Bool   | `true`  | Run `make clean` before building when the tree holds objects |
 
 ### `[build]`
 
