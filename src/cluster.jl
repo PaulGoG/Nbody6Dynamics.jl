@@ -414,7 +414,7 @@ none of `completed`, `halted`, `watchdog`, `stalled`, the pipeline has not
 finished, and the segment count is below `max_segments` (`0` = no bound); the
 script is regenerated from the configuration if it is missing. A segment that
 ended `failed` or `killed` without progress, or the second such segment in a
-row, stops the chain instead ([`_chain_stop_reason`](@ref)): a warning names
+row, stops the chain instead (`_chain_stop_reason`): a warning names
 the run, status and segment, and the ledgers receive a `chain_stopped` row
 with the reason.
 

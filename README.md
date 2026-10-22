@@ -61,7 +61,7 @@ cfg = load_config("config.toml")        # your project's configuration
 results = run_pipeline(cfg)
 ```
 
-The directory of that `config.toml` is the project directory: the engine is cloned and built under its `backend/` and the runs land under its `runs/`, never inside the package. The shipped inputs are reachable with `example_input("N1k_quick.inp")`, and `example_input("showcase/equal_pipeline.toml")` returns a complete pipeline configuration to copy and edit. Building the Fortran engine needs `git`, `gfortran` and `make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
+The directory of that `config.toml` is the project directory: the engine is cloned and built under its `backend/` and the runs land under its `runs/`, never inside the package. The shipped inputs are reachable with `example_input("N1k_quick.inp")`, and `example_input("showcase/equal_pipeline.toml")` returns a complete pipeline configuration to copy and edit (copy `equal_merger.toml` beside it, since its paths are relative to its own directory). Building the Fortran engine needs `git`, `gfortran` and `make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
 
 ## Environment setup of a checkout
 
@@ -130,7 +130,7 @@ One invocation each; details in the sections below.
 ```julia
 using Nbody6Dynamics
 cfg = load_config("config.toml")
-results = run_pipeline(cfg)   # Dict with :snapshots, :diagnostics, :lagr, :escapers, :stellar_evo
+results = run_pipeline(cfg)   # Dict; includes :snapshots, :diagnostics, :lagr, :escapers, :stellar_evo, …
 ```
 
 Or via the CLI wrapper:
@@ -159,22 +159,23 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Install / build | Working | Clone of the engine fork at its release tag (the default `install.source_url` and `install.ref`; the upstream repository at any ref also works), source amendments for an upstream checkout (`deps/engine/amendments.toml`: the escaper summary format that aborted a run at more than 1000 escapers in one step, the tidal energy in the total), `configure`, HDF5 Makefile patch, parallel make; CUDA path auto-detection; GPU builds compiled for the visible devices' compute capabilities or an explicit `cuda_arch` list (the upstream configure emits no architecture flag), `BUILD_INFO.toml` next to the binary, CPU/GPU/MPI binary variants selected by suffix. Validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3); see the manual, section Validated hardware |
-| Initial-condition generator | Working | Plummer and King samplers (King c(W0) validated against published concentrations); Kroupa (2001) IMF; one cluster at rest, two clusters on a Kepler orbit given by apocentre or pericentre (in pc or member half-mass radii) with its orientation and the tidal-frame convention, N clusters on explicit orbits, or a cluster complex drawn from a member mass function, a size–mass relation and a centre distribution (uniform sphere, Plummer, box fractal, filament) with the bulk velocities scaled to a target virial ratio, its energy-matched monolithic controls and one star list shared across arms (the shipped science cases and the sweep controls are single-cluster configurations); primordial mass segregation (Baumgardt, De Marchi & Kroupa 2008 with the McLuster degree S); primordial binaries (Kroupa 1995 periods, thermal eccentricities, written in the engine's pair convention); Jacobi truncation; integration parameters from the engine's rules or from the baseline preset; seeded reproducibility (the TOML `seed` drives the sampler and the engine's `NRAND`); output intervals written as dyadic rationals with exact decimals, which the engine's digit counter requires. Static test models with a known answer for one estimator each: the Osipkov–Merritt Plummer sphere, the Lynden-Bell rotation flip, stretched and energy-ranked models. The engine has no multi-centre diagnostics: cluster-level results before coalescence come from the snapshot-based per-cluster tools, not from `lagr.7` or `esc.11` (merger documentation, "Feasibility and limitations") |
-| Snapshot integrals and bound sets | Working | Exact Newtonian potential in Float64 (a threaded, vectorised loop over tiles that visits each pair once; a KernelAbstractions kernel as the device form); regularised pairs as centres of mass; iterative energetic unbinding with an explicit convergence status; per snapshot the mass, centre of mass, momenta, angular momentum, kinetic and potential energy of the reduced system (the engine's `EKIN` and `POT`), the pairs' internal energy and the bound set; the Jacobi integral under a linearised tide (`e_jacobi`); `snapshot_integrals.csv` per run |
-| Energy-jump localisation and mass budget | Working | The stamped event lines of the engine log as records with their adjustment interval; per interval the engine's `DE` with the increments of its correction channels and the event counts, flagged by a floor and a robust scale (`energy_intervals.csv`, `engine_events.csv`); per snapshot the mass against the escapers, the stellar-evolution and the collision losses (`mass_budget.csv`) and the energy against the removed escapers and the engine's corrections (`energy_budget.csv`); the Jacobi integral of a linearised tide, under which the engine's `DE` is a drift |
-| Remnant diagnostics | Working | Bound remnant of the whole system per snapshot: both Casertano–Hut core radii, from the mass density (engine densities or sixth-neighbour estimate on a k-d tree) and from the number density, core density, half-mass radius, rotation (λ_R, Peebles λ_P, spin alignment with the orbital angular momentum, v_rot/σ profile, floors from a sign-flip null, Bianchini rotation-curve fit), mass segregation of a fixed-identity tracer class with Λ_MSR (Allison et al. 2009), Λ̃_MSR and Γ_MSR over a scan of tree sizes and the segregation time, union-find coalescence time from per-tag density centres and half-mass radii with persistence, snapshot binary census (pairs, hard pairs, largest hardness), the core-collapse marker set; `remnant_diagnostics.csv` and four figures per merger run |
-| Angular momentum, equipartition, merger tree | Working | Angular-momentum budget of the stars against escapers, newcomers and stellar mass loss, rotation of the bound set inside its Lagrangian radii and per initial-mass class with sign-flip floors, elapsed relaxation times (`angular_momentum.csv`); Bianchini equipartition mass of the luminous stars within r_h (`equipartition.csv`); merger tree with persistent joins and the per-progenitor mass budget with the mixing of every progenitor in the product (`merger_tree.csv`, `progenitor_budget.csv`) |
-| Binary spans | Working | `binary_spans` (`[postprocess] binary_spans`, off by default): the KS episodes of every pair of component names joined across short gaps, chains and hierarchies, with the origin (primordial, reformed, exchange, dynamical with GW, tidal or three-body capture) and the end class (GW and stellar mergers, collisions, escapes, exchanges, supernova disruptions, flybys, disruptions) from the engine's event lines (`binary_spans.csv`); the physically bound pairs of every snapshot and their spans across the snapshots, KS pairs included, with interval-censored ends (`bound_spans`, `bound_spans.csv`); binary fractions by number, stars and mass per radial shell, stellar class and census level at every snapshot (`[postprocess] binary_population`, `binary_population.csv`) |
-| Validity record | Working | `validity.toml` and `validity_snapshots.csv` per run: energy, mass and angular-momentum checks with a verdict, bound-set convergence, snapshot cadence against the crossing and relaxation times, the windows excluded from equilibrium estimators (violent relaxation, pericentres, coalescence), the times of virialisation, kinematic relaxation and mixing, the calibrated bias and scatter of the tracked estimators at the bound star count, and the masking rules; thresholds as `[postprocess]` keys |
-| Shape, segregation and mixing | Working | Intrinsic axis ratios from the iterative unweighted shape tensor in ellipsoidal shells (Zemp et al. 2011), projected ellipticities in three projections, the A⁺ concentration index with a jackknife error, the two-sample Kolmogorov–Smirnov distance with its null floor, and the mixing of two tagged populations in radius, energy and angular momentum |
-| Stellar population | Working | `STELLAR_CLASSES` (engine grouping of K* = −1…15), `hr_population` (single stars and members of KS pairs together), `stellar_census` per epoch and class, written as `stellar_census.csv`; HR figures with a run-level legend and a census strip |
-| Parameter sweeps | Working | Sweep TOML → Cartesian grid over dotted merger-TOML keys × seeds; one directory per point with derived configs validated before launch; points run as concurrent worker processes (`omp_threads` per job from the cost model; on a GPU node `devices` and `engines_per_device` assign a device per point and admit k engines per device); `sweep_index.toml` kept current, `sweep_summary.csv` with final N, pairs, energy error and virial ratio; comparison figures on common axes coloured by one grid axis; seeded ensembles (a sweep without axes, or the seeds of every grid point) summarised by median and central 68/95 % bands on a common time grid; `controls = true` adds the isolated single-cluster equivalent of every point and a paired merger-versus-control figure |
-| Simulation runner | Working | Launch script with `OMP_NUM_THREADS` and `GPU_LIST` control, live stdout monitoring, start-up watchdog and completion monitor (`exit_grace`: an engine that printed `END RUN` but never exits is terminated and recorded as completed), opt-in in-terminal sparklines of the diagnostics (`live_diagnostics`), run summary with exact CPU accounting, sampled CPU/memory/GPU telemetry (`telemetry.csv`), the devices the engine initialised and the build record. Long runs: a wall budget per segment (`wall_budget`, `stop_margin`) stops the engine through its `STOP` file with a restart dump, as does SIGTERM to the driver or to the launch script, which is the engine's parent and turns the signal into the stop request; `resume_run` continues an interrupted run from its last complete dump and moves aside what a killed segment wrote after it; every launch is recorded in `RUN_INFO.toml` and closed with a status (`completed`, `stopped`, `halted`, `watchdog`, `killed`, `failed`). Under Slurm, `submit_run` turns a run into a chain of jobs, one per segment, from a job script generated into the run directory, with a job ledger; a cost estimate (wall time, segments, disk from a rate table) is logged at every launch and checked against a budget. Generated runs execute inside their IC output directory so the engine finds `dat.10`; an operator interrupt asks the engine to stop, and the run record carries the commits captured at launch |
-| I/O readers | Working | `conf.3` (standard + extended; the stars only, with the regularised pairs' components first and the engine's centre-of-mass entries dropped; `read_all_conf3` reads in threaded chunks when Julia has more than one thread), `out1000` diagnostics (ADJUST + physical scaling; virial ratio Q = T/\|W\|, equilibrium at 0.5) and `out1000` event lines, `event.35` event counters, `lagr.7`, and `esc.11` (incl. the ANGLE PHI / ANGLE THETA escape-direction columns) / `sev.83_*` / `bev.82_*` in the fork's real formats; `STELLAR_TYPE_LABELS` follow the Hurley convention (13 = NS, 14 = BH); `UnitScaling.zmbar` is the total-mass scale factor M*, not the mean stellar mass. `.h5part` files are detected and reported as unsupported |
-| Plotting / animation | Working | Publication theme: no titles, no minor ticks, Computer Modern fonts, dashed grey low-opacity grid on line plots; presentation knobs config-driven via `[visualization.style]` (`PlotStyle`); escaper suite (cumulative mass loss, velocity classes, escape anisotropy) and SSE-quantity plots (mass segregation, t/T_MS evolutionary clock, core-mass growth); binary suite (pair counts with the Heggie hard/soft split, binary fraction, `a`–`e` diagrams, period histograms); existing figures are never overwritten (safesave-style `#1`, `#2`, … backups) |
-| Load latency | Working | PrecompileTools workload over the configuration, diagnostics-reader and merger-IC paths; the first `load_config` of a session runs compiled |
-| Tests | Passing | Unit and physics-validation suite (engine-dependent tests behind `NBODY6_BINARY_TESTS=1`, a GPU-gated set behind `NBODY6_GPU_TESTS=1`), incl. physics validation, adversarial external-input tests, telemetry/thread-control, per-cluster structure, restart, and tidal-field tests |
+| Install / build | Working | Clones my engine fork at its release tag `v2026.07.9` (any upstream ref also builds, with the source amendments of `deps/engine/amendments.toml`), runs `configure` and a parallel make, and writes `BUILD_INFO.toml` next to the binary. GPU builds target the visible devices' compute capabilities or an explicit `cuda_arch` list; validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3, see the manual, Validated hardware) |
+| Initial-condition generator | Working | Plummer and King clusters with a Kroupa (2001) IMF, alone, as a Kepler pair, on explicit orbits or as a cluster complex with its energy-matched controls, each cluster truncated at its Roche lobe (Eggleton 1983) with respect to its neighbour. Primordial mass segregation (Baumgardt, De Marchi & Kroupa 2008), primordial binaries with the Sana et al. (2012) branch for massive primaries and a periastron Roche guard, seeded throughout; output intervals are dyadic rationals, which upstream builds need (my fork bounds the digit counter since `v2026.07-campaign.3`) |
+| Snapshot integrals and bound sets | Working | Exact Newtonian potential in Float64 with regularised pairs as centres of mass, and the bound set by iterative energetic unbinding with an explicit convergence status. Per snapshot the momenta, energies, the pairs' internal energy and the Jacobi integral of a linearised tide (`snapshot_integrals.csv`) |
+| Energy-jump localisation and mass budget | Working | The engine's `DE` per adjustment interval with its correction channels and event counts, flagged by a floor and a robust scale (`energy_intervals.csv`, `engine_events.csv`). Mass and energy closed per snapshot against escapers, stellar-evolution and collision losses and the engine's corrections (`mass_budget.csv`, `energy_budget.csv`) |
+| Remnant diagnostics | Working | Core radii, density, half-mass radius, rotation with sign-flip floors, mass segregation (Λ_MSR, Λ̃_MSR, Γ_MSR), coalescence time and core-collapse markers of the bound remnant per snapshot (`remnant_diagnostics.csv`, four figures per merger run) |
+| Angular momentum, equipartition, merger tree | Working | Angular-momentum budget and rotation by radius and initial-mass class (`angular_momentum.csv`), the Bianchini equipartition mass (`equipartition.csv`), and the merger tree with the per-progenitor mass budget (`merger_tree.csv`, `progenitor_budget.csv`) |
+| Binaries | Working | KS episodes joined per pair into spans with origin and end class (`binary_spans.csv`), physically bound pairs and their spans across the snapshots (`bound_spans.csv`), their union per pair (`binary_census.csv`), and binary fractions per shell, stellar class and census level (`binary_population` stage, `binary_population.csv`); all off by default |
+| Gravitational-wave observables | Working | `gw_inspiral_time` (Peters 1964), `chirp_mass`, `gw_frequency` (f₂₂, Wen 2003 peak, pericentre) and `eccentricity_at_frequency` along the Peters track |
+| Validity record | Working | Energy, mass and angular-momentum checks with a verdict, snapshot cadence, the windows excluded from equilibrium estimators and the calibrated bias of the tracked estimators (`validity.toml`, `validity_snapshots.csv`) |
+| Shape, segregation and mixing | Working | Axis ratios from the iterative shape tensor (Zemp et al. 2011), projected ellipticities, the A⁺ index, the two-sample Kolmogorov–Smirnov distance with its null floor, and the mixing of two tagged populations |
+| Stellar population | Working | Engine grouping of the stellar types (`STELLAR_CLASSES`), the HR-plane population and a class census per epoch (`stellar_census.csv`) |
+| Parameter sweeps | Working | Cartesian grids over merger-TOML keys × seeds run as concurrent worker processes, with an index, a summary table, comparison figures, seeded ensembles with 68/95 % bands and isolated single-cluster controls. A point counts as done only when its run completed |
+| Simulation runner | Working | Launch script with thread and device control, live monitoring, start-up and stall watchdogs (`startup_timeout`, `stall_timeout`), telemetry and a wall budget per segment that stops the engine with a restart dump. `resume_run` and the Slurm job chain of `submit_run` continue a run; every segment is closed in `RUN_INFO.toml` with a status (`completed`, `stopped`, `halted`, `watchdog`, `stalled`, `killed`, `failed`) |
+| I/O readers | Working | `conf.3`, `out1000` (ADJUST records, scaling, event lines), `event.35`, `lagr.7`, `esc.11`, `sev.83_*` and `bev.82_*`; `read_binary_events` for the KS, few-body and GW lines (`GR CAPTURE` and `GR FLYBY` included); readers of `bdat.9`, `bwdat.19`, `merger.84`, `hiarch.12`, `coll.13`, `coal.24`, `cmbody.26`, `binev.17`, `degen.4`, `escbin.31` and `hbin.39`. `.h5part` files are reported as unsupported |
+| Plotting / animation | Working | Publication theme with Computer Modern fonts, configured in `[visualization.style]`; escaper, stellar-evolution, binary, merger and remnant figures and GIF animations, never overwriting an existing figure |
+| Load latency | Working | PrecompileTools workload over the configuration, diagnostics-reader and merger-IC paths |
+| Tests | Passing | Unit and physics-validation suite with static QA (Aqua, JET, ExplicitImports); engine-dependent tests behind `NBODY6_BINARY_TESTS=1`, a GPU set behind `NBODY6_GPU_TESTS=1` |
 
 ## Testing
 
@@ -188,7 +189,7 @@ The default suite needs no Fortran binary. The engine-dependent tests (build, la
 NBODY6_BINARY_TESTS=1 NBODY6_BACKEND_ROOT=$PWD julia -e 'include("activate.jl"); Pkg.test()'
 ```
 
-The suite covers config round-trips, all I/O readers (synthetic binaries plus real fork output fixtures under `test/fixtures/`), plotting/animation smoke tests, external post-processing (including adversarial malformed inputs), and the merger IC generator. Physics-validation tests check King concentration c(W0) against published values, the Plummer half-mass relation r_hm = 1.305 a, the Kroupa mean mass, virial equilibrium Q = T/|W| = 0.5 after `virialise!`, and the Keplerian orbital energy of generated two-cluster orbits.
+The suite covers config round-trips, all I/O readers (synthetic binaries plus fixtures of real upstream engine output, commit `618d7a4`, under `test/fixtures/`), plotting/animation smoke tests, external post-processing (including adversarial malformed inputs), and the merger IC generator. Physics-validation tests check King concentration c(W0) against published values, the Plummer half-mass relation r_hm = 1.305 a, the Kroupa mean mass, virial equilibrium Q = T/|W| = 0.5 after `virialise!`, and the Keplerian orbital energy of generated two-cluster orbits.
 
 For interactive work against the test dependencies, activate the test environment with [`TestEnv.jl`](https://github.com/JuliaTesting/TestEnv.jl): start `julia -i activate.jl` and run `using TestEnv; TestEnv.activate()` in the session.
 
@@ -206,7 +207,7 @@ Runs three end-to-end targets through `run_pipeline` (requires a built binary in
 
 ## Documentation
 
-The documentation site (Manual, Input Files, Showcase Cases, Cluster Mergers, API Reference, a walkthrough from a merger TOML to the generated initial conditions) is at [paulgog.github.io/Nbody6Dynamics.jl/dev](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/). It builds from `docs/`:
+The documentation site (Manual, Input Files, Showcase Cases, Cluster Mergers, API Reference, References, a walkthrough from a merger TOML to the generated initial conditions) is at [paulgog.github.io/Nbody6Dynamics.jl/dev](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/). It builds from `docs/`:
 
 ```bash
 julia docs/make.jl   # builds to docs/build/
@@ -252,10 +253,10 @@ Nbody6Dynamics/
 ├── Project.toml                     # Package metadata & dependencies
 ├── activate.jl                      # Activates and instantiates the package environment
 ├── config.toml                      # Main pipeline configuration (edit this)
-├── deps/cuda/                       # helper_cuda.h, helper_string.h from NVIDIA cuda-samples v13.0 (CUDA 13 build of the engine)
 ├── assets/calibration/              # estimators.csv (bias, scatter, errors of every estimator versus N on the static models) and estimators.toml (version, grid, seeds)
-├── deps/engine/amendments.toml      # Source corrections applied to the engine tree before configure (escaper summary format, tidal energy in the total under a linearised tide)
 ├── deps/activation.jl               # Shared by the activate.jl scripts: resolves a manifest left stale by a dependency change
+├── deps/cuda/                       # helper_cuda.h, helper_string.h from NVIDIA cuda-samples v13.0 (CUDA 13 build of the engine) and their LICENSE (BSD-3-Clause)
+├── deps/engine/amendments.toml      # Source corrections applied to an upstream engine tree before configure (escaper summary format, tidal energy in the total under a linearised tide)
 ├── src/
 │   ├── Nbody6Dynamics.jl               # Module root; run_pipeline orchestrator; exports
 │   ├── types.jl                     # Config structs (incl. PlotStyle), Snapshot, records, UnitScaling
@@ -294,11 +295,16 @@ Nbody6Dynamics/
 │   ├── io/
 │   │   ├── io.jl                    # I/O submodule includes
 │   │   ├── fortran_binary.jl        # Fortran unformatted record reader
+│   │   ├── fortran_format.jl        # Fixed-width reads of formatted records by their FORMAT field widths (read_fixed)
 │   │   ├── conf3.jl                 # conf.3 snapshot reader (standard + extended layout; stars only)
 │   │   ├── diagnostics.jl           # out1000 parser: ADJUST lines with the energy terms, PHYSICAL SCALING, options and tidal echoes
 │   │   ├── lagr.jl                  # lagr.7 Lagrangian radii reader
 │   │   ├── esc.jl                   # esc.11 escaper reader (fork's real column format)
 │   │   ├── events.jl                # out1000 event lines, event.35 counters
+│   │   ├── binary_events.jl         # read_binary_events: the binary, few-body and GW lines of out1000 in one pass (BinaryEventLog)
+│   │   ├── events_dynamics.jl       # KS, chain, triple, quad, hierarchy, exchange and termination records
+│   │   ├── events_evolution.jl      # GW, binary-escape, mass-loss, tidal and Roche records
+│   │   ├── binary_files.jl          # bdat.9, bwdat.19, merger.84, hiarch.12, coll.13, coal.24, cmbody.26, binev.17, degen.4, escbin.31, hbin.39
 │   │   ├── stellar_evolution.jl     # sev.83_* single-star evolution reader
 │   │   └── binary_evolution.jl      # bev.82_* regularised-binary reader
 │   ├── ic/
@@ -356,18 +362,40 @@ Nbody6Dynamics/
 │   ├── test_cluster.jl              # Job script rendering, submission chains against a stand-in sbatch, segments and ledger
 │   ├── test_cost.jl                 # Rate table, estimate arithmetic, input reader, launch-time budget check
 │   ├── test_io.jl                   # Readers: conf.3, out1000, lagr.7, esc.11, sev.83, bev.82, fixtures
+│   ├── test_fortran_format.jl       # Fixed-width reads of formatted records
+│   ├── test_events_dynamics.jl      # KS, few-body, hierarchy, exchange and termination lines
+│   ├── test_events_evolution.jl     # GW, escape, mass-loss, tidal and Roche lines
+│   ├── test_binary_files.jl         # Readers of the binary and few-body output files
+│   ├── test_binary_spans.jl         # Engine-regularised binary spans (level E)
+│   ├── test_bound_spans.jl          # Bound pairs and their spans (level P)
+│   ├── test_binary_census.jl        # Union of the level-E and level-P spans per pair
+│   ├── test_gw_observables.jl       # Peters inspiral time, GW frequencies, eccentricity at a frequency
+│   ├── test_binary_population.jl    # Binary fractions per shell, stellar class and census level
 │   ├── test_diagnostics.jl          # Binary population, remnant, stellar classes, cluster structure
-│   ├── test_energy_budget.jl        # Jacobi integral, energy-jump localisation, mass budget
 │   ├── test_potential.jl            # Pair potential, reduced systems, bound sets, snapshot integrals
+│   ├── test_energy_budget.jl        # Jacobi integral, energy-jump localisation, mass budget
 │   ├── test_static_models.jl        # Estimators against the static test models with known answers
+│   ├── test_angular_momentum.jl     # Angular-momentum budget and rotation by radius and mass class
+│   ├── test_equipartition.jl        # Bianchini equipartition-mass fit
+│   ├── test_merger_tree.jl          # Merger tree and per-progenitor budget
+│   ├── test_two_cluster_orbit.jl    # Two-cluster orbit by size, orientation, tidal frame
+│   ├── test_cluster_complex.jl      # Cluster complexes: member masses, sizes, centres, bulk velocities
+│   ├── test_complex_controls.jl     # Global IMF partition and the energy-matched controls
+│   ├── test_segregation.jl          # Primordial mass segregation
+│   ├── test_massive_binaries.jl     # Sana et al. (2012) branch and the periastron Roche guard
+│   ├── test_generator_physics.jl    # Roche truncation, frame conversion, strict cluster tables
+│   ├── test_analysis_corrections.jl # Regression tests of the binary and budget analysis
+│   ├── test_run_safety.jl           # Run-directory guard, chain stops, completed-run checks
+│   ├── test_validity.jl             # Validity record and the calibration lookup
 │   ├── test_sweep_ensemble.jl       # Sweeps, seeded ensembles, control configurations
 │   ├── test_plotting.jl             # Figure extension, smoke tests, canvases, formatting
-│   ├── test_external.jl             # External post-processing (+ test_external_adversarial_inner.jl)
+│   ├── test_external.jl             # External post-processing
+│   ├── test_external_adversarial_inner.jl  # Malformed external inputs, included by test_external.jl
 │   ├── test_ic.jl                   # Merger initial-condition generator and its physics checks
 │   ├── test_telemetry.jl            # Hardware telemetry sampler, readers and figure
 │   ├── test_engine_gated.jl         # Shipped GPU-host configurations; engine- and GPU-gated runs
 │   ├── test_qa.jl                   # Static QA: Aqua, ExplicitImports, JET
-│   └── fixtures/                    # Real Nbody6++ output excerpts (esc.11, lagr.7, out1000, sev.83_0, bev.82_0) with their PROVENANCE.md
+│   └── fixtures/                    # Upstream engine output excerpts, commit 618d7a4 (esc.11, lagr.7, out1000, sev.83_0, bev.82_0), with their PROVENANCE.md
 ├── bench/
 │   ├── thread_scaling.jl            # Thread- and N-scaling of the backend from run telemetry (cost model)
 │   ├── gpu_scaling.jl               # GPU-versus-CPU binary at equal N and threads, per GPU_LIST (speed-up table)

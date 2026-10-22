@@ -1,13 +1,13 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# Regression tests of the post-processing corrections of the 2026-10-22 audit:
-# merged hierarchies at levels P and E, epoch matching of the stellar types,
+# Regression tests of the post-processing corrections: merged hierarchies at
+# levels P and E, epoch matching of the stellar types,
 # the q-restricted fraction, the exchange end class, chain episodes, the census
 # split, restart duplicates, the bev.82 pair energies, the ADJUST reader and
 # the run-directory guard of run_pipeline.
 
-@testset "Analysis corrections (audit 2026-10-22)" begin
+@testset "Analysis corrections" begin
     nd = Nbody6Dynamics
 
     # A snapshot from bodies (name, mass, x, v); the first 2·npairs bodies are KS components

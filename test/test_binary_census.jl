@@ -1,7 +1,8 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# WP10 10.2 increment 3: the union of level-E and level-P spans per pair (D5).
+# Binary census: the union per pair of the overlapping or adjacent level-E
+# (engine-regularised) and level-P (bound) spans.
 
 @testset "Binary census (levels E and P)" begin
     # A record with the given fields and the others absent (NaN, 0, false, :none)

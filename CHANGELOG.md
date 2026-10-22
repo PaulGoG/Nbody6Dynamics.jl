@@ -40,9 +40,7 @@ entries say so.
   `BoundSpan`, `write_bound_spans`): mutual most-bound pairs whose apocentre perturbation by the nearest bodies is
   below 0.1, or whose dominant perturber is the bound outer body of a Mardling & Aarseth (2001) stable triple,
   plus every KS pair of the snapshot; spans over the snapshot sequence bridge single misses of a pair that stays
-  bound, with interval-censored formation and end times. On a development run of 10⁴ stars 98.6 % of the bound
-  engine-regularised spans lie inside one bound span, and a third of the bound spans are never regularised.
-  The stage `[postprocess] bound_spans` (default `false`; `bound_gamma_max`, `bound_n_miss`) writes
+  bound, with interval-censored formation and end times. The stage `[postprocess] bound_spans` (default `false`; `bound_gamma_max`, `bound_n_miss`) writes
   `bound_spans.csv`.
 - Gravitational-wave observables of a binary: `gw_inspiral_time` (Peters 1964 orbit average by singularity-free
   quadratures of the time factor, `gw_time_factor`, exact to 10⁻⁶ against the reference table and to 768/425 as
@@ -53,8 +51,7 @@ entries say so.
   QuadGK is a new direct dependency (it was already in the dependency tree).
 - Binary census (`binary_census`, `CensusSpan`, `write_binary_census`): the union per pair of the overlapping or
   adjacent engine-regularised and bound spans, with both levels' limits and counts, the origin of the earlier and
-  the end class of the later level; written as `binary_census.csv` when both span stages run. On a development
-  run: 4450 binaries, 2630 seen by both levels, 1114 only bound (never regularised), 706 only regularised.
+  the end class of the later level; written as `binary_census.csv` when both span stages run.
 - Binary population series (`binary_population_series`, `BinaryPopulationRow`, `write_binary_population`,
   `stellar_type_map`; `[postprocess] binary_population`, off by default, writes `binary_population.csv`): at every
   snapshot and for both census levels (KS pairs; bound pairs), the binary fractions by systems, stars and mass, their
@@ -101,8 +98,8 @@ entries say so.
   binaries the control's energy differs from the target by the internal energy of its re-drawn pairs.
 - Tidal frame of generated configurations: under `kz14 = 1, 2` the engine integrates in the frame rotating
   with the circular Galactic orbit (Ω along +z) and takes the `dat.10` velocities as velocities in that frame.
-  `[merger.tidal] velocity_frame = "rotating"` (default, the earlier output) keeps that reading,
-  `"inertial"` writes v − Ω × r. A Kepler pair whose apocentre reaches its pair Jacobi radius is refused (warned
+  `[merger.tidal] velocity_frame = "inertial"` (the default) writes v − Ω × r, `"rotating"` keeps the sampled
+  velocities as they are. A Kepler pair whose apocentre reaches its pair Jacobi radius is refused (warned
   above half of it); `tidal_frame_rotation`, `pair_jacobi_radius`, `to_rotating_frame!`. The IC record gains Ω,
   the apocentre over the pair Jacobi radius and the bound 4u·max|x|/RS0 on the FP32 regular-force error from the
   coordinate offset, warned above 10⁻⁴.
@@ -246,7 +243,7 @@ entries say so.
   fraction and mass class, a pair sum per call that it did not use.
 - The engine is cloned from the package's fork,
   [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing),
-  at the tag `v2026.07.8` by default (`install.source_url`,
+  at the tag `v2026.07.9` by default (`install.source_url`,
   `install.ref`; the shipped pipeline configurations pin the same tag). The
   fork's branch `main` (named `campaign` until its tags `v2026.07-campaign.1`
   to `.6`; later tags are `v2026.07.N`) carries the three source amendments and the CUDA 13
@@ -293,7 +290,11 @@ entries say so.
   black holes radiates the quadrupole energy of the passage at its pericentre
   and is captured when that exceeds the orbital energy (`GR CAPTURE`,
   `GR FLYBY` lines), and small mass changes in KS pairs of merged hierarchies
-  are booked as well. The fork's `NOTICE.md` lists
+  are booked as well. From `v2026.07.9` a merged hierarchy terminated by `SEARCH` is restored by `RESET`; the
+  time offset of `KZ(35) > 0` shifts the reference epochs of the gravitational-wave decay of KS pairs; the KS
+  slow-down factor applies once after a re-initialisation by that decay; `ROCHE` no longer applies a second
+  decay to compact pairs under `KZ(27) > 2`; a FORMAT statement of a chain diagnostic is repaired; and the second
+  component of a pair in `bev.82` evolves with its own main-sequence time. The fork's `NOTICE.md` lists
   the corrections by tag and states the provenance, the credit and the
   licensing. An existing
   engine checkout under `install.install_dir` is reused as it is; set
@@ -316,6 +317,36 @@ entries say so.
   50 most massive stars by present mass against 50 random sets).
 - The sixth-neighbour density runs on a k-d tree (was O(N²)).
 - New dependency: NearestNeighbors 0.4.
+- Generated initial conditions. Every cluster is truncated at its Roche lobe with respect to its nearest
+  neighbour (Eggleton 1983, `roche_truncation_radius`) by default, since the Hill radius exceeds the inner Lagrange point at
+  comparable masses; `[merger.output] truncate_rule = "hill"` restores the earlier radius. Under `kz14 = 1, 2` the
+  sampled inertial velocities are converted to the engine's rotating frame by default (`velocity_frame =
+  "inertial"`); `"rotating"` restores the earlier output. A truncated Kepler pair is shifted to its centre-of-mass
+  frame. The global IMF partition of a complex hits the target mass of every member. Fractal centre velocities
+  are scaled by 1/2 per generation (Goodwin & Whitworth 2004). Cluster tables are read strictly: a value of the
+  wrong kind and a mix of flat and structured keys are refused, and errors in the member template name
+  `[merger.complex.member]`. An invalid binary specification raises an `ArgumentError`. The new key
+  `[merger.clusterN.segregation] max_points` bounds the number of model points of the segregation scheme, whose
+  memory grows with the mass range of the IMF.
+- Binary analysis. The q-restricted fraction of the population series takes the primary window 0.47–0.76 M☉ of
+  Milone et al. (2012) by default and, when stellar types are available, main-sequence pairs only. A merged
+  hierarchy (a negative centre-of-mass name in `conf.3`) enters both census levels, the KS pairs and the bound
+  pairs, as its inner binary with the outer body as a single, and the energy budget no longer adds the `bev.82` energy of its inner
+  binary a second time. The end class `:exchange` needs an exchange within the join tolerance of the span's close;
+  an open chain episode closes at the next opening; the census keeps apart bound spans that a miss separates.
+  Records that a restart writes twice are dropped from `coll.13` and `coal.24`. The stellar types of a snapshot
+  fall back to the latest earlier `sev.83`/`bev.82` epoch when no epoch matches its time. The binary-span stage
+  needs `KZ(10) ≥ 2` and `parse_stdout`; NBIN0 falls back to `merger_ic.toml` when the stdout capture lacks it.
+  Unparseable ADJUST records are skipped with a warning, and a missing T* or M* gives `NaN`.
+- Run infrastructure. A fresh run into a directory that holds a `RUN_INFO.toml` is refused; such a run continues
+  with `resume_run` or `resume_pipeline`. A resubmit chain stops after a failed or killed segment without progress,
+  or after two failed segments in a row, and records `chain_stopped` in the job ledger. Any exception while the
+  engine runs terminates it and closes the segment. A sweep point counts as done only when its run completed, and
+  ensembles use completed runs only. The launch takes the CUDA toolkit recorded at build time. An existing
+  checkout at a commit other than `install.ref` is reported. Every segment record carries its own backend commit
+  and hardware. Configurations that cannot be honoured are refused at load: `simulation.run_test` together with
+  `postprocess.data_dir`, `postprocess.binary_spans` without `parse_stdout`, and an empty `binary_name`.
+
 ### Deprecated
 
 - `preset = "campaign"` in `[merger.nbody6]` is now `preset = "baseline"`;

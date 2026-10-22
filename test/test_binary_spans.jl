@@ -1,9 +1,8 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# WP10 10.2 increment 1: engine-regularised binary spans (level E) from the
-# 10.1 event records. The implementation is to satisfy this file; the method
-# is specified in the workspace notes (binary spans, increment 1). API:
+# Engine-regularised binary spans (level E) from the event records of
+# `read_binary_events`. API:
 #
 #   binary_spans(log::BinaryEventLog;
 #                listings::AbstractVector{KSPairListing} = KSPairListing[],

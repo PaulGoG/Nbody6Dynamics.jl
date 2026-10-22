@@ -1,11 +1,11 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# Roadmap 6.5: multi-cluster complexes — member mass function, size–mass
-# presets, centre distributions and the bulk velocity field scaled to a
-# target virial ratio of the members as softened point masses.
+# Multi-cluster complexes: member mass function, size–mass presets, centre
+# distributions and the bulk velocity field scaled to a target virial ratio of
+# the members as softened point masses.
 
-@testset "Cluster complexes (6.5)" begin
+@testset "Cluster complexes" begin
     using StableRNGs
     nd = Nbody6Dynamics
     G = nd._G_PC_KMS2_MSUN

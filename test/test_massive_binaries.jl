@@ -1,11 +1,11 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# Roadmap 6.7 (massive binaries): the Sana et al. (2012) branch for massive
-# primaries with pool or replace pairing, and the Roche-lobe guard at
-# periastron with the engine's ZAMS radii (Tout et al. 1996).
+# Massive binaries: the Sana et al. (2012) branch for massive primaries with
+# pool or replace pairing, and the Roche-lobe guard at periastron with the
+# engine's ZAMS radii (Tout et al. 1996).
 
-@testset "Massive binaries and the Roche guard (6.7)" begin
+@testset "Massive binaries and the Roche guard" begin
     using StableRNGs
     nd = Nbody6Dynamics
 

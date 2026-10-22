@@ -140,6 +140,8 @@ read_all_binary_evolution
 ```@docs
 read_binary_events
 BinaryEventLog
+DYNAMICS_EVENT_KINDS
+EVOLUTION_EVENT_KINDS
 KSEvent
 FewBodyEvent
 HierarchyEvent
@@ -541,6 +543,7 @@ virialise!
 ```@docs
 kepler_velocity
 jacobi_radius
+Nbody6Dynamics.roche_truncation_radius
 Nbody6Dynamics.orbit_apocentre
 Nbody6Dynamics.two_cluster_orbit_quantities
 Nbody6Dynamics.tidal_frame_rotation

@@ -73,8 +73,9 @@ length.(result.cluster_ranges)
 #
 # The integration parameters are derived from the member clusters (see the
 # [Input File Reference](@ref)). The output intervals are dyadic rationals with
-# an exact decimal expansion, because the engine counts their decimal digits
-# with a loop that never terminates on other values.
+# an exact decimal expansion, because an upstream build of the engine counts
+# their decimal digits with a loop that never terminates on other values (my
+# fork bounds that count).
 
 print(read(joinpath(dir, "merger.inp"), String))
 

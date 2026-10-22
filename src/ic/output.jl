@@ -1346,7 +1346,8 @@ function generate_merger_ic(
     nbody6 = resolve_nbody6_parameters(cfg.nbody6, specs, cluster_ranges, N_total, rbar)
     # Bound on the per-pair relative error of the FP32 regular force from the
     # coordinate offset: 4 u X / RS0, u = 2⁻²⁴, X the largest |x| [NB]
-    # (literature/2026-10-02-numerical-validity §4 of the workspace notes).
+    # (the device rounds the coordinates to FP32, so the offset of a pair
+    # from the origin sets the error).
     x_max_nb =
         maximum(
             sqrt(pos_combined[1, i]^2 + pos_combined[2, i]^2 + pos_combined[3, i]^2) for
@@ -1428,7 +1429,7 @@ function generate_merger_ic(
     vel_phys = vel_combined .* _CODE_VSTAR_KMS  # code units → km/s
 
     # Convert to N-body units for dat.10 (KZ(22)=2, the only supported
-    # output format; decision D4). `to_nbody_units!` expects velocity in
+    # output format). `to_nbody_units!` expects velocity in
     # km/s, so convert from code units first.
     cfg.output.format == "nbody" || error(
         "Unsupported output format \"$(cfg.output.format)\"; only \"nbody\" (KZ(22)=2) is supported.",

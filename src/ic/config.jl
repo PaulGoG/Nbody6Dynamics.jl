@@ -20,7 +20,7 @@
 #                             prescriptions are not physical in this regime.
 #   - `EqualMassIMF`        — all bodies have the same mass.
 #
-# The TOML loader accepts two equivalent schemas (decision D6): the flat
+# The TOML loader accepts two equivalent schemas: the flat
 # form (`imf = "kroupa"`, `mass_total`, `bodyn`, `body1` at the cluster
 # level) is the canonical user-facing one — all shipped configs use it —
 # while the structured table form (`profile = {type=...}`, `imf =

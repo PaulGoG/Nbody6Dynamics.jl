@@ -1,9 +1,8 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# WP10 10.2 increment 2: physically bound pairs at a snapshot (D3) and their
-# spans over the snapshot sequence (D4), on synthetic snapshots in N-body
-# units (G = 1).
+# Physically bound pairs at a snapshot and their spans over the snapshot
+# sequence (level P), on synthetic snapshots in N-body units (G = 1).
 
 @testset "Bound pairs and spans (level P)" begin
     nd = Nbody6Dynamics

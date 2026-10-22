@@ -1,6 +1,6 @@
 # Nbody6Dynamics.jl
 
-A Julia package for automated setup, execution, post-processing, and visualisation of the [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) N-body astrophysical simulation code, plus a validated multi-cluster merger initial-condition generator.
+A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations end to end, from the engine build and the initial conditions to the diagnostics and figures.
 
 ![Projected surface density of two merging star clusters: the pair at release, the two cores at 4 Myr and the remnant at 50 Myr](assets/merger_evolution.png)
 
@@ -10,14 +10,7 @@ by this package.*
 
 ## Features
 
-- **Merger IC generation** — Multi-cluster initial conditions with validated King (1966) and Plummer samplers (King concentration `c(W0)` matches published values to <1%), Kroupa (2001) IMF in natural / rescaled / equal-mass modes, per-cluster virialisation to `Q = 0.5`, Jacobi truncation, Kepler, explicit or single-cluster placement, and `dat.10` + `merger.inp` output for `KZ(22)=2`
-- **Pipeline orchestration** — Single `run_pipeline(cfg)` entry point driven by `config.toml`: install/build → merger ICs → simulation → post-processing → plots, each phase independently switchable
-- **Install & build** — Clone, source amendments, configure, Makefile patch, and compile Nbody6++GPU with auto-detected CUDA/MPI
-- **Simulate** — Unique run IDs, frozen config snapshots, isolated `runs/<run_id>/` directories, real-time ADJUST monitoring
-- **Post-process** — Readers for `conf.3_*` snapshots (Fortran binary), stdout diagnostics (`out1000`), Lagrangian radii (`lagr.7`), escapers (`esc.11`), stellar evolution (`sev.83_*`) and regularised binaries (`bev.82_*`)
-- **Visualise** — Static figures and GIF animations with CairoMakie, including merger-specific diagnostics (inter-cluster separation, per-cluster virial ratio, IC overview plots)
-- **External post-processing** — Config-free `postprocess_external(dir)` for arbitrary Nbody6++ output directories, with automatic file discovery via `scan_output`
-- **Tests** — Unit tests against real output fixtures (`out1000`, `lagr.7`, `esc.11`, `sev.83`, `bev.82`) plus physics validation (King concentration, Plummer `r_hm = 1.305a`, Kroupa mean mass, virialisation, Kepler/Jacobi relations)
+The package clones and builds the engine (by default my fork at `v2026.07.9`; the CUDA toolkit is located automatically, MPI and HDF5 are switched in `[build]`), generates initial conditions for one cluster, a Kepler pair, N clusters on explicit orbits or a cluster complex, and writes them as `dat.10` with a matching `merger.inp` (`KZ(22) = 2`). It runs the integration under wall budgets, stop requests and start-up and stall watchdogs, resumes it across queue segments or as a Slurm job chain, and records commits, hardware and cost per segment. It reads every standard output file, the binary and few-body event lines included, and derives snapshot integrals, energy and mass budgets, remnant structure, rotation and segregation, binary spans, the binary census and binary fractions, gravitational-wave observables, and a validity record per run. Figures and GIF animations come from a CairoMakie extension; sweeps over a grid with seeds and isolated controls run as concurrent workers.
 
 ## Quick Start
 
@@ -29,11 +22,12 @@ Pkg.add(url = "https://github.com/PaulGoG/Nbody6Dynamics.jl")
 Pkg.add("CairoMakie")     # the figure backend
 ```
 
-The directory of your `config.toml` is the project directory: the engine is built under its `backend/` and runs land under its `runs/`. `example_input("showcase/equal_pipeline.toml")` returns a shipped configuration to copy and edit.
+The directory of your `config.toml` is the project directory: the engine is built under its `backend/` and runs land under its `runs/`. `example_input("showcase/equal_pipeline.toml")` returns a shipped configuration to copy and edit, together with `equal_merger.toml` beside it, since its paths are relative to its own directory.
 
 From a checkout:
 
 ```bash
+git clone https://github.com/PaulGoG/Nbody6Dynamics.jl.git
 cd Nbody6Dynamics.jl
 
 # Install Julia dependencies (one-time)

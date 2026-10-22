@@ -1,5 +1,5 @@
 # =============================================================================
-# Binary population series (design W8): number, star and mass binary fractions
+# Binary population series: number, star and mass binary fractions
 # per radial shell, stellar class and census level of a snapshot sequence
 # =============================================================================
 

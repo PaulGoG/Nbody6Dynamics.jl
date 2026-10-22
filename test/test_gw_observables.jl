@@ -1,12 +1,11 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# WP10 10.5 increment 1: gravitational-wave inspiral time and frequencies of a
-# binary (Peters 1964 orbit average), against the closed forms, the published
-# limits, the Mandel (2021) fit and an independent integration of the Peters
-# equations; reference values of the workspace's GW study (§2.4–2.5).
+# Gravitational-wave inspiral time and frequencies of a binary (Peters 1964
+# orbit average), against the closed forms, the published limits, the Mandel
+# (2021) fit and an independent integration of the Peters equations.
 
-@testset "GW inspiral time and frequencies (10.5)" begin
+@testset "GW inspiral time and frequencies" begin
     nd = Nbody6Dynamics
 
     @testset "Peters–Mathews enhancement and the time factor" begin

@@ -1,12 +1,12 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# Roadmap 6.5 (global IMF partition) and 6.6 (controls C-E and C-cold): one
-# star list drawn for the whole complex and partitioned into the members, and
-# the monolithic controls with the same star list and the same total energy
-# (and, for C-cold, the same global virial ratio).
+# Global IMF partition and the controls C-E and C-cold: one star list drawn for
+# the whole complex and partitioned into the members, and the monolithic
+# controls with the same star list and the same total energy (and, for C-cold,
+# the same global virial ratio).
 
-@testset "Complex IMF partition and controls (6.5, 6.6)" begin
+@testset "Complex IMF partition and controls" begin
     using StableRNGs
     nd = Nbody6Dynamics
 

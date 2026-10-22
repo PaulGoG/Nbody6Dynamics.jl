@@ -1,11 +1,11 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# WP10 10.3 increment 1: binary population series (design W8) — number, star
-# and mass fractions per radial shell, stellar class and census level, on
-# synthetic snapshots with an injected, radially dependent binary population.
+# Binary population series: number, star and mass fractions per radial shell,
+# stellar class and census level, on synthetic snapshots with an injected,
+# radially dependent binary population.
 
-@testset "Binary population series (10.3)" begin
+@testset "Binary population series" begin
     using StableRNGs
     using Random: randperm
     nd = Nbody6Dynamics

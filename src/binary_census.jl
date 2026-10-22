@@ -7,7 +7,8 @@
 # (a hyperbolic regularisation, a pair resolved only by KS) and bound without
 # being regularised (a wide or soft binary). The census joins, per pair, the
 # overlapping or adjacent spans of both levels into one record that keeps the
-# limits and counts of each level (definition D5 of the binary-census note).
+# limits and counts of each level, the origin of the earlier and the end class
+# of the later level.
 
 """
     CensusSpan

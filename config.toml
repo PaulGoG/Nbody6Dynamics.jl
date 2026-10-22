@@ -99,6 +99,12 @@ span_n_periods       = 2.0          # > 0; largest gap between KS episodes joine
 bound_spans          = false        # write bound_spans.csv (bound pairs at the snapshots and their spans)
 bound_gamma_max      = 0.1          # > 0; largest apocentre perturbation of a bound pair
 bound_n_miss         = 1            # ≥ 0; consecutive snapshots a still-bound pair may miss within one span
+binary_population    = false        # write binary_population.csv (binary fractions per shell, stellar class and census level)
+population_frame     = "lagrangian" # one of: "lagrangian" (mass-fraction shells) | "rh" (shells in r/r_h)
+population_q_min     = 0.5          # 0 < x < 1; mass-ratio limit of the q-restricted fraction
+population_m1_min    = 0.47         # M☉; ≥ 0; lower primary mass of the q-restricted fraction
+population_m1_max    = 0.76         # M☉; > population_m1_min; upper primary mass of the q-restricted fraction
+population_edges     = []           # strictly increasing from 0 (ending at 1 for "lagrangian"); [] = the frame's default shells
 validity                  = true          # write validity.toml and validity_snapshots.csv
 validity_interval_de      = 1.0e-4        # > 0; per-interval |DE| above which an interval is flagged
 validity_cumulative_de    = 1.0e-3        # > 0; |DETOT / E0| above which the run is flagged

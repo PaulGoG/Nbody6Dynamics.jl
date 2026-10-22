@@ -15,8 +15,8 @@ end
 @testset "Static QA — ExplicitImports" begin
     using ExplicitImports
     # Pragmatic subset: the package uses plain `using` for its small,
-    # stable dependency surface (full explicit-import migration is
-    # tracked in the roadmap). These checks catch the real hazards:
+    # stable dependency surface (the migration to explicit imports
+    # throughout is deferred). These checks catch the real hazards:
     # stale explicit imports, self-qualified names, and accesses of
     # non-owning modules. The extension imports the core internals it
     # needs explicitly, so its list is held to the same standard.

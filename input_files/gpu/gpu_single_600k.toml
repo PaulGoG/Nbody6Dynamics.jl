@@ -48,12 +48,12 @@ config_file = "single_600k.toml"
 
 [cluster]
 enabled        = false          # true submits the run as a chain of jobs (scripts/run_cluster.jl); needs simulation.wall_budget > 0
-partition      = "GPU"          # the H200 node's partition
-time_limit     = "36:00:00"     # the node's wall limit per job
+partition      = "GPU"          # the site's GPU partition
+time_limit     = "36:00:00"     # wall limit per job; ≤ the partition's limit
 cpus_per_task  = 8
 mem            = "64G"
 gres           = "gpu:1"
 sbatch_options = ["--hint=nomultithread"]
-prologue       = ["export JULIA_DEPOT_PATH=\"$HOME/data/julia-depot:\" JULIAUP_DEPOT_PATH=\"$HOME/data/juliaup\"", "export PATH=\"$HOME/.juliaup/bin:$HOME/data/cuda/bin:$PATH\"", "export CUDA_HOME=\"$HOME/data/cuda\""]
+prologue       = ["export JULIA_DEPOT_PATH=\"<julia-depot>:\"", "export CUDA_HOME=\"<cuda-toolkit>\"", "export PATH=\"$CUDA_HOME/bin:$PATH\""]   # set the Julia depot and the CUDA toolkit for the node
 chain          = "resubmit"     # one of: "resubmit" | "dependency"
 overhead       = 7200.0         # s; initial conditions and post-processing of 6×10⁵ bodies take over an hour each

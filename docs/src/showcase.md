@@ -42,10 +42,10 @@ integration alone; the pipeline adds the initial conditions, the readers, the
 diagnostics and about fifty figures and five animations per run, a few
 minutes at these sizes.
 
-The numbers were produced with the package at commit `f89eb2e`; every
-integration parameter of these generated inputs is unchanged since (only the
-restart-dump frequency `NCOMM` changed), so they are indicative for the
-current generator.
+These runs predate the engine pin `v2026.07.9`. Its correction of the KS
+mass-change bookkeeping (`v2026.07.7`) changes the energy budget of
+binary-rich runs, so the `DETOT` column, `binary` in particular, will differ
+on a rerun.
 
 | Case | Run | Bodies after truncation | Engine wall | Final `DETOT` |
 |---|---|---|---|---|
@@ -85,8 +85,14 @@ the gain grows with N (see the manual, [Validated hardware](@ref)).
 commits, the telemetry summary), `nbody6dynamics.log`, `telemetry.csv`, the
 engine output under `output/` (`BUILD_INFO.toml`, `conf.3_*` snapshots,
 `out1000`, `lagr.7`, `esc.11`, `sev.83_*`, `bev.82_*`, `merger.inp`, `dat.10`,
-`merger_summary.txt`, `merger_ic.toml`), the derived
-tables (`stellar_census.csv`, `remnant_diagnostics.csv`) and `plots/`:
+`merger_summary.txt`, `merger_ic.toml`), the derived tables
+(`stellar_census.csv`, `snapshot_integrals.csv`, `energy_intervals.csv`,
+`engine_events.csv`, `mass_budget.csv`, `energy_budget.csv`,
+`angular_momentum.csv`, `equipartition.csv`, `remnant_diagnostics.csv`,
+`progenitor_budget.csv`, `merger_tree.csv`, the validity record
+`validity.toml` with `validity_snapshots.csv`, and, with their stages on,
+`binary_spans.csv`, `bound_spans.csv`, `binary_census.csv` and
+`binary_population.csv`) and `plots/`:
 
 - initial conditions: projections, overview, velocity field, sampled IMF, density profiles (`merger_ic_*`);
 - the encounter: cluster separation, per-cluster virial ratio and structure, density profiles and velocity dispersions at the first and last snapshot (`merger_*`);

@@ -507,7 +507,7 @@ function postprocess(
             binary_census(results[:binary_spans], results[:bound_spans]; nbin0 = nbin0)
     end
     lap!("binary_census")
-    # Binary fractions per shell, class and census level (design W8)
+    # Binary fractions per shell, class and census level
     if pp.binary_population && haskey(results, :snapshots)
         @info "Binary population over $(length(results[:snapshots])) snapshots..."
         kstar =

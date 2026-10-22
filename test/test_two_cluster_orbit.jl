@@ -1,12 +1,12 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# Roadmap 6.3: the two-cluster orbit by pericentre or apocentre (absolute or in
-# units of r_h of cluster 1), its orientation, orbit-independent truncation,
-# the density-ratio key, per-cluster random streams and the derived orbit
+# The two-cluster orbit by pericentre or apocentre (absolute or in units of r_h
+# of cluster 1), its orientation, orbit-independent truncation, the
+# density-ratio key, per-cluster random streams and the derived orbit
 # quantities of the IC record.
 
-@testset "Two-cluster orbit (6.3)" begin
+@testset "Two-cluster orbit" begin
     using StableRNGs
     nd = Nbody6Dynamics
     G = nd._G_PC_KMS2_MSUN
@@ -260,7 +260,7 @@ $output
         @test meta["meta"]["fp32_offset_bound"] > 0
     end
 
-    @testset "Tidal frame and the pair Jacobi radius (6.4)" begin
+    @testset "Tidal frame and the pair Jacobi radius" begin
         t1 = TidalSpec(; kz14 = 1)
         @test nd.tidal_frame_rotation(t1) ≈ 0.0264
         @test nd.tidal_frame_rotation(TidalSpec()) == 0.0

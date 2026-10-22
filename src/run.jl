@@ -45,11 +45,11 @@ const _SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇',
 """
     run_simulation(cfg::Nbody6Config; base_dir = cfg.config_dir, run_id = "") -> String
 
-Execute the Nbody6++ simulation with:
-- Unique run ID and isolated output directory
-- Bash wrapper for `ulimit -s unlimited` and CUDA env
-- Real-time ADJUST line monitoring with wall-clock timer and heartbeat spinner
-- Frozen config snapshot saved alongside output
+Run the engine on `simulation.input_file` in a new directory `runs/<run_id>/`,
+through a generated launch script that sets the stack limit and the CUDA
+environment, with the configuration frozen beside the output. The stdout
+capture is followed live (ticker, watchdogs, wall budget) and the segment is
+recorded in `RUN_INFO.toml`.
 
 `simulation.input_file`, `install.install_dir` and `simulation.runs_dir`
 resolve against `base_dir` when relative. A run directory that already holds

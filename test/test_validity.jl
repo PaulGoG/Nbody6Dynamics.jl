@@ -1,4 +1,4 @@
-# Validity record (roadmap 2.4): calibration lookup, stage detectors, sections,
+# Validity record: calibration lookup, stage detectors, sections,
 # epochs and the schema of validity.toml / validity_snapshots.csv.
 
 using StableRNGs

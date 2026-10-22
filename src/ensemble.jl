@@ -192,7 +192,7 @@ end
 Group the completed points of a sweep by their grid values (one ensemble
 per grid point, its members the seeds) and summarise the series of
 `quantity` ([`_run_series`](@ref)) with [`ensemble_statistics`](@ref).
-Only runs that completed enter ([`_sweep_done_points`](@ref) warns with the
+Only runs that completed enter (`_sweep_done_points` warns with the
 count of points left out); groups whose members carry no series are skipped.
 The stdout capture of a run is the `postprocess.stdout_file` of its frozen
 `config.toml`.

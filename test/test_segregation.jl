@@ -1,11 +1,11 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 #
-# Roadmap 6.7 (segregation part): primordial mass segregation after Baumgardt,
-# De Marchi & Kroupa (2008) with the McLuster degree S (Küpper et al. 2011,
-# Eq. A1), acting on the systems before virialisation.
+# Primordial mass segregation after Baumgardt, De Marchi & Kroupa (2008) with
+# the McLuster degree S (Küpper et al. 2011, Eq. A1), acting on the systems
+# before virialisation.
 
-@testset "Primordial mass segregation (6.7)" begin
+@testset "Primordial mass segregation" begin
     using StableRNGs
     nd = Nbody6Dynamics
 
