@@ -6,21 +6,22 @@
     _COST_TABLE_H200
 
 Wall seconds per N-body time unit of the GPU build on one NVIDIA H200 NVL
-with 8 host threads, for one single cluster at rest (King model), measured
-with the `bench/gpu_cells.jl` cells and `bench/gpu_scaling.jl` in September
-2026 on host `issaf-0-6`:
+with 8 host threads, for one single cluster at rest (King model). The
+calibration was measured on an H200 node and on workstation GPUs (September
+2026 benchmark runs); `bench/gpu_scaling.jl` and the cells of
+`bench/gpu_cells.jl` produce such tables:
 
 | N | s per N-body unit | source |
 |:--|:--|:--|
-| 1.0×10⁵ | 64 | `gpu_scaling_20260924_014138.csv`, 0.25 time units (start-up included; an upper bound) |
-| 5.0×10⁵ | 281 | `gpu_cells_h200_weak_20260924_184842.csv`, single cell, 2.0 time units |
-| 1.0×10⁶ | 1087 | `gpu_cells_h200_strong_20260925_040734.csv`, single cell, 2.0 time units |
+| 1.0×10⁵ | 64 | `bench/gpu_scaling.jl`, 0.25 time units (start-up included; an upper bound) |
+| 5.0×10⁵ | 281 | `bench/gpu_cells.jl`, weak-scaling series, single cell, 2.0 time units |
+| 1.0×10⁶ | 1087 | `bench/gpu_cells.jl`, strong-scaling series, single cell, 2.0 time units |
 
 The two-cluster (dual) cells cost 1.85–1.99 times the single cell at equal
 N (559 against 281 s at 5×10⁵, 2016 against 1087 s at 10⁶), because the time
 unit of a merger is set by the whole configuration; hence the default
-`cost.merger_factor = 2.0`. The device pilot (roadmap P3) replaces these
-rows through `[cost] table`.
+`cost.merger_factor = 2.0`. A table measured on the target device replaces
+these rows through `[cost] table`.
 """
 const _COST_TABLE_H200 = [(1.0e5, 64.0), (5.0e5, 281.0), (1.0e6, 1087.0)]
 

@@ -1129,14 +1129,19 @@ end
     budget_info = Nbody6Dynamics.TOML.parsefile(joinpath(budget_dir, "RUN_INFO.toml"))
     @test budget_info["run"]["status"] == "stopped"
 
-    # A stop request left by the previous segment is removed before launch
+    # A fresh run into a directory that holds a run record is refused (resume_run continues it)
+    @test_throws ArgumentError run_simulation(fake_cfg(); base_dir = base, run_id = "budget")
+    # A stale stop request in the output directory is removed before launch
+    stale_dir = joinpath(dirname(budget_dir), "stale_stop")
+    mkpath(joinpath(stale_dir, "output"))
+    touch(joinpath(stale_dir, "output", "STOP"))
     withenv("FAKE_TCRIT" => "3", "FAKE_IGNORE_STOP" => nothing) do
-        run_simulation(fake_cfg(); base_dir = base, run_id = "budget")
+        run_simulation(fake_cfg(); base_dir = base, run_id = "stale_stop")
     end
-    seg = last_segment(budget_dir)
+    seg = last_segment(stale_dir)
     @test seg["status"] == "completed"
     @test seg["stop_requested"] == ""
-    @test !isfile(joinpath(budget_dir, "output", "STOP"))
+    @test !isfile(joinpath(stale_dir, "output", "STOP"))
 
     # Budget kill: an engine that ignores the request is terminated at the budget
     kill_dir = withenv("FAKE_TCRIT" => "1000", "FAKE_IGNORE_STOP" => "1") do

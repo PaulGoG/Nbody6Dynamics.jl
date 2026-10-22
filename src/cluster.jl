@@ -21,6 +21,44 @@ const _LedgerRow = NamedTuple{_LEDGER_COLUMNS,NTuple{9,String}}
 """Run statuses after which no further job is submitted (complete, or a decision is needed)."""
 const _FINAL_STATUSES = ("completed", "halted", "watchdog", "stalled")
 
+"""Segment statuses of an engine that ended without a stop request or `END RUN`."""
+const _FAILED_STATUSES = ("failed", "killed")
+
+"""
+    _chain_stop_reason(info_path) -> String
+
+Why a `resubmit` chain must not submit another job after the last segment
+recorded in `info_path` (`RUN_INFO.toml`), or `""` when it may. A segment
+that ended `failed` or `killed` stops the chain when it made no progress
+(its `t_end` is missing or not beyond its `t_start`), or when the segment
+before it ended `failed` or `killed` too: a deterministic failure would
+otherwise be resubmitted until `max_segments`, or forever.
+"""
+function _chain_stop_reason(info_path::AbstractString)::String
+    isfile(info_path) || return ""
+    segments = get(TOML.parsefile(info_path), "segments", Any[])
+    isempty(segments) && return ""
+    last_segment = segments[end]
+    last_segment isa AbstractDict || return ""
+    status = string(get(last_segment, "status", ""))
+    status in _FAILED_STATUSES || return ""
+    index = get(last_segment, "index", length(segments))
+    t_start = get(last_segment, "t_start", 0.0)
+    t_end = get(last_segment, "t_end", nothing)
+    if !(t_end isa Real) || !(t_start isa Real) || t_end ≤ t_start
+        return "segment $index ended $status without progress " *
+               "(t_end = $(something(t_end, "none")), t_start = $t_start)"
+    end
+    if length(segments) ≥ 2
+        previous = segments[end - 1]
+        if previous isa AbstractDict && string(get(previous, "status", "")) in _FAILED_STATUSES
+            return "segments $(get(previous, "index", length(segments) - 1)) and $index both " *
+                   "ended failed or killed (latest: $status)"
+        end
+    end
+    return ""
+end
+
 # ---------------------------------------------------------------------------
 # Job script
 # ---------------------------------------------------------------------------
@@ -372,9 +410,13 @@ The scheduler's job description is kept as `cluster/job_<job_id>.txt` when
 
 A successor `<sbatch> --parsable --dependency=afterany:<job_id>
 cluster/job.sbatch` is submitted when `chain = "resubmit"`, the run status is
-none of `completed`, `halted`, `watchdog`, the pipeline has not finished, and
-the segment count is below `max_segments` (`0` = no bound); the script is
-regenerated from the configuration if it is missing.
+none of `completed`, `halted`, `watchdog`, `stalled`, the pipeline has not
+finished, and the segment count is below `max_segments` (`0` = no bound); the
+script is regenerated from the configuration if it is missing. A segment that
+ended `failed` or `killed` without progress, or the second such segment in a
+row, stops the chain instead ([`_chain_stop_reason`](@ref)): a warning names
+the run, status and segment, and the ledgers receive a `chain_stopped` row
+with the reason.
 
 # Returns
 The result of the pipeline call: empty while the run is short of its end
@@ -448,7 +490,22 @@ function cluster_segment(run_dir::AbstractString)::Dict{Symbol,Any}
 
     continuing =
         cl.chain == "resubmit" && !(status in _FINAL_STATUSES) && !_pipeline_completed(run_dir)
-    if continuing && (cl.max_segments == 0 || segments < cl.max_segments)
+    stop_reason = continuing ? _chain_stop_reason(info_path) : ""
+    if !isempty(stop_reason)
+        _record_job(
+            run_dir,
+            runs_dir;
+            event = "chain_stopped",
+            job_id = job_id,
+            segment = string(segments),
+            status = status,
+            host = host,
+            note = stop_reason,
+        )
+        @warn "Run $(basename(run_dir)) is at status $(status) after segment $(segments): " *
+              "$(stop_reason); the chain is stopped and no further job is submitted " *
+              "(inspect the run, then resume it with resume_pipeline or a new job)"
+    elseif continuing && (cl.max_segments == 0 || segments < cl.max_segments)
         script = joinpath(run_dir, "cluster", "job.sbatch")
         isfile(script) || _write_job_script(cfg, run_dir)
         cmd = _sbatch_cmd(cl, script; after = job_id, kind = "afterany")
@@ -512,7 +569,8 @@ end
 
 Append one row, stamped with the current time and the run id
 `basename(run_dir)`, to both job ledgers: `<run_dir>/cluster/jobs.csv` and
-`<runs_dir>/cluster_jobs.csv`. `event` is `submitted`, `started` or `ended`.
+`<runs_dir>/cluster_jobs.csv`. `event` is `submitted`, `started`, `ended` or
+`chain_stopped`.
 """
 function _record_job(
     run_dir::AbstractString,
@@ -603,8 +661,9 @@ end
 Rows of a job ledger written by [`submit_run`](@ref) and
 [`cluster_segment`](@ref) (`<run_dir>/cluster/jobs.csv`, or
 `<runs_dir>/cluster_jobs.csv` for every run of a runs directory), as named
-tuples with the nine `String` fields `time`, `run_id`, `event` (`submitted`,
-`started`, `ended`), `job_id`, `depends_on`, `segment`, `status`, `host` and
+tuples (a `Vector` of `NamedTuple`s, not a table) with the nine `String`
+fields `time`, `run_id`, `event` (`submitted`, `started`, `ended`,
+`chain_stopped`), `job_id`, `depends_on`, `segment`, `status`, `host` and
 `note`; empty cells read as `""`. An absent file gives an empty vector. Raises
 an `ArgumentError` when the header is not the nine column names in this
 order or a row has another number of cells.

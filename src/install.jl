@@ -8,7 +8,9 @@
 Orchestrate the full install pipeline:
   clone → source amendments → configure → HDF5 patch → CUDA setup → build.
 
-All paths are resolved relative to `base_dir` (defaults to the package root).
+All paths are resolved relative to `base_dir` (defaults to `cfg.config_dir`,
+the directory of the configuration file). An existing checkout is left as
+it is; when it is not at `install.ref` a warning says so.
 """
 function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = cfg.config_dir)
     install = cfg.install
@@ -158,8 +160,11 @@ end
 
 """
 Corrections of the engine source that the package applies before a build
-(`deps/engine/amendments.toml`): defects established in production runs and
-reported upstream, each an exact text substitution in one file.
+(`deps/engine/amendments.toml`): defects established in production runs,
+each an exact text substitution in one file. The fork carries them from
+`v2026.07-campaign.3` on, so on a fork checkout they are found in place and
+nothing is written; the substitution serves checkouts of the unamended
+upstream source.
 """
 const _ENGINE_AMENDMENTS_FILE = joinpath(_PACKAGE_ROOT, "deps", "engine", "amendments.toml")
 
@@ -172,7 +177,10 @@ and return their identifiers: `applied` for those in effect after the call
 (substituted now or found already substituted), `skipped` for those that do
 not fit the tree. An amendment names a file under `src_dir`, a `search` text
 and its `replace` text. It is applied when `search` occurs exactly once;
-it counts as applied without a write when `replace` is already there; it is
+it counts as applied without a write when `replace` is already there (a fork
+checkout), since the build record's `source_amendments` states which
+corrections the built engine contains and the energy accounting of a
+linearised tidal field reads `tidal-energy-total` from it; it is
 skipped with a warning when the file is missing or `search` is absent or
 ambiguous, which is what an engine revision other than the validated one
 looks like — the build then proceeds on the unamended source and the build
@@ -426,6 +434,7 @@ function _ensure_source_tree(src_dir::AbstractString, install)
     end
     if _source_tree_ready(src_dir)
         @info "Source directory already exists: $src_dir (reference left as is)"
+        isempty(install.ref) || _check_checkout_ref(src_dir, install.ref)
         return nothing
     end
     _is_engine_checkout(src_dir) || _refuse_foreign_directory(src_dir)
@@ -443,6 +452,44 @@ function _ensure_source_tree(src_dir::AbstractString, install)
     @warn "The checkout cannot be restored; kept as $aside and cloning again."
     _clone_source(src_dir, install)
     return nothing
+end
+
+"""
+    _check_checkout_ref(src_dir, ref) -> Bool
+
+Whether the existing checkout at `src_dir` is at the commit `ref` names:
+`git rev-parse HEAD` against `git rev-parse <ref>^{commit}`, without a fetch.
+On a mismatch, or when `ref` is not known to the checkout, a warning says
+that the tree is at another commit than `install.ref` and that
+`install.reinstall = true` (or a checkout of `ref`) is needed; the tree is
+never changed. `true` also when git cannot be asked (no checkout metadata),
+since nothing can be compared then, and for a directory without its own
+`.git`.
+"""
+function _check_checkout_ref(src_dir::AbstractString, ref::AbstractString)::Bool
+    # Without its own .git, git would answer for an enclosing repository.
+    ispath(joinpath(src_dir, ".git")) || return true
+    rev(spec) =
+        try
+            cmd = `git -C $src_dir rev-parse --verify --quiet $spec`
+            String(strip(read(pipeline(cmd; stderr = devnull), String)))
+        catch e
+            e isa Union{ProcessFailedException,Base.IOError} || rethrow()
+            ""
+        end
+    head = rev("HEAD")
+    isempty(head) && return true
+    target = rev("$(ref)^{commit}")
+    head == target && return true
+    @warn "The engine checkout at $src_dir is at commit $(first(head, 12)), not at " *
+          "install.ref = \"$ref\"" *
+          (
+              isempty(target) ? " (unknown to the checkout; a fetch may be needed)" :
+              " ($(first(target, 12)))"
+          ) *
+          "; the tree is left as is. Set install.reinstall = true, or check out $ref in it, " *
+          "to build the configured engine"
+    return false
 end
 
 """`true` when `dir` is recognisably an engine checkout: it holds `configure` or its own `.git`."""

@@ -218,8 +218,10 @@ end
     _validate(cfg::Nbody6Config)
 
 Validate a parsed configuration against the constraints documented in
-`config.toml` and the manual: enumerated choices, numerical bounds, and
-required non-empty fields. Raises an `ArgumentError` naming the offending
+`config.toml` and the manual: enumerated choices, numerical bounds,
+required non-empty fields, and the combinations that cannot be honoured
+(`simulation.run_test` with a `postprocess.data_dir`, `postprocess.binary_spans`
+without `postprocess.parse_stdout`). Raises an `ArgumentError` naming the offending
 `section.key` and the actual value; returns `nothing` on success. Called
 unconditionally at the end of [`load_config`](@ref) so a pipeline cannot
 start from a configuration it cannot honor.
@@ -309,6 +311,16 @@ function _validate(cfg::Nbody6Config)
     isempty(sim.runs_dir) && _config_error("simulation.runs_dir", "must be nonempty")
     isempty(sim.run_id_prefix) && _config_error("simulation.run_id_prefix", "must be nonempty")
     isempty(sim.input_file) && _config_error("simulation.input_file", "must be nonempty")
+    isempty(sim.binary_name) && _config_error("simulation.binary_name", "must be nonempty")
+    # The post-processing would read data_dir, not the run just made.
+    sim.run_test &&
+        !isempty(pp.data_dir) &&
+        _config_error(
+            "postprocess.data_dir",
+            "= \"$(pp.data_dir)\" with simulation.run_test = true: the post-processing would " *
+            "read that directory instead of the new run; leave data_dir empty, or set " *
+            "run_test = false to analyse an existing output directory",
+        )
 
     # [postprocess]
     if pp.snapshot_format != "conf3"
@@ -329,6 +341,13 @@ function _validate(cfg::Nbody6Config)
     pp.parse_stdout &&
         isempty(pp.stdout_file) &&
         _config_error("postprocess.stdout_file", "must be nonempty when parse_stdout = true")
+    pp.binary_spans &&
+        !pp.parse_stdout &&
+        _config_error(
+            "postprocess.binary_spans",
+            "= true requires postprocess.parse_stdout = true (the spans are read from the " *
+            "KS, few-body and GW lines of the stdout capture)",
+        )
     pp.read_lagr &&
         isempty(pp.lagr_file) &&
         _config_error("postprocess.lagr_file", "must be nonempty when read_lagr = true")
@@ -386,8 +405,12 @@ function _validate(cfg::Nbody6Config)
     # [visualization.style]
     st.marker_budget > 0 ||
         _config_error("visualization.style.marker_budget", "must be > 0; got $(st.marker_budget)")
-    (0 < st.marker_min ≤ st.marker_max) || _config_error(
-        "visualization.style",
+    st.marker_min > 0 || _config_error(
+        "visualization.style.marker_min",
+        "must be > 0 (0 < marker_min ≤ marker_max); got $(st.marker_min)",
+    )
+    st.marker_min ≤ st.marker_max || _config_error(
+        "visualization.style.marker_max",
         "must satisfy 0 < marker_min ≤ marker_max; " *
         "got marker_min = $(st.marker_min), marker_max = $(st.marker_max)",
     )

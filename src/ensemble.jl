@@ -129,9 +129,8 @@ function ensemble_statistics(
     return EnsembleStatistics(grid, med, q16, q84, q025, q975, n)
 end
 
-"""Physical unit scaling of a run from its stdout; identity when absent."""
-function _run_scaling(out_dir::AbstractString)
-    path = joinpath(out_dir, "out1000")
+"""Physical unit scaling of a run from its stdout capture `path`; identity when absent."""
+function _run_scaling(path::AbstractString)
     isfile(path) || return UnitScaling(1.0, 1.0, 1.0, 1.0)
     return extract_scaling(read_diagnostics(path))
 end
@@ -152,10 +151,10 @@ function _run_series(run_dir::AbstractString, quantity::Symbol; fraction::Real =
         lagr = read_lagr(path)
         isempty(lagr.time) && return nothing
         k = argmin(abs.(lagr.mass_fractions .- fraction))
-        u = _run_scaling(out)
+        u = _run_scaling(_run_stdout_path(run_dir))
         return (to_myr(u, lagr.time), to_pc(u, lagr.radii[k, :]))
     end
-    path = joinpath(out, "out1000")
+    path = _run_stdout_path(run_dir)
     isfile(path) || return nothing
     adj = read_diagnostics(path).adjust
     isempty(adj) && return nothing
@@ -193,7 +192,10 @@ end
 Group the completed points of a sweep by their grid values (one ensemble
 per grid point, its members the seeds) and summarise the series of
 `quantity` ([`_run_series`](@ref)) with [`ensemble_statistics`](@ref).
-Groups whose members carry no series are skipped.
+Only runs that completed enter ([`_sweep_done_points`](@ref) warns with the
+count of points left out); groups whose members carry no series are skipped.
+The stdout capture of a run is the `postprocess.stdout_file` of its frozen
+`config.toml`.
 """
 function sweep_ensembles(sweep_dir::AbstractString, quantity::Symbol; fraction::Real = 0.5)
     _, pts = _sweep_done_points(sweep_dir)

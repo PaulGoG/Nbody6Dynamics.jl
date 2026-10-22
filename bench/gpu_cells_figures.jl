@@ -934,7 +934,7 @@ const SYNTHETIC_HOSTS = [
         class = "datacenter",
         peak = 60.0,
         gpu = "NVIDIA H200 NVL, 143771 MiB, 595.71.05, 9.0",
-        machine = "issaf-0-6-H200x2",
+        machine = "datacentre-node-H200x2",
         g_host = 1.2,
         two_devices = true,
     ),

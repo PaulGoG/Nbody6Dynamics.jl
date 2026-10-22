@@ -568,10 +568,11 @@ function _launch_sweep(
             process_running(proc) && continue
             close(log)
             code = _exit_status(proc)
-            ok = code == 0
+            point_status = _sweep_point_status(code, joinpath(sweep_dir, p.id, _SWEEP_RUN_ID))
+            ok = point_status == "done"
             ok ? (n_done += 1) : (n_failed += 1)
             status[i] = Dict{String,Any}(
-                "status" => ok ? "done" : "failed",
+                "status" => point_status,
                 "started" => status[i]["started"],
                 "exit_status" => code,
                 "elapsed_seconds" => round(time() - t0; digits = 1),
@@ -585,7 +586,7 @@ function _launch_sweep(
             if ok
                 @info "sweep: finished $(p.id) in $(_format_elapsed(time() - t0))"
             else
-                @warn "sweep: $(p.id) failed (exit status $code); see $(joinpath(sweep_dir, p.id, "sweep_point.log"))"
+                @warn "sweep: $(p.id) ended as $(point_status) (exit status $code); see $(joinpath(sweep_dir, p.id, "sweep_point.log"))"
             end
         end
     end
@@ -611,6 +612,27 @@ function run_sweep(cfg::SweepConfig; dry_run::Bool = false, sweep_dir::AbstractS
     _launch_sweep(sweep_dir, cfg, points)
     write_sweep_summary(sweep_dir)
     return sweep_dir
+end
+
+"""
+    _sweep_point_status(exit_status, run_dir) -> String
+
+Index status of a finished sweep point from the worker's `exit_status` and
+the run status of its run directory ([`_run_status`](@ref)): `"done"` when the
+worker exited with 0 and the run is `completed`; otherwise the run status
+(`"halted"`, `"stopped"`, `"failed"`, …), and `"failed"` for a nonzero exit of
+a run recorded as completed (the post-processing failed). A run without a
+status (no record, or a record that predates segment statuses) is judged by
+the exit status alone.
+"""
+function _sweep_point_status(exit_status::Integer, run_dir::AbstractString)::String
+    run_status = _run_status(run_dir)
+    if isempty(run_status)
+        return exit_status == 0 ? "done" : "failed"
+    elseif run_status == "completed"
+        return exit_status == 0 ? "done" : "failed"
+    end
+    return run_status
 end
 
 """Outcome fields of one finished point read from its run directory:
@@ -639,7 +661,7 @@ function _sweep_point_outcome(run_dir::AbstractString)
             out["completed"] = Bool(get(segs[end], "completed", out["exit_status"] == 0))
         end
     end
-    stdout_path = joinpath(run_dir, "output", "out1000")
+    stdout_path = _run_stdout_path(run_dir)
     if isfile(stdout_path)
         diag = read_diagnostics(stdout_path)
         if !isempty(diag.adjust)
@@ -745,12 +767,26 @@ function sweep_visualization(cfg::SweepConfig, sweep_dir::AbstractString)
 end
 
 """Completed points of a sweep of the given `kind` (`"merger"` by default,
-`"control"`, or `""` for all) as `(entry, run_dir)` pairs."""
+`"control"`, or `""` for all) as `(entry, run_dir)` pairs: index status
+`done` and a run that is `completed` ([`_run_status`](@ref); a run without a
+recorded status is kept). Points marked done whose run ended otherwise (an
+index written before the run status was consulted) are left out with a
+warning that counts them."""
 function _sweep_done_points(sweep_dir::AbstractString; kind::AbstractString = "merger")
     idx = read_sweep_index(sweep_dir)
-    pts = [
-        (p, joinpath(p["dir"], _SWEEP_RUN_ID)) for p in idx["points"] if
-        p["status"] == "done" && (isempty(kind) || get(p, "kind", "merger") == kind)
-    ]
+    pts = Tuple{Dict{String,Any},String}[]
+    n_excluded = 0
+    for p in idx["points"]
+        (p["status"] == "done" && (isempty(kind) || get(p, "kind", "merger") == kind)) || continue
+        run_dir = joinpath(p["dir"], _SWEEP_RUN_ID)
+        if _run_status(run_dir) in ("", "completed")
+            push!(pts, (p, run_dir))
+        else
+            n_excluded += 1
+        end
+    end
+    n_excluded > 0 &&
+        @warn "sweep: $(n_excluded) point(s) marked done in $(sweep_dir) did not complete their " *
+              "run and are excluded from the ensembles"
     return idx, pts
 end

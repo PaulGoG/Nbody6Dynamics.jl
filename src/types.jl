@@ -11,7 +11,7 @@
 
 Configuration for the Nbody6++ source installation phase.
 Controls git clone, the checked-out reference (`ref`: commit, tag, or
-branch of the backend; the default is the validated commit), reinstall
+branch of the backend; the default is the fork tag `v2026.07.8`), reinstall
 behaviour, and clean builds.
 """
 Base.@kwdef struct InstallConfig
@@ -167,6 +167,40 @@ stationarity tests, in crossing times; `validity_virial_tolerance` bounds
 |2T/|W| − 1| of a virialised bound set, `validity_rate_tolerance` the change
 per window of a stationary series, and `validity_bias_tolerance` the
 relative calibrated bias above which an estimator is masked.
+
+# Fields
+- `angular_momentum`: write `angular_momentum.csv` (angular-momentum budget,
+  rotation of the bound set and per initial-mass class, elapsed relaxation times)
+- `mass_class_edges`: edges of the initial-mass classes [M☉]; > 0, strictly increasing
+- `mass_class_n_min`: bound members a mass class or radial subset needs for its
+  rotation measure, and the shell membership of the class profiles; ≥ 2
+- `equipartition`: write `equipartition.csv` (Bianchini equipartition mass of the
+  luminous bound stars within the half-mass radius)
+- `equipartition_bin_width`: mass bin of the dispersion–mass relation [M☉]; > 0
+- `equipartition_n_min`: stars a mass bin needs to enter the fit; ≥ 2
+- `merger_tree`: write `merger_tree.csv` and `progenitor_budget.csv` for runs with
+  initial clusters
+- `binary_spans`: write `binary_spans.csv` from the KS, few-body and GW lines of the
+  stdout capture; requires `parse_stdout`
+- `span_n_periods`: largest gap between two KS episodes of a pair that joins them
+  into one span, in orbital periods of the earlier episode; > 0
+- `bound_spans`: write `bound_spans.csv` (physically bound pairs at the snapshots
+  and their spans)
+- `bound_gamma_max`: largest apocentre perturbation of a bound pair by its nearest
+  bodies; > 0
+- `bound_n_miss`: consecutive snapshots a pair that stays bound may fail the
+  perturbation test within one span; ≥ 0
+- `binary_population`: write `binary_population.csv` (binary fractions per radial
+  shell, stellar class and census level at every snapshot)
+- `population_frame`: radial shells, `"lagrangian"` (mass fractions) or `"rh"`
+  (multiples of the half-mass radius)
+- `population_q_min`: mass-ratio limit of the q-restricted fraction; 0 < q_min < 1
+- `population_m1_min`, `population_m1_max`: primary-mass window of the q-restricted
+  fraction [M☉], by default 0.47–0.76 (Milone et al. 2012,
+  doi:10.1051/0004-6361/201016384); 0 ≤ m1_min < m1_max
+- `population_edges`: shell edges replacing the frame's default (mass fractions
+  from 0 to 1, or multiples of r_h from 0, `Inf` allowed); strictly increasing;
+  empty = the frame's default
 """
 Base.@kwdef struct PostprocessConfig
     enabled::Bool = true
@@ -232,8 +266,8 @@ Base.@kwdef struct PostprocessConfig
     binary_population::Bool = false
     population_frame::String = "lagrangian"   # "lagrangian" | "rh"
     population_q_min::Float64 = 0.5
-    population_m1_min::Float64 = 0.5          # M☉
-    population_m1_max::Float64 = 0.9          # M☉
+    population_m1_min::Float64 = 0.47         # M☉
+    population_m1_max::Float64 = 0.76         # M☉
     population_edges::Vector{Float64} = Float64[]   # empty: the frame's default shells
     validity::Bool = true
     validity_interval_de::Float64 = 1.0e-4

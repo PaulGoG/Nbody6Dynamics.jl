@@ -77,6 +77,8 @@ end
     )
 
     # --- Snapshot plots ---
+    using StableRNGs
+    rng_snap = StableRNG(87)
     n = 50
     params = zeros(Float32, 20)
     params[1] = 1.0f0
@@ -84,9 +86,9 @@ end
     snap = Snapshot(
         hdr,
         Int32.(1:n),
-        Float32.(rand(n)),
-        Float32.(randn(3, n)),
-        Float32.(0.1 .* randn(3, n)),
+        Float32.(rand(rng_snap, n)),
+        Float32.(randn(rng_snap, 3, n)),
+        Float32.(0.1 .* randn(rng_snap, 3, n)),
         Float32[],
         Float32[],
     )
@@ -374,6 +376,8 @@ end
     )
 
     # Build two simple test snapshots
+    using StableRNGs
+    rng_anim = StableRNG(387)
     n = 30
     params1 = zeros(Float32, 20)
     params1[1] = 0.0f0
@@ -384,18 +388,18 @@ end
     snap1 = Snapshot(
         hdr1,
         Int32.(1:n),
-        Float32.(rand(n)),
-        Float32.(randn(3, n)),
-        Float32.(0.1 .* randn(3, n)),
+        Float32.(rand(rng_anim, n)),
+        Float32.(randn(rng_anim, 3, n)),
+        Float32.(0.1 .* randn(rng_anim, 3, n)),
         Float32[],
         Float32[],
     )
     snap2 = Snapshot(
         hdr2,
         Int32.(1:n),
-        Float32.(rand(n)),
-        Float32.(randn(3, n) .+ 0.5),
-        Float32.(0.1 .* randn(3, n)),
+        Float32.(rand(rng_anim, n)),
+        Float32.(randn(rng_anim, 3, n) .+ 0.5),
+        Float32.(0.1 .* randn(rng_anim, 3, n)),
         Float32[],
         Float32[],
     )

@@ -38,6 +38,8 @@ end
 # =====================================================================
 
 @testset "conf.3 reader" begin
+    using StableRNGs
+    rng = StableRNG(63)
     # Create a synthetic conf.3 file in standard format
     fpath = joinpath(TESTDIR, "conf.3_test")
     n_particles = 5
@@ -60,8 +62,8 @@ end
         # Particle records (standard: M, X, Y, Z, VX, VY, VZ, NAME)
         for i in 1:n_particles
             m = Float32(1.0 / n_particles)
-            x, y, z = Float32.(randn(3))
-            vx, vy, vz = Float32.(0.1 .* randn(3))
+            x, y, z = Float32.(randn(rng, 3))
+            vx, vy, vz = Float32.(0.1 .* randn(rng, 3))
             name = Int32(i)
             buf = IOBuffer()
             write(buf, m, x, y, z, vx, vy, vz, name)
@@ -88,6 +90,8 @@ end
 # =====================================================================
 
 @testset "conf.3 reader — extended format" begin
+    using StableRNGs
+    rng = StableRNG(108)
     fpath = joinpath(TESTDIR, "conf.3_ext")
     n_particles = 3
 
@@ -105,8 +109,8 @@ end
             write(buf, Float32(0.1 * i))   # mass
             write(buf, Float32(100.0))      # rho
             write(buf, Float32(0.01))       # xns
-            write(buf, Float32.(randn(3))...)  # pos
-            write(buf, Float32.(0.1 .* randn(3))...)  # vel
+            write(buf, Float32.(randn(rng, 3))...)  # pos
+            write(buf, Float32.(0.1 .* randn(rng, 3))...)  # vel
             write(buf, Float32(-0.5))       # phi
             write(buf, Int32(i))            # name
             _write_fortran_record(io, take!(buf))

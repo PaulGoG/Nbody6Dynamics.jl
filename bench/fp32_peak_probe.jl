@@ -8,9 +8,9 @@
 #   julia bench/fp32_peak_probe.jl [--backend=cuda|cpu] [--out=<dir>]
 #
 # Writes <out>/fp32_peak_<hostname>.toml (default out: ./runs). The script
-# keeps its own shared environment, `@nb6_fp32_peak`, and installs
-# GPUDiagnostics (unregistered, by URL), KernelAbstractions and CUDA into it
-# on first use; nothing touches the package environments.
+# keeps its own environment beside it, `bench/fp32_peak_env/`, created on
+# first use with GPUDiagnostics (unregistered, by URL), KernelAbstractions
+# and CUDA; the benchmark environment of `bench/` stays free of them.
 # =============================================================================
 
 using Pkg, TOML, Dates
@@ -32,7 +32,10 @@ backend_name in ("cuda", "cpu") || error("--backend must be cuda or cpu")
 # A git configuration that rewrites https to ssh makes Pkg's libgit2 clone
 # ask for a key; the git CLI honours the same rewrite with the user's agent.
 ENV["JULIA_PKG_USE_CLI_GIT"] = "true"
-Pkg.activate("nb6_fp32_peak"; shared = true, io = devnull)
+env_dir = joinpath(@__DIR__, "fp32_peak_env")
+mkpath(env_dir)
+Pkg.activate(env_dir; io = devnull)
+isfile(joinpath(env_dir, "Project.toml")) && Pkg.instantiate(; io = devnull)
 deps = Set(keys(Pkg.project().dependencies))
 "GPUDiagnostics" in deps ||
     Pkg.add(url = "https://github.com/SebastianM-C/GPUDiagnostics.jl"; io = devnull)

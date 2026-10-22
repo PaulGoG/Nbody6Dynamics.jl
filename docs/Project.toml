@@ -9,7 +9,7 @@ Nbody6Dynamics = "7d8e9f0a-1b2c-4d3e-8f6a-7b8c9d0e1f2a"
 Nbody6Dynamics = {path = ".."}
 
 [compat]
-CairoMakie = "0.12, 0.13"
+CairoMakie = "0.13, 0.15"
 Documenter = "1"
 DocumenterCitations = "1"
 Literate = "2"

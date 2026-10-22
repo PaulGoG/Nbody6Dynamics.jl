@@ -1,4 +1,5 @@
-# Corrections applied to the engine source tree before it is built.
+# Corrections applied to the engine source tree before it is built; the fork
+# carries all three from v2026.07-campaign.3 on, where they are found in place.
 # file: path under the engine root; search: text that must occur exactly once;
 # replace: its replacement.
 

@@ -52,8 +52,10 @@ Execute the Nbody6++ simulation with:
 - Frozen config snapshot saved alongside output
 
 `simulation.input_file`, `install.install_dir` and `simulation.runs_dir`
-resolve against `base_dir` when relative. Returns the path to the run
-directory.
+resolve against `base_dir` when relative. A run directory that already holds
+a `RUN_INFO.toml` is refused with an `ArgumentError`: an existing run is
+continued by [`resume_run`](@ref) or [`restart_simulation`](@ref), never
+started again over its output. Returns the path to the run directory.
 """
 function run_simulation(
     cfg::Nbody6Config;
@@ -73,6 +75,12 @@ function run_simulation(
     #       config.toml  — frozen config
     isempty(run_id) && (run_id = generate_run_id(sim.run_id_prefix))
     run_dir = joinpath(_resolve_path(base_dir, sim.runs_dir), run_id)
+    isfile(joinpath(run_dir, "RUN_INFO.toml")) && throw(
+        ArgumentError(
+            "run_simulation: $run_dir already holds a run (RUN_INFO.toml); continue it with " *
+            "resume_run or restart_simulation, or choose another run_id",
+        ),
+    )
     out_dir = joinpath(run_dir, "output")
     mkpath(out_dir)
 
@@ -310,7 +318,7 @@ function _execute_simulation(
     binary = _find_binary(src_dir, sim.binary_name, cfg.build)
     # A restart takes its sizes from the dump, which the same build wrote.
     is_restart || _check_engine_limits(input_path, _engine_limits(src_dir))
-    # --- Cost estimate against the configured budget (roadmap 1.9) ---
+    # --- Cost estimate of the launch against the configured wall-time budget ---
     estimate = _launch_cost_estimate(cfg, input_path, is_restart ? restart.tcrit_extra : nothing)
 
     # --- Provenance at launch: the record names the code that ran, not the
@@ -527,11 +535,13 @@ function _execute_simulation(
             end
             wait(process)
         catch e
-            e isa InterruptException || rethrow()
-            # Stop first, report after: the console may be gone with whoever
-            # sent the interrupt, and a report that fails must not leave the
-            # engine running. The SIGTERM is a stop request the engine may
-            # honour with a dump within the grace; the record says which.
+            # Any exception here (an operator interrupt, a failing monitor)
+            # leaves the engine without a waiting driver. Stop first, report
+            # after: the console may be gone with whoever sent the interrupt,
+            # and a report that fails must not leave the engine running. The
+            # SIGTERM is a stop request the engine may honour with a dump
+            # within the grace; the record says which.
+            interrupted = e isa InterruptException
             _terminate(process)
             int_status = _segment_status(
                 stdout_path;
@@ -552,7 +562,10 @@ function _execute_simulation(
                 exit_status = _exit_status(process),
                 elapsed = time() - t_start,
                 t_end = int_t_end,
-                fields = Dict{String,Any}("stop_requested" => "interrupt", "stop_dump" => int_dump),
+                fields = Dict{String,Any}(
+                    "stop_requested" => interrupted ? "interrupt" : "exception",
+                    "stop_dump" => int_dump,
+                ),
             )
             watchdog === nothing || (watchdog.stop[] = true)
             staller === nothing || (staller.stop[] = true)
@@ -560,19 +573,24 @@ function _execute_simulation(
             stopper === nothing || (stopper.stop[] = true)
             pruner === nothing || (pruner.stop[] = true)
             monitor === nothing || (monitor.stop_requested = true)
+            cause = interrupted ? "Interrupted" : "Exception while the engine ran ($(typeof(e)))"
             if int_status == "stopped"
-                @warn "Interrupted; the engine stopped on the request" *
+                @warn "$(cause); the engine stopped on the request" *
                       (isempty(int_dump) ? "" : " with the dump $(int_dump)") *
                       " and the run can be resumed"
             else
-                @warn "Interrupted; the engine was terminated (stop request by SIGTERM, SIGKILL " *
+                @warn "$(cause); the engine was terminated (stop request by SIGTERM, SIGKILL " *
                       "of its process group after $(_KILL_GRACE_SECONDS) s)"
             end
             rethrow()
         finally
-            _deregister_engine(engine_pid)
-            # The script removes the file itself unless it was killed with its group.
-            rm(joinpath(out_dir, _ENGINE_PID_FILE); force = true)
+            # Reaped by `wait` or `_terminate` by now; an engine still running
+            # (a termination that itself failed) stays known to the exit hook.
+            if !process_running(process)
+                _deregister_engine(engine_pid)
+                # The script removes the file itself unless it was killed with its group.
+                rm(joinpath(out_dir, _ENGINE_PID_FILE); force = true)
+            end
         end
         watchdog === nothing || (watchdog.stop[] = true)
         staller === nothing || (staller.stop[] = true)
@@ -703,6 +721,29 @@ end
 """`s` as one POSIX-shell word: single-quoted, embedded single quotes escaped."""
 _sh_quote(s::AbstractString) = "'" * replace(String(s), "'" => "'\\''") * "'"
 
+"""
+    _launch_cuda_path(build, out_dir) -> String
+
+CUDA toolkit the launch script exports: `build.cuda_path` when set, else the
+`cuda_path` of the build record copied into `out_dir` (`BUILD_INFO.toml`),
+so the engine runs against the toolkit it was compiled with, else
+[`detect_cuda_path`](@ref). An unreadable record is passed over.
+"""
+function _launch_cuda_path(build::BuildConfig, out_dir::AbstractString)::String
+    isempty(build.cuda_path) || return build.cuda_path
+    record = joinpath(out_dir, "BUILD_INFO.toml")
+    if isfile(record)
+        recorded = try
+            get(TOML.parsefile(record), "cuda_path", "")
+        catch e
+            e isa TOML.ParserError || rethrow()
+            ""
+        end
+        recorded isa AbstractString && !isempty(recorded) && return String(recorded)
+    end
+    return detect_cuda_path()
+end
+
 """Name of the file in the output directory that holds the engine's process id while it runs."""
 const _ENGINE_PID_FILE = "engine.pid"
 
@@ -762,7 +803,7 @@ function _write_launch_script(
 
         # CUDA environment
         if build.enable_gpu
-            cuda = isempty(build.cuda_path) ? detect_cuda_path() : build.cuda_path
+            cuda = _launch_cuda_path(build, run_dir)
             if !isempty(cuda)
                 println(io, "export CUDA_HOME=$(_sh_quote(cuda))")
                 println(io, "export PATH=$(_sh_quote(joinpath(cuda, "bin"))):\"\$PATH\"")
@@ -1993,7 +2034,11 @@ output file inventory; and the `segments` list, one entry per launch
 `run.elapsed_seconds` accumulates, and the latest telemetry replaces the
 table (per-segment CSVs remain). A last entry still `running` with the index
 of `segment` (the record opened at launch) is replaced by `segment`, and
-`run.status` takes the status of `segment`, or keeps the recorded one.
+`run.status` takes the status of `segment`, or keeps the recorded one. The
+record of `segment` carries its own `backend_commit` and the host, CPU model,
+logical core count, memory and GPU (when present) of the fingerprint, so the
+segments of a chain across nodes keep their provenance; the top-level tables
+describe the latest segment.
 """
 function _write_run_summary(
     cfg::Nbody6Config,
@@ -2064,11 +2109,18 @@ function _write_run_summary(
             "package_commit" => _source_stamp(_PACKAGE_ROOT),
             "backend_commit" => isempty(src_dir) ? "unknown" : _git_commit(src_dir),
         ) : Dict{String,Any}(provenance)
-    d = Dict{String,Any}(
-        "run" => run_table,
-        "provenance" => stamps,
-        "hardware" => _hardware_fingerprint(),
-    )
+    hardware = _hardware_fingerprint()
+    # The top level describes the latest segment; each segment keeps its own
+    # commit and machine, so a chain across nodes stays attributable.
+    if segment !== nothing
+        entry = segments[end]
+        entry["backend_commit"] = get(stamps, "backend_commit", "unknown")
+        for key in ("host", "cpu_model", "cpu_threads", "total_memory_gib")
+            entry[key] = hardware[key]
+        end
+        hardware["gpu"] == "unavailable" || (entry["gpu"] = hardware["gpu"])
+    end
+    d = Dict{String,Any}("run" => run_table, "provenance" => stamps, "hardware" => hardware)
     manifest = _snapshot_manifest(run_dir)
     manifest === nothing || (d["provenance"]["environment_manifest"] = manifest)
     telemetry === nothing || (d["telemetry"] = telemetry)

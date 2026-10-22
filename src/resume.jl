@@ -606,6 +606,32 @@ function resume_run(
 end
 
 """
+    _run_stdout_path(run_dir) -> String
+
+Path of the stdout capture of the run in `run_dir`: `output/<stdout_file>`,
+with `postprocess.stdout_file` of the run's frozen `config.toml` when it is
+readable and sets one, else the default of [`PostprocessConfig`](@ref).
+"""
+function _run_stdout_path(run_dir::AbstractString)::String
+    name = PostprocessConfig().stdout_file
+    cfg_path = joinpath(run_dir, "config.toml")
+    if isfile(cfg_path)
+        d = try
+            TOML.parsefile(cfg_path)
+        catch e
+            e isa TOML.ParserError || rethrow()
+            Dict{String,Any}()
+        end
+        pp = get(d, "postprocess", nothing)
+        if pp isa AbstractDict
+            v = get(pp, "stdout_file", "")
+            v isa AbstractString && !isempty(v) && (name = String(v))
+        end
+    end
+    return joinpath(run_dir, "output", name)
+end
+
+"""
     _run_status(run_dir) -> String
 
 `run.status` of `run_dir/RUN_INFO.toml`, the status of the last engine

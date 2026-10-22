@@ -6,12 +6,12 @@
 #   julia scripts/run_verif_suite.jl
 # =============================================================================
 
-const PROJ = normpath(joinpath(@__DIR__, ".."))
-
 include(joinpath(@__DIR__, "activate.jl"))
 
+const PROJ = normpath(joinpath(@__DIR__, ".."))
+
 using CairoMakie   # loads the figure routines (package extension)
-using Nbody6Dynamics, TOML, Dates
+using Nbody6Dynamics, TOML
 
 # SIGINT raises `InterruptException` (a plain script would exit at once): the
 # pipeline handler then terminates the engine, which runs in its own session.
@@ -25,7 +25,7 @@ function make_base_cfg()
             "enabled" => false,
             "reinstall" => false,
             "clean_build" => true,
-            "source_url" => "https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing.git",
+            "source_url" => "https://github.com/PaulGoG/Nbody6PPGPU-beijing.git",
             "install_dir" => "backend/Nbody6PPGPU-beijing",
         ),
         "build" => Dict(

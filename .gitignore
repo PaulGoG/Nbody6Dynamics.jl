@@ -24,3 +24,4 @@ docs/src/walkthrough.md
 # each run keeps its own manifest snapshot (environment_manifest.toml)
 Manifest.toml
 Manifest-v*.toml
+bench/fp32_peak_env/
