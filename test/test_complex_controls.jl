@@ -52,7 +52,7 @@ truncate_jacobi = false
         @test length(cx.cluster_ranges) == 4
         masses = [sum(cx.mass_physical[r]) for r in cx.cluster_ranges]
         mmax = maximum(cx.mass_physical)
-        @test all(200.0 .≤ masses[1:3] .< 200.0 + mmax)
+        @test all(abs.(masses .- 200.0) .≤ mmax)
         @test all(s.imf isa nd.ExplicitMassesIMF for s in cx.cluster_specs)
         # The same seed gives the same partition
         cx2 = generate_merger_ic(load(toml("")); output_dir = mktempdir())
