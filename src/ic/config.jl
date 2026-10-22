@@ -200,11 +200,14 @@ function _binaries_table(b::BinarySpec)
 end
 
 """
-`[merger.cluster<idx>.binaries]` as a [`BinarySpec`](@ref), with the subtable
-`[merger.cluster<idx>.binaries.massive]` as its [`MassiveBinarySpec`](@ref).
+`[<table>.binaries]` as a [`BinarySpec`](@ref), with the subtable
+`[<table>.binaries.massive]` as its [`MassiveBinarySpec`](@ref); `table` is the
+dotted cluster table (`merger.cluster<i>`, `merger.complex.member`). A
+`binaries` value that is not a table is refused.
 """
-function _parse_binaries_table(d::AbstractDict, idx::Int)::BinarySpec
-    section = "merger.cluster$idx.binaries"
+function _parse_binaries_table(d, table::AbstractString)::BinarySpec
+    section = "$table.binaries"
+    d isa AbstractDict || _config_error(section, "must be a table; got $d ($(typeof(d)))")
     b = _parse_section(BinarySpec, d, section; skip = ("massive",))
     haskey(d, "massive") || return b
     raw = d["massive"]
@@ -394,18 +397,24 @@ end
 """
     MergerOutputSpec(; format = "nbody", truncate_jacobi = true,
                        output_dir = "", tcrit = 100.0, dtadj = 1.0, deltat = 1.0,
-                       truncate_radius_rh = 0.0)
+                       truncate_radius_rh = 0.0, truncate_rule = "roche")
 
 Output and integration parameters for merger ICs.
 
 # Fields
 - `format::String`: `"nbody"` (KZ(22)=2, N-body units) — the only supported format.
-- `truncate_jacobi::Bool`: truncate each cluster at the nearest-neighbour
-  Jacobi radius before combining.
+- `truncate_jacobi::Bool`: truncate each cluster at its orbit-dependent
+  tidal radius with respect to its nearest neighbour (`truncate_rule`)
+  before combining.
 - `truncate_radius_rh::Float64`: with `truncate_jacobi = true` and a
   positive value, every cluster is truncated at `truncate_radius_rh` times
-  its own input half-mass radius instead of the orbit-dependent Jacobi
-  radius (kepler and explicit modes); `0` keeps the Jacobi radius; ≥ 0.
+  its own input half-mass radius instead of the orbit-dependent radius
+  (kepler and explicit modes); `0` keeps the orbit-dependent radius; ≥ 0.
+- `truncate_rule::String`: the orbit-dependent radius, `"roche"` (the Roche
+  lobe of Eggleton 1983, [`roche_truncation_radius`](@ref), inside the inner
+  Lagrange point at every mass ratio) or `"hill"` (the Hill radius
+  [`jacobi_radius`](@ref), valid for a cluster much lighter than its
+  neighbour; the rule of earlier versions).
 - `output_dir::String`: directory for generated files; empty (the default)
   leaves the choice to the caller — `run_merger_pipeline` then creates a
   `runs/merger_<timestamp>/` under the working directory, and the main
@@ -418,9 +427,11 @@ Output and integration parameters for merger ICs.
   in one form only.
 
 `dtadj` and `deltat` (and the stellar `dtplot`) are written as the nearest
-dyadic rational with an exact decimal expansion ([`engine_interval`](@ref),
-change below 0.4 %): the engine counts the decimal digits of these
-intervals with a loop that never terminates on other values.
+dyadic rational with an exact decimal expansion ([`engine_interval`](@ref)):
+the engine counts the decimal digits of these intervals with a loop that
+never terminates on other values. For intervals ≥ 0.25 NB the change is
+below 0.4 %; below that the nine-digit cap binds, the spacing stays 2⁻⁹ NB
+and the change reaches up to 2⁻¹⁰ NB.
 """
 Base.@kwdef struct MergerOutputSpec
     format::String = "nbody"
@@ -433,6 +444,7 @@ Base.@kwdef struct MergerOutputSpec
     dtadj_myr::Float64 = 0.0
     deltat_myr::Float64 = 0.0
     truncate_radius_rh::Float64 = 0.0
+    truncate_rule::String = "roche"
 end
 
 """Integration-parameter presets of `[merger.nbody6]` (the `preset` key)."""
@@ -627,7 +639,7 @@ end
 
 """
     TidalSpec(; kz14 = 0, gmg = 0.0, rg0 = 0.0, rg = zeros(3), vg = zeros(3),
-              velocity_frame = "rotating")
+              velocity_frame = "inertial")
 
 External galactic field of `merger.inp` (`[merger.tidal]`, `KZ(14)` and the
 `&INXTRNL0` namelist):
@@ -648,10 +660,13 @@ External galactic field of `merger.inp` (`[merger.tidal]`, `KZ(14)` and the
   engine integrates in the frame that rotates with the circular Galactic
   orbit, Ω = Ω ẑ (Ω = A − B = 26.4 km s⁻¹ kpc⁻¹ for `kz14 = 1`, V_G/R_G
   for `kz14 = 2`), and takes the `dat.10` velocities as velocities in that
-  frame (`xtrnl0.F`, `xtrnld.f`). `"rotating"` (the default) writes the
-  generated velocities as they are: clusters non-rotating and a Kepler orbit
-  of the pair in the rotating frame. `"inertial"` takes them as inertial and
-  writes v − Ω × r for every body. Only `kz14 = 1, 2` accept `"inertial"`.
+  frame (`xtrnl0.F`, `xtrnld.f`). The generator builds the clusters and the
+  orbit in an inertial frame, so `"inertial"` (the default) converts them,
+  writing v − Ω × r for every body. `"rotating"` writes the generated
+  velocities as they are (the behaviour of earlier versions): clusters
+  non-rotating and a Kepler orbit of the pair in the rotating frame. Without
+  a rotating frame (`kz14 = 0, 5`) the value has no effect; the TOML key is
+  then refused at load, a programmatic `TidalSpec` may carry either value.
 
 The `&INSCALE` tidal radius stays 0 so the engine derives it from the field
 with the generator's `RBAR` (a non-zero value would override `RBAR`).
@@ -662,7 +677,7 @@ Base.@kwdef struct TidalSpec
     rg0::Float64 = 0.0
     rg::Vector{Float64} = zeros(3)
     vg::Vector{Float64} = zeros(3)
-    velocity_frame::String = "rotating"
+    velocity_frame::String = "inertial"
 end
 
 # -----------------------------------------------------------------------------
@@ -939,6 +954,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
     _reject_unknown(raw, ("merger",), basename(path))
     haskey(raw, "merger") || _config_error("merger", "table is missing in $path")
     m = raw["merger"]
+    m isa AbstractDict || _config_error("merger", "must be a table; got $m ($(typeof(m)))")
 
     n_clusters = _typed(get(m, "n_clusters", 2), Int, "merger.n_clusters")
     orbit_mode = _typed(get(m, "orbit_mode", "kepler"), String, "merger.orbit_mode")
@@ -1006,7 +1022,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
     for i in 1:n_clusters
         key = "cluster$i"
         haskey(m, key) || _config_error("merger.$key", "table is missing in $path")
-        push!(clusters, _parse_cluster_table(m[key], i, orbit_mode))
+        push!(clusters, _parse_cluster_table(_section_table(m, key, "merger.$key"), i, orbit_mode))
     end
     # The member template joins `clusters` after the per-cluster checks below.
     complex_spec, complex_template = if complex_mode
@@ -1027,8 +1043,14 @@ function load_merger_config(path::AbstractString)::MergerConfig
             "must be exactly 1 for orbit_mode = \"single\", got $n_clusters",
         )
     end
+    if orbit_mode == "explicit"
+        n_clusters ≥ 2 || _config_error(
+            "merger.n_clusters",
+            "must be ≥ 2 for orbit_mode = \"explicit\", got $n_clusters",
+        )
+    end
 
-    orbit_raw = get(m, "orbit", Dict{String,Any}())
+    orbit_raw = _section_table(m, "orbit", "merger.orbit")
     if orbit_mode in ("explicit", "single", "complex") && !isempty(orbit_raw)
         @warn "[merger.orbit] is defined but orbit_mode=\"$orbit_mode\" — the orbit section will be ignored."
     end
@@ -1040,7 +1062,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
         join(size_keys, ", "),
     )
 
-    out_raw = get(m, "output", Dict{String,Any}())
+    out_raw = _section_table(m, "output", "merger.output")
     output = _parse_section(MergerOutputSpec, out_raw, "merger.output")
     for key in ("tcrit", "dtadj", "deltat")
         (haskey(out_raw, key) && haskey(out_raw, key * "_myr")) && _config_error(
@@ -1049,9 +1071,9 @@ function load_merger_config(path::AbstractString)::MergerConfig
         )
     end
 
-    nb_raw = get(m, "nbody6", Dict{String,Any}())
+    nb_raw = _section_table(m, "nbody6", "merger.nbody6")
     nb = _parse_section(Nbody6ParameterSpec, nb_raw, "merger.nbody6"; skip = ("kz",))
-    kz_raw = get(nb_raw, "kz", Dict{String,Any}())
+    kz_raw = _section_table(nb_raw, "kz", "merger.nbody6.kz")
     kz_over = Dict{Int,Int}()
     for (k, v) in kz_raw
         idx = tryparse(Int, String(k))
@@ -1076,13 +1098,18 @@ function load_merger_config(path::AbstractString)::MergerConfig
         kz = kz_over,
     )
 
-    st_raw = get(m, "stellar", Dict{String,Any}())
+    st_raw = _section_table(m, "stellar", "merger.stellar")
     stellar = _parse_section(StellarSpec, st_raw, "merger.stellar")
 
-    td_raw = get(m, "tidal", Dict{String,Any}())
+    td_raw = _section_table(m, "tidal", "merger.tidal")
     tidal = _parse_section(TidalSpec, td_raw, "merger.tidal")
     (length(tidal.rg) == 3 && length(tidal.vg) == 3) ||
         _config_error("merger.tidal.rg", "and merger.tidal.vg must have length 3")
+    # The frame key acts under a rotating-frame tide only; the default is inert elsewhere.
+    (haskey(td_raw, "velocity_frame") && !(tidal.kz14 in (1, 2))) && _config_error(
+        "merger.tidal.velocity_frame",
+        "needs the rotating frame of kz14 = 1 or 2; got kz14 = $(tidal.kz14); remove it",
+    )
 
     seed_raw = get(m, "seed", nothing)
     seed::Union{Int,Nothing} = if seed_raw === nothing
@@ -1163,6 +1190,14 @@ function load_merger_config(path::AbstractString)::MergerConfig
             "must be finite [degrees]; got $(orbit.apocentre_angle)",
         )
     end
+    output.format == "nbody" || _config_error(
+        "merger.output.format",
+        "must be \"nbody\" (KZ(22) = 2, the only supported format); got \"$(output.format)\"",
+    )
+    output.truncate_rule in _TRUNCATE_RULES || _config_error(
+        "merger.output.truncate_rule",
+        "must be one of \"roche\", \"hill\"; got \"$(output.truncate_rule)\"",
+    )
     output.tcrit > 0 || _config_error("merger.output.tcrit", "must be > 0; got $(output.tcrit)")
     output.dtadj > 0 || _config_error("merger.output.dtadj", "must be > 0; got $(output.dtadj)")
     output.deltat > 0 || _config_error("merger.output.deltat", "must be > 0; got $(output.deltat)")
@@ -1197,6 +1232,19 @@ function load_merger_config(path::AbstractString)::MergerConfig
     )
 end
 
+"""
+    _section_table(parent, name, section) -> AbstractDict
+
+The subtable `parent[name]` of a parsed TOML table, an empty table when it is
+absent; a value that is not a table raises `_config_error(section, ...)`.
+"""
+function _section_table(parent::AbstractDict, name::AbstractString, section::AbstractString)
+    haskey(parent, name) || return Dict{String,Any}()
+    t = parent[name]
+    t isa AbstractDict || _config_error(section, "must be a table; got $t ($(typeof(t)))")
+    return t
+end
+
 """Keys of the member template `[merger.complex.member]` that the complex sets itself and that are therefore refused."""
 const _COMPLEX_MEMBER_REFUSED = ("N", "rbar", "position", "velocity", "density_ratio")
 
@@ -1204,11 +1252,15 @@ const _COMPLEX_MEMBER_REFUSED = ("N", "rbar", "position", "velocity", "density_r
     _parse_complex_section(c::AbstractDict) -> (ComplexSpec, ClusterSpec)
 
 `[merger.complex]` as a validated [`ComplexSpec`](@ref) and its member template
-`[merger.complex.member]` as a `ClusterSpec` (parsed as a cluster table of index 0)
-with the placeholders `N = member_n_min`, `rbar = 1.0`. The template refuses
-`N`, `rbar`, `position`, `velocity` and `density_ratio`, which the complex
-sets, and an IMF with a target mass (`mass_total`, `target_mass`): the member
-masses come from the mass function.
+`[merger.complex.member]` as a `ClusterSpec` (parsed as a cluster table whose
+errors name `merger.complex.member`) with the placeholders
+`N = member_n_min`, `rbar = 1.0`. The template refuses `N`, `rbar`,
+`position`, `velocity` and `density_ratio`, which the complex sets, and an
+IMF with a target mass (`mass_total`, `target_mass`): the member masses come
+from the mass function. A control (`control ≠ "none"`) refuses template
+binaries that change the stellar masses (`pairing = "uniform_q"` with
+`fraction > 0`, a massive branch with `pairing = "replace"` and
+`fraction > 0`): the control needs the star list of the complex.
 """
 function _parse_complex_section(c)::Tuple{ComplexSpec,ClusterSpec}
     c isa AbstractDict || _config_error("merger.complex", "must be a table")
@@ -1231,7 +1283,22 @@ function _parse_complex_section(c)::Tuple{ComplexSpec,ClusterSpec}
             "merger.complex.member.mass_total",
             "is refused: the member masses come from merger.complex.mass_function",
         )
-    parsed = _parse_cluster_table(t, 0, "complex")
+    parsed = _parse_cluster_table(t, "merger.complex.member", "complex")
+    if spec.control != "none"
+        b = parsed.binaries
+        (b.fraction > 0 && b.pairing == "uniform_q") && _config_error(
+            "merger.complex.control",
+            "= \"$(spec.control)\" refuses merger.complex.member.binaries.pairing = \"uniform_q\": " *
+            "the pairing changes the stellar masses, and the control needs the complex's star list",
+        )
+        (b.massive.model != "none" && b.massive.fraction > 0 && b.massive.pairing == "replace") &&
+            _config_error(
+                "merger.complex.control",
+                "= \"$(spec.control)\" refuses merger.complex.member.binaries.massive.pairing = " *
+                "\"replace\": the pairing changes the stellar masses, and the control needs the " *
+                "complex's star list",
+            )
+    end
     parsed.imf isa RescaledKroupaIMF && _config_error(
         "merger.complex.member.imf",
         "must not be a rescaled Kroupa IMF: the member masses come from merger.complex.mass_function",
@@ -1244,7 +1311,7 @@ function _parse_complex_section(c)::Tuple{ComplexSpec,ClusterSpec}
         binaries = parsed.binaries,
         segregation = parsed.segregation,
     )
-    _validate_cluster_spec(template, 0)
+    _validate_cluster_spec(template, "merger.complex.member")
     return spec, template
 end
 
@@ -1391,10 +1458,6 @@ function _validate_tidal(t::TidalSpec)
         "merger.tidal.velocity_frame",
         "must be \"rotating\" or \"inertial\"; got \"$(t.velocity_frame)\"",
     )
-    (t.velocity_frame == "inertial" && !(t.kz14 in (1, 2))) && _config_error(
-        "merger.tidal.velocity_frame",
-        "= \"inertial\" needs the rotating frame of kz14 = 1 or 2; got kz14 = $(t.kz14)",
-    )
     if t.kz14 == 5
         any(!=(0.0), t.rg) ||
             _config_error("merger.tidal.rg", "must be non-zero [kpc] for kz14 = 5")
@@ -1538,10 +1601,35 @@ const _CLUSTER_TABLE_KEYS = (
     "density_ratio",
 )
 
-# Parse one [merger.clusterN] table handling both flat and structured forms.
-function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractString)::ClusterSpec
-    key = "merger.cluster$idx"
-    _reject_unknown(c, _CLUSTER_TABLE_KEYS, key)
+"""Flat keys that a structured `imf` table (first entry) or `profile` table (second) excludes."""
+const _FLAT_IMF_KEYS = ("bodyn", "body1", "mass_total")
+const _FLAT_PROFILE_KEYS = ("model", "W0")
+
+"""
+    _parse_cluster_table(c, key, orbit_mode) -> ClusterSpec
+
+One cluster table, `[merger.cluster<i>]` or the member template
+`[merger.complex.member]` (`orbit_mode = "complex"`), in the flat or the
+structured form; `key` is the dotted table name every error carries (an
+`Int` index `i` stands for `"merger.cluster<i>"`). Refused: unknown keys (for
+the member template, also the keys the complex sets); `profile` or
+`binaries` given as a non-table; the flat IMF keys `bodyn`, `body1`,
+`mass_total` beside a structured `imf` table and the flat profile keys
+`model`, `W0` beside a structured `profile` table; `position` and `velocity`
+in kepler and single mode. `orbit_mode = "metadata"` (the cluster tables of
+`merger_ic.toml`) applies no mode rule to `position` and `velocity`.
+"""
+function _parse_cluster_table(
+    c::AbstractDict,
+    key::AbstractString,
+    orbit_mode::AbstractString,
+)::ClusterSpec
+    # The member template lists only the keys it takes
+    allowed = String[
+        k for k in _CLUSTER_TABLE_KEYS if
+        orbit_mode != "complex" || !(k in _COMPLEX_MEMBER_REFUSED || k == "mass_total")
+    ]
+    _reject_unknown(c, allowed, key)
     N = _typed(get(c, "N", 50000), Int, "$key.N")
     rbar = _typed(get(c, "rbar", 2.0), Float64, "$key.rbar")
 
@@ -1553,6 +1641,12 @@ function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractStr
             "and $key.velocity are not used in single mode (the cluster is placed at the origin, at rest); remove them",
         )
     end
+    if orbit_mode == "kepler" && (haskey(c, "position") || haskey(c, "velocity"))
+        _config_error(
+            "$key.position",
+            "and $key.velocity are not used in kepler mode (the orbit places the clusters); remove them",
+        )
+    end
 
     if orbit_mode == "explicit"
         length(position) == 3 ||
@@ -1561,14 +1655,32 @@ function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractStr
             _config_error("$key.velocity", "must be [vx, vy, vz] in explicit orbit mode")
     end
 
-    profile = if haskey(c, "profile") && c["profile"] isa AbstractDict
-        _parse_profile_table(c["profile"], idx)
+    for (name, flat) in (("imf", _FLAT_IMF_KEYS), ("profile", _FLAT_PROFILE_KEYS))
+        (haskey(c, name) && c[name] isa AbstractDict) || continue
+        for k in flat
+            haskey(c, k) && _config_error(
+                "$key.$k",
+                "is a key of the flat form and is not mixed with the structured $name table; " *
+                "move it into $key.$name or drop the table",
+            )
+        end
+    end
+    for name in ("profile", "binaries")
+        (haskey(c, name) && !(c[name] isa AbstractDict)) && _config_error(
+            "$key.$name",
+            "must be a table; got $(c[name]) ($(typeof(c[name])))" *
+            (name == "profile" ? "; the flat form names the profile with `model`" : ""),
+        )
+    end
+
+    profile = if haskey(c, "profile")
+        _parse_profile_table(c["profile"], key)
     else
         model = _typed(get(c, "model", "king"), String, "$key.model")
         if model == "king"
             KingProfile(W0 = _typed(get(c, "W0", 6.0), Float64, "$key.W0"))
         elseif model == "plummer"
-            haskey(c, "W0") && @warn "[merger.cluster$idx] W0 set but model=\"plummer\"; ignored."
+            haskey(c, "W0") && @warn "[$key] W0 set but model=\"plummer\"; ignored."
             PlummerProfile()
         else
             _config_error("$key.model", "unknown model '$model'; supported: 'king', 'plummer'")
@@ -1576,7 +1688,7 @@ function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractStr
     end
 
     imf = if haskey(c, "imf") && c["imf"] isa AbstractDict
-        _parse_imf_table(c["imf"], N, idx)
+        _parse_imf_table(c["imf"], N, key)
     else
         imf_str = _typed(get(c, "imf", "kroupa"), String, "$key.imf")
         bodyn = _typed(get(c, "bodyn", 0.08), Float64, "$key.bodyn")
@@ -1604,8 +1716,8 @@ function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractStr
         end
     end
 
-    binaries = if haskey(c, "binaries") && c["binaries"] isa AbstractDict
-        _parse_binaries_table(c["binaries"], idx)
+    binaries = if haskey(c, "binaries")
+        _parse_binaries_table(c["binaries"], key)
     else
         BinarySpec()
     end
@@ -1613,7 +1725,7 @@ function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractStr
     segregation = if haskey(c, "segregation")
         seg_raw = c["segregation"]
         seg_raw isa AbstractDict || _config_error("$key.segregation", "must be a table")
-        _parse_segregation_table(seg_raw, idx)
+        _parse_segregation_table(seg_raw, key)
     else
         SegregationSpec()
     end
@@ -1621,18 +1733,26 @@ function _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractStr
     return ClusterSpec(N, rbar, profile, imf, position, velocity, binaries, segregation)
 end
 
+_parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractString)::ClusterSpec =
+    _parse_cluster_table(c, "merger.cluster$idx", orbit_mode)
+
 # ---------------------------------------------------------------------------
 # Fail-fast validation of parsed cluster specifications
 # ---------------------------------------------------------------------------
 
 """
+    _validate_cluster_spec(spec::ClusterSpec, key::AbstractString)
     _validate_cluster_spec(spec::ClusterSpec, idx::Int)
 
 Validate one parsed `ClusterSpec` against the documented bounds; raises an
-`ArgumentError` naming the offending `merger.cluster<idx>.<key>`.
+`ArgumentError` naming the offending `<key>.<field>`, `key` the dotted
+cluster table (`idx` stands for `"merger.cluster<idx>"`).
 """
-function _validate_cluster_spec(spec::ClusterSpec, idx::Int)
-    key = "merger.cluster$idx"
+_validate_cluster_spec(spec::ClusterSpec, idx::Int) =
+    _validate_cluster_spec(spec, "merger.cluster$idx")
+
+function _validate_cluster_spec(spec::ClusterSpec, key_table::AbstractString)
+    key = String(key_table)
     spec.N ≥ 2 || _config_error("$key.N", "must be ≥ 2; got $(spec.N)")
     spec.rbar > 0 || _config_error("$key.rbar", "must be > 0; got $(spec.rbar)")
     _validate_profile(spec.profile, key)
@@ -1700,23 +1820,43 @@ function _validate_imf(i::EqualMassIMF, ::Int, key::String)
     return nothing
 end
 
-function _parse_profile_table(p::AbstractDict, idx::Int)::DensityProfile
-    key = "merger.cluster$idx.profile"
+function _parse_profile_table(p::AbstractDict, table::AbstractString)::DensityProfile
+    key = "$table.profile"
     _reject_unknown(p, ("type", "W0"), key)
     t = _typed(get(p, "type", "king"), String, "$key.type")
     if t == "king"
         KingProfile(W0 = _typed(get(p, "W0", 6.0), Float64, "$key.W0"))
     elseif t == "plummer"
+        haskey(p, "W0") && _config_error("$key.W0", "is not a parameter of type = 'plummer'")
         PlummerProfile()
     else
         _config_error("$key.type", "unknown type '$t'; supported: 'king', 'plummer'")
     end
 end
 
-function _parse_imf_table(imf::AbstractDict, N::Int, idx::Int)::IMFSpec
-    key = "merger.cluster$idx.imf"
-    _reject_unknown(imf, ("type", "bounds", "bodyn", "body1", "target_mass", "particle_mass"), key)
+"""Keys a structured `imf` table of each `type` takes; any other key is refused, not dropped."""
+const _IMF_TABLE_KEYS = Dict(
+    "kroupa" => ("type", "bounds", "bodyn", "body1"),
+    "kroupa_rescaled" => ("type", "bounds", "bodyn", "body1", "target_mass"),
+    "equal" => ("type", "particle_mass", "target_mass"),
+)
+
+function _parse_imf_table(imf::AbstractDict, N::Int, table::AbstractString)::IMFSpec
+    key = "$table.imf"
     t = _typed(get(imf, "type", "kroupa"), String, "$key.type")
+    haskey(_IMF_TABLE_KEYS, t) || _config_error(
+        "$key.type",
+        "unknown type '$t'; supported: 'kroupa', 'kroupa_rescaled', 'equal'",
+    )
+    _reject_unknown(imf, _IMF_TABLE_KEYS[t], key)
+    (haskey(imf, "bounds") && (haskey(imf, "bodyn") || haskey(imf, "body1"))) && _config_error(
+        "$key.bounds",
+        "and $key.bodyn / $key.body1 give the same bounds; use one form",
+    )
+    (haskey(imf, "particle_mass") && haskey(imf, "target_mass")) && _config_error(
+        "$key.particle_mass",
+        "and $key.target_mass are mutually exclusive for type = 'equal'",
+    )
 
     bounds_raw = get(imf, "bounds", nothing)
     bodyn, body1 = if bounds_raw !== nothing
@@ -1749,7 +1889,7 @@ function _parse_imf_table(imf::AbstractDict, N::Int, idx::Int)::IMFSpec
         tm = get(imf, "target_mass", nothing)
         tm === nothing && _config_error(
             "$key.particle_mass",
-            "or merger.cluster$idx.imf.target_mass is required for type = 'equal'",
+            "or $key.target_mass is required for type = 'equal'",
         )
         return EqualMassIMF(particle_mass = _typed(tm, Float64, "$key.target_mass") / N)
     else

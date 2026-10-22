@@ -11,7 +11,7 @@
 const _SEGREGATION_METHODS = ("none", "bdk08")
 
 """
-    SegregationSpec(; method = "none", degree = 0.0)
+    SegregationSpec(; method = "none", degree = 0.0, max_points = 10_000_000)
 
 Primordial mass segregation of a cluster (`[merger.clusterN.segregation]`).
 
@@ -19,6 +19,9 @@ Primordial mass segregation of a cluster (`[merger.clusterN.segregation]`).
 - `method::String`: `"none"` (unsegregated sampling) or `"bdk08"`.
 - `degree::Float64`: degree of segregation `S`, `0 ≤ S ≤ 1`; `0` is a random
   assignment, `1` complete ordering.
+- `max_points::Int`: largest admitted number `N′` of model points; `> 0`.
+  `N′ ≥ N ⟨m⟩/m_min` grows with the mass range of the IMF, and every point
+  costs its phase-space coordinates and energy in memory.
 
 `"bdk08"` is the scheme of Baumgardt, De Marchi & Kroupa (2008, Appendix A;
 DOI 10.1086/590488) with the partial ordering of McLuster (Küpper et al. 2011,
@@ -34,21 +37,22 @@ pairs are expanded.
 Base.@kwdef struct SegregationSpec
     method::String = "none"
     degree::Float64 = 0.0
+    max_points::Int = 10_000_000
 end
 
 """`SegregationSpec` as a TOML table (metadata round trip)."""
 _segregation_table(s::SegregationSpec) =
-    Dict{String,Any}("method" => s.method, "degree" => s.degree)
+    Dict{String,Any}("method" => s.method, "degree" => s.degree, "max_points" => s.max_points)
 
-"""`[merger.cluster<idx>.segregation]` as a [`SegregationSpec`](@ref)."""
-_parse_segregation_table(d::AbstractDict, idx::Int)::SegregationSpec =
-    _parse_section(SegregationSpec, d, "merger.cluster$idx.segregation")
+"""`[<table>.segregation]` as a [`SegregationSpec`](@ref); `table` is the dotted cluster table."""
+_parse_segregation_table(d::AbstractDict, table::AbstractString)::SegregationSpec =
+    _parse_section(SegregationSpec, d, "$table.segregation")
 
 """
     _validate_segregation(s::SegregationSpec, key::String)
 
-Refuse an unknown `method` and a `degree` outside `[0, 1]`, naming
-`<key>.segregation.<field>`.
+Refuse an unknown `method`, a `degree` outside `[0, 1]` and a non-positive
+`max_points`, naming `<key>.segregation.<field>`.
 """
 function _validate_segregation(s::SegregationSpec, key::String)
     s.method in _SEGREGATION_METHODS || _config_error(
@@ -57,6 +61,8 @@ function _validate_segregation(s::SegregationSpec, key::String)
     )
     (0 ≤ s.degree ≤ 1) ||
         _config_error("$key.segregation.degree", "must satisfy 0 ≤ S ≤ 1; got $(s.degree)")
+    s.max_points > 0 ||
+        _config_error("$key.segregation.max_points", "must be > 0; got $(s.max_points)")
     return nothing
 end
 
@@ -162,7 +168,8 @@ function _segregation_model_points(profile, n_pts::Int, rh::Float64, rng::Abstra
 end
 
 """
-    segregate_systems(profile, mass, rh; degree, rng) -> (pos, vel, energy)
+    segregate_systems(profile, mass, rh; degree, rng, max_points = 10_000_000)
+        -> (pos, vel, energy)
 
 Phase-space coordinates of the systems of masses `mass` (any order) drawn from
 `profile` with primordial mass segregation of degree `degree` after
@@ -180,8 +187,9 @@ Baumgardt, De Marchi & Kroupa (2008, Appendix A):
 Returns positions and velocities (3 × n, the sampler's units) and the specific
 energies of the chosen points, all in the order of `mass`. `degree = 1` gives
 energies non-decreasing in descending mass; `degree = 0` a random assignment.
-Throws an `ArgumentError` for an empty `mass`, a non-positive mass or
-`degree ∉ [0, 1]`.
+Throws an `ArgumentError` for an empty `mass`, a non-positive mass,
+`degree ∉ [0, 1]`, or `N′ > max_points` (the memory bound
+`segregation.max_points`).
 """
 function segregate_systems(
     profile,
@@ -189,13 +197,24 @@ function segregate_systems(
     rh::Real;
     degree::Real,
     rng::AbstractRNG,
+    max_points::Integer = 10_000_000,
 )::Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}
     n = length(mass)
     _check_segregation_arguments(n, degree)
     all(m -> isfinite(m) && m > 0, mass) ||
         throw(ArgumentError("segregate_systems: every mass must be finite and > 0"))
     M = sum(mass)
-    n_pts = max(n, ceil(Int, M / minimum(mass)))
+    m_min = minimum(mass)
+    ratio = M / (n * m_min)
+    N′ = max(Float64(n), ceil(M / m_min))
+    N′ ≤ max_points || throw(
+        ArgumentError(
+            "segregate_systems: N′ = $(round(Int, N′)) model points (n = $n systems, " *
+            "⟨m⟩/m_min = $(round(ratio; sigdigits = 4))) exceed segregation.max_points = " *
+            "$max_points; raise segregation.max_points or narrow the mass range",
+        ),
+    )
+    n_pts = max(n, ceil(Int, M / m_min))
 
     pts_pos, pts_vel, pts_energy = _segregation_model_points(profile, n_pts, Float64(rh), rng)
     by_energy = sortperm(pts_energy)

@@ -1,4 +1,4 @@
-# Three small clusters (2 King + 1 Plummer) on an equilateral triangle of side 16 pc, inward velocities
+# Three small clusters (2 King + 1 Plummer) on an equilateral triangle of side 13.9 pc (circumradius 8 pc), inward velocities
 
 [merger]
 n_clusters = 3

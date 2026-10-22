@@ -41,7 +41,7 @@ config_file = ""
                 joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"),
                 String,
             ),
-            "[merger]\n" => "[merger]\nseed = 7\n";
+            "seed = 1\n" => "seed = 7\n";
             count = 1,
         ),
     )

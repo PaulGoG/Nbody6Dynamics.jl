@@ -58,14 +58,85 @@ end
 """
     jacobi_radius(d, M_self, M_other) -> Float64
 
-Instantaneous Jacobi (tidal) radius at separation `d`:
+Hill (Jacobi) radius at separation `d`:
 
 ```math
 r_J = d \\left(\\frac{M_{\\rm self}}{3 M_{\\rm other}}\\right)^{1/3}
 ```
+
+This is the limit `M_self ≪ M_other` of the Roche problem; at comparable
+masses it overestimates the lobe and at equal masses (`0.69 d`) lies beyond
+the inner Lagrange point (`0.5 d`). The cluster truncation uses it under
+`[merger.output] truncate_rule = "hill"` only; the default is
+[`roche_truncation_radius`](@ref).
 """
 function jacobi_radius(d::Float64, M_self::Float64, M_other::Float64)
     return d * (M_self / (3.0 * M_other))^(1.0 / 3.0)
+end
+
+"""
+    roche_truncation_radius(d, M_self, M_other) -> Float64
+
+Volume-equivalent radius of the Roche lobe of a body of mass `M_self` with a
+companion of mass `M_other` at separation `d` (Eggleton 1983,
+DOI 10.1086/160960), with `q = M_self / M_other`:
+
+```math
+r_L = d \\, \\frac{0.49\\, q^{2/3}}{0.6\\, q^{2/3} + \\ln(1 + q^{1/3})}
+```
+
+accurate to 1 % for every `q`. Unlike the Hill radius
+([`jacobi_radius`](@ref)), valid for `M_self ≪ M_other` only, the lobe stays
+inside the inner Lagrange point at comparable masses (`0.38 d` at `q = 1`,
+against the Lagrange point at `0.5 d`), so a truncated pair does not start
+with stars beyond the saddle of the joint potential. Throws an
+`ArgumentError` unless both masses are positive.
+
+# Example
+```julia
+roche_truncation_radius(8.0, 1000.0, 1000.0)   # ≈ 3.03
+```
+"""
+function roche_truncation_radius(d::Real, M_self::Real, M_other::Real)::Float64
+    (M_self > 0 && M_other > 0) || throw(
+        ArgumentError(
+            "roche_truncation_radius: masses must be > 0; got M_self = $M_self, M_other = $M_other",
+        ),
+    )
+    return Float64(d) * _roche_lobe_fraction(Float64(M_self) / Float64(M_other))
+end
+
+"""Values of `[merger.output] truncate_rule`."""
+const _TRUNCATE_RULES = ("roche", "hill")
+
+"""Truncation radius of a cluster of mass `M_self` at separation `d` from `M_other` by `rule` (`"roche"`: [`roche_truncation_radius`](@ref); `"hill"`: [`jacobi_radius`](@ref))."""
+function _truncation_radius(
+    rule::AbstractString,
+    d::Float64,
+    M_self::Float64,
+    M_other::Float64,
+)::Float64
+    rule == "roche" && return roche_truncation_radius(d, M_self, M_other)
+    rule == "hill" && return jacobi_radius(d, M_self, M_other)
+    throw(ArgumentError("truncate_rule must be \"roche\" or \"hill\"; got \"$rule\""))
+end
+
+"""
+    _pair_truncation_radii(d_apo, M1, M2, rule, radii) -> (r1, r2)
+
+Truncation radii of a Kepler pair at the apocentre separation `d_apo`:
+`radii[i]` where positive, else the radius of `rule` for the sampled masses.
+"""
+function _pair_truncation_radii(
+    d_apo::Float64,
+    M1::Float64,
+    M2::Float64,
+    rule::AbstractString,
+    radii::Tuple{Float64,Float64},
+)::NTuple{2,Float64}
+    r1 = radii[1] > 0 ? radii[1] : _truncation_radius(rule, d_apo, M1, M2)
+    r2 = radii[2] > 0 ? radii[2] : _truncation_radius(rule, d_apo, M2, M1)
+    return (r1, r2)
 end
 
 """
@@ -98,7 +169,7 @@ end
 """
     setup_two_cluster_orbit(pos1, vel1, mass1, pos2, vel2, mass2,
                             d_apo, ecc; truncate_jacobi_flag = true,
-                            truncation_radii = (0.0, 0.0),
+                            truncation_radii = (0.0, 0.0), truncate_rule = "roche",
                             orbit_normal = [0.0, 0.0, -1.0], apocentre_angle = 0.0)
         -> (pos, vel, mass, cluster_ranges, kept)
 
@@ -118,8 +189,13 @@ moving along `+ŷ`, cluster 2 at `(+d2, 0, 0)` moving along `−ŷ`, bit for bit
 the layout of earlier versions.
 
 If `truncate_jacobi_flag = true`, cluster `i` is truncated before combining
-at `truncation_radii[i]` when that is positive, else at its instantaneous
-Jacobi radius ([`jacobi_radius`](@ref)).
+at `truncation_radii[i]` when that is positive, else at the radius of
+`truncate_rule` for the sampled masses at the apocentre separation:
+`"roche"`, the Roche lobe ([`roche_truncation_radius`](@ref)), or `"hill"`,
+the Hill radius ([`jacobi_radius`](@ref), the rule of earlier versions).
+Truncation removes stars asymmetrically, so the combined arrays are then
+shifted to the mass-weighted centre of mass (position and velocity); without
+truncation the layout is used as placed.
 
 Returns combined `(pos, vel, mass)` arrays in the system CM frame plus a
 vector of `UnitRange{Int}` giving each cluster's (post-truncation) particle
@@ -137,6 +213,7 @@ function setup_two_cluster_orbit(
     ecc::Float64;
     truncate_jacobi_flag::Bool = true,
     truncation_radii::Tuple{Float64,Float64} = (0.0, 0.0),
+    truncate_rule::AbstractString = "roche",
     orbit_normal::AbstractVector{<:Real} = [0.0, 0.0, -1.0],
     apocentre_angle::Real = 0.0,
 )
@@ -145,12 +222,12 @@ function setup_two_cluster_orbit(
     M2 = sum(mass2)
     M_total = M1 + M2
 
-    # Optional truncation: fixed radii where given, else the Jacobi radii
+    # Optional truncation: fixed radii where given, else the radii of the rule
     kept1 = collect(1:length(mass1))
     kept2 = collect(1:length(mass2))
     if truncate_jacobi_flag
-        r_trunc_1 = truncation_radii[1] > 0 ? truncation_radii[1] : jacobi_radius(d_apo, M1, M2)
-        r_trunc_2 = truncation_radii[2] > 0 ? truncation_radii[2] : jacobi_radius(d_apo, M2, M1)
+        r_trunc_1, r_trunc_2 =
+            _pair_truncation_radii(d_apo, M1, M2, truncate_rule, truncation_radii)
         pos1, vel1, mass1, kept1 = truncate_jacobi(pos1, vel1, mass1, r_trunc_1)
         pos2, vel2, mass2, kept2 = truncate_jacobi(pos2, vel2, mass2, r_trunc_2)
         # Update totals after truncation
@@ -194,7 +271,35 @@ function setup_two_cluster_orbit(
         mass_out[j] = mass2[i]
     end
 
+    # The truncated clusters are no longer centred on their sampled centres:
+    # shift to the mass-weighted centre of mass of all bodies.
+    if truncate_jacobi_flag
+        _shift_to_centre_of_mass!(pos_out, vel_out, mass_out)
+    end
+
     return pos_out, vel_out, mass_out, [1:N1, (N1 + 1):N_total], [kept1, kept2]
+end
+
+"""Subtract the mass-weighted mean position and velocity from `pos` and `vel` (3 × N) in place."""
+function _shift_to_centre_of_mass!(
+    pos::Matrix{Float64},
+    vel::Matrix{Float64},
+    mass::Vector{Float64},
+)
+    M_total = sum(mass)
+    cm = zeros(3)
+    cmv = zeros(3)
+    for i in eachindex(mass), k in 1:3
+        cm[k] += mass[i] * pos[k, i]
+        cmv[k] += mass[i] * vel[k, i]
+    end
+    cm ./= M_total
+    cmv ./= M_total
+    for i in eachindex(mass), k in 1:3
+        pos[k, i] -= cm[k]
+        vel[k, i] -= cmv[k]
+    end
+    return nothing
 end
 
 """
@@ -337,8 +442,51 @@ function two_cluster_orbit_quantities(
 end
 
 """
+    _explicit_truncation_radii(cluster_data, specs; truncate_jacobi_flag, truncate_rule,
+                               truncation_radii) -> Vector{Float64}
+
+Truncation radius of every cluster of [`combine_clusters_explicit`](@ref):
+`truncation_radii[i]` where given and positive, else, with at least two
+clusters, the radius of `truncate_rule` ([`_truncation_radius`](@ref)) of the
+sampled masses with respect to the nearest neighbour (centre distance of the
+`position` entries of `specs`); `0` for a cluster that is not truncated.
+"""
+function _explicit_truncation_radii(
+    cluster_data::AbstractVector,
+    specs::AbstractVector{ClusterSpec};
+    truncate_jacobi_flag::Bool,
+    truncate_rule::AbstractString,
+    truncation_radii::AbstractVector{Float64},
+)::Vector{Float64}
+    n = length(cluster_data)
+    radii = zeros(n)
+    truncate_jacobi_flag || return radii
+    for i in 1:n
+        if !isempty(truncation_radii) && truncation_radii[i] > 0
+            radii[i] = Float64(truncation_radii[i])
+        elseif n ≥ 2
+            M_self = sum(cluster_data[i].mass)
+            pos_i = specs[i].position
+            # Nearest-neighbour distance
+            d_min = Inf
+            M_nearest = 0.0
+            for j in 1:n
+                j == i && continue
+                d = sqrt(sum((pos_i[k] - specs[j].position[k])^2 for k in 1:3))
+                if d < d_min
+                    d_min = d
+                    M_nearest = sum(cluster_data[j].mass)
+                end
+            end
+            radii[i] = _truncation_radius(truncate_rule, d_min, M_self, M_nearest)
+        end
+    end
+    return radii
+end
+
+"""
     combine_clusters_explicit(cluster_data, specs; truncate_jacobi_flag = true,
-                              truncation_radii = Float64[])
+                              truncation_radii = Float64[], truncate_rule = "roche")
         -> (pos, vel, mass, cluster_ranges, kept)
 
 Combine N ≥ 2 clusters using explicit per-cluster position/velocity offsets.
@@ -346,8 +494,10 @@ Combine N ≥ 2 clusters using explicit per-cluster position/velocity offsets.
 Each `ClusterSpec` in `specs` must have `position` and `velocity` vectors set.
 Particles in each cluster are shifted by the cluster's CM offset.
 
-If `truncate_jacobi_flag=true`, each cluster is truncated at the Jacobi radius
-with respect to its nearest neighbour before combining; when
+If `truncate_jacobi_flag=true`, each cluster is truncated before combining at
+the radius of `truncate_rule` with respect to its nearest neighbour: the
+Roche lobe (`"roche"`, [`roche_truncation_radius`](@ref)) or the Hill radius
+(`"hill"`, [`jacobi_radius`](@ref), the rule of earlier versions); when
 `truncation_radii` is non-empty (one entry per cluster) and its `i`-th entry
 is positive, cluster `i` is truncated at that radius instead.
 
@@ -359,6 +509,7 @@ function combine_clusters_explicit(
     specs::Vector{ClusterSpec};
     truncate_jacobi_flag::Bool = true,
     truncation_radii::AbstractVector{Float64} = Float64[],
+    truncate_rule::AbstractString = "roche",
 )
     n = length(cluster_data)
     n == length(specs) || error("cluster_data and specs must have same length")
@@ -367,8 +518,15 @@ function combine_clusters_explicit(
             "truncation_radii has $(length(truncation_radii)) entries for $n clusters",
         ),
     )
+    radii = _explicit_truncation_radii(
+        cluster_data,
+        specs;
+        truncate_jacobi_flag = truncate_jacobi_flag,
+        truncate_rule = truncate_rule,
+        truncation_radii = truncation_radii,
+    )
 
-    # Optional Jacobi truncation against nearest neighbour
+    # Optional truncation against the nearest neighbour
     truncated = Vector{
         NamedTuple{(:pos, :vel, :mass),Tuple{Matrix{Float64},Matrix{Float64},Vector{Float64}}},
     }()
@@ -378,29 +536,9 @@ function combine_clusters_explicit(
         # Keep only the particle arrays; sampled cluster data may carry
         # extra fields (energies) that the truncated vector does not hold.
         cd = (pos = cluster_data[i].pos, vel = cluster_data[i].vel, mass = cluster_data[i].mass)
-        if truncate_jacobi_flag && !isempty(truncation_radii) && truncation_radii[i] > 0
-            pos_t, vel_t, mass_t, idx_t =
-                truncate_jacobi(cd.pos, cd.vel, cd.mass, Float64(truncation_radii[i]))
-            push!(truncated, (pos = pos_t, vel = vel_t, mass = mass_t))
-            push!(kept, idx_t)
-        elseif truncate_jacobi_flag && n ≥ 2
-            M_self = sum(cd.mass)
-            pos_i = specs[i].position
-
-            # Find nearest-neighbour distance
-            d_min = Inf
-            M_nearest = 0.0
-            for j in 1:n
-                j == i && continue
-                d = sqrt(sum((pos_i[k] - specs[j].position[k])^2 for k in 1:3))
-                if d < d_min
-                    d_min = d
-                    M_nearest = sum(cluster_data[j].mass)
-                end
-            end
-
-            r_jacobi = jacobi_radius(d_min, M_self, M_nearest)
-            pos_t, vel_t, mass_t, idx_t = truncate_jacobi(cd.pos, cd.vel, cd.mass, r_jacobi)
+        fixed = !isempty(truncation_radii) && truncation_radii[i] > 0
+        if truncate_jacobi_flag && (fixed || n ≥ 2)
+            pos_t, vel_t, mass_t, idx_t = truncate_jacobi(cd.pos, cd.vel, cd.mass, radii[i])
             push!(truncated, (pos = pos_t, vel = vel_t, mass = mass_t))
             push!(kept, idx_t)
         else

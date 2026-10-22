@@ -1301,15 +1301,15 @@ dtplot = 2.0
         )
         @test all(0.5 .≤ bq.m2 ./ bq.m1 .≤ 1.0)
         @test isempty(sample_binaries(BinarySpec(), m, rng_b).primary)
-        @test_throws ErrorException Nbody6Dynamics._validate_binaries(
+        @test_throws ArgumentError Nbody6Dynamics._validate_binaries(
             BinarySpec(; fraction = 1.0),
             "c",
         )
-        @test_throws ErrorException Nbody6Dynamics._validate_binaries(
+        @test_throws ArgumentError Nbody6Dynamics._validate_binaries(
             BinarySpec(; pairing = "x"),
             "c",
         )
-        @test_throws ErrorException Nbody6Dynamics._validate_binaries(
+        @test_throws ArgumentError Nbody6Dynamics._validate_binaries(
             BinarySpec(; a_min = 5.0, a_max = 1.0),
             "c",
         )

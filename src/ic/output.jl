@@ -618,6 +618,7 @@ function _sample_cluster(
             spec.rbar;
             degree = spec.segregation.degree,
             rng = rng,
+            max_points = spec.segregation.max_points,
         )
         (seg_pos, seg_vel)
     elseif spec.profile isa PlummerProfile
@@ -765,7 +766,8 @@ template with `N = Nᵢ`, `rbar = r_h,i`, `position` the centre, a zero
 drawn and partitioned after the masses (`_complex_partition_stars`): member i
 carries its share as an `ExplicitMassesIMF`, `Nᵢ` is the share's
 count, and `Mᵢ` (returned as `masses` and used in the size–mass relation) its
-realised sum. Every draw comes from `rng`. Throws an `ArgumentError` for fewer
+realised sum. `target_masses` are the drawn masses in member order. Every
+draw comes from `rng`. Throws an `ArgumentError` for fewer
 than two members or a member below `spec.member_n_min` stars.
 """
 function _complex_members(spec::ComplexSpec, template::ClusterSpec, rng::AbstractRNG)
@@ -814,7 +816,7 @@ function _complex_members(spec::ComplexSpec, template::ClusterSpec, rng::Abstrac
             segregation = template.segregation,
         ) for i in 1:n
     ]
-    return (masses = M, r_h = r_h, pos = x, vel = v, specs = specs)
+    return (masses = M, target_masses = M_drawn, r_h = r_h, pos = x, vel = v, specs = specs)
 end
 
 """
@@ -861,12 +863,15 @@ end
 """
     _complex_energy(cfg::MergerConfig, members::NamedTuple, rngs) -> NamedTuple
 
-All-star energies of the complex `members` as `generate_merger_ic` builds it
+System energies of the complex `members` as `generate_merger_ic` builds it
 without a control: member i sampled from `rngs[i]`, the bulk velocities scaled
-(`_scale_complex_members`), the members combined as in explicit mode
-and their pairs expanded. Returns `T`, `W` (code units, G = 1) and the star
-count `n_stars`. Nothing is written. Throws an `ArgumentError` when the
-combined system exceeds `cfg.virial_max_n`.
+(`_scale_complex_members`) and the members combined as in explicit mode, with
+the primordial pairs as point masses (before pair expansion), the footing on
+which the control's own energies are taken. The internal energy of the pairs
+is not matched (the control draws its own pairs). Returns `T`, `W` (code
+units, G = 1) and the star count `n_stars` (systems plus pairs). Nothing is
+written. Throws an `ArgumentError` when the star count exceeds
+`cfg.virial_max_n`.
 """
 function _complex_energy(
     cfg::MergerConfig,
@@ -879,29 +884,26 @@ function _complex_energy(
     ]
     specs = _scale_complex_members(cfg.complex, members, cluster_data).specs
     r_trunc_rh = cfg.output.truncate_radius_rh
-    pos, vel, mass, ranges, kept = combine_clusters_explicit(
+    pos, vel, mass, _, kept = combine_clusters_explicit(
         cluster_data,
         specs;
         truncate_jacobi_flag = cfg.output.truncate_jacobi,
         truncation_radii = r_trunc_rh > 0 ? Float64[r_trunc_rh * c.rbar for c in specs] : Float64[],
+        truncate_rule = cfg.output.truncate_rule,
     )
-    expanded = expand_binaries(
-        pos,
-        vel,
-        mass,
-        ranges,
-        [cd.binaries for cd in cluster_data],
-        kept;
-        rng = rngs,
+    # Every kept pair adds one star to its system
+    n_pairs = sum(
+        count(k -> cd.binaries.system_binary[k] > 0, kept[i]) for
+        (i, cd) in enumerate(cluster_data)
     )
-    n_stars = length(expanded.mass)
+    n_stars = length(mass) + n_pairs
     n_stars ≤ cfg.virial_max_n || throw(
         ArgumentError(
             "merger.complex.control: the complex has N = $n_stars stars, above " *
             "merger.virial_max_n = $(cfg.virial_max_n); its energy is an exact O(N²) pair sum",
         ),
     )
-    T, W = _kinetic_and_potential(expanded.mass, expanded.pos, expanded.vel)
+    T, W = _kinetic_and_potential(mass, pos, vel)
     return (T = T, W = W, n_stars = n_stars)
 end
 
@@ -982,8 +984,9 @@ Supports four orbit modes:
   the members are combined as in explicit mode
 
 With `cfg.complex.control = "monolithic"` or `"cold"` the complex is built
-first as without the control (same streams, nothing written) and its all-star
-energies are evaluated after pair expansion; one Plummer cluster of the union
+first as without the control (same streams, nothing written) and the energies
+of its systems are evaluated (pairs as point masses; their internal energy is
+not matched, the control draws its own pairs); one Plummer cluster of the union
 of the members' star lists, sampled and virialised from `_cluster_rng(seed, 1)`
 at r_h = 1 pc, is then rescaled about its centre of mass to the complex's total
 energy (C-E, Q = 0.5) or to its total energy and virial ratio (C-cold), and is
@@ -1122,7 +1125,13 @@ function generate_merger_ic(
         λ_c =
             sqrt(sum(abs2, scaling.l_total)) * sqrt(abs(scaling.e_total)) /
             (_G_PC_KMS2_MSUN * M_c^2.5)
-        complex_info = (scaling = scaling, masses = m_c, r_h = members.r_h, lambda_peebles = λ_c)
+        complex_info = (
+            scaling = scaling,
+            masses = m_c,
+            target_masses = members.target_masses,
+            r_h = members.r_h,
+            lambda_peebles = λ_c,
+        )
         @info @sprintf(
             "Complex: %d members, M = %.4g M☉, Q_cc = %.3f, λ = %.3g, ε = %.3g pc",
             length(m_c),
@@ -1192,6 +1201,7 @@ function generate_merger_ic(
             cfg.orbit.eccentricity;
             truncate_jacobi_flag = cfg.output.truncate_jacobi,
             truncation_radii = r_trunc,
+            truncate_rule = cfg.output.truncate_rule,
             orbit_normal = cfg.orbit.orbit_normal,
             apocentre_angle = cfg.orbit.apocentre_angle,
         )
@@ -1205,6 +1215,7 @@ function generate_merger_ic(
             truncate_jacobi_flag = cfg.output.truncate_jacobi,
             truncation_radii = r_trunc_rh > 0 ? Float64[r_trunc_rh * c.rbar for c in specs] :
                                Float64[],
+            truncate_rule = cfg.output.truncate_rule,
         )
     elseif cfg.orbit_mode == "single"
         combine_single_cluster(cluster_data[1])
@@ -1235,6 +1246,32 @@ function generate_merger_ic(
     # quantities, from the system arrays before pair expansion. The code
     # energy unit G M☉²/pc is _G_PC_KMS2_MSUN M☉ km² s⁻².
     mass_truncated = _truncated_masses(cfg.orbit_mode, cluster_data, mass_combined, system_ranges)
+    mass_kept = Float64[sum(mass_combined[r]) for r in system_ranges]
+    # The radius each cluster was truncated at [pc]; 0 when it was not truncated
+    truncation_radii_pc = if !cfg.output.truncate_jacobi || control_info !== nothing
+        zeros(n_clusters)
+    elseif cfg.orbit_mode == "kepler"
+        collect(
+            _pair_truncation_radii(
+                d_apo,
+                sum(cluster_data[1].mass),
+                sum(cluster_data[2].mass),
+                cfg.output.truncate_rule,
+                (r_trunc_rh * cfg.clusters[1].rbar, r_trunc_rh * cfg.clusters[2].rbar),
+            ),
+        )
+    elseif cfg.orbit_mode == "explicit" || complex_mode
+        _explicit_truncation_radii(
+            cluster_data,
+            specs;
+            truncate_jacobi_flag = true,
+            truncate_rule = cfg.output.truncate_rule,
+            truncation_radii = r_trunc_rh > 0 ? Float64[r_trunc_rh * c.rbar for c in specs] :
+                               Float64[],
+        )
+    else
+        zeros(n_clusters)
+    end
     orbit_derived = if cfg.orbit_mode == "kepler"
         _two_cluster_derived(
             cfg,
@@ -1262,6 +1299,12 @@ function generate_merger_ic(
         orbit_derived = merge(orbit_derived, (apocentre_over_jacobi_pair = ratio,))
     end
 
+    # Realised energy of the control on the systems, the footing of its target
+    if control_info !== nothing
+        T_r, W_r = _kinetic_and_potential(mass_combined, pos_combined, vel_combined)
+        control_info = merge(control_info, (e_realised = T_r + W_r, q_realised = T_r / abs(W_r)))
+    end
+
     # Expand primordial pairs into bodies: every cluster's pairs first, then
     # the singles (the engine's convention for the first 2·NBIN0 bodies).
     expanded = expand_binaries(
@@ -1274,14 +1317,9 @@ function generate_merger_ic(
         rng = per_cluster ? cluster_rngs : use_rng,
     )
     pos_combined, vel_combined, mass_combined = expanded.pos, expanded.vel, expanded.mass
-    # Realised all-star energy of the control, on the same footing as the complex's
-    if control_info !== nothing
-        T_r, W_r = _kinetic_and_potential(mass_combined, pos_combined, vel_combined)
-        control_info = merge(control_info, (e_realised = T_r + W_r, q_realised = T_r / abs(W_r)))
-    end
     # Inertial velocities into the engine's rotating frame (kz14 = 1, 2): v − Ω × r,
-    # with Ω converted to the code velocity unit per pc.
-    if cfg.tidal.velocity_frame == "inertial"
+    # with Ω converted to the code velocity unit per pc; no rotating frame otherwise.
+    if cfg.tidal.velocity_frame == "inertial" && cfg.tidal.kz14 in (1, 2)
         to_rotating_frame!(
             pos_combined,
             vel_combined,
@@ -1453,6 +1491,8 @@ function generate_merger_ic(
         d_apo = d_apo,
         orbit_derived = orbit_derived,
         mass_truncated = mass_truncated,
+        mass_kept = mass_kept,
+        truncation_radii_pc = truncation_radii_pc,
         cluster_specs = specs,
         complex_info = complex_info,
         control_info = control_info,
@@ -1479,8 +1519,9 @@ end
     _write_merger_ic_metadata(path, cfg, cluster_ranges, seed, external_rng,
                               N_total, M_total, rbar, zmbar, regime;
                               d_apo = NaN, orbit_derived = nothing,
-                              mass_truncated = Float64[], cluster_specs = cfg.clusters,
-                              complex_info = nothing)
+                              mass_truncated = Float64[], mass_kept = Float64[],
+                              truncation_radii_pc = Float64[], cluster_specs = cfg.clusters,
+                              complex_info = nothing, control_info = nothing)
 
 Write a machine-readable TOML snapshot of the IC generation (schema version 4),
 sufficient to reconstruct a [`MergerICResult`](@ref) from the `dat.10` file
@@ -1492,21 +1533,25 @@ re-sampling). Cluster specs are stored in the structured form
 The `[orbit]` table holds every [`OrbitSpec`](@ref) field as configured; in
 Kepler mode also `apocentre_resolved` (`d_apo` [pc]) and every field of
 `orbit_derived` ([`two_cluster_orbit_quantities`](@ref), pairs as 2-element
-arrays). `mass_truncated[i]` [M☉], the sampled minus the kept mass, goes to
-the table of cluster `i` when given.
+arrays). `mass_truncated[i]` [M☉], the sampled minus the kept mass,
+`mass_kept[i]` (as `mass`) [M☉], the kept mass of the cluster's stars, and
+`truncation_radii_pc[i]` (as `truncation_radius_pc`) [pc], the radius the
+cluster was truncated at (0 when it was not), go to the table of cluster `i`
+when given. The `[output]` table records `truncate_rule`.
 
 One `cluster<i>` table is written per entry of `cluster_specs` (the members
 in complex mode). With `complex_info` (complex mode) a `[complex]` table holds
 every [`ComplexSpec`](@ref) field and a `[complex.realised]` subtable the
-realised `n_members`, `mass_total` [M☉], `virial_ratio`, `e_total`
+realised `n_members`, `mass_total` [M☉], `member_target_masses` [M☉] (the
+drawn member masses, in member order), `virial_ratio`, `e_total`
 [M☉ km² s⁻²], `l_total` [M☉ pc km s⁻¹], `rotation_fraction`, `softening` [pc]
 and `lambda_peebles` = |L| √|E| / (G M^{5/2}) of the member centres.
 
 With `control_info` (a monolithic control) the `[complex]` table holds the
 [`ComplexSpec`](@ref) fields only, and a `[control]` table the `kind`, the
-targets `e_target` [M☉ km² s⁻²] and `q_target` from the complex, the realised
-all-star `e_realised` and `q_realised`, `r_h_pc` [pc], `n_stars` and
-`mass_total` [M☉] of the control.
+targets `e_target` [M☉ km² s⁻²] and `q_target` from the systems of the complex,
+the realised `e_realised` and `q_realised` of the control's systems,
+`r_h_pc` [pc], `n_stars` and `mass_total` [M☉] of the control.
 """
 function _write_merger_ic_metadata(
     path::AbstractString,
@@ -1522,6 +1567,8 @@ function _write_merger_ic_metadata(
     d_apo::Float64 = NaN,
     orbit_derived::Union{NamedTuple,Nothing} = nothing,
     mass_truncated::AbstractVector{Float64} = Float64[],
+    mass_kept::AbstractVector{Float64} = Float64[],
+    truncation_radii_pc::AbstractVector{Float64} = Float64[],
     cluster_specs::AbstractVector{ClusterSpec} = cfg.clusters,
     complex_info::Union{NamedTuple,Nothing} = nothing,
     control_info::Union{NamedTuple,Nothing} = nothing,
@@ -1571,6 +1618,7 @@ function _write_merger_ic_metadata(
             "format" => cfg.output.format,
             "truncate_jacobi" => cfg.output.truncate_jacobi,
             "truncate_radius_rh" => cfg.output.truncate_radius_rh,
+            "truncate_rule" => cfg.output.truncate_rule,
             "tcrit" => regime.tcrit_nb,
             "dtadj" => regime.dtadj_nb,
             "deltat" => regime.deltat_nb,
@@ -1590,6 +1638,7 @@ function _write_merger_ic_metadata(
         complex_table["realised"] = Dict{String,Any}(
             "n_members" => length(cluster_specs),
             "mass_total" => sum(complex_info.masses),
+            "member_target_masses" => collect(Float64, complex_info.target_masses),
             "virial_ratio" => sc.virial_ratio,
             "e_total" => sc.e_total,
             "l_total" => collect(sc.l_total),
@@ -1630,6 +1679,9 @@ function _write_merger_ic_metadata(
             "hard_fraction" => regime.hard_fraction[i],
         )
         isempty(mass_truncated) || (cluster_table["mass_truncated"] = mass_truncated[i])
+        isempty(mass_kept) || (cluster_table["mass"] = mass_kept[i])
+        isempty(truncation_radii_pc) ||
+            (cluster_table["truncation_radius_pc"] = truncation_radii_pc[i])
         d["cluster$i"] = cluster_table
     end
 
@@ -1670,9 +1722,8 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
 
     # Read cluster specs and ranges — the metadata stores the structured
     # profile/imf tables that `_parse_cluster_table` accepts directly.
-    # Parse with orbit_mode "kepler" semantics to skip position/velocity
-    # validation — metadata always records them explicitly (possibly empty
-    # for kepler mode).
+    # Parse with the "metadata" mode, which applies no mode rule to
+    # position/velocity: metadata always records them (empty in kepler mode).
     cluster_specs = ClusterSpec[]
     n_pairs = Int[]
     # Clusters with an explicit star list (complex members of a global
@@ -1689,7 +1740,7 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
             spec_table["imf"] = Dict{String,Any}("type" => "equal", "particle_mass" => 1.0)
             push!(explicit, i)
         end
-        push!(cluster_specs, _parse_cluster_table(spec_table, i, "kepler"))
+        push!(cluster_specs, _parse_cluster_table(spec_table, i, "metadata"))
         push!(n_pairs, Int(get(c, "N_pairs", 0)))
         i += 1
     end
@@ -1986,7 +2037,7 @@ function _write_merger_summary(
             st.level,
             st.zmet,
             st.epoch0,
-            st.dtplot
+            regime.dtplot_nb
         )
         td = cfg.tidal
         if td.kz14 == 0

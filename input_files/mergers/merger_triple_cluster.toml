@@ -1,4 +1,4 @@
-# Three converging clusters on an equilateral triangle of side 20 pc, explicit placement
+# Three converging clusters on an equilateral triangle of side 17.3 pc (circumradius 10 pc), explicit placement
 
 [merger]
 n_clusters = 3

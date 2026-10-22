@@ -3,6 +3,7 @@
 [merger]
 n_clusters = 2
 orbit_mode = "kepler"
+seed = 1
 
 [merger.cluster1]
 model = "king"

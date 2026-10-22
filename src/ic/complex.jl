@@ -66,8 +66,9 @@ Kroupa 2012, Eq. 7, DOI 10.1051/0004-6361/201118231); `r_h = (2.365/8) pc
 `"member"`: member i has `Nᵢ = round(Mᵢ / ⟨m⟩)` stars drawn from the template
 IMF. `"global"`: one star list is drawn from the template IMF in batches of
 `max(1000, ⌈1.1 ΣMᵢ / ⟨m⟩⌉)` until its sum reaches ΣMᵢ, shuffled, and dealt
-out in order: member i takes stars until its sum reaches or exceeds Mᵢ, the
-last member until the running total reaches ΣMᵢ, and the rest of the list is
+out in order: member i takes stars until the running total reaches or exceeds
+the cumulative target Σ_{j≤i} Mⱼ, the last member until it reaches ΣMᵢ, so
+every member is within one star of its target, and the rest of the list is
 dropped (`_complex_partition_stars`). Each member then carries its
 share as an `ExplicitMassesIMF`, and its radius follows from its realised mass.
 
@@ -75,8 +76,11 @@ share as an `ExplicitMassesIMF`, and its radius follows from its realised mass.
 `"monolithic"` (C-E) and `"cold"` (C-cold) replace the complex by one Plummer
 cluster of the same star list, built from the same seed, whose positions and
 velocities are rescaled about the centre of mass to the total energy E of the
-complex (all stars, pairs expanded), keeping Q = 0.5 (C-E) or matching also
-the global Q = T/|W| of the complex (C-cold).
+complex's systems (primordial pairs as point masses), keeping Q = 0.5 (C-E) or
+matching also the global Q = T/|W| of the complex (C-cold). The internal
+energy of the pairs is not matched (the control draws its own pairs), template
+pairings that change the stellar masses are refused, and the control is not
+segregated.
 
 # Centre distributions
 - `"uniform_sphere"`: `r = radius u^(1/3)`, isotropic direction; velocities
@@ -88,8 +92,8 @@ the global Q = T/|W| of the complex (C-cold).
 - `"fractal"`: the box fractal of Goodwin & Whitworth (2004, DOI
   10.1051/0004-6361:20031529) of dimension D: each parent cube of side L spawns
   8 children at ± L/4 per coordinate with uniform noise of ± 0.05 L, inheriting
-  the parent velocity plus a Gaussian component of variance 2^(−g) in
-  generation g; a child is a parent of the next generation with probability
+  the parent velocity plus a Gaussian component of standard deviation 2^(−g)
+  in generation g (halved per generation); a child is a parent of the next generation with probability
   2^(D − 3). The construction stops at the first generation with at least
   `n` parents inside the unit sphere, of which `n` are chosen at random and
   scaled by `radius`.
@@ -240,10 +244,12 @@ end
 Global IMF partition of a complex with member masses `M` [M☉]: batches of
 `max(1000, ⌈1.1 ΣM / ⟨m⟩⌉)` stars are drawn from the IMF specification `imf`
 (`⟨m⟩ = expected_mass(imf, 1)`) and appended until the list sum reaches ΣM; the
-list is shuffled and dealt out in order. Member i < n takes stars until its sum
-reaches or exceeds `M[i]`; the last member takes stars until the running total
-of the list reaches ΣM. Stars beyond that point are dropped, and a member
-reached after the list is exhausted keeps what it has. All draws come from `rng`.
+list is shuffled and dealt out in order. Member i < n takes stars until the
+running total of the list reaches or exceeds the cumulative target
+`Σ_{j≤i} M[j]`; the last member takes stars until the running total reaches
+ΣM. Every member is thus within one star mass of its target, the last
+included. Stars beyond that point are dropped, and a member reached after the
+list is exhausted keeps what it has. All draws come from `rng`.
 """
 function _complex_partition_stars(imf, M::Vector{Float64}, rng::AbstractRNG)
     n = length(M)
@@ -260,13 +266,13 @@ function _complex_partition_stars(imf, M::Vector{Float64}, rng::AbstractRNG)
     shares = Vector{Vector{Float64}}(undef, n)
     j = 1
     running = 0.0
+    target = 0.0
     for i in 1:n
         share = Float64[]
-        own = 0.0
-        while j ≤ length(list) && (i < n ? own < M[i] : running < M_sum)
+        target = i < n ? target + M[i] : M_sum
+        while j ≤ length(list) && running < target
             m = list[j]
             push!(share, m)
-            own += m
             running += m
             j += 1
         end
@@ -335,7 +341,8 @@ function _fractal_attempt(spec::ComplexSpec, n::Int, rng::AbstractRNG)
     x = zeros(3)
     w = zeros(3)
     for g in 1:_FRACTAL_MAX_GENERATIONS
-        σ = sqrt(2.0^(-g))
+        # Goodwin & Whitworth (2004): the random component shrinks by 1/N_div = 1/2 per generation
+        σ = 2.0^(-g)
         child_pos = Float64[]
         child_vel = Float64[]
         for j in axes(parent_pos, 2), octant in 0:7
@@ -367,7 +374,8 @@ function _fractal_attempt(spec::ComplexSpec, n::Int, rng::AbstractRNG)
     return nothing
 end
 
-# The branching process can die out (≈ 2 % of the roots at D = 1.6, 0.621⁸): a new
+# The branching process can die out (≈ 2.5 % of the roots at D = 1.6: 0.621⁸ ≈ 2.2 % in the
+# first generation, the rest later, the fixed point of q = (1 − P + P q)⁸): a new
 # realisation is drawn from the same stream, so the result stays a function of the seed.
 function _fractal_centres(spec::ComplexSpec, n::Int, rng::AbstractRNG)
     for _ in 1:_FRACTAL_MAX_ATTEMPTS

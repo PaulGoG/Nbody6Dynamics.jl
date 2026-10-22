@@ -16,10 +16,15 @@
 Binary population of the massive primaries of one cluster
 (`[merger.clusterN.binaries.massive]`). The defaults are the O-star
 distributions of Sana et al. (2012, DOI 10.1126/science.1223344):
-`f(lP) ∝ lP^π`, `f(q) ∝ q^κ`, `f(e) ∝ e^η` with `lP = log10(P/d)`. The values of
-π, κ and `f_bin` are read in the full text; η and the domains of `lP` and `e`
-are taken from secondary sources (Sana's supplementary material was not
-accessible).
+`f(lP) ∝ lP^π`, `f(q) ∝ q^κ`, `f(e) ∝ e^η` with `lP = log10(P/d)`. π, κ and
+`f_bin` are those of Sana et al. (2012); η and the domains of `lP`, `q` and `e`
+are as tabulated by Cottaar & Hénault-Brunet (2014, DOI
+10.1051/0004-6361/201322445, Table 1) and used by Sana et al. (2013, DOI
+10.1051/0004-6361/201219621). `fraction` is the fraction of primaries with a
+companion at `log(P/d) ≤ 3.5`: a wider `log_period_max` keeps the density in
+`log P` only if `fraction` is raised accordingly. Sana et al. measured O stars
+(`M ≳ 15 M☉`); below that mass the branch is an extrapolation (Moe & Di Stefano
+2017, DOI 10.3847/1538-4365/aa6fb6).
 
 # Fields
 - `model`: `"none"` (no massive branch; every star belongs to the population of
@@ -66,10 +71,15 @@ With a massive branch (`massive.model ≠ "none"`) the keys `fraction` to
 - `pairing`: `"random"` (both components drawn from the IMF; the more massive
   becomes the primary) or `"uniform_q"` (the secondary's mass is `q m₁` with
   `q` uniform in `[q_min, 1]`, replacing the drawn mass of the partner)
-- `period`: `"kroupa1995"` (the Kroupa 1995 birth period distribution,
+- `period`: `"kroupa1995"` (the birth period distribution of Kroupa 1995b,
+  DOI 10.1093/mnras/277.4.1507, Eq. 8,
   `f(log P) ∝ (log P − 1) / (45 + (log P − 1)²)` for `1 ≤ log P/d ≤ 8.43`,
   converted to a semi-major axis with Kepler's third law) or `"loguniform"`
-  (semi-major axis log-uniform between `a_min` and `a_max`)
+  (semi-major axis log-uniform between `a_min` and `a_max`). Kroupa's birth
+  distribution belongs with his pre-main-sequence eigenevolution, which the
+  generator does not apply: short eccentric orbits are not circularised and
+  the mass ratios are not evolved (Belloni et al. 2017,
+  DOI 10.1093/mnras/stx1763)
 - `a_min`, `a_max`: semi-major axis bounds [AU] for `"loguniform"`; `0 < a_min < a_max`
 - `q_min`: lower mass-ratio bound for `"uniform_q"`; `0 < q_min < 1`
 - `eccentricity`: `"thermal"` (`f(e) = 2e`) or `"circular"`
@@ -102,24 +112,28 @@ const _KROUPA95_DELTA = 45.0
 const _KROUPA95_LOGP_MIN = 1.0
 const _KROUPA95_LOGP_MAX = 8.43
 
-"""Fail-fast bounds of a [`BinarySpec`](@ref); `key` names the owning cluster table."""
+"""Fail-fast bounds of a [`BinarySpec`](@ref); `key` names the owning cluster table. Raises an `ArgumentError` naming the offending key."""
 function _validate_binaries(b::BinarySpec, key::String)
     (0 ≤ b.fraction < 1) ||
-        error("config: $key.binaries.fraction must satisfy 0 ≤ fraction < 1; got $(b.fraction)")
-    b.pairing in ("random", "uniform_q") || error(
-        "config: $key.binaries.pairing must be \"random\" or \"uniform_q\"; got \"$(b.pairing)\"",
+        _config_error("$key.binaries.fraction", "must satisfy 0 ≤ fraction < 1; got $(b.fraction)")
+    b.pairing in ("random", "uniform_q") || _config_error(
+        "$key.binaries.pairing",
+        "must be \"random\" or \"uniform_q\"; got \"$(b.pairing)\"",
     )
-    b.period in ("kroupa1995", "loguniform") || error(
-        "config: $key.binaries.period must be \"kroupa1995\" or \"loguniform\"; got \"$(b.period)\"",
+    b.period in ("kroupa1995", "loguniform") || _config_error(
+        "$key.binaries.period",
+        "must be \"kroupa1995\" or \"loguniform\"; got \"$(b.period)\"",
     )
-    b.eccentricity in ("thermal", "circular") || error(
-        "config: $key.binaries.eccentricity must be \"thermal\" or \"circular\"; got \"$(b.eccentricity)\"",
+    b.eccentricity in ("thermal", "circular") || _config_error(
+        "$key.binaries.eccentricity",
+        "must be \"thermal\" or \"circular\"; got \"$(b.eccentricity)\"",
     )
-    (0 < b.a_min < b.a_max) || error(
-        "config: $key.binaries must satisfy 0 < a_min < a_max [AU]; got $(b.a_min), $(b.a_max)",
+    (0 < b.a_min < b.a_max) || _config_error(
+        "$key.binaries",
+        "must satisfy 0 < a_min < a_max [AU]; got $(b.a_min), $(b.a_max)",
     )
     (0 < b.q_min < 1) ||
-        error("config: $key.binaries.q_min must satisfy 0 < q_min < 1; got $(b.q_min)")
+        _config_error("$key.binaries.q_min", "must satisfy 0 < q_min < 1; got $(b.q_min)")
     return nothing
 end
 
@@ -388,10 +402,14 @@ end
     _pair_massive!(m, used, s::MassiveBinarySpec, rng, zmet, φ) -> (primary, secondary, a_au, e, n_guarded)
 
 The massive branch: the stars are walked in descending mass (stable); each
-unpaired star of mass `≥ m_min` becomes a primary with probability `fraction`,
-draws `(lP, q, e)` as [`_sana_draw`](@ref) and takes a partner by `pool` or
-`replace`; without a partner it stays single. Updates `m` (for `"replace"`)
-and `used` in place.
+unpaired star of mass `≥ m_min` becomes a primary when its Bernoulli trial
+`rand(rng) < fraction` succeeds; it then draws inline the period uniform
+`u_P`, the mass ratio `q` (power law of exponent `q_exponent` on
+`[q_min, 1]`) and the eccentricity uniform `u_e`, and takes a partner by
+`pool` or `replace`; without a partner it stays single. `u_P` and `u_e` are
+mapped through the period and eccentricity laws at the final masses by
+`_sana_orbit`, truncated by the Roche guard when `φ > 0`. Updates `m` (for
+`"replace"`) and `used` in place.
 """
 function _pair_massive!(
     m::Vector{Float64},
