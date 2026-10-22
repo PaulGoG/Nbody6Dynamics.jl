@@ -114,6 +114,8 @@ end
     include("test_segregation.jl")
     include("test_massive_binaries.jl")
     include("test_generator_physics.jl")
+    include("test_analysis_corrections.jl")
+    include("test_run_safety.jl")
     include("test_validity.jl")
     include("test_sweep_ensemble.jl")
     include("test_plotting.jl")
