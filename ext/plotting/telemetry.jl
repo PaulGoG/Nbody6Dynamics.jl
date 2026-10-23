@@ -1,7 +1,7 @@
 # =============================================================================
 # Run telemetry figure
 # =============================================================================
-# The CSV readers live in the core package (src/telemetry.jl); only the
+# The CSV readers live in the core package (src/pipeline/telemetry.jl); only the
 # figure needs a plotting backend.
 
 """Colours of the telemetry series (Okabe–Ito): cores busy, resident memory, GPU utilisation."""

@@ -79,30 +79,30 @@ include("util.jl")
 # ---------------------------------------------------------------------------
 # Platform detection & dependency checking
 # ---------------------------------------------------------------------------
-include("platform.jl")
+include("pipeline/platform.jl")
 
 # ---------------------------------------------------------------------------
 # Install / build pipeline
 # ---------------------------------------------------------------------------
-include("install.jl")
+include("pipeline/install.jl")
 
 # ---------------------------------------------------------------------------
 # Runtime hardware telemetry (used by the simulation executor)
 # ---------------------------------------------------------------------------
-include("telemetry.jl")
+include("pipeline/telemetry.jl")
 
 # ---------------------------------------------------------------------------
 # Simulation execution
 # ---------------------------------------------------------------------------
-include("run.jl")
-include("resume.jl")
-include("cost.jl")
-include("cluster.jl")
+include("pipeline/run.jl")
+include("pipeline/resume.jl")
+include("pipeline/cost.jl")
+include("pipeline/cluster.jl")
 
 # ---------------------------------------------------------------------------
 # GPU validation of a CUDA host (logged stages under runs/)
 # ---------------------------------------------------------------------------
-include("gpu_validation.jl")
+include("pipeline/gpu_validation.jl")
 
 # ---------------------------------------------------------------------------
 # I/O readers
@@ -112,35 +112,35 @@ include("io/io.jl")
 # ---------------------------------------------------------------------------
 # Potential, bound sets and integrals of snapshots
 # ---------------------------------------------------------------------------
-include("potential.jl")
-include("integrals.jl")
-include("energy_events.jl")
-include("budgets.jl")
+include("analysis/potential.jl")
+include("analysis/integrals.jl")
+include("analysis/energy_events.jl")
+include("analysis/budgets.jl")
 
 # ---------------------------------------------------------------------------
 # Per-cluster structure from snapshots (used by the merger plots)
 # ---------------------------------------------------------------------------
-include("cluster_structure.jl")
-include("binary_population.jl")
-include("stellar_population.jl")
-include("remnant.jl")
-include("shape_mixing.jl")
-include("pair_finder.jl")
-include("equipartition.jl")
-include("angular_momentum.jl")
-include("merger_tree.jl")
-include("validity.jl")
-include("binary_spans.jl")
-include("bound_spans.jl")
-include("binary_census.jl")
-include("gw_observables.jl")
-include("binary_population_series.jl")
+include("analysis/cluster_structure.jl")
+include("analysis/binary_population.jl")
+include("analysis/stellar_population.jl")
+include("analysis/remnant.jl")
+include("analysis/shape_mixing.jl")
+include("analysis/pair_finder.jl")
+include("analysis/equipartition.jl")
+include("analysis/angular_momentum.jl")
+include("analysis/merger_tree.jl")
+include("analysis/validity.jl")
+include("analysis/binary_spans.jl")
+include("analysis/bound_spans.jl")
+include("analysis/binary_census.jl")
+include("analysis/gw_observables.jl")
+include("analysis/binary_population_series.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
 # ---------------------------------------------------------------------------
-include("sweep.jl")
-include("ensemble.jl")
+include("pipeline/sweep.jl")
+include("analysis/ensemble.jl")
 
 # ---------------------------------------------------------------------------
 # Figure interface (implemented by the Makie extension, see ext/)
@@ -150,7 +150,7 @@ include("plotting_api.jl")
 # ---------------------------------------------------------------------------
 # External post-processing (standalone, config-free)
 # ---------------------------------------------------------------------------
-include("external.jl")
+include("pipeline/external.jl")
 
 # ---------------------------------------------------------------------------
 # Initial conditions generator (merger ICs)

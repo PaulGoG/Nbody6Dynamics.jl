@@ -29,7 +29,7 @@ Nbody6Dynamics/
 ├── activate.jl       # Activates and instantiates the package environment
 ├── config.toml       # Main pipeline configuration (edit this)
 ├── CONTRIBUTING.md   # What a change needs
-├── src/              # Library: orchestration, IC generator, readers, diagnostics
+├── src/              # Library: core types and config; pipeline/, analysis/, io/, ic/
 ├── ext/              # Makie extension: figures and animations
 ├── scripts/          # CLI entry points
 ├── input_files/      # Shipped inputs by purpose: engine/, clusters/, mergers/, verification/, sweeps/, showcase/, gpu/
@@ -258,40 +258,43 @@ Nbody6Dynamics/
 ├── deps/cuda/                       # helper_cuda.h, helper_string.h from NVIDIA cuda-samples v13.0 (CUDA 13 build of the engine) and their LICENSE (BSD-3-Clause)
 ├── deps/engine/amendments.toml      # Source corrections applied to an upstream engine tree before configure (escaper summary format, tidal energy in the total under a linearised tide)
 ├── src/
-│   ├── Nbody6Dynamics.jl               # Module root; run_pipeline orchestrator; exports
+│   ├── Nbody6Dynamics.jl            # Module root; run_pipeline orchestrator; exports
 │   ├── types.jl                     # Config structs (incl. PlotStyle), Snapshot, records, UnitScaling
 │   ├── config.jl                    # TOML loader/serialiser for Nbody6Config
 │   ├── util.jl                      # safesave-style never-overwrite backups
-│   ├── platform.jl                  # OS/CUDA/dependency detection, hardware fingerprint
-│   ├── telemetry.jl                 # Runtime CPU/memory/GPU telemetry of the backend process tree
-│   ├── install.jl                   # Clone, configure, HDF5 Makefile patch, build
-│   ├── run.jl                       # Simulation launcher: run dirs, launch script, live monitoring
-│   ├── resume.jl                    # Restart dump selection, the join of segments (what a killed segment wrote after its dump is moved aside)
-│   ├── cluster.jl                   # Slurm layer: generated job script, submission and chaining of segments, job ledger
-│   ├── cost.jl                      # Cost model: rate table, wall-time, segment and disk estimate at launch, budget check
-│   ├── gpu_validation.jl            # run_gpu_validation: logged validation stages of a CUDA host under runs/
-│   ├── external.jl                  # scan_output + postprocess_external for arbitrary output dirs
-│   ├── potential.jl                 # Exact pair-sum potential (KernelAbstractions), pairs as centres of mass, bound sets
-│   ├── integrals.jl                 # Snapshot integrals: momenta, energies, bound set; snapshot_integrals.csv
-│   ├── energy_events.jl             # Energy-jump localisation: adjustment intervals, correction channels, event counts; energy_intervals.csv, engine_events.csv
-│   ├── budgets.jl                   # Mass and energy budgets per snapshot: escapers, stellar-evolution and collision losses, engine corrections; mass_budget.csv, energy_budget.csv
-│   ├── cluster_structure.jl         # Per-cluster structure from snapshots: bound members, centres, radii, dispersions
-│   ├── binary_population.jl         # Binary diagnostics: Heggie hard/soft split, binary fraction, energy scale from snapshots
-│   ├── stellar_population.jl        # Stellar classes, HR-plane population, class census
-│   ├── remnant.jl                   # Remnant diagnostics: coalescence, Casertano–Hut core radius, rotation, mass segregation
-│   ├── shape_mixing.jl              # Shape tensor, projected ellipticity, A⁺ index, two-sample D, mixing of two populations
-│   ├── pair_finder.jl               # k-d tree local density, snapshot binary finder, reconciliation with the KS pairs
-│   ├── equipartition.jl             # Bianchini equipartition-mass fit and its per-snapshot series; equipartition.csv
-│   ├── angular_momentum.jl          # Angular-momentum budget, rotation by radius and mass class, elapsed relaxation times; angular_momentum.csv
-│   ├── merger_tree.jl               # Merger tree from the density-centre separations, per-progenitor mass budget and mixing; merger_tree.csv, progenitor_budget.csv
-│   ├── validity.jl                  # Validity record of a run and the calibration-table lookup; validity.toml, validity_snapshots.csv
-│   ├── binary_spans.jl              # Engine-regularised binary spans: KS episodes joined per pair, origin, end class; binary_spans.csv
-│   ├── bound_spans.jl               # Physically bound pairs at the snapshots and their spans; bound_spans.csv
-│   ├── binary_census.jl             # Union of the regularised and the bound spans per pair; binary_census.csv
-│   ├── gw_observables.jl            # Peters inspiral time, chirp mass, GW frequencies, eccentricity at a reference frequency
-│   ├── binary_population_series.jl  # Binary fractions per shell, stellar class and census level; binary_population.csv
-│   ├── sweep.jl                     # Parameter sweeps: grid × seeds, concurrent worker processes, index and summary
-│   ├── ensemble.jl                  # Seeded ensembles: series extractors, common-grid percentiles (median, 68/95 %)
+│   ├── plotting_api.jl              # Figure interface: the public routines, implemented by the Makie extension
+│   ├── pipeline/                    # Engine build, launch, resumption, Slurm chains, cost, telemetry, sweeps
+│   │   ├── platform.jl              # OS/CUDA/dependency detection, hardware fingerprint
+│   │   ├── install.jl               # Clone, configure, HDF5 Makefile patch, build
+│   │   ├── telemetry.jl             # Runtime CPU/memory/GPU telemetry of the backend process tree
+│   │   ├── run.jl                   # Simulation launcher: run dirs, launch script, live monitoring
+│   │   ├── resume.jl                # Restart dump selection, the join of segments (what a killed segment wrote after its dump is moved aside)
+│   │   ├── cost.jl                  # Cost model: rate table, wall-time, segment and disk estimate at launch, budget check
+│   │   ├── cluster.jl               # Slurm layer: generated job script, submission and chaining of segments, job ledger
+│   │   ├── gpu_validation.jl        # run_gpu_validation: logged validation stages of a CUDA host under runs/
+│   │   ├── sweep.jl                 # Parameter sweeps: grid × seeds, concurrent worker processes, index and summary
+│   │   └── external.jl              # scan_output + postprocess_external for arbitrary output dirs
+│   ├── analysis/                    # Diagnostics derived from the output: integrals, budgets, structure, binaries, validity
+│   │   ├── potential.jl             # Exact pair-sum potential (KernelAbstractions), pairs as centres of mass, bound sets
+│   │   ├── integrals.jl             # Snapshot integrals: momenta, energies, bound set; snapshot_integrals.csv
+│   │   ├── energy_events.jl         # Energy-jump localisation: adjustment intervals, correction channels, event counts; energy_intervals.csv, engine_events.csv
+│   │   ├── budgets.jl               # Mass and energy budgets per snapshot: escapers, stellar-evolution and collision losses, engine corrections; mass_budget.csv, energy_budget.csv
+│   │   ├── cluster_structure.jl     # Per-cluster structure from snapshots: bound members, centres, radii, dispersions
+│   │   ├── binary_population.jl     # Binary diagnostics: Heggie hard/soft split, binary fraction, energy scale from snapshots
+│   │   ├── stellar_population.jl    # Stellar classes, HR-plane population, class census
+│   │   ├── remnant.jl               # Remnant diagnostics: coalescence, Casertano–Hut core radius, rotation, mass segregation
+│   │   ├── shape_mixing.jl          # Shape tensor, projected ellipticity, A⁺ index, two-sample D, mixing of two populations
+│   │   ├── pair_finder.jl           # k-d tree local density, snapshot binary finder, reconciliation with the KS pairs
+│   │   ├── equipartition.jl         # Bianchini equipartition-mass fit and its per-snapshot series; equipartition.csv
+│   │   ├── angular_momentum.jl      # Angular-momentum budget, rotation by radius and mass class, elapsed relaxation times; angular_momentum.csv
+│   │   ├── merger_tree.jl           # Merger tree from the density-centre separations, per-progenitor mass budget and mixing; merger_tree.csv, progenitor_budget.csv
+│   │   ├── validity.jl              # Validity record of a run and the calibration-table lookup; validity.toml, validity_snapshots.csv
+│   │   ├── binary_spans.jl          # Engine-regularised binary spans: KS episodes joined per pair, origin, end class; binary_spans.csv
+│   │   ├── bound_spans.jl           # Physically bound pairs at the snapshots and their spans; bound_spans.csv
+│   │   ├── binary_census.jl         # Union of the regularised and the bound spans per pair; binary_census.csv
+│   │   ├── gw_observables.jl        # Peters inspiral time, chirp mass, GW frequencies, eccentricity at a reference frequency
+│   │   ├── binary_population_series.jl # Binary fractions per shell, stellar class and census level; binary_population.csv
+│   │   └── ensemble.jl              # Seeded ensembles: series extractors, common-grid percentiles (median, 68/95 %)
 │   ├── io/
 │   │   ├── io.jl                    # I/O submodule includes
 │   │   ├── fortran_binary.jl        # Fortran unformatted record reader
@@ -307,20 +310,19 @@ Nbody6Dynamics/
 │   │   ├── binary_files.jl          # bdat.9, bwdat.19, merger.84, hiarch.12, coll.13, coal.24, cmbody.26, binev.17, degen.4, escbin.31, hbin.39
 │   │   ├── stellar_evolution.jl     # sev.83_* single-star evolution reader
 │   │   └── binary_evolution.jl      # bev.82_* regularised-binary reader
-│   ├── ic/
-│   │   ├── ic.jl                    # run_merger_pipeline / generate_merger_ic entry points
-│   │   ├── config.jl                # IC TOML parser: ClusterSpec, OrbitSpec, Nbody6ParameterSpec (presets), stellar and tidal specs
-│   │   ├── control.jl               # Isolated single-cluster control derived from a merger TOML
-│   │   ├── complex.jl               # Cluster complexes: member masses and radii, centre distributions, bulk velocity scaling
-│   │   ├── segregation.jl           # Primordial mass segregation: McLuster slot order, energy-ranked BDK08 slices
-│   │   ├── models.jl                # Plummer & King (ODE-solved) density samplers
-│   │   ├── static_models.jl         # Static test models: Osipkov–Merritt Plummer, Lynden-Bell flip, stretched, energy-ranked masses
-│   │   ├── imf.jl                   # Kroupa (2001) IMF, rescaled & equal-mass variants
-│   │   ├── orbits.jl                # Kepler two-body (size, orientation, derived quantities), explicit and single placement, tidal frame, Jacobi radii
-│   │   ├── binaries.jl              # Primordial binary populations; Sana 2012 branch for massive primaries, periastron Roche guard
-│   │   ├── stellar_radius.jl        # ZAMS radii of the engine (Tout et al. 1996 fit of SSE)
-│   │   └── output.jl                # dat.10 writer, merger.inp generator, integration-parameter resolution per preset
-│   └── plotting_api.jl              # Figure interface: the public routines, implemented by the Makie extension
+│   └── ic/
+│       ├── ic.jl                    # run_merger_pipeline / generate_merger_ic entry points
+│       ├── config.jl                # IC TOML parser: ClusterSpec, OrbitSpec, Nbody6ParameterSpec (presets), stellar and tidal specs
+│       ├── control.jl               # Isolated single-cluster control derived from a merger TOML
+│       ├── complex.jl               # Cluster complexes: member masses and radii, centre distributions, bulk velocity scaling
+│       ├── segregation.jl           # Primordial mass segregation: McLuster slot order, energy-ranked BDK08 slices
+│       ├── models.jl                # Plummer & King (ODE-solved) density samplers
+│       ├── static_models.jl         # Static test models: Osipkov–Merritt Plummer, Lynden-Bell flip, stretched, energy-ranked masses
+│       ├── imf.jl                   # Kroupa (2001) IMF, rescaled & equal-mass variants
+│       ├── orbits.jl                # Kepler two-body (size, orientation, derived quantities), explicit and single placement, tidal frame, Jacobi radii
+│       ├── binaries.jl              # Primordial binary populations; Sana 2012 branch for massive primaries, periastron Roche guard
+│       ├── stellar_radius.jl        # ZAMS radii of the engine (Tout et al. 1996 fit of SSE)
+│       └── output.jl                # dat.10 writer, merger.inp generator, integration-parameter resolution per preset
 ├── ext/
 │   ├── Nbody6DynamicsMakieExt.jl    # Extension module, loaded by `using CairoMakie`
 │   └── plotting/

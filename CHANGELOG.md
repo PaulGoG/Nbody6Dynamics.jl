@@ -6,6 +6,16 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- Source layout: the orchestration modules (platform, install, telemetry,
+  run, resume, cost, cluster, GPU validation, sweeps, external
+  post-processing) live under `src/pipeline/` and the diagnostics derived
+  from the output (potential and integrals, budgets, structure, binaries,
+  remnant, validity, gravitational-wave observables, ensembles) under
+  `src/analysis/`; the core types, configuration, utilities and the figure
+  interface stay at `src/`. No name or interface changed.
+
 ### Added
 
 - `simulation.stall_timeout` (default `0`, off): a stall watchdog armed after
