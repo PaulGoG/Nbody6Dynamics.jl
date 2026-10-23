@@ -148,11 +148,20 @@ $output
         dd1 = (M2 / (M1 + M2)) * d_apo
         dd2 = (M1 / (M1 + M2)) * d_apo
         w1, w2 = kepler_velocity(M1, M2, d_apo, e)
-        @test pos[1, 1:40] == p1[1, :] .- dd1 &&
-              pos[2, 1:40] == p1[2, :] &&
-              pos[3, 1:40] == p1[3, :]
-        @test vel[1, 1:40] == v1[1, :] && vel[2, 1:40] == v1[2, :] .+ w1 && vel[3, 1:40] == v1[3, :]
-        @test pos[1, 41:70] == p2[1, :] .+ dd2 && vel[2, 41:70] == v2[2, :] .- w2
+        # Largest deviation per component, so that a failure reports its size
+        maxdev(a, b) = maximum(abs, a .- b)
+        @test (
+            maxdev(pos[1, 1:40], p1[1, :] .- dd1),
+            maxdev(pos[2, 1:40], p1[2, :]),
+            maxdev(pos[3, 1:40], p1[3, :]),
+        ) == (0.0, 0.0, 0.0)
+        @test (
+            maxdev(vel[1, 1:40], v1[1, :]),
+            maxdev(vel[2, 1:40], v1[2, :] .+ w1),
+            maxdev(vel[3, 1:40], v1[3, :]),
+        ) == (0.0, 0.0, 0.0)
+        @test (maxdev(pos[1, 41:70], p2[1, :] .+ dd2), maxdev(vel[2, 41:70], v2[2, :] .- w2)) ==
+              (0.0, 0.0)
         # Orbital angular momentum of the two centres along the orbit normal
         function centres(pos, vel, mass, ranges)
             c = [vec(sum(mass[r]' .* pos[:, r]; dims = 2)) ./ sum(mass[r]) for r in ranges]

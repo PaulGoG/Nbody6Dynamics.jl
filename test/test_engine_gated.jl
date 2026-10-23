@@ -1,6 +1,8 @@
 # Included by runtests.jl inside its top-level test set; the helpers and
 # constants of that file are in scope.
 
+using StableRNGs: StableRNG
+
 @testset "Shipped GPU-host configurations" begin
     gdir = joinpath(@__DIR__, "..", "input_files", "gpu")
     gcfg = load_config(joinpath(gdir, "gpu_pipeline.toml"))
@@ -124,17 +126,21 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         _keep(run_dir, "single")
 
         # 2. Merger demo with a dump at every adjustment, then a restart
-        mtoml = read(
+        # The shipped demo with a fixed seed and checkpoints; every case below derives from
+        # the parsed table, so keys the shipped file acquires cannot collide with these
+        demo = Nbody6Dynamics.TOML.parsefile(
             joinpath(@__DIR__, "..", "input_files", "mergers", "merger_demo_small.toml"),
-            String,
         )
-        # Fixed seed for reproducibility of the engine-dependent runs
-        mtoml = replace(mtoml, r"tcrit = [0-9.]+" => "tcrit = 2.0")
-        mtoml =
-            replace(mtoml, "[merger]\n" => "[merger]\nseed = 11\n"; count = 1) *
-            "\n[merger.nbody6]\ncheckpoint = true\n"
-        mpath = joinpath(work, "merger_demo.toml")
-        write(mpath, mtoml)
+        demo["merger"]["seed"] = 11
+        demo["merger"]["nbody6"] = Dict{String,Any}("checkpoint" => true)
+        function write_demo(path, tcrit; edit! = identity)
+            d = deepcopy(demo)
+            d["merger"]["output"]["tcrit"] = tcrit
+            edit!(d)
+            open(io -> Nbody6Dynamics.TOML.print(io, d), path, "w")
+            return path
+        end
+        mpath = write_demo(joinpath(work, "merger_demo.toml"), 2.0)
         cfg_m_path = joinpath(work, "merger.toml")
         write(cfg_m_path, base_toml(runs_dir, "", "enabled = true\nconfig_file = \"$(mpath)\""))
         cfg_m = load_config(cfg_m_path)
@@ -182,9 +188,7 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         _keep(mrun, "merger_restart")
 
         # 2b. A killed checkpointed run resumed to its end time
-        ktoml = replace(mtoml, r"tcrit = [0-9.]+" => "tcrit = 6.0")
-        kpath = joinpath(work, "merger_kill.toml")
-        write(kpath, ktoml)
+        kpath = write_demo(joinpath(work, "merger_kill.toml"), 6.0)
         cfg_k_path = joinpath(work, "merger_k.toml")
         write(cfg_k_path, base_toml(runs_dir, "", "enabled = true\nconfig_file = \"$(kpath)\""))
         cfg_k0 = load_config(cfg_k_path)
@@ -235,13 +239,15 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         _keep(krun, "merger_resume")
 
         # 3. Point-mass tidal field
-        ttoml = replace(
-            mtoml,
-            "[merger.nbody6]\ncheckpoint = true\n" => "[merger.nbody6]\nqe = 0.05\n\n[merger.tidal]\nkz14 = 2\ngmg = 1.0e11\nrg0 = 8.5\n",
+        tpath = write_demo(
+            joinpath(work, "merger_tidal.toml"),
+            1.0;
+            edit! = d -> begin
+                d["merger"]["nbody6"] = Dict{String,Any}("qe" => 0.05)
+                d["merger"]["tidal"] =
+                    Dict{String,Any}("kz14" => 2, "gmg" => 1.0e11, "rg0" => 8.5)
+            end,
         )
-        ttoml = replace(ttoml, r"tcrit = [0-9.]+" => "tcrit = 1.0")
-        tpath = joinpath(work, "merger_tidal.toml")
-        write(tpath, ttoml)
         cfg_t_path = joinpath(work, "tidal.toml")
         write(cfg_t_path, base_toml(runs_dir, "", "enabled = true\nconfig_file = \"$(tpath)\""))
         cfg_t = load_config(cfg_t_path)
@@ -268,9 +274,11 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         # 4. Two-point sweep through the worker processes
         swork = joinpath(work, "sweep")
         mkpath(swork)
-        stoml = replace(mtoml, r"tcrit = [0-9.]+" => "tcrit = 0.5")
-        stoml = replace(stoml, r"N = 1000" => "N = 300")
-        write(joinpath(swork, "merger.toml"), stoml)
+        write_demo(
+            joinpath(swork, "merger.toml"),
+            0.5;
+            edit! = d -> foreach(c -> d["merger"][c]["N"] = 300, ("cluster1", "cluster2")),
+        )
         write(
             joinpath(swork, "config.toml"),
             replace(
