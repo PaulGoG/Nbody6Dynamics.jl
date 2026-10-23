@@ -35,31 +35,66 @@ eccentricities separate in time (12 Myr at `e = 0.5` against 8 Myr at
 
 ## Reference runs
 
-The four small cases were run on 2026-09-11 on a laptop (Intel Core Ultra 7
-155H, four OpenMP threads, package commit `f89eb2e`, engine
-Nbody6PPGPU-beijing at `618d7a4`, upstream v2026.07). Engine wall time is the
-integration alone; the pipeline adds the initial conditions, the readers, the
-diagnostics and about fifty figures and five animations per run, a few
-minutes at these sizes.
-
-These runs predate the engine pin `v2026.07.9`. Its correction of the KS
-mass-change bookkeeping (`v2026.07.7`) changes the energy budget of
-binary-rich runs, so the `DETOT` column, `binary` in particular, will differ
-on a rerun.
+The cases were run on 2026-10-23 on a laptop (Intel Core Ultra 7 155H, four
+OpenMP threads per run and eight for the flagship, the small cases four at a
+time; package commit `063a40a` (plus the source-layout move of the following commit, which changed no code), engine pin `v2026.07.9`). Engine wall
+time is the integration alone; the pipeline adds the initial conditions, the
+readers, the diagnostics and about fifty figures and five animations per run,
+a few minutes at these sizes.
 
 | Case | Run | Bodies after truncation | Engine wall | Final `DETOT` |
 |---|---|---|---|---|
-| `equal` | `merger_showcase_equal_20260911_200411_f8f6` | 7832 | 72 s | +1.7×10⁻³ |
-| `binary` | `merger_showcase_binary_20260911_200459_aac4` | 4895 | 124 s | +3.9×10⁻³ |
-| `tidal` | `merger_showcase_tidal_20260911_200554_1584` | 4878 | 37 s | +1.5×10⁻³ (`ERRTOT` −5.3×10⁻², the tidal work) |
-| `sweep` | `sweep_showcase_20260911_202212` | 941–974 per merger, 995–999 per control | 42–52 s per point, four at a time | ≤ 5×10⁻³ at every point |
+| `equal` | `merger_showcase_equal_20261023_154447_8ace` | 6894 | 149 s | +2.2×10⁻³ |
+| `binary` | `merger_showcase_binary_20261023_154448_eb6e` | 4212, 703 primordial pairs | 235 s | −2.4×10⁻² |
+| `tidal` | `merger_showcase_tidal_20261023_154446_b65d` | 4301 | 79 s | +4.2×10⁻³ (`ETIDE` −3.3×10⁻³, the tidal work) |
+| `sweep` | `sweep_showcase_20261023_154908` | 737–802 per merger, 995–999 per control | 114–146 s per point, four at a time | ≤ 4.3×10⁻² in magnitude over the eleven finished points; the merger at `e = 0.5`, seed 4 stalled at 15 Myr and was killed |
+| `flagship` | `merger_showcase_flagship_20261023_154446_4dd7` | 39 283 | 2044 s (34 min; AVX build, eight threads) | −1.1×10⁻³ |
 
 `DETOT` is the engine's cumulative relative energy change at the end of the
 run; the merger runs evolve stars and form binaries, so it sits well above
-the 10⁻⁷ of a quiet single cluster, and inside the tolerance the
-configurations set. The documentation assets (`docs/src/assets/`) are
-rendered from the 2 × 25 000-star validation merger `gpu/merger_50k.toml`,
-the H200 run described in `docs/src/assets/PROVENANCE.md`.
+the 10⁻⁷ of a quiet single cluster. The binary case carries the largest
+value: its 700 primordial pairs lose mass through stellar evolution while
+regularised, and since `v2026.07.7` the engine books those mass changes in
+the energy correction instead of leaving them in the error, which moved the
+column from the +3.9×10⁻³ of the runs before the pin. The documentation
+assets (`docs/src/assets/`) are rendered from these runs, the README montage
+and animation from the flagship; `docs/src/assets/PROVENANCE.md` records the
+figure routines and arguments.
+
+## What the cases show
+
+![Separation of the two density centres of the equal pair against the smaller half-mass radius](assets/showcase_equal_separation.png)
+
+*`equal`: the separation of the two density centres falls below the smaller
+half-mass radius at 5 Myr, the coalescence time the merger tree records;
+after that the two centres of the single remnant stay within 0.3 pc.*
+
+![Orbital elements of the regularised pairs of the binary case at 15 Myr](assets/showcase_binary_orbital_elements.png)
+
+*`binary`: the regularised pairs at the end of the run in the a–e plane, hard
+and soft by the Heggie criterion at the mean pair mass; the hard fraction
+rose from 66 % to 70 % over the 15 Myr as the soft pairs were disrupted.*
+
+![Escapers of the tidal case: cumulative escaped mass and escape velocities](assets/showcase_tidal_escapers.png)
+
+*`tidal`: escapers removed at the tidal boundary of the external field. The
+luminous stars leave at a few km/s; the compact remnants carry their natal
+kicks at 10²–10³ km/s.*
+
+![Half-mass radius of every finished merger of the sweep, coloured by eccentricity](assets/showcase_sweep_lagrangian.png)
+
+*`sweep`: the half-mass radius of the five finished mergers on common axes.
+The infall is half a Kepler period from apocentre, so the eccentric pairs
+collapse first, around 9 Myr, and the `e = 0.5` pairs two to three Myr later;
+each remnant then re-expands.*
+
+![Median half-mass radius per eccentricity with 68 and 95 % bands over the seeds](assets/showcase_sweep_ensemble.png)
+
+*`sweep`: the same series as seed ensembles, the median per eccentricity with
+its 68 and 95 % bands. The point at `e = 0.5` has two seeds after the stalled
+run; the sweep figures and summary are drawn from whatever finished, and
+`sweep_index.toml` records the killed point with its status.*
+
 
 The `flagship` configuration is the merger of the hardware validation
 (`gpu/merger_50k.toml` is identical in content to `flagship_merger.toml`,

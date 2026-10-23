@@ -2,7 +2,7 @@
 
 | Documentation | Build and tests | Code quality | Release |
 |:-:|:-:|:-:|:-:|
-| [![Docs stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/stable/)<br>[![Docs dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/) | [![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)<br>[![Backend build](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml)<br>[![Codecov](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl) | [![Format check](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml)<br>[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)<br>[![JET](https://img.shields.io/badge/tested_with-JET.jl-233f9a.svg)](https://github.com/aviatesk/JET.jl) | [![Release](https://img.shields.io/github/v/release/PaulGoG/Nbody6Dynamics.jl?display_name=tag&sort=semver)](https://github.com/PaulGoG/Nbody6Dynamics.jl/releases)<br>[![Julia](https://img.shields.io/badge/Julia-1.13%2B-9558B2.svg?logo=julia&logoColor=white)](https://julialang.org)<br>[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)<br>[![Project Status: Active](https://www.repostatus.org/badges/latest/active.svg)](https://www.repostatus.org/#active) |
+| [![Docs stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/stable/) | [![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)<br>[![Backend build](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml)<br>[![Codecov](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl) | [![Format check](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml)<br>[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)<br>[![JET](https://img.shields.io/badge/tested_with-JET.jl-233f9a.svg)](https://github.com/aviatesk/JET.jl) | [![Release](https://img.shields.io/github/v/release/PaulGoG/Nbody6Dynamics.jl?display_name=tag&sort=semver)](https://github.com/PaulGoG/Nbody6Dynamics.jl/releases)<br>[![Julia](https://img.shields.io/badge/Julia-1.13%2B-9558B2.svg?logo=julia&logoColor=white)](https://julialang.org)<br>[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) |
 
 A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations end to end: it clones and builds the Fortran engine, generates initial conditions for single clusters and multi-cluster mergers, launches and supervises the integration (with restart dumps, wall budgets and resumption across queue segments), reads every standard output file, computes the cluster diagnostics and draws the figures. One TOML configuration drives every phase through a single entry point, `run_pipeline`.
 
@@ -10,15 +10,16 @@ A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/N
 
 *Two King clusters of 25 000 stars each, released 10 pc apart at the apocentre of an orbit of
 eccentricity 0.5, drawn as projected surface mass density: the pair at release, the two cores
-still distinct at 4 Myr, and the remnant with its halo at 50 Myr. The integration took 7.6 min
-of engine time on one NVIDIA H200 NVL. Initial conditions, integration, analysis and figure were
-all produced by this package; the case is `input_files/gpu/merger_50k.toml`.*
+still distinct at 4 Myr, and the remnant with its halo at 50 Myr. The integration took 34 min
+of engine time on the AVX build at eight threads of a laptop (Intel Core Ultra 7 155H); the same
+case ran in 6–8 min on a datacentre or desktop GPU. Initial conditions, integration, analysis and
+figure were all produced by this package; the case is `input_files/showcase/flagship_pipeline.toml`.*
 
 ![Animation of the same merger over 50 Myr](docs/src/assets/merger_evolution.gif)
 
 *The same run animated on fixed axes, one frame per 2 Myr. The cores fall together and merge
 between 6 and 8 Myr; the remnant then relaxes while its halo of loosely bound stars spreads past
-the frame, which holds 95 % of the mass at every epoch. Every run writes animations like this
+the frame, which holds 99 % of the mass at every epoch. Every run writes animations like this
 one alongside its static figures.*
 
 ## Project structure
