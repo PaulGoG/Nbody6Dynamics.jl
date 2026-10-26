@@ -162,6 +162,14 @@ function _segregation_model_points(profile, n_pts::Int, rh::Float64, rng::Abstra
         return pos, vel, energy
     elseif profile isa KingProfile
         return _sample_king_with_energy(n_pts, profile.W0, 1.0; rng = rng)
+    elseif profile isa RotatingKingProfile
+        throw(
+            ArgumentError(
+                "segregate_systems: primordial mass segregation is not available for the " *
+                "rotating King profile (the energy ranking of the segregation scheme does not " *
+                "apply to a distribution function of E and J_z)",
+            ),
+        )
     else
         throw(ArgumentError("segregate_systems: unsupported profile $(typeof(profile))"))
     end

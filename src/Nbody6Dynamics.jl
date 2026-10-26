@@ -1190,6 +1190,7 @@ export compact_binary_catalogue, escaped_binary_catalogue, gw_merger_catalogue
 export write_compact_binary_catalogue, write_escaped_binary_catalogue, write_gw_merger_catalogue
 export peters_semi_major_axis, band_residence, eccentricity_after
 export RotatingKingModel, solve_rotating_king, rotating_king_moments, sample_rotating_king
+export RotatingKingProfile, rotation_moments
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep

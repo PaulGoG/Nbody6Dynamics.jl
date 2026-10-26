@@ -28,6 +28,18 @@ entries say so.
 
 ### Added
 
+- Rotating King profile of the generator: `profile = { type = "rotating_king",
+  W0, omega0, axis }` samples the Einsel & Spurzem (1999) model
+  (`sample_rotating_king`, solved once per `(W0, omega0)`), rotates its
+  angular momentum onto `axis` (`[0, 0, 1]` prograde under `KZ(14) = 1, 2`),
+  scales and virialises it like the King profile, writes the model's and the
+  realised λ and specific angular momentum to `merger_ic.toml`
+  (`clusterN.rotation`, `rotation_moments`) and refuses primordial mass
+  segregation; `model_density` gives its angle-averaged profile.
+- `[merger.nbody6] gw_recoil` (`"off"`, `"fit_q"`, `"nr_fits"`,
+  `"test_1e4"` → `&INBSE kicktype`), `bh_spin` (`"zero"` … `"mesa"` →
+  `bhspinfl`, the unseeded draws warned) and `escapers` (`"remove"` or
+  `"keep"` → `KZ(23)` 2 or 0); any recoil needs `stellar.kz19 ≥ 3`.
 - Gravitational-wave catalogues (`[postprocess] gw_catalogues`, default `false`):
   `compact_binary_catalogue` (one row per Peters-application line, NS/BH BINARY
   line or `bev.82` record of a pair of white dwarfs, neutron stars or black

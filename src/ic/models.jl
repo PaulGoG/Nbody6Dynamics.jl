@@ -198,6 +198,33 @@ function model_density(p::KingProfile, M::Real, r_h::Real)
 end
 
 """
+    model_density(p::RotatingKingProfile, M, r_h) -> Function
+
+Angle-averaged density `ρ̄(r)` of the rotating King model (`solve_rotating_king`,
+cached per `(W0, omega0)`), scaled so that its half-mass radius equals `r_h`
+and its mass `M`; zero beyond the model's outermost radius. The flattening
+of the model is averaged out: the function serves the spherical profile
+overlays of the figures.
+"""
+function model_density(p::RotatingKingProfile, M::Real, r_h::Real)
+    m = _rotating_king_cached(p.W0, p.omega0)
+    _, wμ = _rk_gauss_legendre(length(m.μ))
+    ρ̄ = [0.5 * sum(wμ[j] * m.ρ[i, j] for j in eachindex(wμ)) for i in eachindex(m.r)]
+    s = r_h / m.r_h
+    norm = M / (m.mass * s^3)
+    r_max = m.r[end]
+    return function (r)
+        x = r / s
+        (x < 0 || x ≥ r_max) && return 0.0
+        j = searchsortedlast(m.r, x)
+        j ≥ length(m.r) && return 0.0
+        j < 1 && return norm * ρ̄[1]
+        f = (x - m.r[j]) / (m.r[j + 1] - m.r[j])
+        return norm * ((1 - f) * ρ̄[j] + f * ρ̄[j + 1])
+    end
+end
+
+"""
     sample_king(N::Int, W0::Float64, rt::Float64;
                 rng=Random.default_rng()) -> (pos, vel)
 

@@ -103,7 +103,9 @@ end
 
 Central density over the mean density inside the half-mass radius,
 `ρ₀ / ρ̄(< r_h)`. Plummer: `2 (r_h/a)³ ≈ 4.45` analytically. King: from the
-solved model, with `r_h` located on the cumulative-mass profile.
+solved model, with `r_h` located on the cumulative-mass profile. Rotating
+King: from the solved axisymmetric model (`ρ₀ = 1` in its units, `M̂` and the
+spherical half-mass radius `r_h` of [`RotatingKingModel`](@ref)).
 """
 _central_density_contrast(::PlummerProfile) = 2.0 * _PLUMMER_RHM_OVER_A^3
 function _central_density_contrast(p::KingProfile)
@@ -112,6 +114,10 @@ function _central_density_contrast(p::KingProfile)
     r_h = rhat[i_h]
     ρ_mean = 0.5 * m_cum[end] / (4π / 3 * r_h^3)
     return ρ[1] / ρ_mean
+end
+function _central_density_contrast(p::RotatingKingProfile)
+    m = _rotating_king_cached(p.W0, p.omega0)
+    return 1.0 / (0.5 * m.mass / (4π / 3 * m.r_h^3))
 end
 
 """
@@ -436,7 +442,7 @@ function generate_merger_inp(
     kz[16] = nbody6.kz16
     kz[19] = stellar.kz19
     kz[22] = 2
-    kz[23] = 2
+    kz[23] = _ESCAPERS_KZ23[nbody6.escapers]
     kz[26] = 1
     kz[30] = 1
     if nbody6.binary_physics == "full"
@@ -518,7 +524,11 @@ function generate_merger_inp(
         # --- 3-5. SSE/BSE/Coll: empty → use Level defaults ---
         println(io, "&INSSE /")
         println(io)
-        println(io, "&INBSE /")
+        inbse = String[]
+        nbody6.gw_recoil == "off" ||
+            push!(inbse, "kicktype=$(_GW_RECOIL_KICKTYPE[nbody6.gw_recoil])")
+        nbody6.bh_spin == "zero" || push!(inbse, "bhspinfl=$(_BH_SPIN_FLAG[nbody6.bh_spin])")
+        println(io, isempty(inbse) ? "&INBSE /" : "&INBSE " * join(inbse, ",") * " /")
         println(io)
         println(io, "&INCOLL /")
         println(io)
@@ -628,6 +638,12 @@ function _sample_cluster(
     elseif spec.profile isa KingProfile
         # Sampled with unit tidal radius; the empirical rescale below sets r_hm
         sample_king(N_sys, spec.profile.W0, 1.0; rng = rng)
+    elseif spec.profile isa RotatingKingProfile
+        # Model units (r_K = σ = 1), rotation about ẑ carried onto the profile axis
+        model = _rotating_king_cached(spec.profile.W0, spec.profile.omega0)
+        pos_m, vel_m = sample_rotating_king(N_sys, model; rng = rng)
+        _rotate_to_axis!(pos_m, vel_m, spec.profile.axis)
+        (pos_m, vel_m)
     else
         error("Unknown profile: $(typeof(spec.profile))")
     end
@@ -641,6 +657,17 @@ function _sample_cluster(
     energies = virialise!(sys_mass, pos, vel; nmax = nmax)
     binaries =
         (system_binary = system_binary, m1 = bins.m1, m2 = bins.m2, a_pc = bins.a_pc, e = bins.e)
+    # Model and realised rotation of a rotating King cluster (pc, code velocity unit)
+    rotation = if spec.profile isa RotatingKingProfile
+        (
+            moments = rotating_king_moments(
+                _rotating_king_cached(spec.profile.W0, spec.profile.omega0),
+            ),
+            realised = rotation_moments(sys_mass, pos, vel; axis = spec.profile.axis),
+        )
+    else
+        nothing
+    end
     return (
         pos = pos,
         vel = vel,
@@ -648,6 +675,7 @@ function _sample_cluster(
         T = energies.T,
         W = energies.W,
         binaries = binaries,
+        rotation = rotation,
     )
 end
 
@@ -1409,6 +1437,7 @@ function generate_merger_ic(
         t_cr_member_min_myr = t_cr_member_code * _CODE_TIME_MYR,
         t_star_myr = t_star_myr,
         fp32_offset_bound = fp32_offset_bound,
+        cluster_rotation = Any[get(c, :rotation, nothing) for c in cluster_data],
     )
     @info @sprintf(
         "Combined system: Q = %.3f, RBAR/r_hm,min = %.2f, t_cr = %.3g NB (%.3g Myr), smallest member t_cr = %.3g NB; RS0 = %.3g, RMIN = %.3g, DTMIN = %.3g, NNBOPT = %d",
@@ -1539,7 +1568,12 @@ arrays). `mass_truncated[i]` [M☉], the sampled minus the kept mass,
 `mass_kept[i]` (as `mass`) [M☉], the kept mass of the cluster's stars, and
 `truncation_radii_pc[i]` (as `truncation_radius_pc`) [pc], the radius the
 cluster was truncated at (0 when it was not), go to the table of cluster `i`
-when given. The `[output]` table records `truncate_rule`.
+when given. The `[output]` table records `truncate_rule`. A cluster of a
+[`RotatingKingProfile`](@ref) gets a `rotation` subtable with `omega0`, `axis`,
+the model's `lambda_model`, `t_rot_model` and `r_h_over_r_c_model`
+([`rotating_king_moments`](@ref)) and the realised `lambda_realised` and
+`l_axis_realised_pc_kms` [pc km s⁻¹] of its virialised systems
+([`rotation_moments`](@ref)), read from `regime.cluster_rotation`.
 
 One `cluster<i>` table is written per entry of `cluster_specs` (the members
 in complex mode). With `complex_info` (complex mode) a `[complex]` table holds
@@ -1684,6 +1718,21 @@ function _write_merger_ic_metadata(
         isempty(mass_kept) || (cluster_table["mass"] = mass_kept[i])
         isempty(truncation_radii_pc) ||
             (cluster_table["truncation_radius_pc"] = truncation_radii_pc[i])
+        rotation = get(regime, :cluster_rotation, Any[])
+        if spec.profile isa RotatingKingProfile && i ≤ length(rotation) && rotation[i] !== nothing
+            mom = rotation[i].moments
+            realised = rotation[i].realised
+            cluster_table["rotation"] = Dict{String,Any}(
+                "omega0" => spec.profile.omega0,
+                "axis" => copy(spec.profile.axis),
+                "lambda_model" => mom.λ,
+                "t_rot_model" => mom.t_rot,
+                "r_h_over_r_c_model" => mom.r_h_over_r_c,
+                "lambda_realised" => realised.λ,
+                # code velocity unit → km s⁻¹
+                "l_axis_realised_pc_kms" => realised.l_axis * _CODE_VSTAR_KMS,
+            )
+        end
         d["cluster$i"] = cluster_table
     end
 

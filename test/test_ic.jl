@@ -1544,3 +1544,54 @@ end
         "merger.cluster1",
     )
 end
+
+@testset "GW recoil, black-hole spin and escaper keys" begin
+    nd = Nbody6Dynamics
+    function keys_config(nbody6_lines::String, kz19::Int)
+        text = """
+        [merger]
+        seed = 3
+        n_clusters = 1
+        orbit_mode = "single"
+
+        [merger.cluster1]
+        N = 300
+        rbar = 1.0
+        model = "plummer"
+
+        [merger.stellar]
+        kz19 = $kz19
+
+        [merger.nbody6]
+        $nbody6_lines
+        """
+        path = joinpath(mktempdir(), "keys.toml")
+        write(path, text)
+        return path
+    end
+    cfg = nd.load_merger_config(
+        keys_config("gw_recoil = \"nr_fits\"\nbh_spin = \"geneva\"\nescapers = \"keep\"", 3),
+    )
+    @test cfg.nbody6.gw_recoil == "nr_fits" &&
+          cfg.nbody6.bh_spin == "geneva" &&
+          cfg.nbody6.escapers == "keep"
+    dir = mktempdir()
+    nd.generate_merger_ic(cfg; output_dir = dir)
+    inp = read(joinpath(dir, "merger.inp"), String)
+    @test occursin("&INBSE kicktype=1,bhspinfl=4 /", inp)
+    kz_line = match(r"KZ\(21:30\)=([0-9 -]+)", inp).captures[1]
+    @test parse(Int, split(kz_line)[3]) == 0
+    # defaults: the Level block and KZ(23) = 2
+    dir2 = mktempdir()
+    nd.generate_merger_ic(nd.load_merger_config(keys_config("qe = 0.01", 3)); output_dir = dir2)
+    inp2 = read(joinpath(dir2, "merger.inp"), String)
+    @test occursin("&INBSE /", inp2)
+    @test parse(Int, split(match(r"KZ\(21:30\)=([0-9 -]+)", inp2).captures[1])[3]) == 2
+    # refusals and the warning
+    @test_throws ArgumentError nd.load_merger_config(keys_config("gw_recoil = \"nr_fits\"", 0))
+    @test_throws ArgumentError nd.load_merger_config(keys_config("gw_recoil = \"always\"", 3))
+    @test_throws ArgumentError nd.load_merger_config(keys_config("escapers = \"sometimes\"", 3))
+    @test_logs (:warn, r"unseeded") match_mode = :any nd.load_merger_config(
+        keys_config("bh_spin = \"uniform\"", 3),
+    )
+end

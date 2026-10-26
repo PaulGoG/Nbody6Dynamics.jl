@@ -202,4 +202,151 @@ using LinearAlgebra: Symmetric, eigvals
         @test nd.sample_rotating_king(2000, m6; rng = StableRNG(3)) ==
               nd.sample_rotating_king(2000, m6; rng = StableRNG(3))
     end
+
+    # m6 was solved with the default settings of the cache; the generator tests below
+    # reuse it instead of solving the model again.
+    get!(nd._ROTATING_KING_CACHE, (6.0, 0.6), m6)
+
+    @testset "Rotating King profile: parsing and validation" begin
+        table = Dict{String,Any}(
+            "type" => "rotating_king",
+            "W0" => 6.0,
+            "omega0" => 0.6,
+            "axis" => [0, 0, -1],
+        )
+        p = nd._parse_profile_table(table, "merger.cluster1")
+        @test p isa nd.RotatingKingProfile
+        @test p.W0 == 6.0 && p.omega0 == 0.6 && p.axis == [0.0, 0.0, -1.0]
+        @test nd.profile_name(p) == "rotating_king"
+        q = nd._parse_profile_table(nd._profile_table(p), "merger.cluster1")
+        @test q isa nd.RotatingKingProfile
+        @test (q.W0, q.omega0, q.axis) == (p.W0, p.omega0, p.axis)
+        d = nd._parse_profile_table(Dict{String,Any}("type" => "rotating_king"), "merger.cluster1")
+        @test (d.W0, d.omega0, d.axis) == (6.0, 0.6, [0.0, 0.0, 1.0])
+        # omega0 and axis are not keys of the King and Plummer tables
+        @test_throws ArgumentError nd._parse_profile_table(
+            Dict{String,Any}("type" => "king", "omega0" => 0.6),
+            "merger.cluster1",
+        )
+        @test_throws ArgumentError nd._parse_profile_table(
+            Dict{String,Any}("type" => "plummer", "axis" => [0, 0, 1]),
+            "merger.cluster1",
+        )
+        function validation_message(profile)
+            try
+                nd._validate_profile(profile, "merger.cluster1")
+            catch err
+                err isa ArgumentError || rethrow()
+                return err.msg
+            end
+            return ""
+        end
+        @test validation_message(nd.RotatingKingProfile()) == ""
+        @test occursin(
+            "merger.cluster1.omega0",
+            validation_message(nd.RotatingKingProfile(omega0 = -1.0)),
+        )
+        @test occursin(
+            "merger.cluster1.axis",
+            validation_message(nd.RotatingKingProfile(axis = [0.0, 0.0, 0.0])),
+        )
+        @test occursin(
+            "merger.cluster1.axis",
+            validation_message(nd.RotatingKingProfile(axis = [0.0, 1.0])),
+        )
+    end
+
+    @testset "Rotating King profile: central density contrast" begin
+        ρ̂_rot = nd._central_density_contrast(nd.RotatingKingProfile(W0 = 6.0, omega0 = 0.0))
+        ρ̂_king = nd._central_density_contrast(nd.KingProfile(W0 = 6.0))
+        @test isapprox(ρ̂_rot, ρ̂_king; rtol = 0.01)
+        @test nd._rotating_king_cached(6.0, 0.0) === nd._rotating_king_cached(6.0, 0.0)
+    end
+
+    @testset "Rotation onto the profile axis" begin
+        cross3(a, b) =
+            [a[2] * b[3] - a[3] * b[2], a[3] * b[1] - a[1] * b[3], a[1] * b[2] - a[2] * b[1]]
+        for axis in ([1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [1.0, 1.0, 1.0] ./ sqrt(3), [0.0, 0.0, 1.0])
+            pos = [1.0 0.3; 0.0 -0.2; 0.0 0.5]
+            vel = [0.0 -0.4; 1.0 0.1; 0.0 0.7]
+            norms_before = [sqrt(sum(abs2, M[:, p])) for M in (pos, vel) for p in 1:2]
+            nd._rotate_to_axis!(pos, vel, axis)
+            @test maximum(abs.(cross3(pos[:, 1], vel[:, 1]) .- axis)) < 1e-12
+            norms_after = [sqrt(sum(abs2, M[:, p])) for M in (pos, vel) for p in 1:2]
+            @test maximum(abs.(norms_after .- norms_before)) < 1e-12
+        end
+    end
+
+    @testset "Rotating King cluster sample" begin
+        λ_model = nd.rotating_king_moments(nd._rotating_king_cached(6.0, 0.6)).λ
+        sample(axis) = nd._sample_cluster(
+            nd.ClusterSpec(;
+                N = 20_000,
+                rbar = 1.0,
+                profile = nd.RotatingKingProfile(W0 = 6.0, omega0 = 0.6, axis = axis),
+                imf = nd.EqualMassIMF(particle_mass = 1.0),
+            );
+            rng = StableRNG(21),
+            nmax = nd._VIRIAL_NMAX,
+            zmet = nd.StellarSpec().zmet,
+        )
+        c = sample([0.0, 0.0, 1.0])
+        rot = nd.rotation_moments(c.mass, c.pos, c.vel)
+        @info("Rotating King cluster, ω₀ = 0.6", λ_realised = rot.λ, λ_model)
+        @test abs(rot.λ - λ_model) < 0.02
+        @test rot.l_axis > 0
+        @test c.rotation.realised == rot
+        @test c.rotation.moments.λ == λ_model
+        # The radius is set about the model centre, before virialise! moves the
+        # centre of mass to the origin; the shift is of order r_h/√N.
+        @test isapprox(nd.half_mass_radius(c.mass, c.pos), 1.0; rtol = 0.01)
+
+        c_retro = sample([0.0, 0.0, -1.0])
+        @test nd.rotation_moments(c_retro.mass, c_retro.pos, c_retro.vel).l_axis < 0
+        c_x = sample([1.0, 0.0, 0.0])
+        l_x = nd.rotation_moments(c_x.mass, c_x.pos, c_x.vel; axis = [1.0, 0.0, 0.0]).l_axis
+        l_z = nd.rotation_moments(c_x.mass, c_x.pos, c_x.vel).l_axis
+        @test l_x > 0
+        @test abs(l_z) < 0.03 * l_x
+    end
+
+    @testset "Rotating King profile refuses mass segregation" begin
+        @test_throws ArgumentError nd.segregate_systems(
+            nd.RotatingKingProfile(),
+            fill(1.0, 100),
+            1.0;
+            degree = 0.5,
+            rng = StableRNG(5),
+        )
+    end
+
+    @testset "Rotating King cluster record" begin
+        out = mktempdir()
+        cfg = nd.MergerConfig(
+            [
+                nd.ClusterSpec(;
+                    N = 2000,
+                    rbar = 1.0,
+                    profile = nd.RotatingKingProfile(W0 = 6.0, omega0 = 0.6),
+                    imf = nd.EqualMassIMF(particle_mass = 1.0),
+                ),
+            ],
+            "single",
+            nd.OrbitSpec(),
+            nd.MergerOutputSpec(format = "nbody", output_dir = out);
+            seed = 17,
+        )
+        nd.generate_merger_ic(cfg; output_dir = out)
+        meta = nd.TOML.parsefile(joinpath(out, "merger_ic.toml"))
+        @test meta["cluster1"]["profile"]["type"] == "rotating_king"
+        rot = meta["cluster1"]["rotation"]
+        @test rot["omega0"] == 0.6
+        @test rot["axis"] == [0.0, 0.0, 1.0]
+        @test rot["lambda_model"] > 0
+        @test isfinite(rot["lambda_realised"])
+        @test rot["l_axis_realised_pc_kms"] > 0
+        p = nd.load_merger_ic_result(out).cluster_specs[1].profile
+        @test p isa nd.RotatingKingProfile
+        @test (p.W0, p.omega0, p.axis) == (6.0, 0.6, [0.0, 0.0, 1.0])
+    end
 end

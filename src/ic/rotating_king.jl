@@ -1094,3 +1094,173 @@ function sample_rotating_king(
     model = solve_rotating_king(W0, ω0; kwargs...)
     return sample_rotating_king(N, model; rng = rng)
 end
+
+# ---------------------------------------------------------------------------
+# Model cache, orientation and realised rotation
+# ---------------------------------------------------------------------------
+
+# Solved models by (W0, ω0), default solver settings.
+const _ROTATING_KING_CACHE = Dict{Tuple{Float64,Float64},RotatingKingModel}()
+
+"""
+    _rotating_king_cached(W0, ω0) -> RotatingKingModel
+
+[`solve_rotating_king`](@ref)`(W0, ω0)` with the default solver settings,
+stored in `_ROTATING_KING_CACHE` on the first call and returned from it
+afterwards (a solve takes several seconds; the generator samples every cluster
+of a configuration from the model of its profile). The cache is a plain `Dict`
+and not thread-safe: concurrent first calls from several tasks must not occur.
+"""
+function _rotating_king_cached(W0::Real, ω0::Real)::RotatingKingModel
+    key = (Float64(W0), Float64(ω0))
+    return get!(() -> solve_rotating_king(key[1], key[2]), _ROTATING_KING_CACHE, key)
+end
+
+"""
+    _rotate_to_axis!(pos, vel, axis) -> (pos, vel)
+
+Rotate the columns of the `3 × N` matrices `pos` and `vel` in place by the
+proper rotation that maps `ẑ` onto `â = axis/‖axis‖`. For `â_z ≥ 0` it is the
+rotation about `ẑ × â` (Rodrigues' formula, `R = I + [v]ₓ + [v]ₓ²/(1 + ẑ·â)`
+with `v = ẑ × â`; the identity for `â = ẑ`); for `â_z < 0` the rotation by π
+about `x̂` followed by the rotation that maps `−ẑ` onto `â` by the same
+formula, so that `â = −ẑ` gives the rotation by π about `x̂`. Angular momenta
+`r × v` are carried from `ẑ` to `â`.
+"""
+function _rotate_to_axis!(pos::AbstractMatrix{Float64}, vel::AbstractMatrix{Float64}, axis)
+    (size(pos, 1) == 3 && size(vel, 1) == 3 && size(pos, 2) == size(vel, 2)) || throw(
+        DimensionMismatch(
+            "_rotate_to_axis!: pos and vel must both be 3 × N; got $(size(pos)) and $(size(vel))",
+        ),
+    )
+    length(axis) == 3 ||
+        throw(ArgumentError("_rotate_to_axis!: axis must have three components; got $axis"))
+    n = sqrt(sum(abs2, axis))
+    (isfinite(n) && n > 0) ||
+        throw(ArgumentError("_rotate_to_axis!: axis must be finite and non-zero; got $axis"))
+    a = (Float64(axis[1]) / n, Float64(axis[2]) / n, Float64(axis[3]) / n)
+    flip = a[3] < 0
+    # v = u × â with u = ẑ (no flip) or u = −ẑ (after the rotation by π about x̂)
+    v = flip ? (a[2], -a[1], 0.0) : (-a[2], a[1], 0.0)
+    c = flip ? -a[3] : a[3]
+    K = [0.0 -v[3] v[2]; v[3] 0.0 -v[1]; -v[2] v[1] 0.0]
+    R = [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0] .+ K .+ (K * K) ./ (1 + c)
+    if flip
+        R = R * [1.0 0.0 0.0; 0.0 -1.0 0.0; 0.0 0.0 -1.0]
+    end
+    for M in (pos, vel)
+        @inbounds for p in axes(M, 2)
+            x, y, z = M[1, p], M[2, p], M[3, p]
+            M[1, p] = R[1, 1] * x + R[1, 2] * y + R[1, 3] * z
+            M[2, p] = R[2, 1] * x + R[2, 2] * y + R[2, 3] * z
+            M[3, p] = R[3, 1] * x + R[3, 2] * y + R[3, 3] * z
+        end
+    end
+    return pos, vel
+end
+
+"""
+    rotation_moments(mass, pos, vel; axis = [0, 0, 1], n_bins = 20)
+        -> NamedTuple{(:λ, :l_axis, :t_rot, :t_kin)}
+
+Ordered rotation of a particle set about the unit vector `â = axis/‖axis‖`,
+measured about the centre of mass `x̄` and in the frame of the mass-weighted
+mean velocity `v̄`; `mass` has length `N`, `pos` and `vel` are `3 × N`.
+
+- `l_axis = Σ m [(r − x̄) × (v − v̄)]·â / Σ m`, the specific angular momentum
+  along `â` [length × velocity of the input];
+- `t_kin = ½ Σ m |v − v̄|²`, the kinetic energy;
+- `t_rot = ½ Σ_b M_b ⟨v_φ⟩_b²`, the ordered rotational energy, with the
+  particles sorted by the cylindrical radius `R` about `â` through `x̄` and
+  divided into `n_bins` bins of equal counts, `M_b` the bin mass and
+  `⟨v_φ⟩_b` its mass-weighted mean azimuthal velocity (positive in the sense
+  of `â`); the sample estimator of `T_rot = ½∫ρ⟨v_φ⟩² dV` of
+  [`rotating_king_moments`](@ref), biased upwards by about `n_bins/(3N)` in `λ`;
+- `λ = t_rot/t_kin`.
+
+Particles on the axis (`R = 0`) carry `v_φ = 0`. Throws a
+`DimensionMismatch` for inconsistent sizes and an `ArgumentError` for an
+empty set, `n_bins ∉ [1, N]`, or an axis that is not a finite non-zero
+three-vector.
+
+# Example
+```julia
+m = solve_rotating_king(6.0, 0.6)
+pos, vel = sample_rotating_king(20_000, m)
+rotation_moments(ones(20_000), pos, vel).λ   # ≈ rotating_king_moments(m).λ
+```
+"""
+function rotation_moments(
+    mass::AbstractVector{<:Real},
+    pos::AbstractMatrix{<:Real},
+    vel::AbstractMatrix{<:Real};
+    axis = [0.0, 0.0, 1.0],
+    n_bins::Integer = 20,
+)::NamedTuple{(:λ, :l_axis, :t_rot, :t_kin),NTuple{4,Float64}}
+    N = length(mass)
+    N ≥ 1 || throw(ArgumentError("rotation_moments: the particle set is empty"))
+    (size(pos) == (3, N) && size(vel) == (3, N)) || throw(
+        DimensionMismatch(
+            "rotation_moments: pos and vel must be 3 × $N; got $(size(pos)) and $(size(vel))",
+        ),
+    )
+    1 ≤ n_bins ≤ N ||
+        throw(ArgumentError("rotation_moments: n_bins must lie in [1, $N]; got $n_bins"))
+    length(axis) == 3 ||
+        throw(ArgumentError("rotation_moments: axis must have three components; got $axis"))
+    n_a = sqrt(sum(abs2, axis))
+    (isfinite(n_a) && n_a > 0) ||
+        throw(ArgumentError("rotation_moments: axis must be finite and non-zero; got $axis"))
+    â = (Float64(axis[1]) / n_a, Float64(axis[2]) / n_a, Float64(axis[3]) / n_a)
+
+    M = 0.0
+    x̄ = zeros(Float64, 3)
+    v̄ = zeros(Float64, 3)
+    for p in 1:N
+        m = Float64(mass[p])
+        M += m
+        for k in 1:3
+            x̄[k] += m * pos[k, p]
+            v̄[k] += m * vel[k, p]
+        end
+    end
+    M > 0 || throw(ArgumentError("rotation_moments: the total mass must be > 0; got $M"))
+    x̄ ./= M
+    v̄ ./= M
+
+    R = zeros(Float64, N)
+    v_φ = zeros(Float64, N)
+    l_sum = 0.0
+    t_kin = 0.0
+    for p in 1:N
+        m = Float64(mass[p])
+        x, y, z = pos[1, p] - x̄[1], pos[2, p] - x̄[2], pos[3, p] - x̄[3]
+        u, v, w = vel[1, p] - v̄[1], vel[2, p] - v̄[2], vel[3, p] - v̄[3]
+        # Specific angular momentum along â and the cylindrical decomposition
+        l_p = â[1] * (y * w - z * v) + â[2] * (z * u - x * w) + â[3] * (x * v - y * u)
+        l_sum += m * l_p
+        t_kin += 0.5 * m * (u^2 + v^2 + w^2)
+        s = â[1] * x + â[2] * y + â[3] * z
+        R_p = sqrt(max((x - s * â[1])^2 + (y - s * â[2])^2 + (z - s * â[3])^2, 0.0))
+        R[p] = R_p
+        v_φ[p] = R_p > 0 ? l_p / R_p : 0.0
+    end
+
+    order = sortperm(R)
+    t_rot = 0.0
+    for b in 1:n_bins
+        lo = div((b - 1) * N, n_bins) + 1
+        hi = div(b * N, n_bins)
+        M_b = 0.0
+        p_b = 0.0
+        for q in lo:hi
+            p = order[q]
+            m = Float64(mass[p])
+            M_b += m
+            p_b += m * v_φ[p]
+        end
+        M_b > 0 && (t_rot += 0.5 * p_b^2 / M_b)
+    end
+    λ = t_kin > 0 ? t_rot / t_kin : 0.0
+    return (λ = λ, l_axis = l_sum / M, t_rot = t_rot, t_kin = t_kin)
+end

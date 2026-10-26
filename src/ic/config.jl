@@ -56,9 +56,26 @@ radius carried on `ClusterSpec`.
 """
 struct PlummerProfile <: DensityProfile end
 
+"""
+    RotatingKingProfile(; W0 = 6.0, omega0 = 0.6, axis = [0.0, 0.0, 1.0])
+
+Rotating King model of Einsel & Spurzem (1999, DOI 10.1046/j.1365-8711.1999.02083.x):
+central potential `W0`, dimensionless angular velocity `omega0 = Ω₀ r_K/σ ≥ 0`
+(`0` is the King 1966 model), rotation axis `axis` (the angular momentum of the
+cluster points along it; `[0, 0, 1]` is prograde with respect to the Galactic
+rotation of `KZ(14) = 1, 2`, `[0, 0, -1]` retrograde). Solved and sampled by
+[`solve_rotating_king`](@ref) and [`sample_rotating_king`](@ref).
+"""
+Base.@kwdef struct RotatingKingProfile <: DensityProfile
+    W0::Float64 = 6.0
+    omega0::Float64 = 0.6
+    axis::Vector{Float64} = [0.0, 0.0, 1.0]
+end
+
 "Model name used in log messages and metadata TOML."
 profile_name(::KingProfile) = "king"
 profile_name(::PlummerProfile) = "plummer"
+profile_name(::RotatingKingProfile) = "rotating_king"
 
 # -----------------------------------------------------------------------------
 # IMF tag hierarchy
@@ -143,8 +160,8 @@ Specification for a single star cluster.
 # Fields
 - `N::Int`: number of bodies to sample.
 - `rbar::Float64`: target half-mass radius [pc].
-- `profile::DensityProfile`: spatial sampler ([`KingProfile`](@ref) or
-  [`PlummerProfile`](@ref)).
+- `profile::DensityProfile`: spatial sampler ([`KingProfile`](@ref),
+  [`PlummerProfile`](@ref) or [`RotatingKingProfile`](@ref)).
 - `imf::IMFSpec`: mass-function sampler ([`KroupaIMF`](@ref),
   [`RescaledKroupaIMF`](@ref), or [`EqualMassIMF`](@ref)).
 - `position::Vector{Float64}`: centre-of-mass position [pc] (length 3). For
@@ -321,6 +338,12 @@ Serialise a density-profile tag to the structured TOML table form parsed by
 """
 _profile_table(p::KingProfile) = Dict{String,Any}("type" => "king", "W0" => p.W0)
 _profile_table(::PlummerProfile) = Dict{String,Any}("type" => "plummer")
+_profile_table(p::RotatingKingProfile) = Dict{String,Any}(
+    "type" => "rotating_king",
+    "W0" => p.W0,
+    "omega0" => p.omega0,
+    "axis" => copy(p.axis),
+)
 
 """
     _imf_table(imf::IMFSpec) -> Dict{String,Any}
@@ -525,7 +548,9 @@ const _FULL_BINARY_KZ = (
                           kz16 = 0, tcomp = 1.0e8, tcrtp0 = 3600.0,
                           isernb = 40, iserreg = 40, iserks = 0,
                           nfix = 1, ncrit = 10, nrun = 1, ncomm = 1, checkpoint = false,
-                          preset = "engine", binary_physics = "inherited", kz = Dict{Int,Int}())
+                          preset = "engine", binary_physics = "inherited",
+                          gw_recoil = "off", bh_spin = "zero", escapers = "remove",
+                          kz = Dict{Int,Int}())
 
 Every numerical field of the `&INNBODY6` and `&ININPUT` namelists that the
 merger input writer emits (`[merger.nbody6]`), in the N-body units of the
@@ -588,6 +613,24 @@ input manual.
   dump inside a chain. The former names `preset = "campaign"` and
   `binary_physics = "campaign"` are read as `"baseline"` and `"full"` with a
   deprecation warning
+- `gw_recoil`: recoil of the remnant of a merger of two neutron stars or black
+  holes (`&INBSE kicktype`, applied by COAL and MIX under `stellar.kz19 ≥ 3`):
+  `"off"` (−2, the Level C default, no recoil), `"fit_q"` (0, the mass-ratio
+  fit), `"nr_fits"` (1, the numerical-relativity fits with random spin
+  orientations; the recoil direction of the engine is not isotropic) or
+  `"test_1e4"` (−1, 10⁴ km s⁻¹, a test value); any value but `"off"` requires
+  `stellar.kz19 ≥ 3`
+- `bh_spin`: the dimensionless spin given to a black hole at formation
+  (`&INBSE bhspinfl`): `"zero"` (0, the Level C default), `"uniform"` (1),
+  `"gaussian"` (2, mean 0.5, width 0.2), `"maxwellian"` (3, σ = 0.2),
+  `"geneva"` (4) or `"mesa"` (5, tracks in Z and the CO-core mass); the
+  draws of 1–3 use an unseeded generator in the engine and are not
+  restart-reproducible (warned)
+- `escapers`: `"remove"` (`KZ(23) = 2`, the escapers beyond twice the tidal
+  radius are removed, the behaviour the generator has always written) or
+  `"keep"` (`KZ(23) = 0`, every star stays in the integration with its full
+  phase space, for tails and the escaper catalogues; the cost grows with the
+  escaped population)
 - `kz`: explicit `KZ(i) = v` overrides applied last (`[merger.nbody6.kz]`,
   keys 1–50); an override of an index that also has a named key (8, 14, 16,
   19) warns. `KZ(18) ≥ 2` is refused: it runs the engine's primordial-triple
@@ -645,8 +688,25 @@ Base.@kwdef struct Nbody6ParameterSpec
     checkpoint::Bool = false
     preset::String = "engine"
     binary_physics::String = "inherited"
+    gw_recoil::String = "off"
+    bh_spin::String = "zero"
+    escapers::String = "remove"
     kz::Dict{Int,Int} = Dict{Int,Int}()
 end
+
+"""`kicktype` of `&INBSE` per `gw_recoil` value (kickGW.f: −2 none, 0 mass-ratio fit, 1 numerical-relativity fits with random spin orientations, −1 the 10⁴ km s⁻¹ test value)."""
+const _GW_RECOIL_KICKTYPE = Dict("off" => -2, "fit_q" => 0, "nr_fits" => 1, "test_1e4" => -1)
+"""`bhspinfl` of `&INBSE` per `bh_spin` value (kick.F: 0 zero spin, 1 uniform, 2 Gaussian (0.5, 0.2), 3 Maxwellian σ = 0.2, 4 Geneva and 5 MESA tracks of Z and M_CO)."""
+const _BH_SPIN_FLAG = Dict(
+    "zero" => 0,
+    "uniform" => 1,
+    "gaussian" => 2,
+    "maxwellian" => 3,
+    "geneva" => 4,
+    "mesa" => 5,
+)
+"""`KZ(23)` per `escapers` value: `"remove"` removes escapers beyond twice the tidal radius (2), `"keep"` integrates every star (0)."""
+const _ESCAPERS_KZ23 = Dict("remove" => 2, "keep" => 0)
 
 """
     StellarSpec(; kz19 = 3, level = "C", zmet = 0.001, epoch0 = 0.0, dtplot = 1.0,
@@ -1507,6 +1567,12 @@ end
 
 """Refuse `binary_physics = "full"` without stellar evolution (`kz19 ≥ 3`): the gravitational-wave decay, tides and Roche transfer of the set act on the stellar types."""
 function _validate_binary_physics(p::Nbody6ParameterSpec, s::StellarSpec)
+    (p.gw_recoil != "off" && s.kz19 < 3) && _config_error(
+        "merger.nbody6.gw_recoil",
+        "= \"$(p.gw_recoil)\" requires stellar evolution (merger.stellar.kz19 ≥ 3): the recoil " *
+        "is applied by the collision and coalescence routines of the stellar-evolution path; " *
+        "got kz19 = $(s.kz19)",
+    )
     (p.binary_physics == "full" && s.kz19 < 3) && _config_error(
         "merger.nbody6.binary_physics",
         "= \"full\" requires stellar evolution (merger.stellar.kz19 ≥ 3): the " *
@@ -1555,6 +1621,22 @@ function _validate_nbody6(p::Nbody6ParameterSpec)
         _config_error("merger.nbody6.etar", "must be ≥ 0 (0 = preset value); got $(p.etar)")
     p.etau ≥ 0 ||
         _config_error("merger.nbody6.etau", "must be ≥ 0 (0 = preset value); got $(p.etau)")
+    haskey(_GW_RECOIL_KICKTYPE, p.gw_recoil) || _config_error(
+        "merger.nbody6.gw_recoil",
+        "must be one of \"off\", \"fit_q\", \"nr_fits\", \"test_1e4\"; got \"$(p.gw_recoil)\"",
+    )
+    haskey(_BH_SPIN_FLAG, p.bh_spin) || _config_error(
+        "merger.nbody6.bh_spin",
+        "must be one of \"zero\", \"uniform\", \"gaussian\", \"maxwellian\", \"geneva\", \"mesa\"; " *
+        "got \"$(p.bh_spin)\"",
+    )
+    haskey(_ESCAPERS_KZ23, p.escapers) || _config_error(
+        "merger.nbody6.escapers",
+        "must be \"remove\" or \"keep\"; got \"$(p.escapers)\"",
+    )
+    p.bh_spin in ("uniform", "gaussian", "maxwellian") &&
+        @warn "merger.nbody6.bh_spin = \"$(p.bh_spin)\": the engine draws these spins with an unseeded " *
+              "generator, so the run is not restart-reproducible"
     p.preset in _NBODY6_PRESETS || _config_error(
         "merger.nbody6.preset",
         "must be one of \"engine\", \"baseline\"; got \"$(p.preset)\"",
@@ -1807,6 +1889,17 @@ function _validate_profile(p::KingProfile, key::String)
     return nothing
 end
 _validate_profile(::PlummerProfile, ::String) = nothing
+function _validate_profile(p::RotatingKingProfile, key::String)
+    p.W0 > 0 || _config_error("$key.W0", "must be > 0; got $(p.W0)")
+    (isfinite(p.omega0) && p.omega0 ≥ 0) ||
+        _config_error("$key.omega0", "must be finite and ≥ 0; got $(p.omega0)")
+    length(p.axis) == 3 ||
+        _config_error("$key.axis", "must have three components; got $(length(p.axis))")
+    all(isfinite, p.axis) || _config_error("$key.axis", "must be finite; got $(p.axis)")
+    sqrt(sum(abs2, p.axis)) > 0 ||
+        _config_error("$key.axis", "must have a non-zero norm; got $(p.axis)")
+    return nothing
+end
 
 "Validate an IMF tag; `key` names the owning cluster table."
 function _validate_imf(i::PowerLawIMF, ::Int, key::String)
@@ -1869,15 +1962,25 @@ end
 
 function _parse_profile_table(p::AbstractDict, table::AbstractString)::DensityProfile
     key = "$table.profile"
-    _reject_unknown(p, ("type", "W0"), key)
     t = _typed(get(p, "type", "king"), String, "$key.type")
+    allowed = t == "rotating_king" ? ("type", "W0", "omega0", "axis") : ("type", "W0")
+    _reject_unknown(p, allowed, key)
     if t == "king"
         KingProfile(W0 = _typed(get(p, "W0", 6.0), Float64, "$key.W0"))
     elseif t == "plummer"
         haskey(p, "W0") && _config_error("$key.W0", "is not a parameter of type = 'plummer'")
         PlummerProfile()
+    elseif t == "rotating_king"
+        RotatingKingProfile(
+            W0 = _typed(get(p, "W0", 6.0), Float64, "$key.W0"),
+            omega0 = _typed(get(p, "omega0", 0.6), Float64, "$key.omega0"),
+            axis = _typed(get(p, "axis", [0.0, 0.0, 1.0]), Vector{Float64}, "$key.axis"),
+        )
     else
-        _config_error("$key.type", "unknown type '$t'; supported: 'king', 'plummer'")
+        _config_error(
+            "$key.type",
+            "unknown type '$t'; supported: 'king', 'plummer', 'rotating_king'",
+        )
     end
 end
 

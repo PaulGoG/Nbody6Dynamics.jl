@@ -386,9 +386,11 @@ write_gw_merger_catalogue
 
 ```@docs
 RotatingKingModel
+RotatingKingProfile
 solve_rotating_king
 rotating_king_moments
 sample_rotating_king
+rotation_moments
 ```
 
 ## Bound Spans

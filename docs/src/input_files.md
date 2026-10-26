@@ -95,7 +95,9 @@ Priyatikanto et al. (2016, DOI 10.1093/mnras/stw060) models `notide`, `draco1`, 
 Plummer R_vir = 1 pc, Salpeter 0.15–50 M☉, a = 10 pc circular orbit in the solar-neighbourhood tide, orbit normals +z,
 −z and y) and de la Fuente Marcos & de la Fuente Marcos (2010, DOI 10.1088/0004-637X/719/1/104) q = 1 pairs
 `dlfm2010_e00`, `dlfm2010_e06` (2 × 4096, S₀ = 10 pc, Salpeter 0.17–10 M☉, escapers kept) with their single-cluster
-control `dlfm2010_control8192`. The `*_rotating` variants take the generated circular orbit as rotating-frame
+control `dlfm2010_control8192`, and Gavagnin, Mapelli & Lake (2016, DOI 10.1093/mnras/stw1397) run M2ρ0.25 at reduced
+particle number (`gavagnin2016_m2rho025`: two King W₀ = 5 clusters of equal-mass particles, mass ratio 2, the lighter
+four times denser, on an explicit parabolic encounter with pericentre 6 pc). The `*_rotating` variants take the generated circular orbit as rotating-frame
 velocities (`velocity_frame = "rotating"`), the convention under which the published orientation dependence of the
 merger times is recovered; the plain variants keep the inertial-frame default. All set `nnbopt = 40`: with the
 baseline value of 100 the engine's start-up finds no admissible neighbour sphere for the outermost stars of an
@@ -220,6 +222,9 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 
 | Key | Type | Default | Description |
 |---|---|---|---|
+| `gw_recoil` | String | `"off"` | Recoil of the remnant of a neutron-star or black-hole merger (`&INBSE kicktype`): `"off"` (−2, no recoil, the Level C default), `"fit_q"` (0, mass-ratio fit), `"nr_fits"` (1, numerical-relativity fits with random spin orientations), `"test_1e4"` (−1, 10⁴ km s⁻¹); other than `"off"` needs `stellar.kz19 ≥ 3` |
+| `bh_spin` | String | `"zero"` | Dimensionless spin of a black hole at formation (`&INBSE bhspinfl`): `"zero"` (0), `"uniform"` (1), `"gaussian"` (2), `"maxwellian"` (3), `"geneva"` (4), `"mesa"` (5); 1–3 use an unseeded generator in the engine (warned) |
+| `escapers` | String | `"remove"` | `"remove"` writes `KZ(23) = 2` (escapers beyond twice the tidal radius removed), `"keep"` writes `KZ(23) = 0` (every star integrated with its full phase space) |
 | `preset` | String | `"engine"` | Source of every zero entry below; one of `"engine"`, `"baseline"` (table above; the former name `"campaign"` is read as `"baseline"` with a deprecation warning) |
 | `binary_physics` | String | `"inherited"` | Few-body and binary options of the input; one of `"inherited"`, `"full"` (table below; the former name `"campaign"` is read as `"full"` with a deprecation warning); `"full"` requires `stellar.kz19 ≥ 3` |
 | `qe` | Float | `2.0e-4` | Energy-error tolerance per adjustment interval (`QE`); must be > 0 |
@@ -398,8 +403,10 @@ tcrit           = 10.0
 
 Accepted table keys:
 
-- `profile`: `type = "king"` (+ `W0`, default 6.0) or `type = "plummer"`
+- `profile`: `type = "king"` (+ `W0`, default 6.0), `type = "plummer"`, or `type = "rotating_king"` (+ `W0`, default 6.0; `omega0`, default 0.6; `axis`, default `[0, 0, 1]`)
 - `imf`: `type = "kroupa" | "kroupa_rescaled" | "equal" | "powerlaw"`; mass bounds either as `bounds = [lo, hi]` or as separate `bodyn`/`body1` keys (defaults 0.08 / 100.0); `kroupa_rescaled` requires `target_mass`; `equal` requires `particle_mass` **or** `target_mass` (divided by `N`); `powerlaw` takes the slope `alpha` of `dN/dm ∝ m^{−alpha}` (default 2.35, Salpeter) with the same bounds
+
+`type = "rotating_king"` samples the rotating King model of Einsel & Spurzem (1999, DOI [10.1046/j.1365-8711.1999.02083.x](https://doi.org/10.1046/j.1365-8711.1999.02083.x)), with distribution function `f(E, J_z) ∝ (e^{−E/σ²} − 1) e^{Ω₀ J_z/σ²}`: `W0` is the central dimensionless potential (`W0 > 0`), `omega0 = Ω₀ r_K/σ ≥ 0` the dimensionless angular velocity in units of the King radius and the velocity scale (`omega0 = 0` is the King 1966 model), and `axis` (three components, any non-zero norm) the direction of the cluster's angular momentum. Under the rotating Galactic frames of `KZ(14) = 1, 2`, whose rotation points along `+z`, `axis = [0, 0, 1]` gives a prograde and `axis = [0, 0, -1]` a retrograde cluster. As for the other profiles, `rbar` sets the half-mass radius and the velocities are scaled uniformly to virial equilibrium, which leaves the ratio `λ = T_rot/T_kin` of ordered rotational to kinetic energy unchanged. `merger_ic.toml` records under `clusterN.rotation` the model's `lambda_model`, `t_rot_model` and `r_h_over_r_c_model` together with the realised `lambda_realised` and the specific angular momentum along the axis `l_axis_realised_pc_kms` [pc km s⁻¹] of the sampled systems. Primordial mass segregation (`segregation.method = "bdk08"`) is refused with this profile, since its energy ranking does not apply to a distribution function of `E` and `J_z`; the flat form (`model = ...`) does not accept the rotating model.
 
 The metadata file `merger_ic.toml` written next to `dat.10` stores cluster specs in this structured form, and the same parser reads it back — see `load_merger_ic_result`.
 
