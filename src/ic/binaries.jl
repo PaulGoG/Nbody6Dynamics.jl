@@ -11,7 +11,8 @@
 """
     MassiveBinarySpec(; model = "none", m_min = 5.0, fraction = 0.69, pairing = "pool",
                         log_period_min = 0.15, log_period_max = 3.5, period_exponent = -0.55,
-                        q_min = 0.1, q_exponent = -0.1, ecc_exponent = -0.45, ecc_max = 0.9)
+                        q_min = 0.1, q_exponent = -0.1, ecc_exponent = -0.45, ecc_max = 0.9,
+                        ecc_turnover = true)
 
 Binary population of the massive primaries of one cluster
 (`[merger.clusterN.binaries.massive]`). The defaults are the O-star
@@ -28,20 +29,30 @@ companion at `log(P/d) ≤ 3.5`: a wider `log_period_max` keeps the density in
 
 # Fields
 - `model`: `"none"` (no massive branch; every star belongs to the population of
-  [`BinarySpec`](@ref)) or `"sana2012"`
-- `m_min`: primary-mass threshold [M☉] of the branch; `> 0`
+  [`BinarySpec`](@ref)), `"sana2012"` or `"moe2017"` (the joint distribution
+  `f(lP, q, e | M₁)` of Moe & Di Stefano 2017 with the inner-binary probability
+  of Moe's code; it ignores `fraction`, `period_exponent`, `q_exponent`,
+  `ecc_exponent` and `ecc_max` and uses `m_min`, `pairing`, `log_period_min`,
+  `log_period_max`, `q_min` and `ecc_turnover`)
+- `m_min`: primary-mass threshold [M☉] of the branch; `> 0` (`moe2017` warns
+  below 0.8)
 - `fraction`: binary fraction of the massive primaries, one Bernoulli trial per
   primary reached unpaired; `[0, 1]` (Sana: `f_bin = 0.69 ± 0.09`)
 - `pairing`: `"pool"` (the partner is the unpaired star of mass `≤ m₁` closest to
   `q m₁`; the IMF multiset is kept) or `"replace"` (a random unpaired star below
   `m_min` takes the mass `q m₁`; this alters the IMF)
 - `log_period_min`, `log_period_max`: period range [log10 d];
-  `0 ≤ log_period_min < log_period_max ≤ 8.43` (Sana: 0.15 and 3.5, secondary)
+  `0 ≤ log_period_min < log_period_max ≤ 8.43` (Sana: 0.15 and 3.5, secondary);
+  `moe2017` requires `log_period_min ≥ 0.15` and `log_period_max ≤ 8.0`
 - `period_exponent`: π (Sana: −0.55 ± 0.22)
 - `q_min`: lower mass-ratio bound; `0 < q_min < 1` (Sana: 0.1, secondary)
 - `q_exponent`: κ (Sana: −0.10 ± 0.58)
 - `ecc_exponent`: η; `> −1` (Sana: −0.45 ± 0.17, secondary)
 - `ecc_max`: upper eccentricity bound; `0 < ecc_max < 1` (Sana: 0.9, secondary)
+- `ecc_turnover`: eccentricity law of `moe2017`. `true` is the variant of Moe's
+  code: `f(e) ∝ e^η` below `0.8 e_max`, carrying the probability `8/(9 + η)`,
+  and a linear decline to zero at `e_max` above it. `false` is the paper-only law
+  `f(e) ∝ e^η` on `[0, e_max]`
 """
 Base.@kwdef struct MassiveBinarySpec
     model::String = "none"
@@ -55,6 +66,7 @@ Base.@kwdef struct MassiveBinarySpec
     q_exponent::Float64 = -0.1
     ecc_exponent::Float64 = -0.45
     ecc_max::Float64 = 0.9
+    ecc_turnover::Bool = true
 end
 
 """
@@ -324,6 +336,423 @@ function _sana_orbit(
     return a_au, _power_law_quantile(u_e, 0.0, e_hi, spec.ecc_exponent), truncated
 end
 
+# -----------------------------------------------------------------------------
+# Moe & Di Stefano (2017, DOI 10.3847/1538-4365/aa6fb6): f(lP, q, e | M₁)
+# -----------------------------------------------------------------------------
+# lP = log10(P/d), L = log10(M₁/M☉). The fits hold for 0.8 < M₁ < 40 M☉; the
+# inner-binary probability, the clamp of M₁ and the eccentricity turnover are
+# conventions of Moe's code (as ported in COSMIC), not published fits.
+
+"""Primary mass [M☉] clamped to `[0.8, 40]`, the range of the Moe & Di Stefano (2017) statistics (convention of Moe's code)."""
+_moe_clamp_m1(m₁::Float64)::Float64 = clamp(m₁, 0.8, 40.0)
+
+"""
+    _moe_companion_frequency(lP, m₁) -> Float64
+
+Companions with `q > 0.3` per decade of period, `f_logP;q>0.3(M₁, P)`, Moe &
+Di Stefano (2017, DOI 10.3847/1538-4365/aa6fb6, Eqs. 20–23) with `α = 0.018`,
+`Δ = 0.7`. The first segment (`f₁`) also covers `lP < 0.2`, as in Moe's code.
+"""
+function _moe_companion_frequency(lP::Float64, m₁::Float64)::Float64
+    L = log10(m₁)
+    f₁ = 0.020 + 0.04L + 0.07L^2
+    f₂₇ = 0.039 + 0.07L + 0.01L^2
+    f₅₅ = 0.078 - 0.05L + 0.04L^2
+    α, Δ = 0.018, 0.7
+    lP < 1.0 && return f₁
+    lP < 2.7 - Δ && return f₁ + (lP - 1) / (1.7 - Δ) * (f₂₇ - f₁ - α * Δ)
+    lP < 2.7 + Δ && return f₂₇ + α * (lP - 2.7)
+    lP < 5.5 && return f₂₇ + α * Δ + (lP - 2.7 - Δ) / (2.8 - Δ) * (f₅₅ - f₂₇ - α * Δ)
+    return f₅₅ * exp(-0.3 * (lP - 5.5))
+end
+
+# Linear interpolation in log M₁ between the mass anchors 1.2, 3.5 and 6 M☉ (Moe's code)
+function _moe_mass_anchors(m₁::Float64, y₁₂::Float64, y₃₅::Float64, y₆::Float64)::Float64
+    m₁ ≤ 1.2 && return y₁₂
+    m₁ ≤ 3.5 && return y₁₂ + log(m₁ / 1.2) / log(3.5 / 1.2) * (y₃₅ - y₁₂)
+    m₁ ≤ 6.0 && return y₃₅ + log(m₁ / 3.5) / log(6.0 / 3.5) * (y₆ - y₃₅)
+    return y₆
+end
+
+"""
+    _moe_q_parameters(lP, m₁) -> (; γ_small, γ_large, F_twin)
+
+Mass-ratio law of Moe & Di Stefano (2017, DOI 10.3847/1538-4365/aa6fb6, §9.1):
+`γ_smallq` on `0.1 < q < 0.3` (Eqs. 13–15), `γ_largeq` on `0.3 < q < 1`
+(Eqs. 9–11) and the twin excess `F_twin` above `q = 0.95` (Eqs. 5–7). The
+anchors at 0.8–1.2, 3.5 and > 6 M☉ are interpolated linearly in `log M₁`.
+"""
+function _moe_q_parameters(
+    lP::Float64,
+    m₁::Float64,
+)::NamedTuple{(:γ_small, :γ_large, :F_twin),NTuple{3,Float64}}
+    γl₉ = lP < 5 ? -0.5 : -0.5 - 0.3 * (lP - 5)
+    γl₁₀ =
+        lP < 1 ? -0.5 : lP < 4.5 ? -0.5 - 0.2 * (lP - 1) : lP < 6.5 ? -1.2 - 0.4 * (lP - 4.5) : -2.0
+    γl₁₁ = lP < 1 ? -0.5 : lP < 2 ? -0.5 - 0.9 * (lP - 1) : lP < 4 ? -1.4 - 0.3 * (lP - 2) : -2.0
+    γs₁₃ = 0.3
+    γs₁₄ = lP < 2.5 ? 0.2 : lP < 5.5 ? 0.2 - 0.3 * (lP - 2.5) : -0.7 - 0.2 * (lP - 5.5)
+    γs₁₅ = lP < 1 ? 0.1 : lP < 3 ? 0.1 - 0.15 * (lP - 1) : lP < 5.6 ? -0.2 - 0.5 * (lP - 3) : -1.5
+    F₁ = 0.30 - 0.15 * log10(m₁)
+    lP_twin = m₁ ≤ 6.5 ? 8.0 - m₁ : 1.5
+    F = lP < 1 ? F₁ : lP < lP_twin ? F₁ * (1 - (lP - 1) / (lP_twin - 1)) : 0.0
+    return (
+        γ_small = _moe_mass_anchors(m₁, γs₁₃, γs₁₄, γs₁₅),
+        γ_large = _moe_mass_anchors(m₁, γl₉, γl₁₀, γl₁₁),
+        F_twin = F,
+    )
+end
+
+# ∫_{x₀}^{x₁} x^k dx
+_power_integral(x₀::Float64, x₁::Float64, k::Float64)::Float64 =
+    k == -1 ? log(x₁ / x₀) : (x₁^(k + 1) - x₀^(k + 1)) / (k + 1)
+
+"""
+    _moe_q_weights(p, q_lo) -> (w_small, w_twin, w_large)
+
+Integrated weights of the three segments of the Moe & Di Stefano (2017) mass-ratio
+law above `q_lo ≥ 0.1`, normalised so that the `q > 0.3` part (power law plus
+twin excess) integrates to 1 at `q_lo ≤ 0.3`: the density is
+`(1 − F) q^γl / I_l + (F/0.05) 1[q ≥ 0.95]` on `[0.3, 1]` and continues as
+`p_l(0.3) (q/0.3)^γs` below 0.3. At `q_lo = 0.1`, `w_small = W_s`.
+"""
+function _moe_q_weights(
+    p::NamedTuple{(:γ_small, :γ_large, :F_twin),NTuple{3,Float64}},
+    q_lo::Float64,
+)::NTuple{3,Float64}
+    γl, γs, F = p.γ_large, p.γ_small, p.F_twin
+    I_l = _power_integral(0.3, 1.0, γl)
+    p_l03 = (1 - F) * 0.3^γl / I_l
+    w_small = q_lo < 0.3 ? p_l03 * 0.3^(-γs) * _power_integral(q_lo, 0.3, γs) : 0.0
+    w_twin = F * (1 - max(q_lo, 0.95)) / 0.05
+    w_large = (1 - F) * _power_integral(max(q_lo, 0.3), 1.0, γl) / I_l
+    return w_small, w_twin, w_large
+end
+
+"""
+`1 + W_s`, the factor converting `f_logP;q>0.3` into `f_logP;q>0.1` at `(lP, M₁)`
+(Moe & Di Stefano 2017, DOI 10.3847/1538-4365/aa6fb6, §9.1; COSMIC's `q_factor`).
+"""
+_moe_q_factor(lP::Float64, m₁::Float64)::Float64 =
+    sum(_moe_q_weights(_moe_q_parameters(lP, m₁), 0.1))
+
+"""
+Power-law index η of `f(e) ∝ e^η`, Moe & Di Stefano (2017, DOI
+10.3847/1538-4365/aa6fb6, Eqs. 17–18), interpolated in `log M₁` between 3 and
+7 M☉ and frozen below `lP = 0.7` at its value there (Moe's code).
+"""
+function _moe_eta(lP::Float64, m₁::Float64)::Float64
+    x = max(lP, 0.7)
+    η₃ = 0.6 - 0.7 / (x - 0.5)
+    η₇ = 0.9 - 0.2 / (x - 0.5)
+    m₁ ≤ 3 && return η₃
+    m₁ ≥ 7 && return η₇
+    return η₃ + log(m₁ / 3) / log(7 / 3) * (η₇ - η₃)
+end
+
+"""
+`e_max(P) = 1 − (P/2 d)^{−2/3}`, Moe & Di Stefano (2017, DOI
+10.3847/1538-4365/aa6fb6, Eq. 3); `0` (circular) for `P ≤ 2 d`, at most 0.99
+(the upper end of the eccentricity grid of Moe's code).
+"""
+_moe_e_max(lP::Float64)::Float64 = clamp(1 - (exp10(lP) / 2)^(-2 / 3), 0.0, 0.99)
+
+"""
+Inner-binary probability of a companion at `lP`, the approximation of Moe's code
+(COSMIC port of Moe & Di Stefano 2017, DOI 10.3847/1538-4365/aa6fb6):
+`1` for `lP ≤ 1.5`, else `max(0, 1 − 0.11 (lP − 1.5)^{1.43} (M₁/10 M☉)^{0.56})`.
+"""
+_moe_probbin(lP::Float64, m₁::Float64)::Float64 =
+    lP ≤ 1.5 ? 1.0 : max(0.0, 1 - 0.11 * (lP - 1.5)^1.43 * (m₁ / 10)^0.56)
+
+"""
+    _moe_period_table(m₁, lP_lo, lP_hi) -> (lP, CumP)
+
+Grid `lP` [log10 d] of step 0.005 from `lP_lo` to `lP_hi` (both included; the
+last step may be shorter) and the cumulative trapezoid integral
+`CumP(lP) = ∫ f_logP;q>0.3 (1 + W_s) probbin dlP` of Moe & Di Stefano (2017,
+DOI 10.3847/1538-4365/aa6fb6) with the inner-binary probability of Moe's code.
+`CumP[end]` is the inner-binary fraction `f_bin(M₁)` over `[lP_lo, lP_hi]`.
+"""
+function _moe_period_table(
+    m₁::Float64,
+    lP_lo::Float64,
+    lP_hi::Float64,
+)::Tuple{Vector{Float64},Vector{Float64}}
+    n = floor(Int, (lP_hi - lP_lo) / 0.005 + 1e-9)
+    lP = [lP_lo + 0.005k for k in 0:n]
+    if lP_hi - lP[end] > 1e-9
+        push!(lP, lP_hi)
+    else
+        lP[end] = lP_hi
+    end
+    cum = zeros(length(lP))
+    g_prev =
+        _moe_companion_frequency(lP[1], m₁) * _moe_q_factor(lP[1], m₁) * _moe_probbin(lP[1], m₁)
+    for k in 2:length(lP)
+        g = _moe_companion_frequency(lP[k], m₁) * _moe_q_factor(lP[k], m₁) * _moe_probbin(lP[k], m₁)
+        cum[k] = cum[k - 1] + 0.5 * (g_prev + g) * (lP[k] - lP[k - 1])
+        g_prev = g
+    end
+    return lP, cum
+end
+
+# Inverse of the tabulated cumulative by linear interpolation (flat stretches skipped)
+function _moe_invert_cum(lP::Vector{Float64}, cum::Vector{Float64}, target::Float64)::Float64
+    k = searchsortedfirst(cum, target)
+    k ≤ 1 && return lP[1]
+    k > length(cum) && return lP[end]
+    return lP[k - 1] + (target - cum[k - 1]) / (cum[k] - cum[k - 1]) * (lP[k] - lP[k - 1])
+end
+
+# Tabulated cumulative at x by linear interpolation
+function _moe_cum_at(lP::Vector{Float64}, cum::Vector{Float64}, x::Float64)::Float64
+    x ≤ lP[1] && return cum[1]
+    x ≥ lP[end] && return cum[end]
+    k = searchsortedlast(lP, x)
+    return cum[k] + (x - lP[k]) / (lP[k + 1] - lP[k]) * (cum[k + 1] - cum[k])
+end
+
+"""
+    _moe_draw_q(u₁, u₂, p, q_min) -> Float64
+
+Mass ratio from two uniforms (Moe & Di Stefano 2017, DOI
+10.3847/1538-4365/aa6fb6): `u₁` selects the segment (power law `γ_small` on
+`0.1–0.3`, twin excess uniform on `0.95–1`, power law `γ_large` on `0.3–1`) by
+its weight, `u₂` places `q` in it (logarithmic form for an exponent of −1). The
+law is restricted to `q ≥ max(q_min, 0.1)` with the segment weights renormalised
+to the admitted range; `q_min ≥ 0.3` drops the small segment.
+"""
+function _moe_draw_q(
+    u₁::Float64,
+    u₂::Float64,
+    p::NamedTuple{(:γ_small, :γ_large, :F_twin),NTuple{3,Float64}},
+    q_min::Float64,
+)::Float64
+    q_lo = max(q_min, 0.1)
+    w_s, w_t, w_l = _moe_q_weights(p, q_lo)
+    x = u₁ * (w_s + w_t + w_l)
+    x < w_s && return _power_law_quantile(u₂, q_lo, 0.3, p.γ_small)
+    if x < w_s + w_t
+        q_t = max(q_lo, 0.95)
+        return q_t + (1 - q_t) * u₂
+    end
+    return _power_law_quantile(u₂, max(q_lo, 0.3), 1.0, p.γ_large)
+end
+
+"""
+    _moe_draw_e(u, η, e_max, turnover) -> Float64
+
+Eccentricity at the quantile `u` of the Moe & Di Stefano (2017, DOI
+10.3847/1538-4365/aa6fb6) law. With `turnover` (Moe's code), `f(e) ∝ e^η` below
+`0.8 e_max` carries the probability `p = 8/(9 + η)`: `u < p` gives
+`e = 0.8 e_max (u/p)^{1/(η+1)}`, otherwise `e = e_max − 0.2 e_max √(1 − u′)`
+with `u′ = (u − p)/(1 − p)` (linear decline). Without it, `e = e_max u^{1/(η+1)}`.
+Returns 0 for `η ≤ −1` (not normalisable) or `e_max = 0`.
+"""
+function _moe_draw_e(u::Float64, η::Float64, e_max::Float64, turnover::Bool)::Float64
+    (η ≤ -1 || e_max ≤ 0) && return 0.0
+    s = 1 / (η + 1)
+    turnover || return e_max * u^s
+    p = 8 / (9 + η)
+    u < p && return 0.8 * e_max * (u / p)^s
+    return e_max - 0.2 * e_max * sqrt(max(1 - (u - p) / (1 - p), 0.0))
+end
+
+# Cumulative distribution of the eccentricity law of `_moe_draw_e` at e
+function _moe_e_cdf(e::Float64, η::Float64, e_max::Float64, turnover::Bool)::Float64
+    (η ≤ -1 || e_max ≤ 0) && return 1.0
+    e ≤ 0 && return 0.0
+    e ≥ e_max && return 1.0
+    turnover || return (e / e_max)^(η + 1)
+    p = 8 / (9 + η)
+    e < 0.8 * e_max && return p * (e / (0.8 * e_max))^(η + 1)
+    return p + (1 - p) * (1 - ((e_max - e) / (0.2 * e_max))^2)
+end
+
+# The eccentricity law of `_moe_draw_e` truncated to e ≤ e_hi, at the quantile u
+function _moe_truncated_e(
+    u::Float64,
+    η::Float64,
+    e_max::Float64,
+    e_hi::Float64,
+    turnover::Bool,
+)::Float64
+    e = _moe_draw_e(u * _moe_e_cdf(e_hi, η, e_max, turnover), η, e_max, turnover)
+    return min(e, max(e_hi, 0.0))
+end
+
+"""
+    _moe_draw(spec::MassiveBinarySpec, m₁, rng; table) -> (is_binary, lP, q, e)
+
+One primary of mass `m₁` [M☉] under Moe & Di Stefano (2017, DOI
+10.3847/1538-4365/aa6fb6) with the inner-binary sampler of Moe's code. With
+`m₁c = _moe_clamp_m1(m₁)` and `table = _moe_period_table(m₁c, log_period_min,
+log_period_max)` (passed in by a caller that caches it), one uniform `u` decides
+both: `u ≥ f_bin` leaves the star single (`(false, NaN, NaN, NaN)`), otherwise
+`lP = CumP⁻¹(u)`. Then `q` follows from `_moe_draw_q` at `(lP, m₁c)`
+with `q_min`, and `e` from `_moe_draw_e` with `ecc_turnover`. Draws
+one uniform for a single and four for a binary.
+"""
+function _moe_draw(
+    spec::MassiveBinarySpec,
+    m₁::Float64,
+    rng::AbstractRNG;
+    table::Tuple{Vector{Float64},Vector{Float64}} = _moe_period_table(
+        _moe_clamp_m1(m₁),
+        spec.log_period_min,
+        spec.log_period_max,
+    ),
+)::Tuple{Bool,Float64,Float64,Float64}
+    m₁c = _moe_clamp_m1(m₁)
+    lPv, cum = table
+    u = rand(rng)
+    u < cum[end] || return (false, NaN, NaN, NaN)
+    lP = _moe_invert_cum(lPv, cum, u)
+    u₁ = rand(rng)
+    u₂ = rand(rng)
+    q = _moe_draw_q(u₁, u₂, _moe_q_parameters(lP, m₁c), spec.q_min)
+    e = _moe_draw_e(rand(rng), _moe_eta(lP, m₁c), _moe_e_max(lP), spec.ecc_turnover)
+    return (true, lP, q, e)
+end
+
+"""
+    _moe_orbit(spec::MassiveBinarySpec, table, u_P, u_e, m₁c, m₁, m₂, a_rl, φ) -> (a_au, e, truncated)
+
+Semi-major axis [AU] and eccentricity of a `moe2017` pair from the uniforms
+`u_P` (period, over the inner-binary part of `table`) and `u_e` (eccentricity);
+`m₁c` is the clamped primary mass of the statistics, `φ` the fill limit that set
+`a_rl` (for the error message). For `a_rl > 0` the tabulated `CumP` is restricted
+to `[lP(a_rl), log_period_max]` and renormalised, and the eccentricity law of
+Moe & Di Stefano (2017, DOI 10.3847/1538-4365/aa6fb6) at the drawn `lP` is
+truncated to `e ≤ min(e_max, 1 − a_rl/a)`; `truncated` flags a pair whose period
+range the guard raised.
+"""
+function _moe_orbit(
+    spec::MassiveBinarySpec,
+    table::Tuple{Vector{Float64},Vector{Float64}},
+    u_P::Float64,
+    u_e::Float64,
+    m₁c::Float64,
+    m₁::Float64,
+    m₂::Float64,
+    a_rl::Float64,
+    φ::Float64,
+)::Tuple{Float64,Float64,Bool}
+    lPv, cum = table
+    M = m₁ + m₂
+    truncated = false
+    c_lo = 0.0
+    lP_rl = -Inf
+    if a_rl > 0
+        lP_rl = _log_period_days(a_rl, M)
+        lP_rl > spec.log_period_max &&
+            _guard_range_error(m₁, m₂, a_rl, φ, "log(P/d) ≤ $(spec.log_period_max)")
+        if lP_rl > lPv[1]
+            c_lo = _moe_cum_at(lPv, cum, lP_rl)
+            truncated = true
+        end
+    end
+    c_lo < cum[end] || _guard_range_error(
+        m₁,
+        m₂,
+        a_rl,
+        φ,
+        "log(P/d) ≤ $(spec.log_period_max) with a non-zero inner-binary probability",
+    )
+    lP = max(_moe_invert_cum(lPv, cum, c_lo + u_P * (cum[end] - c_lo)), lP_rl)
+    a_au = _semi_major_axis_au(lP, M)
+    e_max = _moe_e_max(lP)
+    e_hi = e_max
+    if a_rl > 0
+        a_au = max(a_au, a_rl)
+        e_hi = min(e_max, max(1 - a_rl / a_au, 0.0))
+    end
+    return a_au, _moe_truncated_e(u_e, _moe_eta(lP, m₁c), e_max, e_hi, spec.ecc_turnover), truncated
+end
+
+"""
+    _moe_guarded_orbit(spec, table, lP, e, m₁c, m₁, m₂, a_rl, φ, rng) -> (a_au, e, truncated)
+
+Orbit of a `moe2017` pair drawn at `(lP, e)` by `_moe_draw`, at its final
+masses. Without the guard (`a_rl = 0`) it is `a(lP)` and `e`. With it, a drawn
+`a < a_rl` is redrawn from the truncated laws by `_moe_orbit` (fresh
+uniforms), and otherwise an `e > 1 − a_rl/a` is redrawn from the eccentricity law
+truncated there (a fresh uniform); both leave the draw distributed as the
+truncated law. `truncated` flags `lP(a_rl) > log_period_min`, as for Sana.
+"""
+function _moe_guarded_orbit(
+    spec::MassiveBinarySpec,
+    table::Tuple{Vector{Float64},Vector{Float64}},
+    lP::Float64,
+    e::Float64,
+    m₁c::Float64,
+    m₁::Float64,
+    m₂::Float64,
+    a_rl::Float64,
+    φ::Float64,
+    rng::AbstractRNG,
+)::Tuple{Float64,Float64,Bool}
+    M = m₁ + m₂
+    a_au = _semi_major_axis_au(lP, M)
+    a_rl > 0 || return (a_au, e, false)
+    a_au < a_rl && return _moe_orbit(spec, table, rand(rng), rand(rng), m₁c, m₁, m₂, a_rl, φ)
+    truncated = _log_period_days(a_rl, M) > spec.log_period_min
+    e_cap = 1 - a_rl / a_au
+    if e > e_cap
+        e = _moe_truncated_e(rand(rng), _moe_eta(lP, m₁c), _moe_e_max(lP), e_cap, spec.ecc_turnover)
+    end
+    return a_au, e, truncated
+end
+
+"""
+    moe2017_integrals(m₁; lP_lo = 0.2, lP_hi = 8.0, n = 20_001) -> (; f_mult_q03, f_mult_q01, f_bin)
+
+Integrals of the Moe & Di Stefano (2017, DOI 10.3847/1538-4365/aa6fb6) model at
+the primary mass `m₁` [M☉], for checking the implementation against the
+published values.
+
+# Arguments
+- `m₁`: primary mass [M☉]; the fits hold for `0.8 < m₁ < 40` (no clamp applied)
+- `lP_lo`, `lP_hi`: period range [log10 d] of the companion frequencies
+- `n`: number of trapezoid nodes, `≥ 2`
+
+# Returns
+- `f_mult_q03`: `∫ f_logP;q>0.3 dlP` over `[lP_lo, lP_hi]` (their Eq. 1)
+- `f_mult_q01`: `∫ f_logP;q>0.3 (1 + W_s) dlP`, the companions with `q > 0.1`
+- `f_bin`: the inner-binary fraction `CumP[end]` of Moe's code over `[0.15, 8.0]`
+  (cumulative trapezoid on the 0.005-dex grid of the sampler)
+
+# Example
+```julia
+moe2017_integrals(28.0)   # (f_mult_q03 ≈ 1.03, f_mult_q01 ≈ 2.11, f_bin ≈ 0.96)
+```
+"""
+function moe2017_integrals(
+    m₁::Float64;
+    lP_lo::Real = 0.2,
+    lP_hi::Real = 8.0,
+    n::Integer = 20_001,
+)::NamedTuple{(:f_mult_q03, :f_mult_q01, :f_bin),NTuple{3,Float64}}
+    (isfinite(m₁) && m₁ > 0) ||
+        throw(ArgumentError("moe2017_integrals: m₁ must be finite and > 0; got $m₁"))
+    lo, hi = Float64(lP_lo), Float64(lP_hi)
+    lo < hi || throw(ArgumentError("moe2017_integrals: needs lP_lo < lP_hi; got $lo, $hi"))
+    n ≥ 2 || throw(ArgumentError("moe2017_integrals: needs n ≥ 2; got $n"))
+    h = (hi - lo) / (n - 1)
+    s03 = 0.0
+    s01 = 0.0
+    for k in 0:(n - 1)
+        x = lo + k * h
+        w = (k == 0 || k == n - 1) ? 0.5h : h
+        f = _moe_companion_frequency(x, m₁)
+        s03 += w * f
+        s01 += w * f * _moe_q_factor(x, m₁)
+    end
+    f_bin = last(last(_moe_period_table(m₁, 0.15, 8.0)))
+    return (f_mult_q03 = s03, f_mult_q01 = s01, f_bin = f_bin)
+end
+
 # Union–find successor: the smallest unremoved position ≥ p (removed p points to p + 1).
 function _successor!(parent::Vector{Int}, p::Int)::Int
     root = p
@@ -410,6 +839,13 @@ unpaired star of mass `≥ m_min` becomes a primary when its Bernoulli trial
 mapped through the period and eccentricity laws at the final masses by
 `_sana_orbit`, truncated by the Roche guard when `φ > 0`. Updates `m` (for
 `"replace"`) and `used` in place.
+
+With `model = "moe2017"` the Bernoulli trial and the three draws are replaced by
+`_moe_draw` (binary decision, `lP`, `q` and `e` at the primary mass clamped to
+0.8–40 M☉; a primary that draws single stays unused); the period tables are
+cached per clamped mass, and the orbit at the final masses follows
+`_moe_guarded_orbit`. Primaries outside 0.8–40 M☉ are counted and reported in
+one warning.
 """
 function _pair_massive!(
     m::Vector{Float64},
@@ -427,13 +863,29 @@ function _pair_massive!(
     pool_mode = s.pairing == "pool"
     pool = _MassPool(pool_mode ? m : Float64[])
     low = pool_mode ? Int[] : [i for i in eachindex(m) if m[i] < s.m_min]
+    moe = s.model == "moe2017"
+    tables = Dict{Float64,Tuple{Vector{Float64},Vector{Float64}}}()
+    n_clamped = 0
+    no_table = (Float64[], Float64[])
     for i in sortperm(m; rev = true, alg = MergeSort)
         m[i] < s.m_min && break
         used[i] && continue
-        rand(rng) < s.fraction || continue
-        u_P = rand(rng)
-        q = _power_law_quantile(rand(rng), s.q_min, 1.0, s.q_exponent)
-        u_e = rand(rng)
+        u_P, u_e, lP, e_draw, m₁c = NaN, NaN, NaN, NaN, NaN
+        table = no_table
+        if moe
+            m₁c = round(_moe_clamp_m1(m[i]); digits = 6)
+            n_clamped += !(0.8 ≤ m[i] ≤ 40.0)
+            haskey(tables, m₁c) ||
+                (tables[m₁c] = _moe_period_table(m₁c, s.log_period_min, s.log_period_max))
+            table = tables[m₁c]
+            is_binary, lP, q, e_draw = _moe_draw(s, m[i], rng; table = table)
+            is_binary || continue
+        else
+            rand(rng) < s.fraction || continue
+            u_P = rand(rng)
+            q = _power_law_quantile(rand(rng), s.q_min, 1.0, s.q_exponent)
+            u_e = rand(rng)
+        end
         j = 0
         if pool_mode
             _pool_remove!(pool, i)
@@ -450,13 +902,17 @@ function _pair_massive!(
         j == 0 && continue
         used[j] = true
         a_rl = φ > 0 ? _roche_separation_au(m[i], m[j], zmet, φ) : 0.0
-        a_k, e_k, truncated = _sana_orbit(s, u_P, u_e, m[i], m[j], a_rl, φ)
+        a_k, e_k, truncated =
+            moe ? _moe_guarded_orbit(s, table, lP, e_draw, m₁c, m[i], m[j], a_rl, φ, rng) :
+            _sana_orbit(s, u_P, u_e, m[i], m[j], a_rl, φ)
         push!(primary, i)
         push!(secondary, j)
         push!(a_au, a_k)
         push!(e, e_k)
         n_guarded += truncated
     end
+    n_clamped > 0 &&
+        @warn "moe2017: $n_clamped primaries outside 0.8–40 M☉ use the statistics of the nearest bound"
     return primary, secondary, a_au, e, n_guarded
 end
 
@@ -469,7 +925,11 @@ Pair the stars of `masses` [M☉]. Without a massive branch
 the `N` stars are paired by `spec.pairing`, `spec.period` and
 `spec.eccentricity`. With `model = "sana2012"` the massive primaries are paired
 first (`MassiveBinarySpec`), and the same rule then applies to the
-unpaired stars below `massive.m_min`, `N` being their number.
+unpaired stars below `massive.m_min`, `N` being their number. With
+`model = "moe2017"` each massive primary is a binary with the inner-binary
+probability of Moe's code and takes its period, mass ratio and eccentricity from
+the joint distribution of Moe & Di Stefano (2017, DOI 10.3847/1538-4365/aa6fb6)
+at its mass clamped to 0.8–40 M☉.
 
 With `spec.roche_fill_max = φ > 0` every pair, at its final masses, has its
 period law truncated to `a ≥ a_RL = max_i R_i/(φ r_L(q_i))` and its

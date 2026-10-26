@@ -241,7 +241,7 @@ function _parse_binaries_table(d, table::AbstractString)::BinarySpec
     )
 end
 
-const _MASSIVE_BINARY_MODELS = ("none", "sana2012")
+const _MASSIVE_BINARY_MODELS = ("none", "sana2012", "moe2017")
 const _MASSIVE_BINARY_PAIRINGS = ("pool", "replace")
 
 """
@@ -249,7 +249,8 @@ const _MASSIVE_BINARY_PAIRINGS = ("pool", "replace")
 
 Fail-fast bounds of the Roche guard (`roche_fill_max`) and of the massive branch
 (`massive`) of a [`BinarySpec`](@ref); `key` names the owning cluster table.
-Raises an `ArgumentError` naming the offending key.
+Raises an `ArgumentError` naming the offending key. `moe2017` additionally needs
+`0.15 ≤ log_period_min` and `log_period_max ≤ 8.0`, and warns for `m_min < 0.8`.
 """
 function _validate_binary_extensions(b::BinarySpec, key::String)
     kb = "$key.binaries"
@@ -260,8 +261,10 @@ function _validate_binary_extensions(b::BinarySpec, key::String)
     )
     s = b.massive
     km = "$kb.massive"
-    s.model in _MASSIVE_BINARY_MODELS ||
-        _config_error("$km.model", "must be one of \"none\", \"sana2012\"; got \"$(s.model)\"")
+    s.model in _MASSIVE_BINARY_MODELS || _config_error(
+        "$km.model",
+        "must be one of \"none\", \"sana2012\", \"moe2017\"; got \"$(s.model)\"",
+    )
     s.pairing in _MASSIVE_BINARY_PAIRINGS ||
         _config_error("$km.pairing", "must be one of \"pool\", \"replace\"; got \"$(s.pairing)\"")
     (isfinite(s.m_min) && s.m_min > 0) ||
@@ -290,6 +293,19 @@ function _validate_binary_extensions(b::BinarySpec, key::String)
         _config_error("$km.ecc_exponent", "must be finite and > −1; got $(s.ecc_exponent)")
     (0 < s.ecc_max < 1) ||
         _config_error("$km.ecc_max", "must satisfy 0 < ecc_max < 1; got $(s.ecc_max)")
+    if s.model == "moe2017"
+        s.log_period_min ≥ 0.15 || _config_error(
+            "$km.log_period_min",
+            "must be ≥ 0.15 [log10 d] for model = \"moe2017\"; got $(s.log_period_min)",
+        )
+        s.log_period_max ≤ 8.0 || _config_error(
+            "$km.log_period_max",
+            "must be ≤ 8.0 [log10 d] for model = \"moe2017\" (the domain of Moe & " *
+            "Di Stefano 2017); got $(s.log_period_max)",
+        )
+        s.m_min < 0.8 && @warn "$km.m_min = $(s.m_min) M☉ lies below 0.8 M☉, the lower " *
+              "bound of the moe2017 statistics; such primaries use those of 0.8 M☉"
+    end
     return nothing
 end
 
