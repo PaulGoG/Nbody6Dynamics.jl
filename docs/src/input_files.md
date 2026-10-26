@@ -89,6 +89,19 @@ or directly `run_merger_pipeline("input_files/mergers/merger_demo_small.toml")`.
 
 Both run through `scripts/run_verif_suite.jl` together with `engine/N5k_medium.inp`.
 
+`verification/replicas/` holds the configurations of the published two-cluster mergers used as calibration anchors
+(a merger configuration and a pipeline configuration per case; `julia scripts/run_setup.jl input_files/verification/replicas/<case>_pipeline.toml`):
+Priyatikanto et al. (2016, DOI 10.1093/mnras/stw060) models `notide`, `draco1`, `draco2`, `draco5` (2 × 2048 stars,
+Plummer R_vir = 1 pc, Salpeter 0.15–50 M☉, a = 10 pc circular orbit in the solar-neighbourhood tide, orbit normals +z,
+−z and y) and de la Fuente Marcos & de la Fuente Marcos (2010, DOI 10.1088/0004-637X/719/1/104) q = 1 pairs
+`dlfm2010_e00`, `dlfm2010_e06` (2 × 4096, S₀ = 10 pc, Salpeter 0.17–10 M☉, escapers kept) with their single-cluster
+control `dlfm2010_control8192`. The `*_rotating` variants take the generated circular orbit as rotating-frame
+velocities (`velocity_frame = "rotating"`), the convention under which the published orientation dependence of the
+merger times is recovered; the plain variants keep the inertial-frame default. All set `nnbopt = 40`: with the
+baseline value of 100 the engine's start-up finds no admissible neighbour sphere for the outermost stars of an
+untruncated Plummer sphere and loops until the start-up watchdog fires. The published merger times, mass loss and
+remnant densities are compared outside the package, with the runs.
+
 ## Sweep configurations
 
 `sweeps/sweep_demo.toml` is a small demonstration grid (orbital eccentricity × secondary size × two seeds) over `mergers/merger_demo_small.toml` with the root `config.toml` as its pipeline base; `showcase/sweep.toml` is the showcase sweep with isolated controls. The file format is in the manual, section Parameter sweeps.
