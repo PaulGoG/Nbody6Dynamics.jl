@@ -28,6 +28,8 @@ entries say so.
 
 ### Added
 
+- Engine pin `v2026.07.11` (fork): the `KZ(24) = 3` flag route for a list of up to 16 massive black holes named by their `dat.10` index, `mbh.45` rows ending with the body name under both routes, the list kept across restarts, a missing black hole dropped with a warning after a restart.
+
 - IMBH diagnostics (`[postprocess] imbh`, on by default, inert unless
   `output/merger_ic.toml` records a seeded IMBH): `imbh_trajectory` (offset and
   velocity about the stellar density centre, core and half-mass radii of the

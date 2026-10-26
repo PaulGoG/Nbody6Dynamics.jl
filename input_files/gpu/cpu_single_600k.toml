@@ -3,7 +3,7 @@
 [install]
 enabled = false           # the tree below is built by cpu_pipeline.toml (or the validation driver) beforehand
 install_dir = "../../backend/Nbody6PPGPU-beijing"
-ref = "v2026.07.10"
+ref = "v2026.07.11"
 
 [build]
 configure_flags = ["--enable-mcmodel=large", "--with-par=b1m"]
