@@ -8,6 +8,16 @@ entries say so.
 
 ### Changed
 
+- Engine pin `v2026.07.10`: the Peters decay of compact KS pairs is accumulated
+  at every check from the elements of that interval and applied as sums
+  (`GWACCUM`; an encounter that changes e no longer charges the interval before
+  it at the new rate: on a planted fly-by raising e from 0.50 to 0.66 the first
+  application removed 3.85 times the correct Δa with the previous tag and 1.00
+  with this one), and the block-step list stays consistent at an escaper's
+  removal (a duplicated index after the removal of a freshly kicked remnant
+  corrected one particle twice with a zero step and spun the run in `CORE`
+  without output, the stall of the showcase sweep point of 2026-10-23).
+  Restart dumps written by earlier tags cannot be restarted with it.
 - Source layout: the orchestration modules (platform, install, telemetry,
   run, resume, cost, cluster, GPU validation, sweeps, external
   post-processing) live under `src/pipeline/` and the diagnostics derived
