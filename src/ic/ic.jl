@@ -14,6 +14,7 @@ include("segregation.jl")   # SegregationSpec is a field type of ClusterSpec (co
 include("config.jl")
 include("control.jl")
 include("models.jl")
+include("rotating_king.jl")
 include("static_models.jl")
 include("imf.jl")
 include("orbits.jl")
