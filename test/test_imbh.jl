@@ -81,9 +81,10 @@ using StableRNGs: StableRNG
         @test_logs (:warn, r"mass_fraction") match_mode = :any nd.load_merger_config(
             imbh_config(; imbh = "imbh = {mass_fraction = 0.03}"),
         )
-        @test_throws ArgumentError nd.load_merger_config(
-            imbh_config(; nbody6_lines = "imbh_route = \"flag\""),
-        )
+        # one IMBH may take the flag route; the flag route needs an IMBH
+        cfg_flag = nd.load_merger_config(imbh_config(; nbody6_lines = "imbh_route = \"flag\""))
+        @test nd.resolved_imbh_route(cfg_flag) === :flag
+        @test nd.resolved_imbh_route(cfg) === :kz24
         @test_throws ArgumentError nd.load_merger_config(
             imbh_config(; imbh = "", nbody6_lines = "imbh_route = \"flag\""),
         )
@@ -101,7 +102,7 @@ using StableRNGs: StableRNG
             imbh_config(; imbh = "imbh = {mass = 50.0, placement = \"edge\"}"),
         )
 
-        # two clusters with one IMBH each
+        # two clusters with one IMBH each: the kz24 route takes one
         two = """
         [merger]
         seed = 5
@@ -123,6 +124,9 @@ using StableRNGs: StableRNG
         [merger.stellar]
         kz19 = 0
 
+        [merger.nbody6]
+        imbh_route = "kz24"
+
         [merger.orbit]
         apocentre = 10.0
         eccentricity = 0.5
@@ -134,6 +138,7 @@ using StableRNGs: StableRNG
 
     @testset "Generation and the IMBHINIT line" begin
         cfg = nd.load_merger_config(imbh_config())
+        @test nd.resolved_imbh_route(cfg) === :kz24
         dir = mktempdir()
         result = nd.generate_merger_ic(cfg; rng = StableRNG(7), output_dir = dir)
         @test result.N_total == 2001
@@ -183,6 +188,145 @@ using StableRNGs: StableRNG
         @test occursin("IMBH: name 2001", read(summary_path, String))
         ranges = nd.parse_merger_summary(summary_path)
         @test length(ranges) == 1 && collect(ranges[1]) == collect(1:2000)
+    end
+
+    @testset "Flag route" begin
+        # Two clusters of 1500 bodies of 0.5 M☉, one 30 M☉ IMBH each
+        # (M•/M_stars = 0.04, M•/⟨m⟩ = 60)
+        function flag_config(; route::String)
+            text = """
+            [merger]
+            seed = 5
+            n_clusters = 2
+            orbit_mode = "kepler"
+
+            [merger.cluster1]
+            N = 1500
+            rbar = 1.0
+            model = "plummer"
+            imf = "equal"
+            mass_total = 750.0
+            imbh = {mass = 30.0, velocity = "rest"}
+
+            [merger.cluster2]
+            N = 1500
+            rbar = 1.0
+            model = "plummer"
+            imf = "equal"
+            mass_total = 750.0
+            imbh = {mass = 30.0, velocity = "rest"}
+
+            [merger.stellar]
+            kz19 = 0
+
+            [merger.nbody6]
+            escapers = "keep"
+            imbh_route = "$route"
+
+            [merger.orbit]
+            apocentre = 10.0
+            eccentricity = 0.5
+
+            [merger.output]
+            truncate_jacobi = false
+            """
+            path = joinpath(mktempdir(), "flag.toml")
+            write(path, text)
+            return path
+        end
+
+        cfg = nd.load_merger_config(flag_config(; route = "flag"))
+        @test nd.resolved_imbh_route(cfg) === :flag
+        @test nd.resolved_imbh_route(nd.load_merger_config(flag_config(; route = "auto"))) === :flag
+        @test_throws ArgumentError nd.load_merger_config(flag_config(; route = "kz24"))
+
+        dir = mktempdir()
+        result = @test_logs (:warn, r"exceeds 0.02") match_mode = :any nd.generate_merger_ic(
+            cfg;
+            rng = StableRNG(11),
+            output_dir = dir,
+        )
+        @test result.N_total == 3002
+        rows = [parse.(Float64, split(l)) for l in readlines(joinpath(dir, "dat.10"))]
+        @test length(rows) == 3002
+        @test isapprox(rows[end - 1][1], 30 / result.M_total; rtol = 1e-12)
+        @test isapprox(rows[end][1], 30 / result.M_total; rtol = 1e-12)
+
+        meta = nd.TOML.parsefile(joinpath(dir, "merger_ic.toml"))
+        lines = readlines(joinpath(dir, "merger.inp"))
+        inp = join(lines, "\n")
+        kz_line = match(r"KZ\(21:30\)=([0-9 -]+)", inp).captures[1]
+        @test parse(Int, split(kz_line)[4]) == 3
+        is_numeric_line(l, n) =
+            (p = split(l); length(p) == n && all(x -> tryparse(Float64, x) !== nothing, p))
+        @test !any(l -> is_numeric_line(l, 8), lines)
+        i_scale = findfirst(==("&INSCALE"), lines)
+        i_count = findfirst(l -> is_numeric_line(l, 2), lines[(i_scale + 1):end]) + i_scale
+        counts = split(lines[i_count])
+        @test counts[1] == "2"
+        @test isapprox(parse(Float64, counts[2]), meta["imbh"]["dtbh_nb"]; rtol = 1e-12)
+        @test lines[i_count + 1] == "3001 3002"
+
+        imbh = meta["imbh"]
+        @test imbh["route"] == "flag"
+        @test imbh["names"] == [3001, 3002]
+        @test imbh["clusters"] == [1, 2]
+        @test length(imbh["bodies"]) == 2
+        @test imbh["name"] == 3001
+        @test [b["name"] for b in imbh["bodies"]] == [3001, 3002]
+
+        summary_path = joinpath(dir, "merger_summary.txt")
+        imbh_lines = filter(l -> occursin("IMBH:", l), readlines(summary_path))
+        @test length(imbh_lines) == 2
+        @test all(l -> endswith(l, "route flag"), imbh_lines)
+        ranges = nd.parse_merger_summary(summary_path)
+        @test length(ranges) == 2
+        @test sum(length, ranges) == 3000
+
+        # The engine's list holds 16 massive black holes
+        function many_config(n::Int)
+            io = IOBuffer()
+            print(io, "[merger]\nseed = 5\nn_clusters = $n\norbit_mode = \"explicit\"\n\n")
+            for i in 1:n
+                print(
+                    io,
+                    """
+                    [merger.cluster$i]
+                    N = 100
+                    rbar = 1.0
+                    model = "plummer"
+                    imf = "equal"
+                    mass_total = 100.0
+                    position = [$(20.0 * i), 0.0, 0.0]
+                    velocity = [0.0, 0.0, 0.0]
+                    imbh = {mass = 30.0}
+
+                    """,
+                )
+            end
+            print(io, "[merger.stellar]\nkz19 = 0\n\n[merger.nbody6]\nescapers = \"keep\"\n")
+            path = joinpath(mktempdir(), "many.toml")
+            write(path, String(take!(io)))
+            return path
+        end
+        @test nd.resolved_imbh_route(nd.load_merger_config(many_config(16))) === :flag
+        @test_throws "16 massive black holes" nd.load_merger_config(many_config(17))
+
+        # generate_merger_inp: the flag route's guards
+        nb = nd.resolve_nbody6_parameters(
+            Nbody6ParameterSpec(),
+            cfg.clusters,
+            [collect(1:1500), collect(1501:3000)],
+            3002,
+            1.0,
+        )
+        inp_path = joinpath(mktempdir(), "flag.inp")
+        inp_with(imbh) = nd.generate_merger_inp(inp_path, 3002, 1.0, 1.0; nbody6 = nb, imbh = imbh)
+        @test_throws ArgumentError inp_with((route = :other, names = [3001], dtbh_nb = 0.1))
+        @test_throws ArgumentError inp_with((route = :flag, names = Int[], dtbh_nb = 0.1))
+        @test_throws ArgumentError inp_with((route = :flag, names = collect(1:17), dtbh_nb = 0.1))
+        @test_throws ArgumentError inp_with((route = :flag, names = [3003], dtbh_nb = 0.1))
+        @test_throws ArgumentError inp_with((route = :flag, names = [3001, 3001], dtbh_nb = 0.1))
     end
 
     @testset "Velocity modes" begin

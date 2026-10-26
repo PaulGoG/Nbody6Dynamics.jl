@@ -1,0 +1,45 @@
+# IMBH pair smoke run (flag route, roadmap 10.8 / study block I9 at reduced N): two King W0 = 7 clusters of 2048
+# equal-mass particles, each with an IMBH of 1 % of its stellar mass at rest, on a bound Kepler orbit, isolated, no
+# stellar evolution; 30 Myr. Checks the two-line KZ(24) = 3 input, the two mbh.45 records and the IMBH pair elements.
+
+[merger]
+seed = 8201
+n_clusters = 2
+orbit_mode = "kepler"
+
+[merger.cluster1]
+N = 2048
+rbar = 1.0          # half-mass radius [pc]
+profile = { type = "king", W0 = 7.0 }
+imf = { type = "equal", particle_mass = 1.0 }   # [M☉]
+imbh = { mass_fraction = 0.01, velocity = "rest", response = "rigid" }
+
+[merger.cluster2]
+N = 2048
+rbar = 1.0
+profile = { type = "king", W0 = 7.0 }
+imf = { type = "equal", particle_mass = 1.0 }
+imbh = { mass_fraction = 0.01, velocity = "rest", response = "rigid" }
+
+[merger.orbit]
+apocentre = 6.0     # [pc]
+eccentricity = 0.5
+
+[merger.output]
+format = "nbody"
+tcrit_myr = 30.0
+dtadj_myr = 0.25
+deltat_myr = 0.25
+
+[merger.tidal]
+kz14 = 0            # one of: 0 | 1 | 2 | 5 (isolated)
+
+[merger.stellar]
+kz19 = 0            # point masses
+
+[merger.nbody6]
+preset = "baseline"  # one of: "engine" | "baseline"
+qe = 0.01
+escapers = "keep"   # one of: "remove" | "keep"
+imbh_route = "flag" # one of: "auto" | "kz24" | "flag"
+imbh_output_dt_myr = 0.25

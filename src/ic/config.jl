@@ -185,11 +185,14 @@ Intermediate-mass black hole seeded in a cluster (`[merger.clusterK.imbh]`).
 - `response::String`: `"rigid"` (the stellar velocities unchanged) or
   `"jeans"` (rescaled in shells to the isotropic Jeans equilibrium with the
   added point mass).
-- `spin::Float64`: dimensionless spin χ, `0 ≤ χ ≤ 1`; recorded only, the
-  `kz24` route cannot pass it to the engine.
+- `spin::Float64`: dimensionless spin χ, `0 ≤ χ ≤ 1`; recorded only, neither
+  route passes it to the engine.
 
-The IMBH is written as the last body of `dat.10` and repeated on the engine's
-`IMBHINIT` line (`KZ(24) = 1`); one IMBH per configuration.
+One IMBH per cluster. The IMBHs are the last bodies of `dat.10`, in cluster
+order. The `kz24` route (`KZ(24) = 1`) takes one IMBH per configuration and
+repeats its state on the engine's `IMBHINIT` line; the `flag` route
+(`KZ(24) = 3`, engine fork ≥ v2026.07.11, the package pin) takes 1 to 16 and
+passes their `dat.10` names (`[merger.nbody6] imbh_route`).
 """
 Base.@kwdef struct IMBHSpec
     mass::Float64 = NaN
@@ -702,10 +705,13 @@ input manual.
   `"keep"` (`KZ(23) = 0`, every star stays in the integration with its full
   phase space, for tails and the escaper catalogues; the cost grows with the
   escaped population)
-- `imbh_route`: how a seeded IMBH ([`IMBHSpec`](@ref)) reaches the engine:
-  `"auto"` or `"kz24"` (`KZ(24) = 1`, the IMBH as the last body of `dat.10`
-  repeated on the `IMBHINIT` line; one IMBH) or `"flag"` (refused: it needs
-  an engine amendment this build does not have)
+- `imbh_route`: how the seeded IMBHs ([`IMBHSpec`](@ref)) reach the engine:
+  `"kz24"` (`KZ(24) = 1`, the IMBH as the last body of `dat.10` repeated on
+  the `IMBHINIT` line; one IMBH), `"flag"` (`KZ(24) = 3`, engine fork
+  ≥ v2026.07.11: the IMBHs as the last bodies of `dat.10`, one per cluster
+  and 1 to 16 in all, flagged by their names on the line after
+  `NIMBHS DTBH`) or `"auto"` (`kz24` for one IMBH, `flag` for several);
+  see [`resolved_imbh_route`](@ref)
 - `imbh_output_dt_myr`: interval of the engine's IMBH record `mbh.45`
   (`DTBH`) [Myr]; > 0
 - `kz`: explicit `KZ(i) = v` overrides applied last (`[merger.nbody6.kz]`,
@@ -1665,42 +1671,103 @@ function _validate_binary_physics(p::Nbody6ParameterSpec, s::StellarSpec)
     return nothing
 end
 
+"""Largest IMBH count of the flag route: the engine's list holds 16 massive black holes (`imbhinit.F`)."""
+const _IMBH_FLAG_MAX = 16
+
+"""
+    _resolve_imbh_route(route, n_imbh) -> Symbol
+
+Route of `n_imbh` seeded IMBHs under `imbh_route = route`: `:none` without an
+IMBH, `:kz24` or `:flag` as configured, and for `"auto"` `:kz24` for one IMBH
+and `:flag` for several. The consistency of the pair is checked by
+[`_imbh_route_violation`](@ref).
+"""
+function _resolve_imbh_route(route::AbstractString, n_imbh::Integer)::Symbol
+    n_imbh == 0 && return :none
+    route == "kz24" && return :kz24
+    route == "flag" && return :flag
+    return n_imbh == 1 ? :kz24 : :flag
+end
+
+"""
+    _imbh_route_violation(route, carriers) -> Union{Nothing,Tuple{String,String}}
+
+`(key, message)` of the IMBH-count rule that `imbh_route = route` and the
+indices `carriers` of the clusters with an IMBH violate, `nothing` when they
+are consistent: `"kz24"` takes at most one IMBH, `"flag"` at least one and at
+most `_IMBH_FLAG_MAX`, `"auto"` at most `_IMBH_FLAG_MAX`.
+"""
+function _imbh_route_violation(route::AbstractString, carriers::AbstractVector{<:Integer})
+    n = length(carriers)
+    if route == "kz24" && n > 1
+        return (
+            "merger.cluster$(carriers[2]).imbh",
+            "the kz24 route takes one IMBH; $n clusters carry one",
+        )
+    elseif route == "flag" && n == 0
+        return (
+            "merger.nbody6.imbh_route",
+            "\"flag\" needs at least one [merger.clusterK.imbh] table",
+        )
+    elseif n > _IMBH_FLAG_MAX
+        return (
+            "merger.cluster$(carriers[_IMBH_FLAG_MAX + 1]).imbh",
+            "the engine's list holds $(_IMBH_FLAG_MAX) massive black holes; $n clusters carry one",
+        )
+    end
+    return nothing
+end
+
+"""
+    resolved_imbh_route(cfg::MergerConfig) -> Symbol
+
+Route by which the IMBHs of `cfg` reach the engine: `:none` (no cluster
+carries an [`IMBHSpec`](@ref)), `:kz24` (`KZ(24) = 1`, one IMBH repeated on
+the `IMBHINIT` line) or `:flag` (`KZ(24) = 3`, engine fork ≥ v2026.07.11, the
+IMBH names after `NIMBHS DTBH`). `imbh_route = "auto"` resolves to `:kz24`
+for one IMBH and to `:flag` for several. The configuration is assumed
+validated ([`load_merger_config`](@ref)).
+
+# Example
+```julia
+cfg = load_merger_config("merger.toml")
+resolved_imbh_route(cfg) === :flag && @info "several IMBHs, KZ(24) = 3"
+```
+"""
+resolved_imbh_route(cfg::MergerConfig)::Symbol =
+    _resolve_imbh_route(cfg.nbody6.imbh_route, count(c -> c.imbh !== nothing, cfg.clusters))
+
 """
     _validate_imbh_configuration(clusters, nbody6, stellar)
 
 Configuration-level checks of IMBH seeding in [`load_merger_config`](@ref):
-`imbh_route = "flag"` is refused (it needs an engine amendment this build does
-not have), and with an IMBH in some cluster: a second IMBH (the `kz24` route
-takes one), a `kz` override of index 24 (set by the route) and, under stellar
-evolution (`kz19 ≥ 3`), a `mass` below 100 M☉ are refused; `escapers =
-"remove"` warns (an ejected IMBH is removed and every later restart aborts).
+the IMBH count against `imbh_route` ([`_imbh_route_violation`](@ref): at most
+one under `"kz24"`, 1 to 16 under `"flag"`, at most 16 under `"auto"`), and
+with an IMBH in some cluster: a `kz` override of index 24 (set by the route)
+and, under stellar evolution (`kz19 ≥ 3`), a `mass` below 100 M☉ of any IMBH
+are refused; `escapers = "remove"` warns once (an ejected IMBH is removed and
+every later restart aborts).
 """
 function _validate_imbh_configuration(
     clusters::AbstractVector{ClusterSpec},
     nbody6::Nbody6ParameterSpec,
     stellar::StellarSpec,
 )
-    nbody6.imbh_route == "flag" && _config_error(
-        "merger.nbody6.imbh_route",
-        "\"flag\" needs the IMBH-1 amendment of the engine (fork item 9.14), which this build " *
-        "does not have; use \"kz24\" with one IMBH",
-    )
     carriers = findall(c -> c.imbh !== nothing, clusters)
+    violation = _imbh_route_violation(nbody6.imbh_route, carriers)
+    violation === nothing || _config_error(violation...)
     isempty(carriers) && return nothing
-    n_imbh = length(carriers)
-    n_imbh > 1 && _config_error(
-        "merger.cluster$(carriers[2]).imbh",
-        "the kz24 route takes one IMBH; $n_imbh clusters carry one",
-    )
-    k = carriers[1]
     haskey(nbody6.kz, 24) &&
         _config_error("merger.nbody6.kz", "KZ(24) is set by the IMBH route; remove the override")
-    s = clusters[k].imbh::IMBHSpec
-    (stellar.kz19 ≥ 3 && isfinite(s.mass) && s.mass < 100) && _config_error(
-        "merger.cluster$(k).imbh.mass",
-        "an IMBH under stellar evolution must be ≥ 100 M☉ (below, indistinguishable from the " *
-        "SSE black holes); got $(s.mass) M☉",
-    )
+    for k in carriers
+        s = clusters[k].imbh::IMBHSpec
+        (stellar.kz19 ≥ 3 && isfinite(s.mass) && s.mass < 100) && _config_error(
+            "merger.cluster$(k).imbh.mass",
+            "an IMBH under stellar evolution must be ≥ 100 M☉ (below, indistinguishable from the " *
+            "SSE black holes); got $(s.mass) M☉",
+        )
+    end
+    k = carriers[1]
     nbody6.escapers == "remove" &&
         @warn "merger.cluster$(k).imbh: with escapers = \"remove\" an IMBH ejected beyond twice " *
               "the tidal radius is removed and every later restart aborts (imbhinit.F); use " *

@@ -54,11 +54,18 @@ entries say so.
   (`[merger.nbody6] imbh_route`, `imbh_output_dt_myr`) writes the IMBH as the
   last body of `dat.10`, sets `KZ(24) = 1` and repeats its state on the
   engine's `IMBHINIT` line in the engine's units, so the overwrite of particle
-  N is an identity. One IMBH per configuration; refused: `imbh_route =
-  "flag"`, a `KZ(24)` override, M•/M_stars > 0.05, M•/⟨m⟩ < 20, below
-  100 M☉ under stellar evolution and, there, `KZ(27) < 3`; `escapers =
-  "remove"` warns. `merger_ic.toml` records it under `[imbh]`,
-  `merger_summary.txt` in one `IMBH:` line.
+  N is an identity. The `flag` route (engine fork ≥ v2026.07.11) seeds one
+  IMBH per cluster, up to 16, as the last bodies of `dat.10` in cluster order,
+  sets `KZ(24) = 3` and writes the lines `NIMBHS DTBH` and the IMBH names
+  after `&INSCALE`; `imbh_route = "auto"` takes `kz24` for one IMBH and
+  `flag` for several (`resolved_imbh_route`). Refused: several IMBHs under
+  `kz24`, more than 16, `flag` without an IMBH, a `KZ(24)` override,
+  M•/M_stars > 0.05, M•/⟨m⟩ < 20, below 100 M☉ under stellar evolution and,
+  there, `KZ(27) < 3`; `escapers = "remove"` warns. `merger_ic.toml` records
+  the first IMBH under `[imbh]` with `route`, `names`, `clusters` and every
+  IMBH in the array of tables `bodies`; `merger_summary.txt` has one `IMBH:`
+  line per IMBH. `read_mbh45` reads the body name that ends the `mbh.45`
+  records from fork v2026.07.11 on (`MBHRow.name`).
 - Rotating King profile of the generator: `profile = { type = "rotating_king",
   W0, omega0, axis }` samples the Einsel & Spurzem (1999) model
   (`sample_rotating_king`, solved once per `(W0, omega0)`), rotates its

@@ -398,13 +398,17 @@ Follows the Fortran NAMELIST read order expected by `nbody6.F → start.F`:
   `&INNBODY6` → `&ININPUT` → `&INSSE` → `&INBSE` → `&INCOLL` →
   `&INDATA` → `&INSCALE` (→ `&INXTRNL0` if KZ(14) = 2, 5) (→ the
   list-directed `IMBHINIT` line `BIMBH XIMBH(1:3) VIMBH(1:3) DTBH` if
-  KZ(24) = 1).
+  KZ(24) = 1, or the lines `NIMBHS DTBH` and the `NIMBHS` IMBH names if
+  KZ(24) = 3).
 
-`imbh`, a named tuple `(mass_nb, pos_nb, vel_nb, dtbh_nb)` holding the last
+`imbh` selects one of two IMBH routes by its `route` field; either sets
+`KZ(24)` with the other fixed options (before the `kz` overrides), and an
+unknown route raises an `ArgumentError`.
+
+`(route = :kz24, mass_nb, pos_nb, vel_nb, dtbh_nb)`, holding the last
 `dat.10` row (the IMBH, N-body units) and the `mbh.45` interval `DTBH` [NB],
-sets `KZ(24) = 1` with the other fixed options (before the `kz` overrides)
-and writes the `IMBHINIT` line in the units the engine reads it (M☉, pc,
-km s⁻¹). The engine overwrites particle N with `BODY(N) = BIMBH/ZMBAR`,
+sets `KZ(24) = 1` and writes the `IMBHINIT` line in the units the engine
+reads it (M☉, pc, km s⁻¹). The engine overwrites particle N with `BODY(N) = BIMBH/ZMBAR`,
 `X = XIMBH/RBAR`, `XDOT = VIMBH/VSTAR`, `VSTAR = 1e-5 √(GM/PC) √(ZMASS ZMBAR/RBAR)`,
 where under `KZ(22) = 2` its `ZMBAR` is already the mass scale
 `ZMBAR N / ZMASS` (`start.F`), not the mean mass written to `&ININPUT`. With
@@ -412,9 +416,17 @@ where under `KZ(22) = 2` its `ZMBAR` is already the mass scale
 `zmass_w = zmbar_w N_total` (`ZMASS = 1`), the line carries
 `BIMBH = mass_nb zmass_w`, `XIMBH = pos_nb rbar_w` and
 `VIMBH = vel_nb VSTAR(zmass_w, rbar_w)`, so the engine's conversion returns
-the `dat.10` state to rounding (an identity overwrite). An IMBH under stellar
-evolution (`stellar.kz19 ≥ 3`) needs the Peters decay of `KZ(27) = 3`; a
-smaller final `KZ(27)` is refused.
+the `dat.10` state to rounding (an identity overwrite).
+
+`(route = :flag, names::Vector{Int}, dtbh_nb)` sets `KZ(24) = 3` (engine
+fork ≥ v2026.07.11) and writes, at the same position, the line
+`NIMBHS DTBH` (`length(names)` and `dtbh_nb` as `%.15e`) and then the names
+separated by single spaces on one line. The engine keeps the `dat.10` mass,
+position and velocity of these bodies and flags them as IMBHs (type 14).
+`names` must hold 1 to 16 distinct names in `1:N_total`.
+
+An IMBH under stellar evolution (`stellar.kz19 ≥ 3`) needs the Peters decay
+of `KZ(27) = 3` on either route; a smaller final `KZ(27)` is refused.
 
 # Key settings
 - `nbody6`: resolved [`Nbody6ParameterSpec`](@ref); obtain it from
@@ -465,7 +477,19 @@ function generate_merger_inp(
     kz[23] = _ESCAPERS_KZ23[nbody6.escapers]
     kz[26] = 1
     kz[30] = 1
-    imbh === nothing || (kz[24] = 1)   # IMBHINIT: particle N is the IMBH
+    imbh_route = if imbh === nothing
+        :none
+    else
+        hasproperty(imbh, :route) ||
+            throw(ArgumentError("imbh: a route field (:kz24 or :flag) is required"))
+        imbh.route in (:kz24, :flag) || throw(
+            ArgumentError("imbh: unknown route $(repr(imbh.route)); expected :kz24 or :flag"),
+        )
+        imbh.route
+    end
+    # kz24: IMBHINIT overwrites particle N; flag: the listed names are the IMBHs
+    imbh_route === :kz24 && (kz[24] = 1)
+    imbh_route === :flag && (kz[24] = 3)
     if nbody6.binary_physics == "full"
         for (i, v) in _FULL_BINARY_KZ
             kz[i] = v
@@ -478,13 +502,9 @@ function generate_merger_inp(
     end
     kz[46] > 0 &&
         @warn "KZ(46) = $(kz[46]) writes the per-binary custom output (ASCII, several GB per N-body time unit at 6×10⁵ bodies); meant for test arms"
-    (imbh !== nothing && stellar.kz19 ≥ 3 && kz[27] < 3) && error(
-        "an IMBH under stellar evolution needs the Peters decay of KZ(27) = 3 " *
-        "(binary_physics = \"full\" or kz = {27 = 3}); got KZ(27) = $(kz[27])",
-    )
     # The IMBHINIT line in the units the engine reads it, from the RBAR and
     # ZMBAR it parses and its mass scale ZMBAR N / ZMASS (ZMASS = 1)
-    imbh_line = if imbh === nothing
+    imbh_line = if imbh_route !== :kz24
         nothing
     else
         (length(imbh.pos_nb) == 3 && length(imbh.vel_nb) == 3 && imbh.dtbh_nb > 0) || throw(
@@ -501,6 +521,28 @@ function generate_merger_inp(
             dtbh = Float64(imbh.dtbh_nb),
         )
     end
+    # The NIMBHS DTBH line and the name line of the flag route
+    imbh_flag = if imbh_route !== :flag
+        nothing
+    else
+        names = collect(Int, imbh.names)
+        imbh.dtbh_nb > 0 ||
+            throw(ArgumentError("imbh: dtbh_nb must be > 0; got $(imbh.dtbh_nb)"))
+        1 ≤ length(names) ≤ _IMBH_FLAG_MAX || throw(
+            ArgumentError(
+                "imbh: the flag route takes 1 to $(_IMBH_FLAG_MAX) names; got $(length(names))",
+            ),
+        )
+        all(n -> 1 ≤ n ≤ N_total, names) ||
+            throw(ArgumentError("imbh: names must lie in 1:$N_total; got $names"))
+        allunique(names) || throw(ArgumentError("imbh: repeated names in $names"))
+        (names = names, dtbh = Float64(imbh.dtbh_nb))
+    end
+    # The physics refusal after the argument checks
+    (imbh !== nothing && stellar.kz19 ≥ 3 && kz[27] < 3) && error(
+        "an IMBH under stellar evolution needs the Peters decay of KZ(27) = 3 " *
+        "(binary_physics = \"full\" or kz = {27 = 3}); got KZ(27) = $(kz[27])",
+    )
 
     # Build KZ lines: KZ(1:10) = ... etc.
     kz_strs = String[]
@@ -639,11 +681,16 @@ function generate_merger_inp(
                 imbh_line.dtbh
             )
         end
+        # --- 10'. Flag route (KZ(24) = 3): NIMBHS DTBH, then the IMBH names ---
+        if imbh_flag !== nothing
+            @printf(io, "%d %.15e\n", length(imbh_flag.names), imbh_flag.dtbh)
+            println(io, join(string.(imbh_flag.names), " "))
+        end
 
         # --- No binaries (NBIN0=0) or hierarchical triples ---
     end
 
-    kz24_note = kz[24] == 1 && imbh !== nothing ? ", KZ(24)=1" : ""
+    kz24_note = imbh !== nothing && kz[24] in (1, 3) ? ", KZ(24)=$(kz[24])" : ""
     @info "Wrote .inp file: $path (N=$N_total, NBIN0=$nbin0, KZ(22)=2, KZ(14)=$kz14$kz24_note, binary_physics=$(nbody6.binary_physics), RBAR=$rbar, ZMBAR=$zmbar)"
     if nbody6.checkpoint
         n_dumps = floor(Int, tcrit / dtadj) + 1
@@ -1086,15 +1133,18 @@ With `cfg.seed_streams = "per_cluster"` (always in complex mode) and no
 external `rng`, cluster `i` is sampled and its pairs expanded from its own
 stream (`_cluster_rng(seed, i)`); an external `rng` replaces every stream.
 
-A cluster with an [`IMBHSpec`](@ref) (one per configuration) gets its IMBH
-on the systems after truncation and before pair expansion: centred on their
+Every cluster with an [`IMBHSpec`](@ref) gets its IMBH, in cluster order,
+on its systems after truncation and before pair expansion: centred on their
 centre of mass (plus the offset), its velocity from the cluster's stream for
 `velocity = "equipartition"`, and with `response = "jeans"` the systems'
-velocities rescaled. It is written as the last body of `dat.10` and repeated
-on the `IMBHINIT` line of `merger.inp` (`KZ(24) = 1`); `N_total` and
-`M_total` include it, the cluster ranges and `RBAR` (the stars' half-mass
-radius) do not. Refused: M•/M_stars > 0.05 and M•/⟨m⟩ < 20 (warned above
-0.02, below 50 and above 10⁴).
+velocities rescaled. The IMBHs are the last bodies of `dat.10`, in cluster
+order (names `N_stars + 1, …`). The route follows
+[`resolved_imbh_route`](@ref): under `:kz24` (one IMBH) its state is repeated
+on the `IMBHINIT` line of `merger.inp` (`KZ(24) = 1`); under `:flag`
+(`KZ(24) = 3`, up to 16) the lines `NIMBHS DTBH` and the IMBH names follow
+`&INSCALE`. `N_total` and `M_total` include the IMBHs, the cluster ranges and
+`RBAR` (the stars' half-mass radius) do not. Refused: M•/M_stars > 0.05 and
+M•/⟨m⟩ < 20 (warned above 0.02, below 50 and above 10⁴).
 
 Returns a [`MergerICResult`](@ref) for downstream plotting and inspection.
 """
@@ -1124,14 +1174,12 @@ function generate_merger_ic(
     _validate_tidal(cfg.tidal)
     _validate_tidal_tolerance(cfg.tidal, cfg.nbody6)
     # IMBH route checks of the loader, for configurations built in code
-    n_imbh = count(c -> c.imbh !== nothing, cfg.clusters)
-    cfg.nbody6.imbh_route == "flag" && error(
-        "generate_merger_ic: merger.nbody6.imbh_route \"flag\" needs the IMBH-1 amendment of " *
-        "the engine (fork item 9.14), which this build does not have; use \"kz24\" with one IMBH",
-    )
-    n_imbh > 1 &&
-        error("generate_merger_ic: the kz24 route takes one IMBH; $n_imbh clusters carry one")
-    (n_imbh > 0 && haskey(cfg.nbody6.kz, 24)) && error(
+    imbh_carriers = findall(c -> c.imbh !== nothing, cfg.clusters)
+    imbh_violation = _imbh_route_violation(cfg.nbody6.imbh_route, imbh_carriers)
+    imbh_violation === nothing ||
+        error("generate_merger_ic: $(imbh_violation[1]): $(imbh_violation[2])")
+    imbh_route = resolved_imbh_route(cfg)
+    (!isempty(imbh_carriers) && haskey(cfg.nbody6.kz, 24)) && error(
         "generate_merger_ic: merger.nbody6.kz KZ(24) is set by the IMBH route; remove the override",
     )
     cfg.seed_streams in _SEED_STREAMS || throw(
@@ -1416,11 +1464,10 @@ function generate_merger_ic(
         control_info = merge(control_info, (e_realised = T_r + W_r, q_realised = T_r / abs(W_r)))
     end
 
-    # IMBH (kz24 route) on the systems of its cluster, before pair expansion:
-    # a primordial pair counts as one system in ⟨m⟩ and in the dispersion.
-    k_imbh = findfirst(c -> c.imbh !== nothing, specs)
-    imbh_state = nothing
-    if k_imbh !== nothing
+    # IMBHs on the systems of their clusters, in cluster order, before pair
+    # expansion: a primordial pair counts as one system in ⟨m⟩ and in the dispersion.
+    imbh_states = NamedTuple[]
+    for k_imbh in findall(c -> c.imbh !== nothing, specs)
         spec_bh = specs[k_imbh].imbh::IMBHSpec
         members_bh = collect(Int, system_ranges[k_imbh])
         M_i = sum(mass_combined[members_bh])
@@ -1475,16 +1522,19 @@ function generate_merger_ic(
         else
             Float64[]
         end
-        imbh_state = (
-            cluster = k_imbh,
-            spec = spec_bh,
-            mass = M_bh,
-            mass_fraction = frac_bh,
-            m_mean = m_mean,
-            σ_c = σ_c,
-            pos = x_bh,
-            vel = v_bh,
-            jeans_factors = jeans_factors,
+        push!(
+            imbh_states,
+            (
+                cluster = k_imbh,
+                spec = spec_bh,
+                mass = M_bh,
+                mass_fraction = frac_bh,
+                m_mean = m_mean,
+                σ_c = σ_c,
+                pos = x_bh,
+                vel = v_bh,
+                jeans_factors = jeans_factors,
+            ),
         )
         @info @sprintf(
             "IMBH: cluster %d, M• = %.4g M☉ (M•/M_stars = %.3g, M•/⟨m⟩ = %.3g), σ_c = %.3g km/s, velocity %s, response %s",
@@ -1510,14 +1560,15 @@ function generate_merger_ic(
         rng = per_cluster ? cluster_rngs : use_rng,
     )
     pos_combined, vel_combined, mass_combined = expanded.pos, expanded.vel, expanded.mass
-    # The IMBH is the last body (particle N of IMBHINIT), in no cluster's
-    # blocks; it counts in N_total and M_total, while RBAR stays the
-    # half-mass radius of the stars.
-    if imbh_state !== nothing
-        pos_combined = hcat(pos_combined, imbh_state.pos)
-        vel_combined = hcat(vel_combined, imbh_state.vel)
-        mass_combined = vcat(mass_combined, imbh_state.mass)
-        M_total += imbh_state.mass
+    # The IMBHs are the last bodies in cluster order (particle N of IMBHINIT
+    # under kz24, the flagged names under flag), in no cluster's blocks; they
+    # count in N_total and M_total, while RBAR stays the half-mass radius of
+    # the stars.
+    for st in imbh_states
+        pos_combined = hcat(pos_combined, st.pos)
+        vel_combined = hcat(vel_combined, st.vel)
+        mass_combined = vcat(mass_combined, st.mass)
+        M_total += st.mass
     end
     # Inertial velocities into the engine's rotating frame (kz14 = 1, 2): v − Ω × r,
     # with Ω converted to the code velocity unit per pc; no rotating frame otherwise.
@@ -1640,34 +1691,56 @@ function generate_merger_ic(
     vel_combined .*= _CODE_VSTAR_KMS  # code units → km/s (match to_nbody_units! API)
     to_nbody_units!(mass_combined, pos_combined, vel_combined, M_total, rbar)
 
-    # IMBHINIT data (the last dat.10 row, DTBH with the realised T*) and the run record
+    # IMBH input of merger.inp (DTBH with the realised T*) and the run record:
+    # the scalar fields of the first IMBH, every IMBH under `bodies`
     imbh_inp = nothing
     imbh_record = nothing
-    if imbh_state !== nothing
-        dtbh_nb = nbody6.imbh_output_dt_myr / t_star_myr
-        imbh_inp = (
-            mass_nb = mass_combined[end],
-            pos_nb = pos_combined[:, end],
-            vel_nb = vel_combined[:, end],
-            dtbh_nb = dtbh_nb,
+    n_imbh = length(imbh_states)
+    if n_imbh > 0
+        (imbh_route === :flag || (imbh_route === :kz24 && n_imbh == 1)) || error(
+            "generate_merger_ic: $n_imbh IMBHs do not fit the resolved route $(repr(imbh_route))",
         )
-        imbh_record = Dict{String,Any}(
-            "name" => N_total,
-            "cluster" => imbh_state.cluster,
-            "mass_msun" => imbh_state.mass,
-            "mass_fraction" => imbh_state.mass_fraction,
-            "mean_stellar_mass_msun" => imbh_state.m_mean,
-            "sigma_c_kms" => imbh_state.σ_c * _CODE_VSTAR_KMS,
-            "placement" => imbh_state.spec.placement,
-            "velocity_mode" => imbh_state.spec.velocity,
-            "response" => imbh_state.spec.response,
-            "jeans_factors" => collect(Float64, imbh_state.jeans_factors),
-            "spin" => imbh_state.spec.spin,
-            "route" => "kz24",
-            "dtbh_nb" => dtbh_nb,
-            "position_pc" => pos_phys[:, end],
-            "velocity_kms" => vel_phys[:, end],
-            "rbar_note" => "length unit from the stars alone",
+        dtbh_nb = nbody6.imbh_output_dt_myr / t_star_myr
+        n_stars = N_total - n_imbh
+        imbh_names = collect((n_stars + 1):N_total)
+        imbh_inp = if imbh_route === :kz24
+            (
+                route = :kz24,
+                mass_nb = mass_combined[end],
+                pos_nb = pos_combined[:, end],
+                vel_nb = vel_combined[:, end],
+                dtbh_nb = dtbh_nb,
+            )
+        else
+            (route = :flag, names = imbh_names, dtbh_nb = dtbh_nb)
+        end
+        imbh_bodies = [
+            Dict{String,Any}(
+                "name" => imbh_names[j],
+                "cluster" => st.cluster,
+                "mass_msun" => st.mass,
+                "mass_fraction" => st.mass_fraction,
+                "mean_stellar_mass_msun" => st.m_mean,
+                "sigma_c_kms" => st.σ_c * _CODE_VSTAR_KMS,
+                "placement" => st.spec.placement,
+                "velocity_mode" => st.spec.velocity,
+                "response" => st.spec.response,
+                "jeans_factors" => collect(Float64, st.jeans_factors),
+                "spin" => st.spec.spin,
+                "position_pc" => pos_phys[:, imbh_names[j]],
+                "velocity_kms" => vel_phys[:, imbh_names[j]],
+            ) for (j, st) in enumerate(imbh_states)
+        ]
+        imbh_record = merge(
+            copy(imbh_bodies[1]),
+            Dict{String,Any}(
+                "route" => String(imbh_route),
+                "names" => imbh_names,
+                "clusters" => Int[st.cluster for st in imbh_states],
+                "bodies" => imbh_bodies,
+                "dtbh_nb" => dtbh_nb,
+                "rbar_note" => "length unit from the stars alone",
+            ),
         )
     end
 
@@ -1797,14 +1870,16 @@ targets `e_target` [M☉ km² s⁻²] and `q_target` from the systems of the com
 the realised `e_realised` and `q_realised` of the control's systems,
 `r_h_pc` [pc], `n_stars` and `mass_total` [M☉] of the control.
 
-With `imbh_record` (a seeded IMBH, kz24 route) the top-level `[imbh]` table
-holds its body name `name` (= `N_total`, the last body), `cluster`,
+With `imbh_record` (seeded IMBHs) the top-level `[imbh]` table holds the
+per-IMBH fields of the first IMBH: its body name `name`, `cluster`,
 `mass_msun`, the realised `mass_fraction` M•/M_stars, `mean_stellar_mass_msun`
 (per system), `sigma_c_kms`, `placement`, `velocity_mode`, `response`,
-`jeans_factors` (empty for a rigid response), `spin`, `route`, `dtbh_nb`, the
-written state `position_pc` and `velocity_kms` (in the engine's frame) and
-`rbar_note`: `rbar` is the half-mass radius of the stars, while `N_total`,
-`M_total` and `zmbar` include the IMBH.
+`jeans_factors` (empty for a rigid response), `spin` and the written state
+`position_pc` and `velocity_kms` (in the engine's frame). It adds `route`
+(`"kz24"` or `"flag"`), `names` and `clusters` of every IMBH in `dat.10`
+order, the array of tables `bodies` with the per-IMBH fields of each,
+`dtbh_nb` and `rbar_note`: `rbar` is the half-mass radius of the stars, while
+`N_total`, `M_total` and `zmbar` include the IMBHs.
 """
 function _write_merger_ic_metadata(
     path::AbstractString,
@@ -2167,19 +2242,21 @@ function _write_merger_summary(
             end
             println(io)
         end
-        # Not a cluster line: parse_merger_summary reads the stellar ranges only
+        # Not cluster lines: parse_merger_summary reads the stellar ranges only
         if imbh_record !== nothing
-            @printf(
-                io,
-                "  IMBH: name %d, M = %.4g M☉ (M•/M_stars = %.3g), cluster %d, route %s, velocity %s, response %s\n",
-                imbh_record["name"],
-                imbh_record["mass_msun"],
-                imbh_record["mass_fraction"],
-                imbh_record["cluster"],
-                imbh_record["route"],
-                imbh_record["velocity_mode"],
-                imbh_record["response"]
-            )
+            for b in get(imbh_record, "bodies", [imbh_record])
+                @printf(
+                    io,
+                    "  IMBH: name %d, M = %.4g M☉ (M•/M_stars = %.3g), cluster %d, velocity %s, response %s, route %s\n",
+                    b["name"],
+                    b["mass_msun"],
+                    b["mass_fraction"],
+                    b["cluster"],
+                    b["velocity_mode"],
+                    b["response"],
+                    imbh_record["route"]
+                )
+            end
         end
         println(io)
         if complex_info !== nothing

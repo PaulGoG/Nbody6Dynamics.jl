@@ -56,6 +56,20 @@ using StableRNGs: StableRNG
             @test rows[1].vel_kms == (1.0, 2.0, 3.0)
             @test rows[1].n_neighbours == 12
             @test rows[1].vsigma_km2s2 == (0.5, 0.5, 0.5)
+            @test rows[1].name == 0 && rows[2].name == 0
+            # fork v2026.07.11 on: the body name as a 21st number, integer or real
+            named = joinpath(dir, "named.45")
+            write(
+                named,
+                record("SINGLE", 3.5, 998, 20) *
+                " 8193\n" *
+                record("BINARY", 4.5, 997, 20) *
+                " 8.193000000000000E+03\n",
+            )
+            rows_named = nd.read_mbh45(named)
+            @test length(rows_named) == 2
+            @test all(r -> r.name == 8193, rows_named)
+            @test rows_named[1].index == 998 && rows_named[1].vsigma_km2s2 == (0.5, 0.5, 0.5)
             bad = joinpath(dir, "bad.45")
             write(bad, record("SINGLE", 1.0, 5, 20) * "\n" * record("SINGLE", 2.0, 5, 19) * "\n")
             @test_throws ArgumentError nd.read_mbh45(bad)
