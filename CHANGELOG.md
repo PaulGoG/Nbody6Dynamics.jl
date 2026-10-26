@@ -40,6 +40,31 @@ entries say so.
   `"test_1e4"` → `&INBSE kicktype`), `bh_spin` (`"zero"` … `"mesa"` →
   `bhspinfl`, the unseeded draws warned) and `escapers` (`"remove"` or
   `"keep"` → `KZ(23)` 2 or 0); any recoil needs `stellar.kz19 ≥ 3`.
+- Rotating King profile of the generator: `profile = { type = "rotating_king",
+  W0, omega0, axis }` samples the Einsel & Spurzem (1999) model
+  (`sample_rotating_king`, solved once per `(W0, omega0)`), rotates its
+  angular momentum onto `axis` (`[0, 0, 1]` prograde under `KZ(14) = 1, 2`),
+  scales and virialises it like the King profile, writes the model's and the
+  realised λ and specific angular momentum to `merger_ic.toml`
+  (`clusterN.rotation`, `rotation_moments`) and refuses primordial mass
+  segregation; `model_density` gives its angle-averaged profile.
+- `[merger.nbody6] gw_recoil` (`"off"`, `"fit_q"`, `"nr_fits"`,
+  `"test_1e4"` → `&INBSE kicktype`), `bh_spin` (`"zero"` … `"mesa"` →
+  `bhspinfl`, the unseeded draws warned) and `escapers` (`"remove"` or
+  `"keep"` → `KZ(23)` 2 or 0); any recoil needs `stellar.kz19 ≥ 3`.
+- Collision catalogue (`[postprocess] collision_catalogue`, default `true`):
+  `collision_catalogue` tags every collision of `coll.13` (the product keeps
+  the heavier star's name) and coalescence of `coal.24` with the progenitor
+  cluster of each star from `merger_summary.txt`, the primordial-pair,
+  mixed-origin, kicked-before and generation flags; `collision_summary`,
+  `write_collision_catalogue` (`collision_catalogue.csv`).
+- Survival statistics of binary lifetimes (`[postprocess] binary_survival`,
+  default `false`): `event_table` from the spans on the age or the cluster
+  time axis (delayed entry, the open ends censored, end classes as causes),
+  `kaplan_meier` with the Greenwood variance and log–log intervals,
+  `nelson_aalen`, `aalen_johansen` cumulative incidence with its variance,
+  `turnbull` for interval censoring, `logrank_test`, `cox_snell_residuals`,
+  and the products `binary_survival.csv`, `binary_incidence.csv`.
 - Gravitational-wave catalogues (`[postprocess] gw_catalogues`, default `false`):
   `compact_binary_catalogue` (one row per Peters-application line, NS/BH BINARY
   line or `bev.82` record of a pair of white dwarfs, neutron stars or black

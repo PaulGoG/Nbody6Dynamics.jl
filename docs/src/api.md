@@ -364,6 +364,35 @@ binary_distribution_series
 write_binary_distributions
 ```
 
+## Survival Statistics
+
+```@docs
+EventTable
+event_table
+SurvivalCurve
+kaplan_meier
+survival_at
+confidence_interval
+nelson_aalen
+CumulativeIncidence
+aalen_johansen
+turnbull
+logrank_test
+cox_snell_residuals
+write_survival_curve
+write_cumulative_incidence
+```
+
+## Collision Catalogue
+
+```@docs
+CollisionRow
+collision_catalogue
+collision_summary
+progenitor_of
+write_collision_catalogue
+```
+
 ## Gravitational-Wave Catalogues
 
 ```@docs

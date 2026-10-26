@@ -102,6 +102,8 @@ end
     include("test_gw_observables.jl")
     include("test_binary_population.jl")
     include("test_gw_catalogues.jl")
+    include("test_collision_catalogue.jl")
+    include("test_survival.jl")
     include("test_diagnostics.jl")
     include("test_potential.jl")
     include("test_energy_budget.jl")

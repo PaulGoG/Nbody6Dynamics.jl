@@ -296,6 +296,8 @@ Nbody6Dynamics/
 │   │   ├── gw_observables.jl        # Peters inspiral time, chirp mass, GW frequencies, eccentricity at a reference frequency
 │   │   ├── binary_population_series.jl # Binary fractions per shell, stellar class and census level; pair types, hardness, element distributions
 │   │   ├── gw_catalogues.jl         # Compact-binary, escaped-binary and GW-merger catalogues; band residence times on the Peters track
+│   │   ├── collision_catalogue.jl   # Collisions and coalescences tagged with the progenitor cluster of each star
+│   │   ├── survival.jl              # Kaplan–Meier, Nelson–Aalen, Aalen–Johansen, Turnbull, log-rank, Cox–Snell for binary lifetimes
 │   │   └── ensemble.jl              # Seeded ensembles: series extractors, common-grid percentiles (median, 68/95 %)
 │   ├── io/
 │   │   ├── io.jl                    # I/O submodule includes
@@ -377,6 +379,8 @@ Nbody6Dynamics/
 │   ├── test_gw_observables.jl       # Peters inspiral time, GW frequencies, eccentricity at a frequency
 │   ├── test_binary_population.jl    # Binary fractions per shell, stellar class and census level; pair types, frames, distributions
 │   ├── test_gw_catalogues.jl        # GW catalogues: Peters track, band residence, catalogue rows from a synthetic event log
+│   ├── test_collision_catalogue.jl  # Collision catalogue: progenitor tags, primordial pairs, generations
+│   ├── test_survival.jl             # Survival estimators against closed forms and simulated censored samples
 │   ├── test_diagnostics.jl          # Binary population, remnant, stellar classes, cluster structure
 │   ├── test_potential.jl            # Pair potential, reduced systems, bound sets, snapshot integrals
 │   ├── test_energy_budget.jl        # Jacobi integral, energy-jump localisation, mass budget

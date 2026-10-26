@@ -136,6 +136,8 @@ include("analysis/binary_census.jl")
 include("analysis/gw_observables.jl")
 include("analysis/binary_population_series.jl")
 include("analysis/gw_catalogues.jl")
+include("analysis/collision_catalogue.jl")
+include("analysis/survival.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -616,6 +618,49 @@ function postprocess(
         end
     end
     lap!("gw_catalogues")
+    # Collisions and coalescences with the progenitor cluster of each star
+    if pp.collision_catalogue && haskey(results, :diagnostics)
+        coll_path = joinpath(sim_dir, "coll.13")
+        coal_path = joinpath(sim_dir, "coal.24")
+        scaling = extract_scaling(results[:diagnostics])
+        if (isfile(coll_path) || isfile(coal_path)) &&
+           isfinite(scaling.tscale) &&
+           scaling.tscale > 0
+            @info "Collision catalogue with the progenitor cluster of each star..."
+            collisions = isfile(coll_path) ? read_collision_log(coll_path) : CollisionRecord[]
+            coalescences = get!(results, :coalescences) do
+                isfile(coal_path) ? read_coalescence_log(coal_path) : CoalescenceRecord[]
+            end
+            ranges = parse_merger_summary(joinpath(sim_dir, "merger_summary.txt"))
+            log = get(results, :binary_event_log, nothing)
+            results[:collision_catalogue] = collision_catalogue(
+                collisions,
+                coalescences,
+                ranges;
+                tstar_myr = scaling.tscale,
+                rbar_pc = scaling.rbar,
+                nbin0 = nbin0,
+                mass_loss = log === nothing ? nothing : log.mass_loss,
+            )
+        end
+    end
+    lap!("collision_catalogue")
+    # Lifetimes of the regularised binaries: Kaplan–Meier on the age axis and the
+    # cumulative incidence of the end classes (escape and the open ends censor)
+    if pp.binary_survival && haskey(results, :binary_spans) && haskey(results, :diagnostics)
+        spans = results[:binary_spans]
+        t_last = maximum((s.t_end_myr for s in spans); init = 0.0)
+        if !isempty(spans) && isfinite(t_last)
+            @info "Binary survival statistics over $(length(spans)) spans..."
+            table = event_table(spans; time_axis = :age, t_end = t_last)
+            results[:binary_survival] = (
+                curve = kaplan_meier(table),
+                incidence = aalen_johansen(table),
+                n_spans = length(spans),
+            )
+        end
+    end
+    lap!("binary_survival")
     # Validity record: built from the products above, with the build record of
     # the output directory and the run record of its parent.
     if pp.validity
@@ -953,6 +998,22 @@ function _finish_pipeline(
             results[:binary_distributions],
         )
     end
+    if haskey(results, :binary_survival) && !isempty(products_dir)
+        write_survival_curve(
+            joinpath(products_dir, "binary_survival.csv"),
+            results[:binary_survival].curve,
+        )
+        write_cumulative_incidence(
+            joinpath(products_dir, "binary_incidence.csv"),
+            results[:binary_survival].incidence,
+        )
+    end
+    if haskey(results, :collision_catalogue) && !isempty(products_dir)
+        write_collision_catalogue(
+            joinpath(products_dir, "collision_catalogue.csv"),
+            results[:collision_catalogue],
+        )
+    end
     if haskey(results, :gw_catalogues) && !isempty(products_dir)
         cat = results[:gw_catalogues]
         write_compact_binary_catalogue(
@@ -1191,6 +1252,11 @@ export write_compact_binary_catalogue, write_escaped_binary_catalogue, write_gw_
 export peters_semi_major_axis, band_residence, eccentricity_after
 export RotatingKingModel, solve_rotating_king, rotating_king_moments, sample_rotating_king
 export RotatingKingProfile, rotation_moments
+export CollisionRow,
+    collision_catalogue, collision_summary, progenitor_of, write_collision_catalogue
+export EventTable, SurvivalCurve, CumulativeIncidence, event_table, kaplan_meier, nelson_aalen
+export aalen_johansen, turnbull, logrank_test, cox_snell_residuals, survival_at, confidence_interval
+export write_survival_curve, write_cumulative_incidence
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
