@@ -347,6 +347,11 @@ chirp_mass
 orbital_frequency
 gw_frequency
 eccentricity_at_frequency
+peters_mathews_g
+gw_amplitude_ldc
+gw_harmonic_strain
+gw_characteristic_strain
+gw_harmonic_frequency_derivative
 ```
 
 ## Binary Population Series
@@ -437,6 +442,7 @@ write_escaped_binary_catalogue
 GWMergerRow
 gw_merger_catalogue
 write_gw_merger_catalogue
+write_ldc_galactic_binaries
 ```
 
 ## Rotating King Model

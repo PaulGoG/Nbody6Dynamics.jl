@@ -5,6 +5,8 @@
 # residence against the circular closed forms, the state after GW decay, and
 # the compact-binary, escaped-binary and merger rows of a synthetic event log.
 
+using StableRNGs: StableRNG
+
 @testset "GW catalogues" begin
     nd = Nbody6Dynamics
 
@@ -488,5 +490,115 @@
             decision_lines = true,
         )
         @test length(rows3) == 3
+    end
+
+    @testset "Strain columns and LDC export" begin
+        log3 = nd.BinaryEventLog()
+        # Three compact pairs, two of them quasi-circular
+        for (i, (n1, n2, ecc)) in enumerate(((1, 2, 0.001), (3, 4, 0.005), (5, 6, 0.5)))
+            push!(
+                log3.gw,
+                nd.GWEvent(;
+                    line = i,
+                    interval = 1,
+                    time_nb = 10.0 * i,
+                    kind = :gw_decay_step,
+                    name1 = n1,
+                    name2 = n2,
+                    kstar1 = 14,
+                    kstar2 = 13,
+                    m1_msun = 20.0,
+                    m2_msun = 1.4,
+                    semi_nb = 1.0e-8,
+                    ecc = ecc,
+                    gamma = 1.0e-9,
+                    t_gr_nb = 100.0,
+                ),
+            )
+        end
+        rows = compact_binary_catalogue(log3, BinarySpan[]; tstar_myr = 0.2, rbar_pc = 1.0)
+        @test length(rows) == 3
+        for r in rows
+            @test isfinite(r.amp_ldc22_kpc) && isfinite(r.h2_avg_kpc) && isfinite(r.hc2_kpc)
+            @test r.amp_ldc22_kpc ≈ gw_amplitude_ldc(r.mchirp_msun, r.f_gw22_hz) rtol = 1e-12
+            @test r.h2_avg_kpc ≈ gw_harmonic_strain(r.m1_msun, r.m2_msun, r.a_au, r.e, 2) rtol =
+                1e-12
+        end
+
+        ldc_names = [
+            "EclipticLatitude",
+            "EclipticLongitude",
+            "Amplitude",
+            "Frequency",
+            "FrequencyDerivative",
+            "Inclination",
+            "Polarization",
+            "InitialPhase",
+            "ObservationDuration",
+            "Cadence",
+        ]
+        dir = mktempdir()
+        path = write_ldc_galactic_binaries(
+            joinpath(dir, "ldc.csv"),
+            rows;
+            distance_kpc = 8.0,
+            rng = StableRNG(2),
+        )
+        @test path == joinpath(dir, "ldc.csv")
+        lines = readlines(path)
+        @test startswith(lines[1], "#")
+        @test occursin("n_pairs=3", lines[1]) && occursin("n_exported=2", lines[1])
+        @test split(lines[2], ",") == ldc_names
+        body = [split(l, ",") for l in lines[3:end]]
+        @test length(body) == 2
+        col(name) = findfirst(==(name), ldc_names)
+        circular = filter(r -> r.e ≤ 0.01, rows)
+        for (cells, r) in zip(body, sort(circular; by = r -> (r.name1, r.name2)))
+            value(name) = parse(Float64, cells[col(name)])
+            @test value("Amplitude") ≈ r.amp_ldc22_kpc / 8 rtol = 1e-12
+            @test value("Frequency") == r.f_gw22_hz
+            @test value("FrequencyDerivative") ≈ nd._gwcat_fdot_circular(r.mchirp_msun, r.f_gw22_hz) rtol =
+                1e-12
+            @test -π / 2 ≤ value("EclipticLatitude") ≤ π / 2
+            @test 0 ≤ value("EclipticLongitude") < 2π
+            @test 0 ≤ value("Inclination") ≤ π
+            @test 0 ≤ value("Polarization") < π
+            @test 0 ≤ value("InitialPhase") < 2π
+            @test value("ObservationDuration") == 4 * 365.25 * 86400
+            @test value("Cadence") == 15.0
+        end
+
+        # Without a generator the angle cells stay empty
+        path = write_ldc_galactic_binaries(joinpath(dir, "ldc_norng.csv"), rows; distance_kpc = 8.0)
+        lines = readlines(path)
+        @test length(lines) == 2 + 2
+        angles =
+            ("EclipticLatitude", "EclipticLongitude", "Inclination", "Polarization", "InitialPhase")
+        for l in lines[3:end]
+            cells = split(l, ",")
+            @test all(name -> cells[col(name)] == "", angles)
+            @test !isempty(cells[col("Amplitude")])
+        end
+
+        # A looser cut exports every pair
+        path = write_ldc_galactic_binaries(
+            joinpath(dir, "ldc_all.csv"),
+            rows;
+            distance_kpc = 8.0,
+            e_max = 0.6,
+        )
+        @test length(readlines(path)) == 2 + 3
+
+        @test_throws ArgumentError write_ldc_galactic_binaries(
+            joinpath(dir, "bad.csv"),
+            rows;
+            distance_kpc = 0.0,
+        )
+        @test_throws ArgumentError write_ldc_galactic_binaries(
+            joinpath(dir, "bad.csv"),
+            rows;
+            distance_kpc = 8.0,
+            e_max = 1.0,
+        )
     end
 end

@@ -596,6 +596,12 @@ function _validate_estimators(pp::PostprocessConfig)
         "postprocess.gw_t_now_myr",
         "must be finite and ≥ 0 (0 = none); got $(pp.gw_t_now_myr)",
     )
+    (isfinite(pp.ldc_distance_kpc) && pp.ldc_distance_kpc > 0) || _config_error(
+        "postprocess.ldc_distance_kpc",
+        "must be finite and > 0 [kpc]; got $(pp.ldc_distance_kpc)",
+    )
+    0 < pp.ldc_e_max < 1 ||
+        _config_error("postprocess.ldc_e_max", "must lie in (0, 1); got $(pp.ldc_e_max)")
     pp.gw_catalogues &&
         !pp.parse_stdout &&
         _config_error(

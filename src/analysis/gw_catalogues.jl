@@ -300,15 +300,20 @@ const _GWCAT_NO_ORBIT = (
     t_gw_mandel_myr = NaN,
     q_f_zwick = NaN,
     flag_pn_regime = false,
+    amp_ldc22_kpc = NaN,
+    h2_avg_kpc = NaN,
+    hc2_kpc = NaN,
 )
 
-"""Orbit, frequencies and coalescence times of a record (masses M☉, a in au); `NaN` for an invalid orbit."""
+"""Orbit, frequencies, coalescence times and strains at 1 kpc of a record (masses M☉, a in au); `NaN` for an invalid orbit."""
 function _gwcat_orbit_state(m1::Float64, m2::Float64, a::Float64, e::Float64)
     _gwcat_valid_orbit(m1, m2, a, e) || return _GWCAT_NO_ORBIT
     f_orb = orbital_frequency(m1, m2, a)
     f22 = gw_frequency(m1, m2, a, e; definition = :f22)
     gm = _GW_G * (m1 + m2) * _GW_MSUN
     p_m = a * _GW_AU * (1 - e) * (1 + e)
+    # An orbit frequency that under- or overflows leaves the strains NaN
+    strains = isfinite(f22) && f22 > 0
     return (
         q_peri_au = a * (1 - e),
         period_d = 1 / (f_orb * _GWCAT_S_PER_DAY),
@@ -322,6 +327,9 @@ function _gwcat_orbit_state(m1::Float64, m2::Float64, a::Float64, e::Float64)
         t_gw_mandel_myr = gw_inspiral_time_mandel(m1, m2, a, e) / _GWCAT_YR_PER_MYR,
         q_f_zwick = gw_zwick_factor(m1, m2, a, e),
         flag_pn_regime = _GW_C^2 * p_m / gm < _GWCAT_X_PN,
+        amp_ldc22_kpc = strains ? gw_amplitude_ldc(chirp_mass(m1, m2), f22) : NaN,
+        h2_avg_kpc = strains ? gw_harmonic_strain(m1, m2, a, e, 2) : NaN,
+        hc2_kpc = strains ? gw_characteristic_strain(m1, m2, a, e, 2) : NaN,
     )
 end
 
@@ -477,6 +485,13 @@ times to frequency crossings are counted from the record.
 | `flag_pn_regime` | x = c²a(1 − e²)/(GM) < 100, below the calibration of Tucker & Will (2021) | — |
 | `flag_perturbed_no_brake` | γ ≥ 0.1: the engine applies no GW decay to the pair while perturbed | — |
 | `record_kind` | the event kind of the record (`:gw_decay_step` for a GR KSTIDE line, `:gw_ksint`/`:gw_tides` for the decision lines, `:ks_new_compact`, `:bev82`) | — |
+| `amp_ldc22_kpc` | LDC 22-mode amplitude [`gw_amplitude_ldc`](@ref)(𝓜, f₂₂) at 1 kpc | kpc |
+| `h2_avg_kpc` | orientation-averaged strain of the n = 2 harmonic, [`gw_harmonic_strain`](@ref) at 1 kpc | kpc |
+| `hc2_kpc` | characteristic strain of the n = 2 harmonic, [`gw_characteristic_strain`](@ref) at 1 kpc | kpc |
+
+The three strain columns are distance-free products h × D with D in kpc: the
+strain at a distance D is the stored value divided by D in kpc. They are
+`NaN` where the orbit or the masses are not finite and positive.
 
 An application of the decay writes a decision line (GR KSINT2 or GR TIDES) and
 the KSTIDE line at the same time with the same state: the decision line is
@@ -528,6 +543,9 @@ Base.@kwdef struct CompactBinaryRow
     span_origin::Symbol
     flag_pn_regime::Bool
     flag_perturbed_no_brake::Bool
+    amp_ldc22_kpc::Float64 = NaN
+    h2_avg_kpc::Float64 = NaN
+    hc2_kpc::Float64 = NaN
 end
 
 """Count a record for source `i`: `false` (and counted) for an absent type, `false` for a non-compact pair."""
@@ -625,6 +643,9 @@ function _gwcat_compact_row(
         span_origin = span === nothing ? :none : span.origin,
         flag_pn_regime = orb.flag_pn_regime,
         flag_perturbed_no_brake = gamma ≥ _GWCAT_GAMMA_NO_BRAKE,
+        amp_ldc22_kpc = orb.amp_ldc22_kpc,
+        h2_avg_kpc = orb.h2_avg_kpc,
+        hc2_kpc = orb.hc2_kpc,
     )
 end
 
@@ -824,9 +845,15 @@ counted from the escape.
 | `f_gw22_now_hz`, `e_now`, `a_now_au` | state at `t_now_myr` after GW decay since the escape ([`eccentricity_after`](@ref)) | Hz, —, au |
 | `t_to_merge_from_now_myr` | coalescence time of that state | Myr |
 | `flag_kept_in_sim` | `false` when esc.11 lists a component within a relative 10⁻⁶ of `t_esc_myr` (the engine removed the pair), `true` otherwise | — |
+| `amp_ldc22_kpc` | LDC 22-mode amplitude [`gw_amplitude_ldc`](@ref)(𝓜, f₂₂) of the escape orbit at 1 kpc | kpc |
+| `h2_avg_kpc` | orientation-averaged strain of the n = 2 harmonic, [`gw_harmonic_strain`](@ref) at 1 kpc | kpc |
+| `hc2_kpc` | characteristic strain of the n = 2 harmonic, [`gw_characteristic_strain`](@ref) at 1 kpc | kpc |
 
 The present-epoch columns are `NaN` when `t_now_myr` is `NaN` or earlier than
-the escape, and when the pair merges before it.
+the escape, and when the pair merges before it. The three strain columns are
+distance-free products h × D with D in kpc: the strain at a distance D is the
+stored value divided by D in kpc; they are `NaN` where the orbit or the masses
+are not finite and positive.
 """
 Base.@kwdef struct EscapedBinaryRow
     t_esc_nb::Float64
@@ -862,6 +889,9 @@ Base.@kwdef struct EscapedBinaryRow
     a_now_au::Float64
     t_to_merge_from_now_myr::Float64
     flag_kept_in_sim::Bool
+    amp_ldc22_kpc::Float64 = NaN
+    h2_avg_kpc::Float64 = NaN
+    hc2_kpc::Float64 = NaN
 end
 
 """Escape mode of an escape line: a GW recoil, then a natal kick within the preceding interval, else dynamical."""
@@ -1019,6 +1049,9 @@ function escaped_binary_catalogue(
                 a_now_au = a_now,
                 t_to_merge_from_now_myr = t_left,
                 flag_kept_in_sim = !listed,
+                amp_ldc22_kpc = orb.amp_ldc22_kpc,
+                h2_avg_kpc = orb.h2_avg_kpc,
+                hc2_kpc = orb.hc2_kpc,
             ),
         )
     end
@@ -1302,3 +1335,136 @@ write_gw_merger_catalogue("gw_merger_catalogue.csv", rows)
 """
 write_gw_merger_catalogue(path::AbstractString, rows::AbstractVector{GWMergerRow})::String =
     _gwcat_write(path, rows, GWMergerRow)
+
+# ---------------------------------------------------------------------------
+# LDC galactic-binary export
+# ---------------------------------------------------------------------------
+
+# Columns of the galactic-binary table of the LDC Sangria data set (LDC manual, Tab. 3)
+const _GWCAT_LDC_COLUMNS = (
+    "EclipticLatitude",
+    "EclipticLongitude",
+    "Amplitude",
+    "Frequency",
+    "FrequencyDerivative",
+    "Inclination",
+    "Polarization",
+    "InitialPhase",
+    "ObservationDuration",
+    "Cadence",
+)
+# Default observation span [s] (four Julian years) and cadence [s] of the LDC export
+const _GWCAT_LDC_T_OBS_S = 4 * 365.25 * 86_400.0
+const _GWCAT_LDC_CADENCE_S = 15.0
+
+"""LDC cell: the shortest round-trip form of a finite float, an empty cell otherwise."""
+_gwcat_ldc_cell(v::Float64)::String = isfinite(v) ? string(v) : ""
+
+"""
+    write_ldc_galactic_binaries(path, rows::AbstractVector{CompactBinaryRow};
+                                distance_kpc, e_max = 0.01, t_obs_s = 4 × 365.25 × 86400,
+                                cadence_s = 15.0, rng = nothing) -> String
+
+Write the quasi-circular compact pairs of a compact-binary catalogue as a
+galactic-binary table of the LISA Data Challenge: the columns, their order
+and units follow the Sangria galactic-binary table (LDC manual, Tab. 3).
+
+# Arguments
+- `rows`: rows of [`compact_binary_catalogue`](@ref)
+- `distance_kpc`: distance of every source [kpc]; > 0
+- `e_max`: largest eccentricity of an exported pair; 0 < e_max < 1
+- `t_obs_s`, `cadence_s`: observation span and sampling interval [s] of the
+  `ObservationDuration` and `Cadence` columns; > 0
+- `rng`: random number generator of the sky position and orientation angles,
+  `nothing` for empty angle cells
+
+Of every pair (unordered `name1`, `name2`) the last record in `time_nb` is
+taken; it is exported when its f₂₂ and both masses are finite and its
+eccentricity is `e ≤ e_max`. The LDC galactic-binary waveform is that of a
+circular orbit and cannot represent an eccentric source, hence the cut. The
+columns are `EclipticLatitude` [rad], `EclipticLongitude` [rad], `Amplitude`
+(`amp_ldc22_kpc / distance_kpc`, [`gw_amplitude_ldc`](@ref)), `Frequency`
+(f₂₂ [Hz]), `FrequencyDerivative` (the circular chirp
+(96/5)π^{8/3}(G𝓜/c³)^{5/3}f₂₂^{11/3} [Hz s⁻¹]), `Inclination`, `Polarization`,
+`InitialPhase` [rad], `ObservationDuration` and `Cadence` [s]. With an `rng`
+the angles are drawn isotropically per row in that order: latitude
+asin(2u − 1), longitude 2πu, inclination acos(2u − 1), polarisation πu and
+initial phase 2πu, u uniform on [0, 1). The distance is a catalogue-level
+assumption, not a position of the pair in the Galaxy.
+
+A first `#` line records `distance_kpc`, `e_max`, the number of pairs and the
+number of exported rows; the header follows, then one row per exported pair
+ordered by (`name1`, `name2`). Floats are written in their shortest
+round-trip form, non-finite values as empty cells. An existing file is
+backed up, never overwritten. Returns the path. Throws an `ArgumentError` for
+a non-positive `distance_kpc`, `t_obs_s` or `cadence_s`, or `e_max` outside
+(0, 1).
+
+# Example
+```julia
+write_ldc_galactic_binaries("ldc_galactic_binaries.csv", rows; distance_kpc = 8.0,
+                            rng = MersenneTwister(1))
+```
+"""
+function write_ldc_galactic_binaries(
+    path::AbstractString,
+    rows::AbstractVector{CompactBinaryRow};
+    distance_kpc::Real,
+    e_max::Real = 0.01,
+    t_obs_s::Real = _GWCAT_LDC_T_OBS_S,
+    cadence_s::Real = _GWCAT_LDC_CADENCE_S,
+    rng::Union{Nothing,AbstractRNG} = nothing,
+)::String
+    caller = "write_ldc_galactic_binaries"
+    _gwcat_check_positive(distance_kpc, "distance_kpc", caller)
+    _gwcat_check_positive(t_obs_s, "t_obs_s", caller)
+    _gwcat_check_positive(cadence_s, "cadence_s", caller)
+    (isfinite(e_max) && 0 < e_max < 1) ||
+        throw(ArgumentError("$caller: e_max must lie in (0, 1); got $e_max"))
+    d = Float64(distance_kpc)
+
+    last_record = Dict{Tuple{Int,Int},CompactBinaryRow}()
+    for r in rows
+        key = _gwcat_key(r.name1, r.name2)
+        prev = get(last_record, key, nothing)
+        (prev === nothing || r.time_nb ≥ prev.time_nb) && (last_record[key] = r)
+    end
+    quasi_circular(r) =
+        isfinite(r.f_gw22_hz) && isfinite(r.m1_msun) && isfinite(r.m2_msun) && r.e ≤ e_max
+    selected =
+        sort!(filter(quasi_circular, collect(values(last_record))); by = r -> (r.name1, r.name2))
+
+    _backup_existing(path)
+    open(path, "w") do io
+        println(
+            io,
+            "# distance_kpc=$(d) e_max=$(Float64(e_max)) n_pairs=$(length(last_record)) " *
+            "n_exported=$(length(selected))",
+        )
+        println(io, join(_GWCAT_LDC_COLUMNS, ","))
+        for r in selected
+            β = λ = ι = ψ = φ₀ = NaN
+            if rng !== nothing
+                β = asin(2 * rand(rng) - 1)
+                λ = 2π * rand(rng)
+                ι = acos(2 * rand(rng) - 1)
+                ψ = π * rand(rng)
+                φ₀ = 2π * rand(rng)
+            end
+            cells = (
+                β,
+                λ,
+                r.amp_ldc22_kpc / d,
+                r.f_gw22_hz,
+                _gwcat_fdot_circular(r.mchirp_msun, r.f_gw22_hz),
+                ι,
+                ψ,
+                φ₀,
+                Float64(t_obs_s),
+                Float64(cadence_s),
+            )
+            println(io, join(map(_gwcat_ldc_cell, cells), ","))
+        end
+    end
+    return String(path)
+end

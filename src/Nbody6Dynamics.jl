@@ -1149,6 +1149,14 @@ function _finish_pipeline(
             cat.escaped,
         )
         write_gw_merger_catalogue(joinpath(products_dir, "gw_merger_catalogue.csv"), cat.mergers)
+        pp = cfg.postprocess
+        pp.ldc_export && write_ldc_galactic_binaries(
+            joinpath(products_dir, "ldc_galactic_binaries.csv"),
+            cat.compact;
+            distance_kpc = pp.ldc_distance_kpc,
+            e_max = pp.ldc_e_max,
+            rng = MersenneTwister(pp.ldc_seed),
+        )
     end
     if haskey(results, :progenitor_budget) && !isempty(products_dir)
         write_progenitor_budget(
@@ -1367,12 +1375,15 @@ export gw_enhancement,
     orbital_frequency,
     gw_frequency,
     eccentricity_at_frequency
+export peters_mathews_g,
+    gw_amplitude_ldc, gw_harmonic_strain, gw_characteristic_strain, gw_harmonic_frequency_derivative
 export BinaryPopulationRow, binary_population_series, write_binary_population, stellar_type_map
 export BinaryPairTypeRow, binary_pair_type_series, write_binary_pair_types
 export BinaryDistributionRow, binary_distribution_series, write_binary_distributions
 export CompactBinaryRow, EscapedBinaryRow, GWMergerRow, pair_class
 export compact_binary_catalogue, escaped_binary_catalogue, gw_merger_catalogue
 export write_compact_binary_catalogue, write_escaped_binary_catalogue, write_gw_merger_catalogue
+export write_ldc_galactic_binaries
 export peters_semi_major_axis, band_residence, eccentricity_after
 export RotatingKingModel, solve_rotating_king, rotating_king_moments, sample_rotating_king
 export RotatingKingProfile, rotation_moments

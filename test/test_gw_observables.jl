@@ -99,4 +99,63 @@
               gw_inspiral_time(30.0, 30.0, 0.2, 0.9) - gw_inspiral_time(30.0, 30.0, r2.a_au, r2.e) rtol =
             1e-8
     end
+
+    @testset "Strain amplitudes" begin
+        # Circular orbit: only n = 2 radiates
+        @test peters_mathews_g(2, 0.0) ≈ 1.0 atol = 1e-12
+        @test peters_mathews_g(1, 0.0) ≈ 0.0 atol = 1e-12
+        @test peters_mathews_g(3, 0.0) ≈ 0.0 atol = 1e-12
+        # The harmonics sum to the Peters–Mathews enhancement
+        for (e, N, tol) in ((0.3, 400, 1e-8), (0.6, 400, 1e-8), (0.9, 4000, 1e-5))
+            @test sum(n -> peters_mathews_g(n, e), 1:N) ≈ gw_enhancement(e) rtol = tol
+        end
+
+        # LDC amplitude of 𝓜 = 0.5 M☉ at f = 1 mHz and 1 kpc
+        @test gw_amplitude_ldc(0.5, 1e-3) ≈ 1.87e-22 rtol = 1e-2
+
+        m1 = m2 = 0.6
+        a = 0.01
+        f_orb = orbital_frequency(m1, m2, a)
+        𝓜 = chirp_mass(m1, m2)
+        @test gw_harmonic_strain(m1, m2, a, 0.0, 2) ≈ 4 / sqrt(5) * gw_amplitude_ldc(𝓜, 2f_orb) rtol =
+            1e-12
+
+        # h_{c,n}² = (fₙ²/ḟₙ) hₙ²
+        e = 0.4
+        for n in (1, 2, 3, 5)
+            f_n = n * f_orb
+            fdot_n = gw_harmonic_frequency_derivative(m1, m2, a, e, n)
+            h_n = gw_harmonic_strain(m1, m2, a, e, n)
+            @test gw_characteristic_strain(m1, m2, a, e, n)^2 ≈ f_n^2 / fdot_n * h_n^2 rtol = 1e-8
+        end
+        # The n = 2 drift at e = 0 is the circular chirp of f₂₂; ḟ_orb = ḟ₂₂ F(e)/2 in general
+        @test gw_harmonic_frequency_derivative(m1, m2, a, 0.0, 2) ≈
+              nd._gwcat_fdot_circular(𝓜, 2f_orb) rtol = 1e-12
+        @test gw_harmonic_frequency_derivative(m1, m2, a, e, 1) ≈
+              nd._gwcat_fdot_circular(𝓜, 2f_orb) * gw_enhancement(e) / 2 rtol = 1e-12
+
+        # Every strain scales as 1/D
+        @test gw_amplitude_ldc(𝓜, 2f_orb; distance_kpc = 8.0) ≈ gw_amplitude_ldc(𝓜, 2f_orb) / 8 rtol =
+            1e-12
+        @test gw_harmonic_strain(m1, m2, a, e, 3; distance_kpc = 2.0) ≈
+              gw_harmonic_strain(m1, m2, a, e, 3; distance_kpc = 8.0) * 4 rtol = 1e-12
+        @test gw_characteristic_strain(m1, m2, a, e, 3; distance_kpc = 2.0) ≈
+              gw_characteristic_strain(m1, m2, a, e, 3; distance_kpc = 8.0) * 4 rtol = 1e-12
+
+        @test_throws ArgumentError peters_mathews_g(0, 0.5)
+        @test_throws ArgumentError peters_mathews_g(2, 1.0)
+        @test_throws ArgumentError peters_mathews_g(2, -0.1)
+        @test_throws ArgumentError gw_amplitude_ldc(0.0, 1e-3)
+        @test_throws ArgumentError gw_amplitude_ldc(0.5, 0.0)
+        @test_throws ArgumentError gw_amplitude_ldc(0.5, 1e-3; distance_kpc = 0.0)
+        @test_throws ArgumentError gw_harmonic_strain(-0.6, m2, a, e, 2)
+        @test_throws ArgumentError gw_harmonic_strain(m1, m2, 0.0, e, 2)
+        @test_throws ArgumentError gw_harmonic_strain(m1, m2, a, 1.0, 2)
+        @test_throws ArgumentError gw_harmonic_strain(m1, m2, a, e, 0)
+        @test_throws ArgumentError gw_harmonic_strain(m1, m2, a, e, 2; distance_kpc = -1.0)
+        @test_throws ArgumentError gw_characteristic_strain(m1, m2, a, e, 2; distance_kpc = 0.0)
+        @test_throws ArgumentError gw_characteristic_strain(m1, 0.0, a, e, 2)
+        @test_throws ArgumentError gw_harmonic_frequency_derivative(m1, m2, a, e, 0)
+        @test_throws ArgumentError gw_harmonic_frequency_derivative(m1, m2, -a, e, 1)
+    end
 end

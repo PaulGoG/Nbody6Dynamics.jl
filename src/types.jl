@@ -211,6 +211,12 @@ relative calibrated bias above which an estimator is masked.
   increasing positive values
 - `gw_t_now_myr`: observation epoch of the escaped pairs [Myr] for their
   present-epoch state; 0 = none; ≥ 0
+- `ldc_export`: write `ldc_galactic_binaries.csv`, the quasi-circular compact pairs
+  of the compact-binary catalogue as an LDC galactic-binary table
+  ([`write_ldc_galactic_binaries`](@ref)); requires `gw_catalogues`
+- `ldc_distance_kpc`: distance of every exported source [kpc]; > 0
+- `ldc_e_max`: largest eccentricity of an exported pair; 0 < e_max < 1
+- `ldc_seed`: seed of the sky position and orientation angles of the export
 - `collision_catalogue`: write `collision_catalogue.csv` (every collision of
   `coll.13` and coalescence of `coal.24` with the progenitor cluster of each
   star, the primordial-pair, mixed-origin and generation flags) when either
@@ -304,6 +310,10 @@ Base.@kwdef struct PostprocessConfig
     gw_catalogues::Bool = false
     gw_band_hz::Vector{Float64} = [1.0e-4, 1.0e-1]
     gw_t_now_myr::Float64 = 0.0               # 0: no present-epoch state
+    ldc_export::Bool = false
+    ldc_distance_kpc::Float64 = 8.0
+    ldc_e_max::Float64 = 0.01
+    ldc_seed::Int = 1
     collision_catalogue::Bool = true
     binary_survival::Bool = false
     imbh::Bool = true

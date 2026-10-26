@@ -435,3 +435,218 @@ function _gw_inspiral_time_ode(m1::Real, m2::Real, a::Real, e0::Real)::Float64
     a_end_au = exp(u_end[1]) / _GW_AU
     return sol.t[end] / _GW_YR + gw_inspiral_time(m1, m2, a_end_au, max(u_end[2], 0.0))
 end
+
+# =============================================================================
+# Strain amplitudes
+# =============================================================================
+#
+# Orientation-averaged strains of the harmonics of a Keplerian binary (Peters &
+# Mathews 1963; Barack & Cutler 2004, DOI 10.1103/PhysRevD.69.082005; Wagg,
+# Broekgaarden & Gültekin 2022, DOI 10.3847/1538-4365/ac5c52) and the 22-mode
+# amplitude of the LISA Data Challenge galactic binaries. Distances enter in
+# kpc; every strain scales as 1/D.
+
+# Kiloparsec [m] (IAU 2015 parsec)
+const _GW_KPC = 3.0856775814913673e19
+
+"""Throw an `ArgumentError` unless the distance [kpc] is positive."""
+function _gw_check_distance(distance_kpc::Real)
+    distance_kpc > 0 ||
+        throw(ArgumentError("distance must be positive, got distance_kpc = $distance_kpc"))
+    return nothing
+end
+
+"""Throw an `ArgumentError` unless the harmonic number is ≥ 1."""
+function _gw_check_harmonic(n::Integer)
+    n ≥ 1 || throw(ArgumentError("harmonic number must be ≥ 1, got n = $n"))
+    return nothing
+end
+
+"""Bessel function J_k(x) of any integer order, J₋ₖ = (−1)ᵏ Jₖ."""
+function _gw_besselj(k::Int, x::Float64)::Float64
+    k ≥ 0 && return besselj(k, x)
+    j = besselj(-k, x)
+    return isodd(k) ? -j : j
+end
+
+"""
+    peters_mathews_g(n::Integer, e::Real) -> Float64
+
+Relative GW power g(n, e) radiated in the n-th harmonic of the orbital
+frequency by a Keplerian binary of eccentricity `e` (Peters & Mathews 1963,
+DOI 10.1103/PhysRev.131.435, Eq. 20). With Jₖ = Jₖ(ne) the Bessel functions of
+the first kind,
+
+    g(n, e) = (n⁴/32) { [J_{n−2} − 2e J_{n−1} + (2/n) Jₙ + 2e J_{n+1} − J_{n+2}]²
+                        + (1 − e²) [J_{n−2} − 2Jₙ + J_{n+2}]² + (4/(3n²)) Jₙ² }.
+
+A circular orbit radiates only in n = 2, g(2, 0) = 1 and g(n, 0) = 0 for n ≠ 2,
+and the harmonics sum to the enhancement, Σ_{n≥1} g(n, e) =
+[`gw_enhancement`](@ref)(e). Throws an `ArgumentError` for `n < 1` or `e`
+outside [0, 1).
+
+# Example
+```julia
+peters_mathews_g(2, 0.0)   # 1.0
+```
+"""
+function peters_mathews_g(n::Integer, e::Real)::Float64
+    _gw_check_harmonic(n)
+    0 ≤ e < 1 || throw(ArgumentError("eccentricity must lie in [0, 1), got e = $e"))
+    k = Int(n)
+    ε = Float64(e)
+    x = k * ε
+    j₋₂ = _gw_besselj(k - 2, x)
+    j₋₁ = _gw_besselj(k - 1, x)
+    j₀ = _gw_besselj(k, x)
+    j₊₁ = _gw_besselj(k + 1, x)
+    j₊₂ = _gw_besselj(k + 2, x)
+    ν = Float64(k)
+    b₁ = j₋₂ - 2ε * j₋₁ + 2 / ν * j₀ + 2ε * j₊₁ - j₊₂
+    b₂ = j₋₂ - 2j₀ + j₊₂
+    return ν^4 / 32 * (b₁^2 + (1 - ε) * (1 + ε) * b₂^2 + 4 / (3ν^2) * j₀^2)
+end
+
+"""
+    gw_amplitude_ldc(mchirp_msun::Real, f_gw_hz::Real; distance_kpc::Real = 1.0) -> Float64
+
+Strain amplitude of the leading (l = m = 2) mode of a circular binary of chirp
+mass `mchirp_msun` [M☉] at GW frequency `f_gw_hz` [Hz] and distance
+`distance_kpc` [kpc], in the convention of the LISA Data Challenge galactic
+binaries (LDC manual, Eqs. 30–32a and 45–46),
+
+    𝒜 = 2 (G𝓜)^{5/3} (πf)^{2/3} / (c⁴ D).
+
+𝒜 is half the face-on amplitude h₀ = 4(G𝓜)^{5/3}(πf)^{2/3}/(c⁴D) of the
+quadrupole formula and carries no orientation average. The amplitude scales as
+1/D: the catalogues store the distance-free product 𝒜 × D at D = 1 kpc, and
+the value at a distance D is the stored one divided by D in kpc. Throws an
+`ArgumentError` for a non-positive chirp mass, frequency or distance.
+
+# Example
+```julia
+gw_amplitude_ldc(0.5, 1e-3)   # ≈ 1.87×10⁻²² at 1 kpc
+```
+"""
+function gw_amplitude_ldc(mchirp_msun::Real, f_gw_hz::Real; distance_kpc::Real = 1.0)::Float64
+    mchirp_msun > 0 ||
+        throw(ArgumentError("chirp mass must be positive, got mchirp_msun = $mchirp_msun"))
+    f_gw_hz > 0 || throw(ArgumentError("GW frequency must be positive, got f_gw_hz = $f_gw_hz"))
+    _gw_check_distance(distance_kpc)
+    gm = _GW_G * Float64(mchirp_msun) * _GW_MSUN
+    d_m = Float64(distance_kpc) * _GW_KPC
+    return 2 * gm^(5 / 3) * (π * Float64(f_gw_hz))^(2 / 3) / (_GW_C^4 * d_m)
+end
+
+"""
+    gw_harmonic_strain(m1::Real, m2::Real, a_au::Real, e::Real, n::Integer;
+                       distance_kpc::Real = 1.0) -> Float64
+
+Orientation- and polarisation-averaged strain amplitude hₙ of the n-th
+harmonic (frequency fₙ = n f_orb) of a binary of masses `m1`, `m2` [M☉],
+semi-major axis `a_au` [au] and eccentricity `e` at distance `distance_kpc`
+[kpc] (Wagg, Broekgaarden & Gültekin 2022, LEGWORK, DOI
+10.3847/1538-4365/ac5c52, Eq. 27),
+
+    hₙ² = (2^{28/3}/5) (G𝓜)^{10/3} / (c⁸ D²) · g(n, e)/n² · (π f_orb)^{4/3},
+
+with f_orb = (2π)⁻¹ √(GM/a³), 𝓜 the [`chirp_mass`](@ref) and g from
+[`peters_mathews_g`](@ref). A circular binary radiates only in n = 2, where
+h₂ = (4/√5) [`gw_amplitude_ldc`](@ref)(𝓜, 2f_orb) = (4/5)^{1/2} h₀, the face-on
+amplitude h₀ = 2𝒜 times the root of the orientation average
+⟨[(1 + cos²ι)/2]² + cos²ι⟩ = 4/5. The strain scales as 1/D: the
+catalogues store hₙ × D at D = 1 kpc, and the value at a distance D is the
+stored one divided by D in kpc. Throws an `ArgumentError` for non-positive
+masses, `a_au` or distance, `e` outside [0, 1) or `n < 1`.
+
+# Example
+```julia
+gw_harmonic_strain(0.6, 0.6, 0.01, 0.0, 2; distance_kpc = 8.0)
+```
+"""
+function gw_harmonic_strain(
+    m1::Real,
+    m2::Real,
+    a_au::Real,
+    e::Real,
+    n::Integer;
+    distance_kpc::Real = 1.0,
+)::Float64
+    _gw_check_binary(m1, m2, a_au, e)
+    _gw_check_harmonic(n)
+    _gw_check_distance(distance_kpc)
+    f_orb = orbital_frequency(m1, m2, a_au)
+    gm = _GW_G * chirp_mass(m1, m2) * _GW_MSUN
+    ν = Float64(n)
+    shape = 2^(28 / 3) / 5 * peters_mathews_g(n, e) / ν^2 * (π * f_orb)^(4 / 3)
+    return sqrt(shape) * gm^(5 / 3) / (_GW_C^4 * Float64(distance_kpc) * _GW_KPC)
+end
+
+"""
+    gw_harmonic_frequency_derivative(m1::Real, m2::Real, a_au::Real, e::Real, n::Integer)
+        -> Float64
+
+Orbit-averaged drift ḟₙ = n ḟ_orb [Hz s⁻¹] of the frequency fₙ = n f_orb of the
+n-th harmonic under quadrupole radiation, for masses `m1`, `m2` [M☉],
+semi-major axis `a_au` [au] and eccentricity `e` (Peters 1964,
+DOI 10.1103/PhysRev.136.B1224),
+
+    ḟ_orb = (48/5) π^{8/3} (G𝓜/c³)^{5/3} (2f_orb)^{11/3} F(e),
+
+with F the [`gw_enhancement`](@ref); for n = 2 at e = 0 it is the circular
+chirp ḟ = (96/5) π^{8/3} (G𝓜/c³)^{5/3} f^{11/3} of f = 2f_orb. Throws an
+`ArgumentError` for non-positive masses or `a_au`, `e` outside [0, 1) or
+`n < 1`.
+"""
+function gw_harmonic_frequency_derivative(
+    m1::Real,
+    m2::Real,
+    a_au::Real,
+    e::Real,
+    n::Integer,
+)::Float64
+    _gw_check_binary(m1, m2, a_au, e)
+    _gw_check_harmonic(n)
+    f_orb = orbital_frequency(m1, m2, a_au)
+    t_m = _GW_G * chirp_mass(m1, m2) * _GW_MSUN / _GW_C^3
+    fdot_orb = 48 / 5 * π^(8 / 3) * t_m^(5 / 3) * (2 * f_orb)^(11 / 3) * gw_enhancement(e)
+    return Float64(n) * fdot_orb
+end
+
+"""
+    gw_characteristic_strain(m1::Real, m2::Real, a_au::Real, e::Real, n::Integer;
+                             distance_kpc::Real = 1.0) -> Float64
+
+Orientation-averaged characteristic strain h_{c,n} of the n-th harmonic of an
+inspiralling binary of masses `m1`, `m2` [M☉], semi-major axis `a_au` [au] and
+eccentricity `e` at distance `distance_kpc` [kpc] (Wagg, Broekgaarden &
+Gültekin 2022, LEGWORK, DOI 10.3847/1538-4365/ac5c52, Eq. 26, after Barack &
+Cutler 2004, DOI 10.1103/PhysRevD.69.082005),
+
+    h_{c,n}² = (2^{5/3} / (3π^{4/3})) (G𝓜)^{5/3} / (c³ D²) · f_orb^{−1/3} · g(n, e) / (n F(e)),
+
+with f_orb = (2π)⁻¹ √(GM/a³), g from [`peters_mathews_g`](@ref) and F the
+[`gw_enhancement`](@ref). It equals h_{c,n}² = (fₙ²/ḟₙ) hₙ² of the
+[`gw_harmonic_strain`](@ref) hₙ and the drift ḟₙ of
+[`gw_harmonic_frequency_derivative`](@ref), fₙ = n f_orb. The strain scales as
+1/D: the catalogues store h_{c,n} × D at D = 1 kpc, and the value at a
+distance D is the stored one divided by D in kpc. Throws an `ArgumentError`
+for non-positive masses, `a_au` or distance, `e` outside [0, 1) or `n < 1`.
+"""
+function gw_characteristic_strain(
+    m1::Real,
+    m2::Real,
+    a_au::Real,
+    e::Real,
+    n::Integer;
+    distance_kpc::Real = 1.0,
+)::Float64
+    _gw_check_binary(m1, m2, a_au, e)
+    _gw_check_harmonic(n)
+    _gw_check_distance(distance_kpc)
+    f_orb = orbital_frequency(m1, m2, a_au)
+    gm = _GW_G * chirp_mass(m1, m2) * _GW_MSUN
+    ratio = peters_mathews_g(n, e) / (Float64(n) * gw_enhancement(e))
+    hc² = 2^(5 / 3) / (3 * π^(4 / 3)) * gm^(5 / 3) / _GW_C^3 * f_orb^(-1 / 3) * ratio
+    return sqrt(hc²) / (Float64(distance_kpc) * _GW_KPC)
+end

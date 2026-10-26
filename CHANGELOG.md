@@ -30,6 +30,16 @@ entries say so.
 
 - Engine pin `v2026.07.11` (fork): the `KZ(24) = 3` flag route for a list of up to 16 massive black holes named by their `dat.10` index, `mbh.45` rows ending with the body name under both routes, the list kept across restarts, a missing black hole dropped with a warning after a restart.
 
+- Gravitational-wave strains: `peters_mathews_g` (Peters & Mathews 1963),
+  the LDC 22-mode amplitude `gw_amplitude_ldc`, the harmonic and
+  characteristic strains of LEGWORK (`gw_harmonic_strain`,
+  `gw_characteristic_strain`) and `gw_harmonic_frequency_derivative`; the
+  compact- and escaped-binary catalogues gain `amp_ldc22_kpc`, `h2_avg_kpc` and
+  `hc2_kpc` (h × D at 1 kpc), and `[postprocess] ldc_export` writes the
+  quasi-circular pairs as an LDC galactic-binary table
+  (`write_ldc_galactic_binaries`, keys `ldc_distance_kpc`, `ldc_e_max`,
+  `ldc_seed`).
+
 - IMBH diagnostics (`[postprocess] imbh`, on by default, inert unless
   `output/merger_ic.toml` records a seeded IMBH): `imbh_trajectory` (offset and
   velocity about the stellar density centre, core and half-mass radii of the
