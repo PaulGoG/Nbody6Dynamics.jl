@@ -167,6 +167,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | Remnant diagnostics | Working | Core radii, density, half-mass radius, rotation with sign-flip floors, mass segregation (Λ_MSR, Λ̃_MSR, Γ_MSR), coalescence time and core-collapse markers of the bound remnant per snapshot (`remnant_diagnostics.csv`, four figures per merger run) |
 | Angular momentum, equipartition, merger tree | Working | Angular-momentum budget and rotation by radius and initial-mass class (`angular_momentum.csv`), the Bianchini equipartition mass (`equipartition.csv`), and the merger tree with the per-progenitor mass budget (`merger_tree.csv`, `progenitor_budget.csv`) |
 | Binaries | Working | KS episodes joined per pair into spans with origin and end class (`binary_spans.csv`), physically bound pairs and their spans across the snapshots (`bound_spans.csv`), their union per pair (`binary_census.csv`), binary fractions per shell, stellar class and census level (`binary_population` stage, `binary_population.csv`), pair-type composition and hardness (`binary_pair_types.csv`), orbital-element distributions (`binary_distributions.csv`) the gravitational-wave catalogues of the compact pairs (`compact_binary_catalogue.csv`, `escaped_binary_catalogue.csv`, `gw_merger_catalogue.csv`), the collision catalogue with progenitor tags (`collision_catalogue.csv`, on by default) and the lifetime statistics (`binary_survival.csv`, `binary_incidence.csv`); figures: timeline, population series, survival curves, a–e and f–e planes; the binary stages are off by default |
+| IMBH diagnostics | Working | For a run seeded with an IMBH (`[imbh]` of `merger_ic.toml`, on by default): its offset and velocity about the stellar density centre with the core and half-mass radii of the stars (`imbh_trajectory.csv`), the wandering moments against the Brownian predictions of a Plummer sphere and a harmonic core (`imbh_wandering.csv`), the most bound two-body companion per snapshot with its elements and Peters time (`imbh_companions.csv`), and the tidal disruptions, collisions, coalescences, GW recoils and escape of the IMBH (`imbh_events.csv`); reader of the engine's `mbh.45` |
 | Gravitational-wave observables | Working | `gw_inspiral_time` (Peters 1964), `chirp_mass`, `gw_frequency` (f₂₂, Wen 2003 peak, pericentre) and `eccentricity_at_frequency` along the Peters track |
 | Validity record | Working | Energy, mass and angular-momentum checks with a verdict, snapshot cadence, the windows excluded from equilibrium estimators and the calibrated bias of the tracked estimators (`validity.toml`, `validity_snapshots.csv`) |
 | Shape, segregation and mixing | Working | Axis ratios from the iterative shape tensor (Zemp et al. 2011), projected ellipticities, the A⁺ index, the two-sample Kolmogorov–Smirnov distance with its null floor, and the mixing of two tagged populations |
@@ -298,6 +299,7 @@ Nbody6Dynamics/
 │   │   ├── gw_catalogues.jl         # Compact-binary, escaped-binary and GW-merger catalogues; band residence times on the Peters track
 │   │   ├── collision_catalogue.jl   # Collisions and coalescences tagged with the progenitor cluster of each star
 │   │   ├── survival.jl              # Kaplan–Meier, Nelson–Aalen, Aalen–Johansen, Turnbull, log-rank, Cox–Snell for binary lifetimes
+│   │   ├── imbh.jl                  # IMBH trajectory about the density centre, Brownian wandering, bound companions, event list
 │   │   └── ensemble.jl              # Seeded ensembles: series extractors, common-grid percentiles (median, 68/95 %)
 │   ├── io/
 │   │   ├── io.jl                    # I/O submodule includes
@@ -312,6 +314,7 @@ Nbody6Dynamics/
 │   │   ├── events_dynamics.jl       # KS, chain, triple, quad, hierarchy, exchange and termination records
 │   │   ├── events_evolution.jl      # GW, binary-escape, mass-loss, tidal and Roche records
 │   │   ├── binary_files.jl          # bdat.9, bwdat.19, merger.84, hiarch.12, coll.13, coal.24, cmbody.26, binev.17, degen.4, escbin.31, hbin.39
+│   │   ├── mbh45.jl                 # mbh.45 IMBH record reader (bhplot.f, KZ(24) = 1)
 │   │   ├── stellar_evolution.jl     # sev.83_* single-star evolution reader
 │   │   └── binary_evolution.jl      # bev.82_* regularised-binary reader
 │   └── ic/
@@ -389,6 +392,7 @@ Nbody6Dynamics/
 │   ├── test_static_models.jl        # Estimators against the static test models with known answers
 │   ├── test_rotating_king.jl        # Rotating King model against the Einsel & Spurzem (1999) moments
 │   ├── test_imbh.jl                 # IMBH seeding: keys and guards, IMBHINIT identity, velocity modes, Jeans response
+│   ├── test_imbh_analysis.jl        # IMBH diagnostics: mbh.45 reader, trajectory, wandering, companions, events, writers
 │   ├── test_angular_momentum.jl     # Angular-momentum budget and rotation by radius and mass class
 │   ├── test_equipartition.jl        # Bianchini equipartition-mass fit
 │   ├── test_merger_tree.jl          # Merger tree and per-progenitor budget

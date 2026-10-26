@@ -194,7 +194,9 @@ using StableRNGs: StableRNG
             output_dir = mktempdir(),
         )
         v_cm = mean_of(rest.vel_physical, rest.mass_physical, 1:2000)
-        @test isapprox(rest.vel_physical[:, end], v_cm; atol = 1e-9)
+        # "rest" is the cluster mean velocity nudged by 10⁻⁶ σ_c (a few 10⁻⁶ km s⁻¹ here)
+        @test isapprox(rest.vel_physical[:, end], v_cm; atol = 1e-4)
+        @test 0 < sqrt(sum(abs2, rest.vel_physical[:, end] .- v_cm)) < 1e-4
 
         explicit = nd.generate_merger_ic(
             nd.load_merger_config(

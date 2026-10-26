@@ -364,6 +364,27 @@ binary_distribution_series
 write_binary_distributions
 ```
 
+## IMBH Diagnostics
+
+```@docs
+MBHRow
+read_mbh45
+IMBHState
+imbh_trajectory
+imbh_wandering
+effective_mass
+brownian_rms_plummer
+brownian_rms_core
+IMBHCompanion
+imbh_companions
+imbh_companion_summary
+imbh_events
+write_imbh_trajectory
+write_imbh_wandering
+write_imbh_companions
+write_imbh_events
+```
+
 ## Survival Statistics
 
 ```@docs

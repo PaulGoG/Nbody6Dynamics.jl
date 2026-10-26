@@ -138,6 +138,7 @@ include("analysis/binary_population_series.jl")
 include("analysis/gw_catalogues.jl")
 include("analysis/collision_catalogue.jl")
 include("analysis/survival.jl")
+include("analysis/imbh.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -662,6 +663,53 @@ function postprocess(
         end
     end
     lap!("binary_survival")
+    # IMBH diagnostics: trajectory about the stellar density centre, wandering, companions, events
+    if pp.imbh && haskey(results, :snapshots)
+        imbh_name = _imbh_name(joinpath(sim_dir, "merger_ic.toml"))
+        if imbh_name > 0
+            @info "IMBH diagnostics of body $imbh_name..."
+            snaps_bh = results[:snapshots]
+            traj = imbh_trajectory(snaps_bh, imbh_name; _centre_keywords(pp)...)
+            comp = imbh_companions(snaps_bh, imbh_name)
+            bh_tstar =
+                haskey(results, :diagnostics) ? extract_scaling(results[:diagnostics]).tscale : NaN
+            bh_coll_path = joinpath(sim_dir, "coll.13")
+            bh_coal_path = joinpath(sim_dir, "coal.24")
+            bh_collisions =
+                isfile(bh_coll_path) ? read_collision_log(bh_coll_path) : CollisionRecord[]
+            bh_coalescences = get!(results, :coalescences) do
+                isfile(bh_coal_path) ? read_coalescence_log(bh_coal_path) : CoalescenceRecord[]
+            end
+            bh_gw = haskey(results, :binary_event_log) ? results[:binary_event_log].gw : GWEvent[]
+            bh_events = imbh_events(
+                imbh_name;
+                collisions = bh_collisions,
+                coalescences = bh_coalescences,
+                escapers = get(results, :escapers, EscaperRecord[]),
+                gw_events = bh_gw,
+                tstar_myr = bh_tstar,
+            )
+            m_eff = _imbh_core_effective_mass(snaps_bh, imbh_name, traj)
+            wandering = vcat(imbh_wandering(traj), imbh_wandering(traj; frame = :centre_of_mass))
+            mbh45_path = joinpath(sim_dir, "mbh.45")
+            mbh45 = isfile(mbh45_path) ? read_mbh45(mbh45_path) : MBHRow[]
+            bh_summary = imbh_companion_summary(comp)
+            results[:imbh] = (;
+                name = imbh_name,
+                trajectory = traj,
+                wandering,
+                companions = comp,
+                summary = bh_summary,
+                events = bh_events,
+                m_eff_msun = m_eff,
+                mbh45,
+            )
+            @info "IMBH $imbh_name: $(length(traj)) states, bound companion in " *
+                  "$(round(100 * bh_summary.fraction_bound; digits = 1)) % of the snapshots, " *
+                  "$(length(bh_events)) events"
+        end
+    end
+    lap!("imbh")
     # Validity record: built from the products above, with the build record of
     # the output directory and the run record of its parent.
     if pp.validity
@@ -1009,6 +1057,25 @@ function _finish_pipeline(
             results[:binary_survival].incidence,
         )
     end
+    if haskey(results, :imbh) && !isempty(products_dir)
+        bh = results[:imbh]
+        write_imbh_trajectory(
+            joinpath(products_dir, "imbh_trajectory.csv"),
+            bh.trajectory;
+            name = bh.name,
+        )
+        write_imbh_wandering(
+            joinpath(products_dir, "imbh_wandering.csv"),
+            bh.wandering;
+            name = bh.name,
+        )
+        write_imbh_companions(
+            joinpath(products_dir, "imbh_companions.csv"),
+            bh.companions;
+            name = bh.name,
+        )
+        write_imbh_events(joinpath(products_dir, "imbh_events.csv"), bh.events; name = bh.name)
+    end
     if haskey(results, :collision_catalogue) && !isempty(products_dir)
         write_collision_catalogue(
             joinpath(products_dir, "collision_catalogue.csv"),
@@ -1259,6 +1326,10 @@ export CollisionRow,
 export EventTable, SurvivalCurve, CumulativeIncidence, event_table, kaplan_meier, nelson_aalen
 export aalen_johansen, turnbull, logrank_test, cox_snell_residuals, survival_at, confidence_interval
 export write_survival_curve, write_cumulative_incidence
+export MBHRow, read_mbh45, IMBHState, IMBHCompanion
+export imbh_trajectory, imbh_wandering, imbh_companions, imbh_companion_summary, imbh_events
+export effective_mass, brownian_rms_plummer, brownian_rms_core
+export write_imbh_trajectory, write_imbh_wandering, write_imbh_companions, write_imbh_events
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep

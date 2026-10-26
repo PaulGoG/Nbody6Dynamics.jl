@@ -15,6 +15,16 @@ const _ENGINE_GM_CGS = 6.6743e-8 * 1.9884e33
 const _ENGINE_PC_CGS = 3.0856776e18
 
 """
+Speed floor of the IMBH relative to the cluster mean, in units of the central
+dispersion σ_c: the engine's start-up rejects a body whose speed is below
+≈ 10⁻¹⁶ N-body units (an invalid first time step aborts the block-step sort),
+so a velocity within this floor of the cluster mean is replaced by a velocity
+of this magnitude in a random direction (10⁻¹² of the Brownian equilibrium
+kinetic energy).
+"""
+const _IMBH_REST_SPEED_FLOOR = 1.0e-6
+
+"""
     _imbh_engine_vstar_kms(mass_scale_msun, rbar) -> Float64
 
 Velocity unit `VSTAR` [km s⁻¹] as the engine forms it in `units.f`,
@@ -99,6 +109,9 @@ dispersion `σ_c` [code unit] and mean stellar mass `m_mean` [M☉]. Position:
 `"equipartition"` a Gaussian draw about `v_c` of per-component variance
 `σ_c² m_mean / M•`, the Brownian equilibrium ⟨v²⟩ of a massive particle in a
 stellar core (Merritt 2005, Eq. 16, DOI 10.1086/429964), drawn from `rng`.
+A velocity within `_IMBH_REST_SPEED_FLOOR σ_c` of `v_c` (the `"rest"` mode of
+a cluster at rest, or an explicit zero) is replaced by that speed in a random
+direction from `rng`: the engine's start-up rejects a body at exact rest.
 """
 function _imbh_body(
     spec::IMBHSpec,
@@ -119,6 +132,12 @@ function _imbh_body(
         v_c .+ σ_c * sqrt(m_mean / mass_msun) .* randn(rng, 3)
     else
         throw(ArgumentError("_imbh_body: unknown velocity mode \"$(spec.velocity)\""))
+    end
+    v_floor = _IMBH_REST_SPEED_FLOOR * σ_c
+    if sqrt(sum(abs2, vel .- v_c)) < v_floor
+        u = randn(rng, 3)
+        u ./= sqrt(sum(abs2, u))
+        vel = v_c .+ v_floor .* u
     end
     return Vector{Float64}(pos), Vector{Float64}(vel)
 end

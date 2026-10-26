@@ -174,7 +174,9 @@ Intermediate-mass black hole seeded in a cluster (`[merger.clusterK.imbh]`).
   (the centre of mass plus `offset`).
 - `offset::Vector{Float64}`: displacement from the stellar centre of mass
   [pc], cluster frame; used by `"offset"`.
-- `velocity::String`: `"rest"` (the cluster's mean velocity),
+- `velocity::String`: `"rest"` (the cluster's mean velocity, nudged by
+  10⁻⁶ σ_c in a random direction because the engine's start-up rejects a body
+  at exact rest),
   `"equipartition"` (a Gaussian draw of per-component variance
   σ_c² ⟨m⟩/M• about it, Merritt 2005) or `"explicit"` (the mean velocity plus
   `velocity_kms`).

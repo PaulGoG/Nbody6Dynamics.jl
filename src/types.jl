@@ -219,6 +219,9 @@ relative calibrated bias above which an estimator is masked.
   the regularised binaries against their age, every end an event, the open
   ends censored) and `binary_incidence.csv` (Aalen–Johansen cumulative
   incidence per end class); requires `binary_spans`
+- `imbh`: IMBH diagnostics when `output/merger_ic.toml` records a seeded IMBH
+  (`imbh_trajectory.csv`, `imbh_wandering.csv`, `imbh_companions.csv`,
+  `imbh_events.csv`); inert otherwise
 - `population_q_min`: mass-ratio limit of the q-restricted fraction; 0 < q_min < 1
 - `population_m1_min`, `population_m1_max`: primary-mass window of the q-restricted
   fraction [M☉], by default 0.47–0.76 (Milone et al. 2012,
@@ -303,6 +306,7 @@ Base.@kwdef struct PostprocessConfig
     gw_t_now_myr::Float64 = 0.0               # 0: no present-epoch state
     collision_catalogue::Bool = true
     binary_survival::Bool = false
+    imbh::Bool = true
     validity::Bool = true
     validity_interval_de::Float64 = 1.0e-4
     validity_cumulative_de::Float64 = 1.0e-3

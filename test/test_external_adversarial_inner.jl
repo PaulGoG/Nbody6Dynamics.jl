@@ -350,7 +350,7 @@ end
             "energy_events",
             "budgets",
         ]
-        @test labels[(end - 8):end] == [
+        @test labels[(end - 9):end] == [
             "binary_spans",
             "bound_spans",
             "binary_census",
@@ -359,6 +359,7 @@ end
             "gw_catalogues",
             "collision_catalogue",
             "binary_survival",
+            "imbh",
             "validity",
         ]
         @test haskey(results, :validity) &&

@@ -28,6 +28,19 @@ entries say so.
 
 ### Added
 
+- IMBH diagnostics (`[postprocess] imbh`, on by default, inert unless
+  `output/merger_ic.toml` records a seeded IMBH): `imbh_trajectory` (offset and
+  velocity about the stellar density centre, core and half-mass radii of the
+  stars, KS partner), `imbh_wandering` with the Brownian predictions
+  `brownian_rms_plummer` (Chatterjee, Hernquist & Loeb 2002) and
+  `brownian_rms_core` (Lin & Tremaine 1980; Merritt 2005) and the
+  `effective_mass` ⟨m²⟩/⟨m⟩, `imbh_companions` and `imbh_companion_summary`
+  (the most bound two-body companion per snapshot, exchanges, longest
+  residence), `imbh_events` (tidal disruptions, collisions, coalescences, GW
+  mergers and recoils, escape) and `read_mbh45` for the engine's `mbh.45`, whose
+  `DEN`, `RIJMAX` and `VSIGMA` columns are documented as unusable. Products
+  `imbh_trajectory.csv`, `imbh_wandering.csv`, `imbh_companions.csv`,
+  `imbh_events.csv`.
 - IMBH seeding of the generator (`[merger.clusterK.imbh]`, `IMBHSpec`):
   `mass` or `mass_fraction`, `placement` (`"centre"`, `"offset"`),
   `velocity` (`"rest"`, `"equipartition"` after Merritt 2005, `"explicit"`),
