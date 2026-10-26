@@ -155,13 +155,18 @@ $output
             maxdev(pos[2, 1:40], p1[2, :]),
             maxdev(pos[3, 1:40], p1[3, :]),
         ) == (0.0, 0.0, 0.0)
-        @test (
-            maxdev(vel[1, 1:40], v1[1, :]),
-            maxdev(vel[2, 1:40], v1[2, :] .+ w1),
-            maxdev(vel[3, 1:40], v1[3, :]),
-        ) == (0.0, 0.0, 0.0)
-        @test (maxdev(pos[1, 41:70], p2[1, :] .+ dd2), maxdev(vel[2, 41:70], v2[2, :] .- w2)) ==
-              (0.0, 0.0)
+        # The frame term w is added in a different order on some hosts (one ulp on the
+        # Backend runner, 4.4e-16): the velocity components are checked to 1e-14.
+        @test all(
+            ≤(1e-14),
+            (
+                maxdev(vel[1, 1:40], v1[1, :]),
+                maxdev(vel[2, 1:40], v1[2, :] .+ w1),
+                maxdev(vel[3, 1:40], v1[3, :]),
+            ),
+        )
+        @test maxdev(pos[1, 41:70], p2[1, :] .+ dd2) == 0.0
+        @test maxdev(vel[2, 41:70], v2[2, :] .- w2) ≤ 1e-14
         # Orbital angular momentum of the two centres along the orbit normal
         function centres(pos, vel, mass, ranges)
             c = [vec(sum(mass[r]' .* pos[:, r]; dims = 2)) ./ sum(mass[r]) for r in ranges]
