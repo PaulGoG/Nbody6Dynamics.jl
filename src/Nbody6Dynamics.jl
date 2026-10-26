@@ -683,7 +683,7 @@ function postprocess(
             for imbh_name in imbh_names
                 @info "IMBH diagnostics of body $imbh_name..."
                 traj = imbh_trajectory(snaps_bh, imbh_name; _centre_keywords(pp)...)
-                comp = imbh_companions(snaps_bh, imbh_name)
+                comp = imbh_companions(snaps_bh, imbh_name; gamma_max = pp.bound_gamma_max)
                 bh_events = imbh_events(
                     imbh_name;
                     collisions = bh_collisions,
@@ -714,19 +714,37 @@ function postprocess(
             end
             bh_pairs = length(imbh_names) ≥ 2 ? imbh_pairs(snaps_bh, imbh_names) : IMBHPair[]
             bh_pair_summaries = NamedTuple[]
-            for key in unique((r.name1, r.name2) for r in bh_pairs)
+            pair_keys = unique((r.name1, r.name2) for r in bh_pairs)
+            for key in pair_keys
                 sel = [r for r in bh_pairs if (r.name1, r.name2) == key]
                 push!(
                     bh_pair_summaries,
                     merge((name1 = key[1], name2 = key[2]), imbh_pair_summary(sel)),
                 )
             end
+            # Whole-span hardening rate of every pair
+            bh_hardening = vcat(
+                _IMBHHardeningRow[],
+                (
+                    imbh_pair_hardening([r for r in bh_pairs if (r.name1, r.name2) == key]) for
+                    key in pair_keys
+                )...,
+            )
             if length(imbh_names) ≥ 2
                 t_bound = filter(isfinite, [s.t_first_bound_myr for s in bh_pair_summaries])
-                @info "IMBH pairs: $(length(bh_pair_summaries)) pairs, " * (
-                    isempty(t_bound) ? "none bound" :
-                    "first bound at $(round(minimum(t_bound); sigdigits = 4)) Myr"
-                )
+                k_h =
+                    isempty(pair_keys) ? nothing :
+                    findfirst(h -> (h.name1, h.name2) == pair_keys[1], bh_hardening)
+                @info "IMBH pairs: $(length(bh_pair_summaries)) pairs, " *
+                      (
+                          isempty(t_bound) ? "none bound" :
+                          "first bound at $(round(minimum(t_bound); sigdigits = 4)) Myr"
+                      ) *
+                      (
+                          k_h === nothing ? "" :
+                          ", d(1/a)/dt = $(round(bh_hardening[k_h].s_au_per_myr; sigdigits = 3)) " *
+                          "au⁻¹ Myr⁻¹ for $(pair_keys[1][1])–$(pair_keys[1][2])"
+                      )
             end
             mbh45_path = joinpath(sim_dir, "mbh.45")
             mbh45 = isfile(mbh45_path) ? read_mbh45(mbh45_path) : MBHRow[]
@@ -735,6 +753,7 @@ function postprocess(
                 bodies = bh_bodies,
                 pairs = bh_pairs,
                 pair_summaries = bh_pair_summaries,
+                hardening = bh_hardening,
                 mbh45,
             )
         end
@@ -1107,6 +1126,11 @@ function _finish_pipeline(
         )
         isempty(bh.pairs) ||
             write_imbh_pairs(joinpath(products_dir, "imbh_pairs.csv"), bh.pairs; names = bh.names)
+        isempty(bh.hardening) || write_imbh_pair_hardening(
+            joinpath(products_dir, "imbh_pair_hardening.csv"),
+            bh.hardening;
+            names = bh.names,
+        )
     end
     if haskey(results, :collision_catalogue) && !isempty(products_dir)
         write_collision_catalogue(
@@ -1363,6 +1387,7 @@ export imbh_trajectory, imbh_wandering, imbh_companions, imbh_companion_summary,
 export effective_mass, brownian_rms_plummer, brownian_rms_core
 export write_imbh_trajectory, write_imbh_wandering, write_imbh_companions, write_imbh_events
 export IMBHPair, imbh_pairs, imbh_pair_summary, write_imbh_pairs
+export imbh_pair_hardening, hardening_rate_dimensionless, write_imbh_pair_hardening
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep

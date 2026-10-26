@@ -382,11 +382,14 @@ imbh_events
 IMBHPair
 imbh_pairs
 imbh_pair_summary
+imbh_pair_hardening
+hardening_rate_dimensionless
 write_imbh_trajectory
 write_imbh_wandering
 write_imbh_companions
 write_imbh_events
 write_imbh_pairs
+write_imbh_pair_hardening
 ```
 
 ## Survival Statistics
@@ -442,6 +445,7 @@ write_gw_merger_catalogue
 RotatingKingModel
 RotatingKingProfile
 IMBHSpec
+resolved_imbh_route
 solve_rotating_king
 rotating_king_moments
 sample_rotating_king

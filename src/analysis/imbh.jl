@@ -484,13 +484,16 @@ end
     IMBHCompanion
 
 Most bound companion of the IMBH at one snapshot, from
-[`imbh_companions`](@ref). Without a bound candidate `companion_name` is 0
-and the mass, separation, elements, energy and `t_gw_myr` are `NaN`.
+[`imbh_companions`](@ref). Without an accepted companion (no bound
+candidate, or the most bound one perturbed beyond `gamma_max`)
+`companion_name` is 0 and the mass, separation, elements, energy and
+`t_gw_myr` are `NaN`; `gamma` keeps the perturbation of a rejected
+candidate and is `NaN` without a bound candidate.
 
 | field | meaning | unit |
 |---|---|---|
 | `time_myr` | snapshot time | Myr |
-| `companion_name` | name of the companion, 0 when none is bound | — |
+| `companion_name` | name of the companion, 0 when none is accepted | — |
 | `companion_mass_msun` | companion mass `m` | M☉ |
 | `separation_pc` | separation `r` | pc |
 | `semi_major_axis_au` | `a = −G (M• + m)/(2ε)` | au |
@@ -498,6 +501,7 @@ and the mass, separation, elements, energy and `t_gw_myr` are `NaN`.
 | `specific_energy_km2s2` | `ε = ½ v_rel² − G (M• + m)/r` | km² s⁻² |
 | `in_pair` | the companion is the IMBH's KS partner | — |
 | `t_gw_myr` | Peters coalescence time [`gw_inspiral_time`](@ref) | Myr |
+| `gamma` | perturbation `γ` of the most bound candidate by the other candidates | — |
 """
 Base.@kwdef struct IMBHCompanion
     time_myr::Float64
@@ -509,33 +513,51 @@ Base.@kwdef struct IMBHCompanion
     specific_energy_km2s2::Float64
     in_pair::Bool
     t_gw_myr::Float64
+    gamma::Float64 = NaN
 end
 
 """
-    imbh_companions(snaps::AbstractVector{Snapshot}, name::Integer; k::Integer = 10)
-        -> Vector{IMBHCompanion}
+    imbh_companions(snaps::AbstractVector{Snapshot}, name::Integer; k::Integer = 10,
+                    gamma_max::Real = Inf) -> Vector{IMBHCompanion}
 
 Most bound companion of the IMBH of body name `name` at every snapshot that
 holds it, one [`IMBHCompanion`](@ref) each. The candidates are the `k`
 nearest stars to the IMBH and, when the IMBH is a KS component, its KS
 partner; for each the two-body specific energy
 `ε = ½ |v_j − v•|² − G (M• + m_j)/|x_j − x•|` is formed in physical units,
-and the companion is the candidate of most negative `ε < 0`, with the
-elements `a = −G (M• + m)/(2ε)` and `e = √max(0, 1 − |r × v|²/(G (M• + m) a))`
-and the Peters coalescence time of the pair. A snapshot without a bound
-candidate gives a row with `companion_name = 0`.
+and the most bound candidate `j` is the one of most negative `ε < 0`, with
+the elements `a = −G (M• + m)/(2ε)` and
+`e = √max(0, 1 − |r × v|²/(G (M• + m) a))` and the Peters coalescence time
+of the pair.
 
-This is a two-body criterion, not a perturbation test: stars inside the
-IMBH's radius of influence are two-body bound by construction, and a
-companion found here may be strongly perturbed by the others. `conf.3`
-positions are single precision, so elements of pairs whose separation lies
-below ≈ 10⁻⁵ of the cluster's distance from the coordinate origin are noise
-(IMBH study §4.6). The companion's stellar type is not in `conf.3`; join by
-name to `sev.83`/`bev.82` for it. `ArgumentError` for `k < 0`.
+The most bound candidate, at separation `d` from the IMBH, is then tested
+against the other candidates `p` (the KS partner included when it is one)
+by the perturbation parameter
+
+    γ = max_p 2 m_p d³ / ((M• + m_j) r_p³),
+
+`r_p` the distance of `p` from the centre of mass of the pair (IMBH, `j`),
+and `γ = 0` without another candidate. `γ` is the KS perturbation measure of
+the engine: the tidal acceleration of the perturber over the pair's
+internal acceleration, up to the factor 2 of a perturber at the pair's
+distance. The candidate is accepted as companion when `γ < gamma_max` (in
+the pipeline `PostprocessConfig.bound_gamma_max`); otherwise the row has
+`companion_name = 0` and `NaN` elements as for no bound candidate, with the
+rejected candidate's `γ` in `gamma`. A snapshot without a bound candidate
+gives a row with `companion_name = 0` and `gamma = NaN`. Without the
+perturbation limit (`gamma_max = Inf`) the two-body test over the ten
+nearest stars acts as a cusp detector around a massive body: the stars
+inside the IMBH's radius of influence are two-body bound by construction.
+
+`conf.3` positions are single precision, so elements of pairs whose
+separation lies below ≈ 10⁻⁵ of the cluster's distance from the coordinate
+origin are noise (IMBH study §4.6). The companion's stellar type is not in
+`conf.3`; join by name to `sev.83`/`bev.82` for it. `ArgumentError` for
+`k < 0`.
 
 # Example
 ```julia
-comp = imbh_companions(read_all_conf3(dir), imbh_name)
+comp = imbh_companions(read_all_conf3(dir), imbh_name; gamma_max = 0.1)
 imbh_companion_summary(comp).fraction_bound
 ```
 """
@@ -543,8 +565,10 @@ function imbh_companions(
     snaps::AbstractVector{Snapshot},
     name::Integer;
     k::Integer = 10,
+    gamma_max::Real = Inf,
 )::Vector{IMBHCompanion}
     k ≥ 0 || throw(ArgumentError("imbh_companions: k must be ≥ 0; got $k"))
+    γ_max = Float64(gamma_max)
     G = _G_PC_KMS2_MSUN
     rows = IMBHCompanion[]
     for snap in snaps
@@ -585,7 +609,23 @@ function imbh_companions(
             end
         end
         if best == 0
-            push!(rows, IMBHCompanion(t, 0, NaN, NaN, NaN, NaN, NaN, false, NaN))
+            push!(rows, IMBHCompanion(t, 0, NaN, NaN, NaN, NaN, NaN, false, NaN, NaN))
+            continue
+        end
+        # Perturbation by the other candidates, in N-body units (γ is dimensionless)
+        mb = Float64(snap.mass[i])
+        mj = Float64(snap.mass[best])
+        xj = ntuple(c -> Float64(snap.pos[c, best]), 3)
+        x_cm = ntuple(c -> (mb * xb[c] + mj * xj[c]) / (mb + mj), 3)
+        d³ = sqrt(sum(c -> (xj[c] - xb[c])^2, 1:3))^3
+        γ = 0.0
+        for p in candidates
+            p == best && continue
+            r_p = sqrt(sum(c -> (Float64(snap.pos[c, p]) - x_cm[c])^2, 1:3))
+            γ = max(γ, 2 * Float64(snap.mass[p]) * d³ / ((mb + mj) * r_p^3))
+        end
+        if !(γ < γ_max)
+            push!(rows, IMBHCompanion(t, 0, NaN, NaN, NaN, NaN, NaN, false, NaN, γ))
             continue
         end
         μ = G * (M_bh + m_best)
@@ -611,6 +651,7 @@ function imbh_companions(
                 ε_best,
                 best == partner,
                 t_gw,
+                γ,
             ),
         )
     end
@@ -826,6 +867,175 @@ function imbh_pair_summary(rows::AbstractVector{IMBHPair})
         a_min_au = a_min,
         e_at_a_min = e_min,
     )
+end
+
+# ---------------------------------------------------------------------------
+# Hardening of IMBH pairs
+# ---------------------------------------------------------------------------
+
+"""Parsec per megayear in one km s⁻¹."""
+const _IMBH_PC_MYR_PER_KMS = 1.0227121650537077
+
+"""Row type of [`imbh_pair_hardening`](@ref)."""
+const _IMBHHardeningRow = NamedTuple{
+    (
+        :name1,
+        :name2,
+        :t_start_myr,
+        :t_end_myr,
+        :n,
+        :a_mean_au,
+        :s_au_per_myr,
+        :s_err_au_per_myr,
+        :k_de_dlninva,
+    ),
+    Tuple{Int,Int,Float64,Float64,Int,Float64,Float64,Float64,Float64},
+}
+
+"""Least-squares slope of `y` against `x`; `NaN` when `x` does not vary."""
+function _imbh_ls_slope(x::AbstractVector{Float64}, y::AbstractVector{Float64})::Float64
+    x̄ = sum(x) / length(x)
+    ȳ = sum(y) / length(y)
+    Sxx = sum(v -> (v - x̄)^2, x)
+    Sxx > 0 || return NaN
+    return sum((x[k] - x̄) * (y[k] - ȳ) for k in eachindex(x, y)) / Sxx
+end
+
+"""Hardening row of the bound rows `sel` of one pair over `[t_start, t_end]`."""
+function _imbh_hardening_row(
+    sel::AbstractVector{IMBHPair},
+    t_start::Float64,
+    t_end::Float64,
+)::_IMBHHardeningRow
+    n = length(sel)
+    t = Float64[r.time_myr for r in sel]
+    a = Float64[r.semi_major_axis_au for r in sel]
+    inv_a = 1 ./ a
+    s = _imbh_ls_slope(t, inv_a)
+    s_err = NaN
+    if n ≥ 4 && isfinite(s)
+        t̄ = sum(t) / n
+        Stt = sum(v -> (v - t̄)^2, t)
+        b = sum(inv_a) / n - s * t̄
+        res_var = sum((inv_a[k] - b - s * t[k])^2 for k in 1:n) / (n - 2)
+        s_err = sqrt(res_var / Stt)
+    end
+    k_e = _imbh_ls_slope(log.(inv_a), Float64[r.eccentricity for r in sel])
+    return (
+        name1 = sel[1].name1,
+        name2 = sel[1].name2,
+        t_start_myr = t_start,
+        t_end_myr = t_end,
+        n = n,
+        a_mean_au = sum(a) / n,
+        s_au_per_myr = s,
+        s_err_au_per_myr = s_err,
+        k_de_dlninva = k_e,
+    )
+end
+
+"""
+    imbh_pair_hardening(rows::AbstractVector{IMBHPair}; window_myr::Real = 0.0)
+        -> Vector{NamedTuple}
+
+Hardening rate of one IMBH pair from its rows of [`imbh_pairs`](@ref), one
+row per time window over the bound rows (unbound rows and rows with a
+non-finite time are ignored): the whole span for `window_myr ≤ 0`, else
+consecutive windows `[t₀ + k w, t₀ + (k + 1) w)` of length `w = window_myr`
+from the first bound time `t₀`, the last window taking the remainder up to
+the last bound time, as in [`imbh_wandering`](@ref). A window with fewer
+than three bound rows is left out. Rows `(name1, name2, t_start_myr,
+t_end_myr, n, a_mean_au, s_au_per_myr, s_err_au_per_myr, k_de_dlninva)`:
+
+- `n` the bound rows of the window and `a_mean_au` their mean `a` [au];
+- `s_au_per_myr`: the least-squares slope `s = d(1/a)/dt` of `1/a` [au⁻¹]
+  against `t` [Myr], the hardening rate of Quinlan (1996,
+  DOI 10.1016/S1384-1076(96)00003-6) and Sesana & Khan (2015,
+  DOI 10.1093/mnrasl/slv131), whose dimensionless form `H = s σ/(G ρ)`
+  ([`hardening_rate_dimensionless`](@ref)) is ≈ 15–20 for a hard binary;
+- `s_err_au_per_myr`: its standard error
+  `√(residual variance / Σ(t − t̄)²)`, the residual variance with `n − 2`
+  degrees of freedom; `NaN` for fewer than four rows;
+- `k_de_dlninva`: the least-squares slope `K = de/d ln(1/a)` of `e` against
+  `ln(1/a)`, the eccentricity growth rate of Quinlan (1996); `NaN` when
+  `1/a` does not vary.
+
+`ArgumentError` when the rows mix several pairs; an empty vector without
+three bound rows.
+
+# Example
+```julia
+rows = imbh_pairs(read_all_conf3(dir), [5001, 5002])
+h = only(imbh_pair_hardening(rows))
+hardening_rate_dimensionless(h.s_au_per_myr, σ_kms, ρ_msun_pc3)
+```
+"""
+function imbh_pair_hardening(rows::AbstractVector{IMBHPair}; window_myr::Real = 0.0)
+    out = _IMBHHardeningRow[]
+    isempty(rows) && return out
+    p = (rows[1].name1, rows[1].name2)
+    all(r -> (r.name1, r.name2) == p, rows) || throw(
+        ArgumentError(
+            "imbh_pair_hardening: the rows mix several pairs; select one (name1, name2) first",
+        ),
+    )
+    bound = sort!([r for r in rows if r.bound && isfinite(r.time_myr)]; by = r -> r.time_myr)
+    length(bound) ≥ 3 || return out
+    t0 = bound[1].time_myr
+    t1 = bound[end].time_myr
+    if window_myr ≤ 0
+        push!(out, _imbh_hardening_row(bound, t0, t1))
+        return out
+    end
+    w = Float64(window_myr)
+    n_full = floor(Int, (t1 - t0) / w)
+    j = 1
+    for k in 0:n_full
+        lo = t0 + k * w
+        hi = t0 + (k + 1) * w
+        first_j = j
+        while j ≤ length(bound) && (k == n_full || bound[j].time_myr < hi)
+            j += 1
+        end
+        sel = view(bound, first_j:(j - 1))
+        length(sel) ≥ 3 && push!(out, _imbh_hardening_row(sel, lo, k < n_full ? hi : t1))
+    end
+    return out
+end
+
+"""
+    hardening_rate_dimensionless(s_au_per_myr, sigma_kms, rho_msun_pc3) -> Float64
+
+Dimensionless hardening rate `H = s σ/(G ρ)` of a massive binary (Quinlan
+1996, DOI 10.1016/S1384-1076(96)00003-6; Sesana & Khan 2015,
+DOI 10.1093/mnrasl/slv131) from the rate `s = d(1/a)/dt` [au⁻¹ Myr⁻¹] of
+[`imbh_pair_hardening`](@ref), the one-dimensional velocity dispersion `σ`
+[km s⁻¹] and the stellar density `ρ` [M☉ pc⁻³] about the binary. `s` is
+converted to pc⁻¹ Myr⁻¹ (× 206264.806 au pc⁻¹), `σ` to pc Myr⁻¹
+(× 1.0227121650537077, one km s⁻¹ in pc Myr⁻¹), and
+`G = 4.30091×10⁻³ × 1.0227121650537077²` pc³ M☉⁻¹ Myr⁻². A hard binary in
+a fixed stellar background has `H ≈ 15–20`. `ArgumentError` unless `σ` and
+`ρ` are positive.
+
+# Example
+```julia
+hardening_rate_dimensionless(1.0e-3, 10.0, 1.0e4)   # ≈ 46.9
+```
+"""
+function hardening_rate_dimensionless(
+    s_au_per_myr::Real,
+    sigma_kms::Real,
+    rho_msun_pc3::Real,
+)::Float64
+    (sigma_kms > 0 && rho_msun_pc3 > 0) || throw(
+        ArgumentError(
+            "hardening_rate_dimensionless: σ and ρ must be > 0; got $sigma_kms, $rho_msun_pc3",
+        ),
+    )
+    s = Float64(s_au_per_myr) * _IMBH_AU_PER_PC
+    σ = Float64(sigma_kms) * _IMBH_PC_MYR_PER_KMS
+    G = _G_PC_KMS2_MSUN * _IMBH_PC_MYR_PER_KMS^2
+    return s * σ / (G * Float64(rho_msun_pc3))
 end
 
 # ---------------------------------------------------------------------------
@@ -1193,5 +1403,39 @@ function write_imbh_pairs(
         "imbh_name=$(join(listed, ";")) n_pairs=$n_pairs n_rows=$(length(rows))",
         String.(collect(fieldnames(IMBHPair))),
         (ntuple(f -> getfield(r, f), n_fields) for r in rows),
+    )
+end
+
+"""
+    write_imbh_pair_hardening(path, rows; names = Int[]) -> String
+
+Write the hardening rows of [`imbh_pair_hardening`](@ref) of one or several
+IMBH pairs as CSV: a `#` line with the IMBH names (`imbh_name=n₁;n₂;…`, the
+names met in `rows` when `names` is empty), the number of distinct pairs
+and of rows, then one row per window with the columns of the row tuple;
+non-finite values as empty cells. An existing file is backed up, never
+overwritten. Returns the path.
+
+# Example
+```julia
+write_imbh_pair_hardening("imbh_pair_hardening.csv", imbh_pair_hardening(rows); names = names)
+```
+"""
+function write_imbh_pair_hardening(
+    path::AbstractString,
+    rows::AbstractVector;
+    names::AbstractVector{<:Integer} = Int[],
+)::String
+    listed = if isempty(names)
+        sort!(unique(vcat(Int[r.name1 for r in rows], Int[r.name2 for r in rows])))
+    else
+        Int[Int(n) for n in names]
+    end
+    n_pairs = length(unique((r.name1, r.name2) for r in rows))
+    return _imbh_write_csv(
+        path,
+        "imbh_name=$(join(listed, ";")) n_pairs=$n_pairs n_rows=$(length(rows))",
+        String.(collect(fieldnames(_IMBHHardeningRow))),
+        (Tuple(r) for r in rows),
     )
 end

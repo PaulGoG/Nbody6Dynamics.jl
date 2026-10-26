@@ -26,6 +26,7 @@ kz14 = 0            # one of: 0 | 1 | 2 | 5 (isolated)
 
 [merger.stellar]
 kz19 = 0            # point masses
+dtplot_myr = 2.0    # inert without stellar evolution; must be ≥ deltat
 
 [merger.nbody6]
 preset = "baseline"  # one of: "engine" | "baseline"

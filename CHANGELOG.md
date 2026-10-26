@@ -52,7 +52,15 @@ entries say so.
   per IMBH (`imbh_wandering_<name>`, `imbh_companions_<name>` when there are
   several), and `imbh_pairs` with `imbh_pair_summary` follow the two-body
   state of every IMBH pair (separation, ε, a, e, Kepler period, Peters time,
-  KS state; product `imbh_pairs.csv`).
+  KS state; product `imbh_pairs.csv`). The companion search applies the KS
+  perturbation criterion: the most bound candidate is accepted only when its
+  perturbation γ by the other nearest stars stays below `gamma_max`
+  (`bound_gamma_max` in the pipeline), and `IMBHCompanion` records γ in
+  `gamma`. `imbh_pair_hardening` fits the hardening rate s = d(1/a)/dt with
+  its standard error and K = de/d ln(1/a) over the bound rows of a pair,
+  whole span or windows, and `hardening_rate_dimensionless` gives
+  H = s σ/(G ρ) (Quinlan 1996; Sesana & Khan 2015); product
+  `imbh_pair_hardening.csv`.
 - IMBH seeding of the generator (`[merger.clusterK.imbh]`, `IMBHSpec`):
   `mass` or `mass_fraction`, `placement` (`"centre"`, `"offset"`),
   `velocity` (`"rest"`, `"equipartition"` after Merritt 2005, `"explicit"`),

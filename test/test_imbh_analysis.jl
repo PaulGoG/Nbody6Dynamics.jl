@@ -4,9 +4,10 @@
 # IMBH diagnostics: the mbh.45 reader, the trajectory about the stellar
 # density centre on synthetic Gaussian clouds (StableRNGs), the wandering
 # moments and the Brownian predictions, the bound-companion search on a
-# circular test orbit, the elements of IMBH pairs on a circular binary, the
-# event list from synthetic engine records, the IC record lookup and the CSV
-# writers.
+# circular test orbit and its perturbation criterion, the elements of IMBH
+# pairs on a circular binary, the hardening estimator on a synthetic pair
+# series, the event list from synthetic engine records, the IC record lookup
+# and the CSV writers.
 
 using StableRNGs: StableRNG
 
@@ -208,8 +209,8 @@ using StableRNGs: StableRNG
         @test isempty(nd.imbh_companions([snaps[3]], bh))
         @test_throws ArgumentError nd.imbh_companions(snaps, bh; k = -1)
 
-        bound(t, n) = nd.IMBHCompanion(t, n, 1.0, 1.0e-3, 200.0, 0.1, -1.0, false, 1.0)
-        unbound(t) = nd.IMBHCompanion(t, 0, NaN, NaN, NaN, NaN, NaN, false, NaN)
+        bound(t, n) = nd.IMBHCompanion(t, n, 1.0, 1.0e-3, 200.0, 0.1, -1.0, false, 1.0, 0.0)
+        unbound(t) = nd.IMBHCompanion(t, 0, NaN, NaN, NaN, NaN, NaN, false, NaN, NaN)
         s = nd.imbh_companion_summary([bound(1.0, 7), bound(2.0, 8), unbound(3.0)])
         @test s.n_snapshots == 3
         @test s.fraction_bound ≈ 2 / 3
@@ -220,6 +221,43 @@ using StableRNGs: StableRNG
         @test s2.n_exchanges == 1
         s0 = nd.imbh_companion_summary([unbound(1.0)])
         @test s0.fraction_bound == 0.0 && s0.longest_name == 0 && isnan(s0.longest_span_myr)
+    end
+
+    @testset "Companion perturbation criterion" begin
+        # The circular test star at d = 10⁻³ pc and a perturber of mass 1/N at
+        # rest at 10⁻² pc, the IMBH at rest at the origin
+        m_c = 1 / N
+        d_c = 1.0e-3
+        v_circ = sqrt((0.01 + m_c) / d_c)
+        x_p = 1.0e-2
+        function pert_snap(with_perturber)
+            n_p = with_perturber ? 1 : 0
+            return mksnap(
+                0.0,
+                1:(N + 2 + n_p),
+                vcat(m_s, 0.01, m_c, fill(m_c, n_p)),
+                hcat(pos_s, [0.0, 0.0, 0.0], [d_c, 0.0, 0.0], repeat([x_p, 0.0, 0.0], 1, n_p)),
+                hcat(vel_s, [0.0, 0.0, 0.0], [0.0, v_circ, 0.0], zeros(3, n_p)),
+            )
+        end
+        # Expected γ from the single-precision masses and positions of the snapshot
+        f32(x) = Float64(Float32(x))
+        M_b, m_j, m_p, x_j = f32(0.01), f32(m_c), f32(m_c), f32(d_c)
+        x_cm = m_j * x_j / (M_b + m_j)
+        γ_exp = 2 * m_p * x_j^3 / ((M_b + m_j) * (f32(x_p) - x_cm)^3)
+        c = only(nd.imbh_companions([pert_snap(true)], bh))
+        @test c.companion_name == N + 2
+        @test isapprox(c.gamma, γ_exp; rtol = 1e-6)
+        r = only(nd.imbh_companions([pert_snap(true)], bh; gamma_max = 1.0e-5))
+        @test r.companion_name == 0
+        @test isnan(r.semi_major_axis_au)
+        @test r.gamma == c.gamma
+        # Without the perturber the cloud stars are far
+        c0 = only(nd.imbh_companions([pert_snap(false)], bh))
+        @test c0.companion_name == N + 2
+        @test c0.gamma < 1.0e-5
+        s = nd.imbh_companion_summary([c, r])
+        @test s.fraction_bound == 0.5
     end
 
     # Two IMBHs (names N + 1, N + 2) on a circular orbit of separation d about
@@ -292,6 +330,52 @@ using StableRNGs: StableRNG
         @test_throws ArgumentError nd.imbh_pair_summary(rows3)
         s0 = nd.imbh_pair_summary(nd.IMBHPair[])
         @test s0.n_snapshots == 0 && isnan(s0.t_first_bound_myr) && isnan(s0.a_min_au)
+    end
+
+    @testset "IMBH pair hardening" begin
+        # 1/a = 10⁻³ + 5×10⁻⁴ t [au⁻¹], e = 0.3 + 0.1 ln(1/a)
+        function hrow(t; bound = true, name2 = N + 2)
+            inv_a = 1.0e-3 + 5.0e-4 * t
+            return nd.IMBHPair(;
+                time_myr = t,
+                name1 = N + 1,
+                name2 = name2,
+                separation_pc = 1.0e-3,
+                specific_energy_km2s2 = bound ? -1.0 : 1.0,
+                bound = bound,
+                semi_major_axis_au = bound ? 1 / inv_a : NaN,
+                eccentricity = bound ? 0.3 + 0.1 * log(inv_a) : NaN,
+                period_myr = NaN,
+                t_gw_myr = NaN,
+                in_pair = false,
+            )
+        end
+        rows = [hrow(t) for t in 0.0:1.0:20.0]
+        h = only(nd.imbh_pair_hardening(rows))
+        @test h.name1 == N + 1 && h.name2 == N + 2
+        @test h.n == 21
+        @test h.t_start_myr == 0.0 && h.t_end_myr == 20.0
+        @test isapprox(h.a_mean_au, sum(r -> r.semi_major_axis_au, rows) / 21; rtol = 1e-12)
+        @test isapprox(h.s_au_per_myr, 5.0e-4; rtol = 1e-9)
+        @test isapprox(h.s_err_au_per_myr, 0.0; atol = 1e-12)
+        @test isapprox(h.k_de_dlninva, 0.1; rtol = 1e-9)
+        hw = nd.imbh_pair_hardening(rows; window_myr = 7)
+        @test length(hw) == 3
+        @test [q.t_start_myr for q in hw] == [0.0, 7.0, 14.0]
+        @test [q.t_end_myr for q in hw] == [7.0, 14.0, 20.0]
+        @test [q.n for q in hw] == [7, 7, 7]
+        @test all(q -> isapprox(q.s_au_per_myr, 5.0e-4; rtol = 1e-9), hw)
+        # Unbound rows are ignored
+        with_unbound =
+            vcat(rows[1:5], [hrow(4.5; bound = false), hrow(10.5; bound = false)], rows[6:end])
+        hu = only(nd.imbh_pair_hardening(with_unbound))
+        @test hu.n == 21
+        @test hu.s_au_per_myr == h.s_au_per_myr
+        @test_throws ArgumentError nd.imbh_pair_hardening(vcat(rows, [hrow(0.0; name2 = N + 3)]))
+        @test isempty(nd.imbh_pair_hardening(vcat(rows[1:2], [hrow(3.0; bound = false)])))
+        @test isempty(nd.imbh_pair_hardening(nd.IMBHPair[]))
+        @test isapprox(nd.hardening_rate_dimensionless(1.0e-3, 10.0, 1.0e4), 46.89; rtol = 1e-3)
+        @test_throws ArgumentError nd.hardening_rate_dimensionless(1.0e-3, 0.0, 1.0e4)
     end
 
     @testset "Events" begin
@@ -475,6 +559,27 @@ using StableRNGs: StableRNG
             lp_default =
                 readlines(nd.write_imbh_pairs(joinpath(dir, "imbh_pairs_default.csv"), prow))
             @test lp_default[1] == lp[1]
+            # Hardening rows: four snapshots of the same circular pair, 1/a constant
+            hrows = nd.imbh_pair_hardening(
+                nd.imbh_pairs([pair_snap(t, v_pair) for t in 0.0:3.0], [N + 1, N + 2]),
+            )
+            lh = readlines(
+                nd.write_imbh_pair_hardening(
+                    joinpath(dir, "imbh_pair_hardening.csv"),
+                    hrows;
+                    names = [N + 1, N + 2],
+                ),
+            )
+            @test lh[1] == "# imbh_name=$(N + 1);$(N + 2) n_pairs=1 n_rows=1"
+            @test lh[2] ==
+                  "name1,name2,t_start_myr,t_end_myr,n,a_mean_au,s_au_per_myr," *
+                  "s_err_au_per_myr,k_de_dlninva"
+            @test length(lh) == 3
+            hc = split(lh[3], ",")
+            @test length(hc) == 9
+            @test hc[1:2] == [string(N + 1), string(N + 2)]
+            @test hc[5] == "4"
+            @test hc[9] == ""   # K undefined for a constant 1/a
         end
     end
 end
