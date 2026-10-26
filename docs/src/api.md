@@ -379,10 +379,14 @@ IMBHCompanion
 imbh_companions
 imbh_companion_summary
 imbh_events
+IMBHPair
+imbh_pairs
+imbh_pair_summary
 write_imbh_trajectory
 write_imbh_wandering
 write_imbh_companions
 write_imbh_events
+write_imbh_pairs
 ```
 
 ## Survival Statistics

@@ -46,7 +46,13 @@ entries say so.
   centre of mass and density centre over r_c and r_h, the windowed rms offset
   against the Plummer and harmonic-core predictions) and `plot_imbh_companions`
   (a and e of the bound companion by identity, KS state and IMRI candidates);
-  the pipeline draws both when the IMBH products exist.
+  the pipeline draws both when the IMBH products exist. Several IMBHs (the
+  flag route, up to 16, `imbh.names` of the run record) are analysed one by
+  one: the products carry an `imbh_name` first column, the figures are drawn
+  per IMBH (`imbh_wandering_<name>`, `imbh_companions_<name>` when there are
+  several), and `imbh_pairs` with `imbh_pair_summary` follow the two-body
+  state of every IMBH pair (separation, ε, a, e, Kepler period, Peters time,
+  KS state; product `imbh_pairs.csv`).
 - IMBH seeding of the generator (`[merger.clusterK.imbh]`, `IMBHSpec`):
   `mass` or `mass_fraction`, `placement` (`"centre"`, `"offset"`),
   `velocity` (`"rest"`, `"equipartition"` after Merritt 2005, `"explicit"`),

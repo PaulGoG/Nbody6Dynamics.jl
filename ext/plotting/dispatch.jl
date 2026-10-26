@@ -289,16 +289,29 @@ function Nbody6Dynamics.generate_plots(
     end
 
     # IMBH: wandering without the Brownian predictions (σ_c and ρ_c are not
-    # known here; the utility scripts pass them), and the bound companions
+    # known here; the utility scripts pass them), and the bound companions, one
+    # figure per black hole, suffixed by its name when there are several
     if haskey(results, :imbh)
         bh = results[:imbh]
-        if !isempty(bh.trajectory)
-            @info "Plotting IMBH wandering..."
-            Nbody6Dynamics.plot_imbh_wandering(bh.trajectory, bh.wandering, vis)
-        end
-        if !isempty(bh.companions)
-            @info "Plotting IMBH companions..."
-            Nbody6Dynamics.plot_imbh_companions(bh.companions, vis)
+        single = length(bh.bodies) == 1
+        for b in bh.bodies
+            if !isempty(b.trajectory)
+                @info "Plotting IMBH wandering of body $(b.name)..."
+                Nbody6Dynamics.plot_imbh_wandering(
+                    b.trajectory,
+                    b.wandering,
+                    vis;
+                    filename = single ? "imbh_wandering" : "imbh_wandering_$(b.name)",
+                )
+            end
+            if !isempty(b.companions)
+                @info "Plotting IMBH companions of body $(b.name)..."
+                Nbody6Dynamics.plot_imbh_companions(
+                    b.companions,
+                    vis;
+                    filename = single ? "imbh_companions" : "imbh_companions_$(b.name)",
+                )
+            end
         end
     end
 

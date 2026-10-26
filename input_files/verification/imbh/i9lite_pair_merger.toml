@@ -1,5 +1,6 @@
 # IMBH pair smoke run (flag route, roadmap 10.8 / study block I9 at reduced N): two King W0 = 7 clusters of 2048
-# equal-mass particles, each with an IMBH of 1 % of its stellar mass at rest, on a bound Kepler orbit, isolated, no
+# equal-mass particles, each with a 50 M☉ IMBH at rest (3 % of the Jacobi-truncated cluster; 1 % would be 16 M☉,
+# below the generator's M•/⟨m⟩ ≥ 20 floor), on a bound Kepler orbit, isolated, no
 # stellar evolution; 30 Myr. Checks the two-line KZ(24) = 3 input, the two mbh.45 records and the IMBH pair elements.
 
 [merger]
@@ -12,14 +13,14 @@ N = 2048
 rbar = 1.0          # half-mass radius [pc]
 profile = { type = "king", W0 = 7.0 }
 imf = { type = "equal", particle_mass = 1.0 }   # [M☉]
-imbh = { mass_fraction = 0.01, velocity = "rest", response = "rigid" }
+imbh = { mass = 50.0, velocity = "rest", response = "rigid" }   # [M☉]; 3 % of the truncated cluster, M•/⟨m⟩ = 50
 
 [merger.cluster2]
 N = 2048
 rbar = 1.0
 profile = { type = "king", W0 = 7.0 }
 imf = { type = "equal", particle_mass = 1.0 }
-imbh = { mass_fraction = 0.01, velocity = "rest", response = "rigid" }
+imbh = { mass = 50.0, velocity = "rest", response = "rigid" }   # [M☉]; 3 % of the truncated cluster, M•/⟨m⟩ = 50
 
 [merger.orbit]
 apocentre = 6.0     # [pc]

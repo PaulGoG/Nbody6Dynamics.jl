@@ -4,8 +4,9 @@
 # IMBH diagnostics: the mbh.45 reader, the trajectory about the stellar
 # density centre on synthetic Gaussian clouds (StableRNGs), the wandering
 # moments and the Brownian predictions, the bound-companion search on a
-# circular test orbit, the event list from synthetic engine records, the IC
-# record lookup and the CSV writers.
+# circular test orbit, the elements of IMBH pairs on a circular binary, the
+# event list from synthetic engine records, the IC record lookup and the CSV
+# writers.
 
 using StableRNGs: StableRNG
 
@@ -221,6 +222,78 @@ using StableRNGs: StableRNG
         @test s0.fraction_bound == 0.0 && s0.longest_name == 0 && isnan(s0.longest_span_myr)
     end
 
+    # Two IMBHs (names N + 1, N + 2) on a circular orbit of separation d about
+    # their common centre of mass, inside the cloud; an optional third at 1 pc
+    d_pair = 0.05
+    m_pair = 0.01
+    v_pair = sqrt(2m_pair / d_pair)     # relative circular speed, G = 1
+    function pair_snap(t, v_rel; third = false)
+        names = third ? (1:(N + 3)) : (1:(N + 2))
+        mass = vcat(m_s, m_pair, m_pair, third ? [m_pair] : Float64[])
+        pos = hcat(
+            pos_s,
+            [-d_pair / 2, 0.0, 0.0],
+            [d_pair / 2, 0.0, 0.0],
+            third ? reshape([1.0, 0.0, 0.0], 3, 1) : zeros(3, 0),
+        )
+        vel = hcat(
+            vel_s,
+            [0.0, -v_rel / 2, 0.0],
+            [0.0, v_rel / 2, 0.0],
+            third ? zeros(3, 1) : zeros(3, 0),
+        )
+        return mksnap(t, names, mass, pos, vel)
+    end
+
+    @testset "IMBH pairs" begin
+        pair_names = [N + 1, N + 2]
+        rows = nd.imbh_pairs([pair_snap(t, v_pair) for t in 0.0:2.0], pair_names)
+        @test length(rows) == 3
+        @test all(r -> r.name1 == N + 1 && r.name2 == N + 2, rows)
+        @test [r.time_myr for r in rows] == [0.0, 1.0, 2.0]
+        r = rows[1]
+        @test r.bound && !r.in_pair
+        @test r.specific_energy_km2s2 < 0
+        @test isapprox(r.separation_pc, d_pair; rtol = 1e-6)
+        @test isapprox(r.semi_major_axis_au, d_pair * 1.0 * 206264.806; rtol = 1e-5)
+        @test r.eccentricity < 1e-5
+        M12 = 2 * Float64(Float32(m_pair)) * M_tot
+        a_pc = r.semi_major_axis_au / 206264.806
+        P = 2π * sqrt(a_pc^3 / (G * M12)) * (3.0856775814913673e13 / 3.15576e13)
+        @test isapprox(r.period_myr, P; rtol = 1e-9)
+        @test isfinite(r.t_gw_myr) && r.t_gw_myr > 0
+        # Twice the circular speed: unbound
+        u = only(nd.imbh_pairs([pair_snap(0.0, 2v_pair)], pair_names))
+        @test !u.bound && u.specific_energy_km2s2 > 0
+        @test isnan(u.semi_major_axis_au) && isnan(u.eccentricity)
+        @test isnan(u.period_myr) && isnan(u.t_gw_myr)
+        # Three names: three pairs, sorted by the names
+        rows3 = nd.imbh_pairs([pair_snap(0.0, v_pair; third = true)], [N + 3, N + 1, N + 2])
+        @test length(rows3) == 3
+        @test [(q.name1, q.name2) for q in rows3] == [(N + 1, N + 2), (N + 1, N + 3), (N + 2, N + 3)]
+        @test isempty(nd.imbh_pairs([pair_snap(0.0, v_pair)], [N + 1]))
+        @test isempty(nd.imbh_pairs([snaps[1]], pair_names))   # N + 2 absent
+        # The two IMBHs as the components of the first KS pair
+        ks = mksnap(
+            0.0,
+            vcat(N + 1, N + 2, 1:N),
+            vcat(m_pair, m_pair, m_s),
+            hcat([-d_pair / 2, 0.0, 0.0], [d_pair / 2, 0.0, 0.0], pos_s),
+            hcat([0.0, -v_pair / 2, 0.0], [0.0, v_pair / 2, 0.0], vel_s);
+            npairs = 1,
+        )
+        @test only(nd.imbh_pairs([ks], pair_names)).in_pair
+        s = nd.imbh_pair_summary(rows)
+        @test s.n_snapshots == 3
+        @test s.fraction_bound == 1
+        @test s.t_first_bound_myr == 0.0 && s.t_last_bound_myr == 2.0
+        @test isapprox(s.a_min_au, d_pair * 206264.806; rtol = 1e-5)
+        @test s.e_at_a_min < 1e-5
+        @test_throws ArgumentError nd.imbh_pair_summary(rows3)
+        s0 = nd.imbh_pair_summary(nd.IMBHPair[])
+        @test s0.n_snapshots == 0 && isnan(s0.t_first_bound_myr) && isnan(s0.a_min_au)
+    end
+
     @testset "Events" begin
         imbh = 5001
         coll(t, n1, n2, k2) = nd.CollisionRecord(;
@@ -318,6 +391,16 @@ using StableRNGs: StableRNG
             @test nd._imbh_name(path) == 0
             write(path, "[meta]\nnbin0 = 0\n\n[imbh]\nname = 3001\nmass_msun = 1000.0\n")
             @test nd._imbh_name(path) == 3001
+            # Names of several IMBHs from the run record
+            names_path = joinpath(dir, "names.toml")
+            write(names_path, "[imbh]\nname = 5\nnames = [5, 9]\n")
+            @test nd._imbh_names(names_path) == [5, 9]
+            @test nd._imbh_name(names_path) == 5
+            write(names_path, "[imbh]\nname = 5\n")
+            @test nd._imbh_names(names_path) == [5]
+            write(names_path, "[meta]\nnbin0 = 0\n")
+            @test nd._imbh_names(names_path) == Int[]
+            @test nd._imbh_names(joinpath(dir, "absent.toml")) == Int[]
         end
     end
 
@@ -352,12 +435,46 @@ using StableRNGs: StableRNG
                 @test isfile(path)
                 lines = readlines(path)
                 @test startswith(lines[1], "# imbh_name=$bh")
-                @test startswith(lines[2], head)
+                @test startswith(lines[2], "imbh_name," * head)
                 @test length(lines) == 2 + n_rows
                 @test length(split(lines[3], ",")) == length(split(lines[2], ","))
+                @test first(split(lines[3], ",")) == string(bh)
             end
             nd.write_imbh_events(joinpath(dir, "imbh_events.csv"), ev; name = bh)
             @test isfile(joinpath(dir, "imbh_events#1.csv"))
+            # Two IMBHs in one product: the name column separates the series
+            two = nd.write_imbh_trajectory(
+                joinpath(dir, "imbh_trajectory_two.csv"),
+                [(bh, traj), (bh + 1, traj)],
+            )
+            lt = readlines(two)
+            @test startswith(lt[1], "# imbh_name=$bh;$(bh + 1) n_states=4")
+            @test startswith(lt[2], "imbh_name,time_nb,")
+            @test length(lt) == 2 + 4
+            @test [first(split(l, ",")) for l in lt[3:end]] == string.([bh, bh, bh + 1, bh + 1])
+            le = readlines(
+                nd.write_imbh_events(
+                    joinpath(dir, "imbh_events_two.csv"),
+                    [(bh, ev), (bh + 1, ev)],
+                ),
+            )
+            @test startswith(le[1], "# imbh_name=$bh;$(bh + 1) n_events=2")
+            @test length(le) == 2 + 2
+            # Pair states
+            prow = nd.imbh_pairs([pair_snap(t, v_pair) for t in 0.0:1.0], [N + 1, N + 2])
+            lp = readlines(
+                nd.write_imbh_pairs(joinpath(dir, "imbh_pairs.csv"), prow; names = [N + 1, N + 2]),
+            )
+            @test lp[1] == "# imbh_name=$(N + 1);$(N + 2) n_pairs=1 n_rows=2"
+            @test lp[2] == join(string.(fieldnames(nd.IMBHPair)), ",")
+            @test length(lp) == 2 + 2
+            cells = split(lp[3], ",")
+            @test length(cells) == fieldcount(nd.IMBHPair)
+            @test cells[2:3] == [string(N + 1), string(N + 2)]
+            @test cells[6] == "true"
+            lp_default =
+                readlines(nd.write_imbh_pairs(joinpath(dir, "imbh_pairs_default.csv"), prow))
+            @test lp_default[1] == lp[1]
         end
     end
 end

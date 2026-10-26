@@ -663,14 +663,12 @@ function postprocess(
         end
     end
     lap!("binary_survival")
-    # IMBH diagnostics: trajectory about the stellar density centre, wandering, companions, events
+    # IMBH diagnostics: trajectory about the stellar density centre, wandering,
+    # companions and events of every seeded IMBH, the two-body elements of every IMBH pair
     if pp.imbh && haskey(results, :snapshots)
-        imbh_name = _imbh_name(joinpath(sim_dir, "merger_ic.toml"))
-        if imbh_name > 0
-            @info "IMBH diagnostics of body $imbh_name..."
+        imbh_names = _imbh_names(joinpath(sim_dir, "merger_ic.toml"))
+        if !isempty(imbh_names)
             snaps_bh = results[:snapshots]
-            traj = imbh_trajectory(snaps_bh, imbh_name; _centre_keywords(pp)...)
-            comp = imbh_companions(snaps_bh, imbh_name)
             bh_tstar =
                 haskey(results, :diagnostics) ? extract_scaling(results[:diagnostics]).tscale : NaN
             bh_coll_path = joinpath(sim_dir, "coll.13")
@@ -681,32 +679,64 @@ function postprocess(
                 isfile(bh_coal_path) ? read_coalescence_log(bh_coal_path) : CoalescenceRecord[]
             end
             bh_gw = haskey(results, :binary_event_log) ? results[:binary_event_log].gw : GWEvent[]
-            bh_events = imbh_events(
-                imbh_name;
-                collisions = bh_collisions,
-                coalescences = bh_coalescences,
-                escapers = get(results, :escapers, EscaperRecord[]),
-                gw_events = bh_gw,
-                tstar_myr = bh_tstar,
-            )
-            m_eff = _imbh_core_effective_mass(snaps_bh, imbh_name, traj)
-            wandering = vcat(imbh_wandering(traj), imbh_wandering(traj; frame = :centre_of_mass))
+            bh_bodies = NamedTuple[]
+            for imbh_name in imbh_names
+                @info "IMBH diagnostics of body $imbh_name..."
+                traj = imbh_trajectory(snaps_bh, imbh_name; _centre_keywords(pp)...)
+                comp = imbh_companions(snaps_bh, imbh_name)
+                bh_events = imbh_events(
+                    imbh_name;
+                    collisions = bh_collisions,
+                    coalescences = bh_coalescences,
+                    escapers = get(results, :escapers, EscaperRecord[]),
+                    gw_events = bh_gw,
+                    tstar_myr = bh_tstar,
+                )
+                m_eff = _imbh_core_effective_mass(snaps_bh, imbh_name, traj)
+                wandering =
+                    vcat(imbh_wandering(traj), imbh_wandering(traj; frame = :centre_of_mass))
+                bh_summary = imbh_companion_summary(comp)
+                push!(
+                    bh_bodies,
+                    (;
+                        name = imbh_name,
+                        trajectory = traj,
+                        wandering,
+                        companions = comp,
+                        summary = bh_summary,
+                        events = bh_events,
+                        m_eff_msun = m_eff,
+                    ),
+                )
+                @info "IMBH $imbh_name: $(length(traj)) states, bound companion in " *
+                      "$(round(100 * bh_summary.fraction_bound; digits = 1)) % of the snapshots, " *
+                      "$(length(bh_events)) events"
+            end
+            bh_pairs = length(imbh_names) ≥ 2 ? imbh_pairs(snaps_bh, imbh_names) : IMBHPair[]
+            bh_pair_summaries = NamedTuple[]
+            for key in unique((r.name1, r.name2) for r in bh_pairs)
+                sel = [r for r in bh_pairs if (r.name1, r.name2) == key]
+                push!(
+                    bh_pair_summaries,
+                    merge((name1 = key[1], name2 = key[2]), imbh_pair_summary(sel)),
+                )
+            end
+            if length(imbh_names) ≥ 2
+                t_bound = filter(isfinite, [s.t_first_bound_myr for s in bh_pair_summaries])
+                @info "IMBH pairs: $(length(bh_pair_summaries)) pairs, " * (
+                    isempty(t_bound) ? "none bound" :
+                    "first bound at $(round(minimum(t_bound); sigdigits = 4)) Myr"
+                )
+            end
             mbh45_path = joinpath(sim_dir, "mbh.45")
             mbh45 = isfile(mbh45_path) ? read_mbh45(mbh45_path) : MBHRow[]
-            bh_summary = imbh_companion_summary(comp)
             results[:imbh] = (;
-                name = imbh_name,
-                trajectory = traj,
-                wandering,
-                companions = comp,
-                summary = bh_summary,
-                events = bh_events,
-                m_eff_msun = m_eff,
+                names = imbh_names,
+                bodies = bh_bodies,
+                pairs = bh_pairs,
+                pair_summaries = bh_pair_summaries,
                 mbh45,
             )
-            @info "IMBH $imbh_name: $(length(traj)) states, bound companion in " *
-                  "$(round(100 * bh_summary.fraction_bound; digits = 1)) % of the snapshots, " *
-                  "$(length(bh_events)) events"
         end
     end
     lap!("imbh")
@@ -1061,20 +1091,22 @@ function _finish_pipeline(
         bh = results[:imbh]
         write_imbh_trajectory(
             joinpath(products_dir, "imbh_trajectory.csv"),
-            bh.trajectory;
-            name = bh.name,
+            Tuple{Int,Vector{IMBHState}}[(b.name, b.trajectory) for b in bh.bodies],
         )
         write_imbh_wandering(
             joinpath(products_dir, "imbh_wandering.csv"),
-            bh.wandering;
-            name = bh.name,
+            Tuple{Int,Vector{_IMBHWanderingRow}}[(b.name, b.wandering) for b in bh.bodies],
         )
         write_imbh_companions(
             joinpath(products_dir, "imbh_companions.csv"),
-            bh.companions;
-            name = bh.name,
+            Tuple{Int,Vector{IMBHCompanion}}[(b.name, b.companions) for b in bh.bodies],
         )
-        write_imbh_events(joinpath(products_dir, "imbh_events.csv"), bh.events; name = bh.name)
+        write_imbh_events(
+            joinpath(products_dir, "imbh_events.csv"),
+            Tuple{Int,Vector{_IMBHEventRow}}[(b.name, b.events) for b in bh.bodies],
+        )
+        isempty(bh.pairs) ||
+            write_imbh_pairs(joinpath(products_dir, "imbh_pairs.csv"), bh.pairs; names = bh.names)
     end
     if haskey(results, :collision_catalogue) && !isempty(products_dir)
         write_collision_catalogue(
@@ -1330,6 +1362,7 @@ export MBHRow, read_mbh45, IMBHState, IMBHCompanion
 export imbh_trajectory, imbh_wandering, imbh_companions, imbh_companion_summary, imbh_events
 export effective_mass, brownian_rms_plummer, brownian_rms_core
 export write_imbh_trajectory, write_imbh_wandering, write_imbh_companions, write_imbh_events
+export IMBHPair, imbh_pairs, imbh_pair_summary, write_imbh_pairs
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep

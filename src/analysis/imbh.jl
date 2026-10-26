@@ -1,6 +1,7 @@
 # =============================================================================
 # IMBH diagnostics: trajectory about the stellar density centre, Brownian
-# wandering, bound companions and the event list of a seeded IMBH
+# wandering, bound companions and the event list of a seeded IMBH, and the
+# two-body elements of every pair of seeded IMBHs
 # =============================================================================
 #
 # The IMBH is found by its name at every snapshot; the stars are every other
@@ -44,24 +45,39 @@ const _IMBHEventRow = NamedTuple{
 # ---------------------------------------------------------------------------
 
 """
-    _imbh_name(path) -> Int
+    _imbh_names(path) -> Vector{Int}
 
-Body name of the seeded IMBH, `imbh.name` of the IC record `merger_ic.toml`
-at `path`; 0 when the file, the `[imbh]` table or a positive name is absent,
-or the file is not valid TOML.
+Body names of the seeded IMBHs from the IC record `merger_ic.toml` at
+`path`: the vector `imbh.names` when present (its positive integer entries,
+in record order), else `[imbh.name]` when that scalar is a positive integer,
+else empty. Empty as well when the file or the `[imbh]` table is absent or
+the file is not valid TOML.
 """
-function _imbh_name(path::AbstractString)::Int
-    isfile(path) || return 0
+function _imbh_names(path::AbstractString)::Vector{Int}
+    isfile(path) || return Int[]
     meta = try
         TOML.parsefile(path)
     catch e
         e isa Base.TOML.ParserError || rethrow()
-        return 0
+        return Int[]
     end
     table = get(meta, "imbh", nothing)
-    table isa AbstractDict || return 0
+    table isa AbstractDict || return Int[]
+    vs = get(table, "names", nothing)
+    vs isa AbstractVector && return Int[Int(v) for v in vs if v isa Integer && v > 0]
     v = get(table, "name", nothing)
-    return v isa Integer && v > 0 ? Int(v) : 0
+    return v isa Integer && v > 0 ? [Int(v)] : Int[]
+end
+
+"""
+    _imbh_name(path) -> Int
+
+Body name of the first seeded IMBH of the IC record `merger_ic.toml` at
+`path`, the first entry of `_imbh_names`; 0 when there is none.
+"""
+function _imbh_name(path::AbstractString)::Int
+    names = _imbh_names(path)
+    return isempty(names) ? 0 : names[1]
 end
 
 """Column of the body `name` in `snap`, 0 when absent."""
@@ -648,6 +664,171 @@ function imbh_companion_summary(rows::AbstractVector{IMBHCompanion})
 end
 
 # ---------------------------------------------------------------------------
+# IMBH pairs
+# ---------------------------------------------------------------------------
+
+"""Myr per pc/(km s⁻¹): kilometres per parsec over the seconds of a megayear."""
+const _IMBH_MYR_PER_PC_KMS = 3.0856775814913673e13 / 3.15576e13
+
+"""
+    IMBHPair
+
+Two-body state of a pair of seeded IMBHs at one snapshot, from
+[`imbh_pairs`](@ref); `name1 < name2`. The elements, the period and
+`t_gw_myr` are `NaN` for an unbound pair (`ε ≥ 0`).
+
+| field | meaning | unit |
+|---|---|---|
+| `time_myr` | snapshot time | Myr |
+| `name1`, `name2` | body names of the two IMBHs | — |
+| `separation_pc` | separation `r` | pc |
+| `specific_energy_km2s2` | `ε = ½ v_rel² − G (M₁ + M₂)/r` | km² s⁻² |
+| `bound` | `ε < 0` | — |
+| `semi_major_axis_au` | `a = −G (M₁ + M₂)/(2ε)` | au |
+| `eccentricity` | `e = √(1 − |r × v|²/(G (M₁ + M₂) a))` | — |
+| `period_myr` | Kepler period `2π √(a³/(G (M₁ + M₂)))` | Myr |
+| `t_gw_myr` | Peters coalescence time [`gw_inspiral_time`](@ref) | Myr |
+| `in_pair` | the two are the components of one KS pair | — |
+"""
+Base.@kwdef struct IMBHPair
+    time_myr::Float64
+    name1::Int
+    name2::Int
+    separation_pc::Float64
+    specific_energy_km2s2::Float64
+    bound::Bool
+    semi_major_axis_au::Float64
+    eccentricity::Float64
+    period_myr::Float64
+    t_gw_myr::Float64
+    in_pair::Bool
+end
+
+"""[`IMBHPair`](@ref) of the bodies in columns `i` (name `n1`) and `j` (name `n2`) of `snap`."""
+function _imbh_pair_row(snap::Snapshot, i::Int, j::Int, n1::Int, n2::Int)::IMBHPair
+    G = _G_PC_KMS2_MSUN
+    h = snap.header
+    L = rbar(h)
+    V = vstar(h)
+    Mu = zmbar(h)
+    t = time_myr(h)
+    M1 = Float64(snap.mass[i]) * Mu
+    M2 = Float64(snap.mass[j]) * Mu
+    r = ntuple(c -> (Float64(snap.pos[c, j]) - Float64(snap.pos[c, i])) * L, 3)
+    v = ntuple(c -> (Float64(snap.vel[c, j]) - Float64(snap.vel[c, i])) * V, 3)
+    d = sqrt(r[1]^2 + r[2]^2 + r[3]^2)
+    μ = G * (M1 + M2)
+    ε = d > 0 ? 0.5 * (v[1]^2 + v[2]^2 + v[3]^2) - μ / d : NaN
+    in_pair = _imbh_partner_index(snap, i) == j
+    ε < 0 || return IMBHPair(t, n1, n2, d, ε, false, NaN, NaN, NaN, NaN, in_pair)
+    a_pc = -μ / (2ε)
+    hx = r[2] * v[3] - r[3] * v[2]
+    hy = r[3] * v[1] - r[1] * v[3]
+    hz = r[1] * v[2] - r[2] * v[1]
+    e = sqrt(max(0.0, 1 - (hx^2 + hy^2 + hz^2) / (μ * a_pc)))
+    a_au = a_pc * _IMBH_AU_PER_PC
+    period = 2π * sqrt(a_pc^3 / μ) * _IMBH_MYR_PER_PC_KMS
+    t_gw = (M1 > 0 && M2 > 0 && e < 1) ? gw_inspiral_time(M1, M2, a_au, e) / 1.0e6 : NaN
+    return IMBHPair(t, n1, n2, d, ε, true, a_au, e, period, t_gw, in_pair)
+end
+
+"""
+    imbh_pairs(snaps::AbstractVector{Snapshot}, names::AbstractVector{<:Integer})
+        -> Vector{IMBHPair}
+
+Two-body state of every unordered pair of distinct IMBH names (`name1 <
+name2`) at every snapshot that holds both, one [`IMBHPair`](@ref) each, in
+the physical units of [`imbh_companions`](@ref): the specific energy
+`ε = ½ |v₂ − v₁|² − G (M₁ + M₂)/|x₂ − x₁|`, and for `ε < 0` the elements
+`a = −G (M₁ + M₂)/(2ε)`, `e = √max(0, 1 − |r × v|²/(G (M₁ + M₂) a))`, the
+Kepler period `2π √(a³/(G (M₁ + M₂)))` converted from pc/(km s⁻¹) to Myr,
+and the Peters coalescence time. `in_pair` marks two IMBHs that are the
+components `2k − 1` and `2k` (`k ≤ npairs`) of one KS pair.
+
+The criterion is two-body: the stars about the pair are ignored, so a
+bound pair may be strongly perturbed. Repeated names count once. Rows are
+sorted by `(name1, name2, time_myr)`; fewer than two distinct names give an
+empty vector.
+
+# Example
+```julia
+rows = imbh_pairs(read_all_conf3(dir), [5001, 5002])
+imbh_pair_summary(rows).t_first_bound_myr
+```
+"""
+function imbh_pairs(
+    snaps::AbstractVector{Snapshot},
+    names::AbstractVector{<:Integer},
+)::Vector{IMBHPair}
+    ns = sort!(unique(Int[Int(n) for n in names]))
+    rows = IMBHPair[]
+    n_bh = length(ns)
+    n_bh < 2 && return rows
+    for snap in snaps
+        idx = [_imbh_index(snap, n) for n in ns]
+        for a in 1:(n_bh - 1), b in (a + 1):n_bh
+            (idx[a] > 0 && idx[b] > 0) || continue
+            push!(rows, _imbh_pair_row(snap, idx[a], idx[b], ns[a], ns[b]))
+        end
+    end
+    sort!(rows; by = r -> (r.name1, r.name2, r.time_myr))
+    return rows
+end
+
+"""
+    imbh_pair_summary(rows::AbstractVector{IMBHPair})
+        -> NamedTuple{(:n_snapshots, :t_first_bound_myr, :t_last_bound_myr, :fraction_bound,
+                       :a_min_au, :e_at_a_min)}
+
+Summary of the rows of one IMBH pair from [`imbh_pairs`](@ref):
+`n_snapshots` rows, the first and last time of a bound row
+(`t_first_bound_myr`, `t_last_bound_myr`), the fraction of bound rows
+`fraction_bound`, the smallest semi-major axis of a bound row `a_min_au`
+[au] and the eccentricity of that row `e_at_a_min`. Without a bound row the
+times, `a_min_au` and `e_at_a_min` are `NaN`; empty rows give
+`n_snapshots = 0` and `fraction_bound = 0`. `ArgumentError` when the rows
+mix several pairs.
+
+# Example
+```julia
+rows = imbh_pairs(snaps, [5001, 5002])
+s = imbh_pair_summary(rows)
+s.fraction_bound, s.a_min_au
+```
+"""
+function imbh_pair_summary(rows::AbstractVector{IMBHPair})
+    n = length(rows)
+    if n > 0
+        p = (rows[1].name1, rows[1].name2)
+        all(r -> (r.name1, r.name2) == p, rows) || throw(
+            ArgumentError(
+                "imbh_pair_summary: the rows mix several pairs; select one (name1, name2) first",
+            ),
+        )
+    end
+    bound = [r for r in rows if r.bound]
+    t_first = NaN
+    t_last = NaN
+    a_min = NaN
+    e_min = NaN
+    if !isempty(bound)
+        t_first = minimum(r -> r.time_myr, bound)
+        t_last = maximum(r -> r.time_myr, bound)
+        k = argmin([r.semi_major_axis_au for r in bound])
+        a_min = bound[k].semi_major_axis_au
+        e_min = bound[k].eccentricity
+    end
+    return (
+        n_snapshots = n,
+        t_first_bound_myr = t_first,
+        t_last_bound_myr = t_last,
+        fraction_bound = n > 0 ? length(bound) / n : 0.0,
+        a_min_au = a_min,
+        e_at_a_min = e_min,
+    )
+end
+
+# ---------------------------------------------------------------------------
 # Events
 # ---------------------------------------------------------------------------
 
@@ -783,114 +964,234 @@ function _imbh_write_csv(
 end
 
 """
+Write the series of several IMBHs as one CSV: the `#` line lists the names
+(`imbh_name=n₁;n₂;…`) before `meta_tail`, the header is `imbh_name`
+followed by `header`, and every element `r` of every series contributes one
+row `(name, cells(r)...)`, in the order of `series`.
+"""
+function _imbh_write_series(
+    path::AbstractString,
+    meta_tail::AbstractString,
+    header::AbstractVector{<:AbstractString},
+    series::AbstractVector{<:Tuple{Integer,Any}},
+    cells,
+)::String
+    names = Int[Int(p[1]) for p in series]
+    rows = ((Int(n), cells(r)...) for (n, s) in series for r in s)
+    return _imbh_write_csv(
+        path,
+        "imbh_name=$(join(names, ";")) $meta_tail",
+        vcat("imbh_name", collect(String, header)),
+        rows,
+    )
+end
+
+"""Columns of [`write_imbh_trajectory`](@ref) after `imbh_name`."""
+const _IMBH_TRAJECTORY_HEADER = [
+    "time_nb",
+    "time_myr",
+    "index",
+    "mass_msun",
+    "r_pc",
+    "x_pc",
+    "y_pc",
+    "z_pc",
+    "vx_kms",
+    "vy_kms",
+    "vz_kms",
+    "r_cm_pc",
+    "x_cm_pc",
+    "y_cm_pc",
+    "z_cm_pc",
+    "r_core_pc",
+    "r_half_pc",
+    "in_pair",
+    "partner_name",
+]
+
+"""Cells of one [`IMBHState`](@ref), the vectors split into components."""
+_imbh_state_cells(s::IMBHState) = (
+    s.time_nb,
+    s.time_myr,
+    s.index,
+    s.mass_msun,
+    s.r_pc,
+    s.x_pc...,
+    s.v_kms...,
+    s.r_cm_pc,
+    s.x_cm_pc...,
+    s.r_core_pc,
+    s.r_half_pc,
+    s.in_pair,
+    s.partner_name,
+)
+
+"""
+    write_imbh_trajectory(path, series::AbstractVector{<:Tuple{Integer,Any}}) -> String
     write_imbh_trajectory(path, traj::AbstractVector{IMBHState}; name::Integer = 0) -> String
 
-Write the trajectory as CSV: a `#` line with the IMBH name and the number of
-states, then one row per [`IMBHState`](@ref) with the fields in declaration
-order, the vectors split into components (`x_pc`, `y_pc`, `z_pc`,
-`vx_kms`, `vy_kms`, `vz_kms`); non-finite values as empty cells. An existing
-file is backed up, never overwritten. Returns the path.
+Write the trajectories of one or several IMBHs as CSV. `series` holds
+`(name, traj)` pairs, `traj` a vector of [`IMBHState`](@ref) from
+[`imbh_trajectory`](@ref); the single-series method writes `[(name, traj)]`.
+A `#` line lists the IMBH names (`imbh_name=n₁;n₂;…`) and the total number
+of states, then one row per state with the IMBH name first (`imbh_name`)
+and the fields in declaration order, the vectors split into components
+(`x_pc`, `y_pc`, `z_pc`, `vx_kms`, `vy_kms`, `vz_kms`); non-finite values
+as empty cells. An existing file is backed up, never overwritten. Returns
+the path.
+
+# Example
+```julia
+write_imbh_trajectory("imbh_trajectory.csv", [(n, imbh_trajectory(snaps, n)) for n in names])
+```
 """
+function write_imbh_trajectory(
+    path::AbstractString,
+    series::AbstractVector{<:Tuple{Integer,Any}},
+)::String
+    n_states = sum(p -> length(p[2]), series; init = 0)
+    return _imbh_write_series(
+        path,
+        "n_states=$n_states",
+        _IMBH_TRAJECTORY_HEADER,
+        series,
+        _imbh_state_cells,
+    )
+end
+
 function write_imbh_trajectory(
     path::AbstractString,
     traj::AbstractVector{IMBHState};
     name::Integer = 0,
 )::String
-    header = [
-        "time_nb",
-        "time_myr",
-        "index",
-        "mass_msun",
-        "r_pc",
-        "x_pc",
-        "y_pc",
-        "z_pc",
-        "vx_kms",
-        "vy_kms",
-        "vz_kms",
-        "r_cm_pc",
-        "x_cm_pc",
-        "y_cm_pc",
-        "z_cm_pc",
-        "r_core_pc",
-        "r_half_pc",
-        "in_pair",
-        "partner_name",
-    ]
-    rows = (
-        (
-            s.time_nb,
-            s.time_myr,
-            s.index,
-            s.mass_msun,
-            s.r_pc,
-            s.x_pc...,
-            s.v_kms...,
-            s.r_cm_pc,
-            s.x_cm_pc...,
-            s.r_core_pc,
-            s.r_half_pc,
-            s.in_pair,
-            s.partner_name,
-        ) for s in traj
-    )
-    return _imbh_write_csv(path, "imbh_name=$name n_states=$(length(traj))", header, rows)
+    return write_imbh_trajectory(path, [(Int(name), traj)])
 end
 
 """
+    write_imbh_wandering(path, series::AbstractVector{<:Tuple{Integer,Any}}) -> String
     write_imbh_wandering(path, rows; name::Integer = 0) -> String
 
-Write the wandering statistics of [`imbh_wandering`](@ref) as CSV: a `#`
-line with the IMBH name, the number of windows and of states, then one row
-per window with the columns of the row tuple. An existing file is backed
+Write the wandering statistics of [`imbh_wandering`](@ref) of one or several
+IMBHs as CSV. `series` holds `(name, rows)` pairs; the single-series method
+writes `[(name, rows)]`. A `#` line lists the IMBH names, the total number
+of windows and of states, then one row per window with the IMBH name first
+(`imbh_name`) and the columns of the row tuple. An existing file is backed
 up, never overwritten. Returns the path.
 """
-function write_imbh_wandering(path::AbstractString, rows::AbstractVector; name::Integer = 0)::String
-    n_states = sum(r -> r.n, rows; init = 0)
-    return _imbh_write_csv(
+function write_imbh_wandering(
+    path::AbstractString,
+    series::AbstractVector{<:Tuple{Integer,Any}},
+)::String
+    n_windows = sum(p -> length(p[2]), series; init = 0)
+    n_states = sum(p -> sum(r -> r.n, p[2]; init = 0), series; init = 0)
+    return _imbh_write_series(
         path,
-        "imbh_name=$name n_windows=$(length(rows)) n_states=$n_states",
+        "n_windows=$n_windows n_states=$n_states",
         String.(collect(fieldnames(_IMBHWanderingRow))),
-        (Tuple(r) for r in rows),
+        series,
+        Tuple,
     )
 end
 
+function write_imbh_wandering(path::AbstractString, rows::AbstractVector; name::Integer = 0)::String
+    return write_imbh_wandering(path, [(Int(name), rows)])
+end
+
 """
+    write_imbh_companions(path, series::AbstractVector{<:Tuple{Integer,Any}}) -> String
     write_imbh_companions(path, rows::AbstractVector{IMBHCompanion}; name::Integer = 0) -> String
 
-Write the companion series of [`imbh_companions`](@ref) as CSV: a `#` line
-with the IMBH name, the number of snapshots and of bound rows, then one row
-per [`IMBHCompanion`](@ref) with the fields in declaration order. An existing
-file is backed up, never overwritten. Returns the path.
+Write the companion series of [`imbh_companions`](@ref) of one or several
+IMBHs as CSV. `series` holds `(name, rows)` pairs; the single-series method
+writes `[(name, rows)]`. A `#` line lists the IMBH names, the total number
+of snapshots and of bound rows, then one row per [`IMBHCompanion`](@ref)
+with the IMBH name first (`imbh_name`) and the fields in declaration order.
+An existing file is backed up, never overwritten. Returns the path.
 """
+function write_imbh_companions(
+    path::AbstractString,
+    series::AbstractVector{<:Tuple{Integer,Any}},
+)::String
+    n_rows = sum(p -> length(p[2]), series; init = 0)
+    n_bound = sum(p -> count(r -> r.companion_name != 0, p[2]), series; init = 0)
+    n_fields = fieldcount(IMBHCompanion)
+    return _imbh_write_series(
+        path,
+        "n_snapshots=$n_rows n_bound=$n_bound",
+        String.(collect(fieldnames(IMBHCompanion))),
+        series,
+        r -> ntuple(f -> getfield(r, f), n_fields),
+    )
+end
+
 function write_imbh_companions(
     path::AbstractString,
     rows::AbstractVector{IMBHCompanion};
     name::Integer = 0,
 )::String
-    n_bound = count(r -> r.companion_name != 0, rows)
-    n_fields = fieldcount(IMBHCompanion)
-    return _imbh_write_csv(
-        path,
-        "imbh_name=$name n_snapshots=$(length(rows)) n_bound=$n_bound",
-        String.(collect(fieldnames(IMBHCompanion))),
-        (ntuple(f -> getfield(r, f), n_fields) for r in rows),
-    )
+    return write_imbh_companions(path, [(Int(name), rows)])
 end
 
 """
+    write_imbh_events(path, series::AbstractVector{<:Tuple{Integer,Any}}) -> String
     write_imbh_events(path, rows; name::Integer = 0) -> String
 
-Write the event list of [`imbh_events`](@ref) as CSV: a `#` line with the
-IMBH name and the number of events, then one row per event (`kind`,
-`time_myr`, `partner_name`, `partner_kstar`, `partner_mass_msun`). An
-existing file is backed up, never overwritten. Returns the path.
+Write the event lists of [`imbh_events`](@ref) of one or several IMBHs as
+CSV. `series` holds `(name, rows)` pairs; the single-series method writes
+`[(name, rows)]`. A `#` line lists the IMBH names and the total number of
+events, then one row per event with the IMBH name first (`imbh_name`,
+`kind`, `time_myr`, `partner_name`, `partner_kstar`, `partner_mass_msun`).
+An existing file is backed up, never overwritten. Returns the path.
 """
+function write_imbh_events(
+    path::AbstractString,
+    series::AbstractVector{<:Tuple{Integer,Any}},
+)::String
+    n_events = sum(p -> length(p[2]), series; init = 0)
+    return _imbh_write_series(
+        path,
+        "n_events=$n_events",
+        String.(collect(fieldnames(_IMBHEventRow))),
+        series,
+        Tuple,
+    )
+end
+
 function write_imbh_events(path::AbstractString, rows::AbstractVector; name::Integer = 0)::String
+    return write_imbh_events(path, [(Int(name), rows)])
+end
+
+"""
+    write_imbh_pairs(path, rows::AbstractVector{IMBHPair}; names = Int[]) -> String
+
+Write the pair states of [`imbh_pairs`](@ref) as CSV: a `#` line with the
+IMBH names (`imbh_name=n₁;n₂;…`, the names met in `rows` when `names` is
+empty), the number of distinct pairs and of rows, then one row per
+[`IMBHPair`](@ref) with the fields in declaration order; non-finite values
+as empty cells. An existing file is backed up, never overwritten. Returns
+the path.
+
+# Example
+```julia
+write_imbh_pairs("imbh_pairs.csv", imbh_pairs(snaps, names); names = names)
+```
+"""
+function write_imbh_pairs(
+    path::AbstractString,
+    rows::AbstractVector{IMBHPair};
+    names::AbstractVector{<:Integer} = Int[],
+)::String
+    listed = if isempty(names)
+        sort!(unique(vcat(Int[r.name1 for r in rows], Int[r.name2 for r in rows])))
+    else
+        Int[Int(n) for n in names]
+    end
+    n_pairs = length(unique((r.name1, r.name2) for r in rows))
+    n_fields = fieldcount(IMBHPair)
     return _imbh_write_csv(
         path,
-        "imbh_name=$name n_events=$(length(rows))",
-        String.(collect(fieldnames(_IMBHEventRow))),
-        (Tuple(r) for r in rows),
+        "imbh_name=$(join(listed, ";")) n_pairs=$n_pairs n_rows=$(length(rows))",
+        String.(collect(fieldnames(IMBHPair))),
+        (ntuple(f -> getfield(r, f), n_fields) for r in rows),
     )
 end
