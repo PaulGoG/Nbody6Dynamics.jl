@@ -1,0 +1,34 @@
+# IMBH validation block I3 (anchor V4, Trenti, Ardi, Mineshige & Hut 2007, DOI 10.1111/j.1365-2966.2006.11189.x): a
+# King W0 = 7 cluster of 8192 equal-mass particles without an IMBH (the control),
+# no primordial binaries, isolated, no stellar evolution, 140 Myr ≈ 5 t_rh(0); the density-weighted core radius over the
+# half-mass radius after ≥ 5 t_rh is the anchor (0.27–0.29 with an IMBH, 0.015 without, f_b = 0).
+
+[merger]
+seed = 8302
+n_clusters = 1
+orbit_mode = "single"
+
+[merger.cluster1]
+N = 8192
+rbar = 1.0          # half-mass radius [pc]
+profile = { type = "king", W0 = 7.0 }
+imf = { type = "equal", particle_mass = 1.0 }   # [M☉]
+# no IMBH: the control of the pair
+
+[merger.output]
+format = "nbody"
+tcrit_myr = 140.0   # ≈ 5 t_rh(0) (t_rh ≈ 27 Myr)
+dtadj_myr = 0.5
+deltat_myr = 1.0
+
+[merger.tidal]
+kz14 = 0            # one of: 0 | 1 | 2 | 5 (isolated)
+
+[merger.stellar]
+kz19 = 0            # point masses
+
+[merger.nbody6]
+preset = "baseline"  # one of: "engine" | "baseline"
+qe = 0.01
+escapers = "keep"   # one of: "remove" | "keep"
+imbh_output_dt_myr = 1.0
