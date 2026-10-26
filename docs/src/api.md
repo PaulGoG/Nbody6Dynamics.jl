@@ -460,6 +460,10 @@ semi_major_axis_pc
 plot_binary_population
 plot_binary_orbital_elements
 plot_binary_period_distribution
+plot_binary_timeline
+plot_binary_population_series
+plot_survival_curves
+plot_gw_planes
 ```
 
 ## Stellar Population

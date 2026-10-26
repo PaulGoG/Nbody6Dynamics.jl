@@ -40,18 +40,6 @@ entries say so.
   `"test_1e4"` → `&INBSE kicktype`), `bh_spin` (`"zero"` … `"mesa"` →
   `bhspinfl`, the unseeded draws warned) and `escapers` (`"remove"` or
   `"keep"` → `KZ(23)` 2 or 0); any recoil needs `stellar.kz19 ≥ 3`.
-- Rotating King profile of the generator: `profile = { type = "rotating_king",
-  W0, omega0, axis }` samples the Einsel & Spurzem (1999) model
-  (`sample_rotating_king`, solved once per `(W0, omega0)`), rotates its
-  angular momentum onto `axis` (`[0, 0, 1]` prograde under `KZ(14) = 1, 2`),
-  scales and virialises it like the King profile, writes the model's and the
-  realised λ and specific angular momentum to `merger_ic.toml`
-  (`clusterN.rotation`, `rotation_moments`) and refuses primordial mass
-  segregation; `model_density` gives its angle-averaged profile.
-- `[merger.nbody6] gw_recoil` (`"off"`, `"fit_q"`, `"nr_fits"`,
-  `"test_1e4"` → `&INBSE kicktype`), `bh_spin` (`"zero"` … `"mesa"` →
-  `bhspinfl`, the unseeded draws warned) and `escapers` (`"remove"` or
-  `"keep"` → `KZ(23)` 2 or 0); any recoil needs `stellar.kz19 ≥ 3`.
 - Collision catalogue (`[postprocess] collision_catalogue`, default `true`):
   `collision_catalogue` tags every collision of `coll.13` (the product keeps
   the heavier star's name) and coalescence of `coal.24` with the progenitor
@@ -65,6 +53,19 @@ entries say so.
   `nelson_aalen`, `aalen_johansen` cumulative incidence with its variance,
   `turnbull` for interval censoring, `logrank_test`, `cox_snell_residuals`,
   and the products `binary_survival.csv`, `binary_incidence.csv`.
+- Figures of the binary programme (CairoMakie extension): `plot_binary_timeline`
+  (span bars by origin with end-class markers and censoring), `plot_binary_population_series`
+  (f_b and f_M per shell with binomial bands), `plot_survival_curves`
+  (Kaplan–Meier steps with censor ticks and a number-at-risk strip) and
+  `plot_gw_planes` (a–e plane with Peters coalescence-time contours, f–e
+  plane with the LISA and ground-based bands); the pipeline draws the first,
+  second and fourth when the spans, the population series and the catalogues exist.
+- The compact-binary catalogue keeps one row per decay application (the
+  decision line is dropped when its KSTIDE line is present; `decision_lines = true`
+  keeps both) and records the event kind (`record_kind`).
+- Replica configuration of Gavagnin, Mapelli & Lake (2016) run M2ρ0.25 at
+  reduced particle number (`verification/replicas/gavagnin2016_m2rho025`,
+  explicit parabolic encounter).
 - Gravitational-wave catalogues (`[postprocess] gw_catalogues`, default `false`):
   `compact_binary_catalogue` (one row per Peters-application line, NS/BH BINARY
   line or `bev.82` record of a pair of white dwarfs, neutron stars or black

@@ -476,9 +476,16 @@ times to frequency crossings are counted from the record.
 | `span_origin` | `origin` of the covering [`BinarySpan`](@ref), `:none` without one | — |
 | `flag_pn_regime` | x = c²a(1 − e²)/(GM) < 100, below the calibration of Tucker & Will (2021) | — |
 | `flag_perturbed_no_brake` | γ ≥ 0.1: the engine applies no GW decay to the pair while perturbed | — |
+| `record_kind` | the event kind of the record (`:gw_decay_step` for a GR KSTIDE line, `:gw_ksint`/`:gw_tides` for the decision lines, `:ks_new_compact`, `:bev82`) | — |
+
+An application of the decay writes a decision line (GR KSINT2 or GR TIDES) and
+the KSTIDE line at the same time with the same state: the decision line is
+dropped when the KSTIDE line of the pair at that time is present, so that one
+application gives one row (`decision_lines = true` keeps both).
 """
 Base.@kwdef struct CompactBinaryRow
     record_source::Symbol
+    record_kind::Symbol = :none
     time_nb::Float64
     time_myr::Float64
     name1::Int
@@ -544,6 +551,7 @@ end
 function _gwcat_compact_row(
     ctx,
     source::Symbol,
+    kind::Symbol,
     time_nb::Float64,
     n1::Int,
     n2::Int,
@@ -574,6 +582,7 @@ function _gwcat_compact_row(
     t_merge = time_myr + orb.t_gw_peters_myr
     return CompactBinaryRow(;
         record_source = source,
+        record_kind = kind,
         time_nb = time_nb,
         time_myr = time_myr,
         name1 = n1,
@@ -623,7 +632,7 @@ end
     compact_binary_catalogue(log::BinaryEventLog, spans::AbstractVector{BinarySpan};
                              tstar_myr, rbar_pc, binary_evo = BinaryEvolutionSnapshot[],
                              band_hz = (1e-4, 1e-1), f_ref_hz = (1e-2, 10.0),
-                             t_hubble_myr = 13_800.0) -> Vector{CompactBinaryRow}
+                             t_hubble_myr = 13_800.0, decision_lines = false) -> Vector{CompactBinaryRow}
 
 Compact-binary catalogue of a run: one [`CompactBinaryRow`](@ref) per record
 of a pair whose two components are white dwarfs, neutron stars or black
@@ -670,6 +679,7 @@ function compact_binary_catalogue(
     band_hz = _GWCAT_BAND_HZ,
     f_ref_hz = _GWCAT_FREF_HZ,
     t_hubble_myr::Real = _GWCAT_T_HUBBLE_MYR,
+    decision_lines::Bool = false,
 )::Vector{CompactBinaryRow}
     caller = "compact_binary_catalogue"
     _gwcat_check_positive(tstar_myr, "tstar_myr", caller)
@@ -697,6 +707,7 @@ function compact_binary_catalogue(
             _gwcat_compact_row(
                 ctx,
                 :gw_decay,
+                ev.kind,
                 ev.time_nb,
                 ev.name1,
                 ev.name2,
@@ -719,6 +730,7 @@ function compact_binary_catalogue(
             _gwcat_compact_row(
                 ctx,
                 :ns_bh_binary,
+                :ks_new_compact,
                 ev.time_nb,
                 ev.name1,
                 ev.name2,
@@ -740,6 +752,7 @@ function compact_binary_catalogue(
             _gwcat_compact_row(
                 ctx,
                 :bev82,
+                :bev82,
                 r.time_nb,
                 Int(r.name1),
                 Int(r.name2),
@@ -752,6 +765,16 @@ function compact_binary_catalogue(
                 NaN,
                 NaN,
             ),
+        )
+    end
+    if !decision_lines
+        applied =
+            Set((r.name1, r.name2, r.time_nb) for r in rows if r.record_kind === :gw_decay_step)
+        filter!(
+            r -> !(
+                r.record_kind in (:gw_ksint, :gw_tides) && (r.name1, r.name2, r.time_nb) in applied
+            ),
+            rows,
         )
     end
     sort!(rows; by = r -> (r.time_nb, r.name1, r.name2))

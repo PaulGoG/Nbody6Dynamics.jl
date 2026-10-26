@@ -99,6 +99,10 @@ const _PLOTTING_ENTRY_POINTS = (
     :plot_binary_population,
     :plot_binary_orbital_elements,
     :plot_binary_period_distribution,
+    :plot_binary_timeline,
+    :plot_binary_population_series,
+    :plot_survival_curves,
+    :plot_gw_planes,
     # remnant of a merger
     :plot_remnant_rotation,
     :plot_rotation_profile,

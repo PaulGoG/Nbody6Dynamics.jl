@@ -253,6 +253,41 @@ function Nbody6Dynamics.generate_plots(
         end
     end
 
+    # Binary spans: the compact pairs, else the primordial ones
+    if haskey(results, :binary_spans)
+        spans = results[:binary_spans]::Vector{BinarySpan}
+        if !isempty(spans)
+            select =
+                !isempty(_timeline_selection(spans, :compact)) ? :compact :
+                !isempty(_timeline_selection(spans, :primordial)) ? :primordial : nothing
+            if select === nothing
+                @info "Binary timeline skipped: no compact or primordial spans"
+            else
+                @info "Plotting binary timeline ($(select) spans)..."
+                Nbody6Dynamics.plot_binary_timeline(spans, vis; select = select)
+            end
+        end
+    end
+
+    if haskey(results, :binary_population)
+        rows = results[:binary_population]::Vector{BinaryPopulationRow}
+        if !isempty(rows)
+            level = any(r -> r.level === :bound, rows) ? :bound : :ks
+            @info "Plotting binary population series (level :$(level))..."
+            Nbody6Dynamics.plot_binary_population_series(rows, vis; level = level)
+        end
+    end
+
+    if haskey(results, :gw_catalogues)
+        compact = results[:gw_catalogues].compact::Vector{CompactBinaryRow}
+        if any(_gw_plane_record, compact)
+            @info "Plotting the a–e and f–e planes of the compact pairs..."
+            Nbody6Dynamics.plot_gw_planes(compact, vis)
+        elseif !isempty(compact)
+            @info "Compact-pair planes skipped: no record with a bound orbit and a GW frequency"
+        end
+    end
+
     # Run telemetry: the sampler's CSVs live in the run directory above the
     # output directory (absent for output produced outside the pipeline).
     if !isempty(sim_dir) && isdir(sim_dir)

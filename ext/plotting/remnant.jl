@@ -222,7 +222,7 @@ end
             corner = _emptiest_corner(
                 R[valid],
                 profile.v_rot_over_sigma[valid];
-                corners = (:tl, :tr, :br),
+                corners = (:tl, :tr),
             ),
             color = c_r,
         )

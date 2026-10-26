@@ -893,3 +893,299 @@ end
     @test MakieExt._physical_units(vis, [nomass], false)
     @test !MakieExt._physical_units(vis, [nomass], true)
 end
+
+@testset "Binary diagnostics figures" begin
+    for entry_point in (
+        :plot_binary_timeline,
+        :plot_binary_population_series,
+        :plot_survival_curves,
+        :plot_gw_planes,
+    )
+        @test entry_point in Nbody6Dynamics._PLOTTING_ENTRY_POINTS
+    end
+    vis = VisualizationConfig(; output_dir = mktempdir(), format = "png")
+
+    # --- Span timeline ---
+    function span_record(; kw...)
+        base = (
+            name1 = 1,
+            name2 = 2,
+            primordial = false,
+            hierarchy_outer = false,
+            origin = :dynamical,
+            origin_sublabel = :none,
+            mixed = false,
+            t_form_nb = 0.0,
+            t_end_nb = 1.0,
+            t_form_myr = 0.0,
+            t_end_myr = 1.0,
+            left_censored = false,
+            right_censored = false,
+            end_class = :unresolved,
+            n_ks_episodes = 1,
+            n_gaps_merged = 0,
+            max_gap_nb = 0.0,
+            ks_time_fraction = 1.0,
+            in_chain_count = 0,
+            hierarchy_flag = false,
+            outer_partner_name = 0,
+            ecc_form = 0.1,
+            semi_form_nb = 1e-3,
+            period_form_d = 10.0,
+            eb_form_nb = -0.1,
+            m1_form_msun = 1.0,
+            m2_form_msun = 0.8,
+            kstar1_form = 1,
+            kstar2_form = 1,
+            kstar_cm_form = 1,
+            r_cm_form_nb = 0.1,
+            gamma_form = 0.0,
+            ecc_end = 0.1,
+            semi_end_nb = 1e-3,
+            period_end_d = 10.0,
+            eb_end_nb = -0.1,
+            m1_end_msun = 1.0,
+            m2_end_msun = 0.8,
+            kstar1_end = 1,
+            kstar2_end = 1,
+            kstar_cm_end = 1,
+            r_cm_end_nb = 0.1,
+            gamma_end = 0.0,
+            line_form = 1,
+            line_end = 2,
+        )
+        return BinarySpan(; merge(base, (; kw...))...)
+    end
+    spans = [
+        span_record(;
+            name1 = 1,
+            name2 = 2,
+            primordial = true,
+            origin = :primordial,
+            t_end_myr = 8.0,
+            left_censored = true,
+            end_class = :disruption,
+        ),
+        span_record(;
+            name1 = 3,
+            name2 = 4,
+            primordial = true,
+            origin = :primordial,
+            t_end_myr = 10.0,
+            right_censored = true,
+            end_class = :censored_run_end,
+        ),
+        span_record(;
+            name1 = 5,
+            name2 = 6,
+            t_form_myr = 2.0,
+            t_end_myr = 6.0,
+            end_class = :gw_merger,
+            kstar1_form = 14,
+            kstar2_form = 14,
+        ),
+        span_record(;
+            name1 = 7,
+            name2 = 8,
+            origin = :exchange,
+            t_form_myr = 3.0,
+            t_end_myr = 9.5,
+            end_class = :escape_bound,
+            kstar1_form = 13,
+            kstar2_form = 11,
+        ),
+        span_record(;
+            name1 = 9,
+            name2 = 10,
+            primordial = true,
+            origin = :primordial_reformed,
+            t_form_myr = 4.0,
+            t_end_myr = 5.0,
+            end_class = :exchange,
+        ),
+        span_record(;
+            name1 = 11,
+            name2 = 12,
+            t_form_myr = 6.0,
+            t_end_myr = 7.0,
+            end_class = :flyby,
+        ),
+    ]
+    @test isfile(Nbody6Dynamics.plot_binary_timeline(spans, vis))
+    @test isfile(
+        Nbody6Dynamics.plot_binary_timeline(
+            spans,
+            vis;
+            select = :primordial,
+            filename = "timeline_primordial",
+        ),
+    )
+    @test isfile(
+        Nbody6Dynamics.plot_binary_timeline(
+            spans,
+            vis;
+            select = :all,
+            max_bars = 4,
+            t_end_myr = 12.0,
+            filename = "timeline_all",
+        ),
+    )
+    @test_throws ErrorException Nbody6Dynamics.plot_binary_timeline(BinarySpan[], vis)
+    @test_throws ErrorException Nbody6Dynamics.plot_binary_timeline(spans[[1, 2]], vis)
+    @test_throws ArgumentError Nbody6Dynamics.plot_binary_timeline(spans, vis; select = :hard)
+
+    # --- Population series: 3 snapshots × 2 levels × bins 0–2 ---
+    edges = ((0.0, 1.0), (0.0, 0.1), (0.1, 0.25))
+    pop_rows = BinaryPopulationRow[]
+    for (j, t) in enumerate((0.0, 1.0, 2.0)), level in (:ks, :bound), bin in 0:2
+        n_s = 90
+        n_b = 10 + bin + j + (level === :bound ? 5 : 0)
+        f_b = n_b / (n_s + n_b)
+        push!(
+            pop_rows,
+            BinaryPopulationRow(
+                j,
+                2t,
+                t,
+                level,
+                :lagrangian,
+                bin,
+                edges[bin + 1]...,
+                0.0,
+                1.0 + bin,
+                :all,
+                n_s,
+                n_b,
+                2n_b,
+                0,
+                45.0,
+                0.9 * n_b,
+                f_b,
+                2f_b / (1 + f_b),
+                0.9 * n_b / (45.0 + 0.9 * n_b),
+                sqrt(f_b * (1 - f_b) / (n_s + n_b)),
+                NaN,
+                NaN,
+                NaN,
+            ),
+        )
+    end
+    @test isfile(Nbody6Dynamics.plot_binary_population_series(pop_rows, vis))
+    @test isfile(
+        Nbody6Dynamics.plot_binary_population_series(
+            pop_rows,
+            vis;
+            level = :ks,
+            bins = (0, 1),
+            filename = "population_series_ks",
+        ),
+    )
+    @test_throws ErrorException Nbody6Dynamics.plot_binary_population_series(
+        pop_rows,
+        vis;
+        class = :white_dwarf,
+    )
+
+    # --- Survival curves ---
+    curves = [
+        (
+            label = "Primordial",
+            time = [1.0, 2.0, 4.0],
+            survival = [0.9, 0.7, 0.4],
+            lower = [0.8, 0.55, 0.25],
+            upper = [0.97, 0.82, 0.58],
+            n_risk = [10, 8, 5],
+            censor_times = [3.0, 5.0],
+        ),
+        (
+            label = "Dynamical",
+            time = [0.5, 3.0],
+            survival = [0.8, 0.5],
+            lower = [0.6, 0.3],
+            upper = [0.92, 0.7],
+            n_risk = [6, 3],
+            censor_times = Float64[],
+        ),
+    ]
+    @test isfile(Nbody6Dynamics.plot_survival_curves(curves, vis))
+    @test MakieExt._number_at_risk(curves[1], 0.0) == 10
+    @test MakieExt._number_at_risk(curves[1], 3.0) == 6
+    @test MakieExt._number_at_risk(curves[1], 4.5) == 1
+    @test_throws ErrorException Nbody6Dynamics.plot_survival_curves(NamedTuple[], vis)
+
+    # --- Compact pairs in the a–e and f–e planes ---
+    function compact_record(; kw...)
+        base = (
+            record_source = :bev82,
+            time_nb = 1.0,
+            time_myr = 1.0,
+            name1 = 1,
+            name2 = 2,
+            kstar1 = 14,
+            kstar2 = 14,
+            pair_class = :bhbh,
+            m1_msun = 10.0,
+            m2_msun = 8.0,
+            q = 0.8,
+            eta = 0.247,
+            mtot_msun = 18.0,
+            mchirp_msun = 7.8,
+            a_au = 1.0,
+            e = 0.5,
+            q_peri_au = 0.5,
+            period_d = 100.0,
+            f_orb_hz = 1e-7,
+            f_gw22_hz = 2e-7,
+            f_gw_peak_wen_hz = 1e-6,
+            f_gw_peri_hz = 1e-6,
+            fdot_gw22_hz_s = 1e-30,
+            t_gw_circ_myr = 1e6,
+            t_gw_peters_myr = 1e5,
+            t_gw_mandel_myr = 1e5,
+            q_f_zwick = 1.0,
+            t_merge_abs_myr = 1e5,
+            merges_before_t_hubble = false,
+            tgr_engine_nb = NaN,
+            gamma_pert = 0.0,
+            e_at_fref_lo = NaN,
+            e_at_fref_hi = NaN,
+            t_to_fref_lo_myr = NaN,
+            t_to_fref_hi_myr = NaN,
+            t_band_in_myr = NaN,
+            t_band_out_myr = NaN,
+            above_band_lo = false,
+            above_band_hi = false,
+            channel = :dynamical,
+            span_origin = :dynamical,
+            flag_pn_regime = false,
+            flag_perturbed_no_brake = false,
+        )
+        return CompactBinaryRow(; merge(base, (; kw...))...)
+    end
+    classes = (:bhbh, :bhns, :nsns, :bhwd, :nswd, :wdwd, :bhbh, :bhbh)
+    channels =
+        (:primordial, :dynamical, :ejected, :none, :dynamical, :primordial, :ejected, :primordial)
+    f22 = 10.0 .^ range(-6, 0; length = 8)
+    compact_rows = [
+        compact_record(;
+            time_nb = Float64(k),
+            name1 = k == 8 ? 1 : 2k - 1,     # the last record of the first pair
+            name2 = k == 8 ? 2 : 2k,
+            pair_class = classes[k],
+            channel = channels[k],
+            a_au = 10.0^(1 - 0.5k),
+            e = (0.0, 0.3, 0.6, 0.9, 0.99, 0.5, 0.2, 0.999)[k],
+            f_gw22_hz = f22[k],
+        ) for k in 1:8
+    ]
+    @test isfile(Nbody6Dynamics.plot_gw_planes(compact_rows, vis))
+    @test isfile(
+        Nbody6Dynamics.plot_gw_planes(
+            compact_rows,
+            vis;
+            last_only = false,
+            filename = "gw_planes_all",
+        ),
+    )
+    @test_throws ErrorException Nbody6Dynamics.plot_gw_planes(CompactBinaryRow[], vis)
+end

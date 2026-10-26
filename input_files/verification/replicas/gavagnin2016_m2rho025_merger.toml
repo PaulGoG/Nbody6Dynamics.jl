@@ -1,0 +1,45 @@
+# Replica of Gavagnin, Mapelli & Lake 2016 (MNRAS 461, 1276, DOI 10.1093/mnras/stw1397), run M2ρ0.25 at reduced
+# particle number: two King W0 = 5 clusters of equal-mass particles, mass ratio 2 (2 x 10^5 and 10^5 Msun), the
+# lighter one four times denser (virial radii 8 and 4 pc; r_h = 0.81 R_V for W0 = 5), on a parabolic encounter with
+# pericentre 6 pc from an initial separation of 140.8 pc; no stellar evolution, no tide. The published run has 60 000
+# particles of 5 Msun; here 6144 particles of 48.83 Msun keep the masses, radii and orbit (the relaxation is ten
+# times faster, so the remnant is read within one of its relaxation times after the merger).
+
+[merger]
+seed = 7503
+n_clusters = 2
+orbit_mode = "explicit"
+
+[merger.cluster1]
+N = 4096
+rbar = 6.48        # half-mass radius [pc] (0.81 R_V, R_V = 8 pc)
+profile = { type = "king", W0 = 5.0 }
+imf = { type = "equal", particle_mass = 48.83 }
+position = [-46.93, 0.0, 0.0]   # [pc]; centre of mass at the origin
+velocity = [1.396, -0.294, 0.0] # [km/s]; parabolic relative orbit, pericentre 6 pc
+
+[merger.cluster2]
+N = 2048
+rbar = 3.24        # half-mass radius [pc] (0.81 R_V, R_V = 4 pc)
+profile = { type = "king", W0 = 5.0 }
+imf = { type = "equal", particle_mass = 48.83 }
+position = [93.87, 0.0, 0.0]
+velocity = [-2.793, 0.589, 0.0]
+
+[merger.output]
+format = "nbody"
+truncate_jacobi = true
+tcrit_myr = 100.0
+dtadj_myr = 1.0
+deltat_myr = 2.0
+
+[merger.tidal]
+kz14 = 0            # one of: 0 | 1 | 2 | 5
+
+[merger.stellar]
+kz19 = 0            # no stellar evolution, as published
+level = "0"
+
+[merger.nbody6]
+preset = "engine"  # one of: "engine" | "baseline"
+qe = 0.01

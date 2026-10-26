@@ -457,4 +457,36 @@
             )
         end
     end
+
+    @testset "One row per application" begin
+        # The decision line (GR KSINT2) and the KSTIDE line of one application share the time
+        # and the state: only the KSTIDE row is kept unless decision_lines = true.
+        log2 = nd.BinaryEventLog()
+        common = (
+            interval = 1,
+            name1 = 5,
+            name2 = 9,
+            kstar1 = 14,
+            kstar2 = 14,
+            m1_msun = 30.0,
+            m2_msun = 30.0,
+            semi_nb = 1.0e-6,
+            ecc = 0.5,
+            gamma = 1.0e-9,
+            t_gr_nb = 100.0,
+        )
+        push!(log2.gw, nd.GWEvent(; line = 1, time_nb = 2.0, kind = :gw_ksint, common...))
+        push!(log2.gw, nd.GWEvent(; line = 2, time_nb = 2.0, kind = :gw_decay_step, common...))
+        push!(log2.gw, nd.GWEvent(; line = 3, time_nb = 3.0, kind = :gw_ksint, common...))
+        rows2 = compact_binary_catalogue(log2, BinarySpan[]; tstar_myr = 0.2, rbar_pc = 1.0)
+        @test [r.record_kind for r in rows2] == [:gw_decay_step, :gw_ksint]
+        rows3 = compact_binary_catalogue(
+            log2,
+            BinarySpan[];
+            tstar_myr = 0.2,
+            rbar_pc = 1.0,
+            decision_lines = true,
+        )
+        @test length(rows3) == 3
+    end
 end

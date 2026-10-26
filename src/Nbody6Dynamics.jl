@@ -1286,6 +1286,7 @@ export plot_hr, plot_hr_evolution
 export plot_escapers, plot_escape_anisotropy
 export plot_mass_segregation, plot_evolutionary_clock, plot_core_mass
 export plot_binary_population, plot_binary_orbital_elements, plot_binary_period_distribution
+export plot_binary_timeline, plot_binary_population_series, plot_survival_curves, plot_gw_planes
 export plot_cluster_separation, plot_cluster_virial, plot_cluster_structure
 export plot_density_profiles, plot_velocity_dispersion
 export plot_remnant_rotation, plot_rotation_profile, plot_remnant_structure
