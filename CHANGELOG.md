@@ -40,7 +40,11 @@ entries say so.
   mergers and recoils, escape) and `read_mbh45` for the engine's `mbh.45`, whose
   `DEN`, `RIJMAX` and `VSIGMA` columns are documented as unusable. Products
   `imbh_trajectory.csv`, `imbh_wandering.csv`, `imbh_companions.csv`,
-  `imbh_events.csv`.
+  `imbh_events.csv`. Figures `plot_imbh_wandering` (distance from the stellar
+  centre of mass and density centre over r_c and r_h, the windowed rms offset
+  against the Plummer and harmonic-core predictions) and `plot_imbh_companions`
+  (a and e of the bound companion by identity, KS state and IMRI candidates);
+  the pipeline draws both when the IMBH products exist.
 - IMBH seeding of the generator (`[merger.clusterK.imbh]`, `IMBHSpec`):
   `mass` or `mass_fraction`, `placement` (`"centre"`, `"offset"`),
   `velocity` (`"rest"`, `"equipartition"` after Merritt 2005, `"explicit"`),

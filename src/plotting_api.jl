@@ -103,6 +103,9 @@ const _PLOTTING_ENTRY_POINTS = (
     :plot_binary_population_series,
     :plot_survival_curves,
     :plot_gw_planes,
+    # IMBH
+    :plot_imbh_wandering,
+    :plot_imbh_companions,
     # remnant of a merger
     :plot_remnant_rotation,
     :plot_rotation_profile,

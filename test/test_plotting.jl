@@ -1189,3 +1189,101 @@ end
     )
     @test_throws ErrorException Nbody6Dynamics.plot_gw_planes(CompactBinaryRow[], vis)
 end
+
+@testset "IMBH figures" begin
+    for entry_point in (:plot_imbh_wandering, :plot_imbh_companions)
+        @test entry_point in Nbody6Dynamics._PLOTTING_ENTRY_POINTS
+    end
+    vis = VisualizationConfig(; output_dir = mktempdir(), format = "png")
+
+    # --- Wandering: 40 states, both frames in windows of 13 Myr ---
+    traj = map(0.0:1.0:39.0) do t
+        r_cm = 0.06 + 0.02 * cos(t)
+        IMBHState(;
+            time_nb = 0.0,
+            time_myr = t,
+            index = 0,
+            mass_msun = 0.0,
+            r_pc = 0.05 + 0.02 * sin(t),
+            x_pc = (0.0, 0.0, 0.0),
+            v_kms = (0.0, 0.0, 0.0),
+            r_cm_pc = r_cm,
+            x_cm_pc = (r_cm, 0.0, 0.0),
+            r_core_pc = 0.1,
+            r_half_pc = 1.0,
+            in_pair = false,
+            partner_name = 0,
+        )
+    end
+    wandering = vcat(
+        imbh_wandering(traj; window_myr = 13.0),
+        imbh_wandering(traj; window_myr = 13.0, frame = :centre_of_mass),
+    )
+    @test isfile(Nbody6Dynamics.plot_imbh_wandering(traj, wandering, vis))
+    @test isfile(
+        Nbody6Dynamics.plot_imbh_wandering(
+            traj,
+            wandering,
+            vis;
+            prediction_plummer_pc = 0.03,
+            prediction_core_pc = 0.04,
+            filename = "imbh_wandering_predictions",
+        ),
+    )
+    @test isfile(
+        Nbody6Dynamics.plot_imbh_wandering(
+            traj,
+            NamedTuple[],
+            vis;
+            prediction_core_pc = 0.04,
+            filename = "imbh_wandering_no_window",
+        ),
+    )
+    @test_throws ErrorException Nbody6Dynamics.plot_imbh_wandering(IMBHState[], wandering, vis)
+
+    # --- Companions: three names, two unbound rows, two KS pairs, one IMRI candidate ---
+    unbound(t) = IMBHCompanion(;
+        time_myr = t,
+        companion_name = 0,
+        companion_mass_msun = NaN,
+        separation_pc = NaN,
+        semi_major_axis_au = NaN,
+        eccentricity = NaN,
+        specific_energy_km2s2 = NaN,
+        in_pair = false,
+        t_gw_myr = NaN,
+    )
+    companion_names = (101, 102, 103)
+    companions = map(1:40) do k
+        t = Float64(k - 1)
+        k in (10, 20) && return unbound(t)
+        IMBHCompanion(;
+            time_myr = t,
+            companion_name = companion_names[1 + k ÷ 15],
+            companion_mass_msun = 1.0,
+            separation_pc = 1.0e-3,
+            semi_major_axis_au = 10.0^(1 + 0.05k),
+            eccentricity = 0.5 + 0.4 * sin(k),
+            specific_energy_km2s2 = -1.0,
+            in_pair = k in (5, 6),
+            t_gw_myr = k == 30 ? 1.0 : 1.0e6,
+        )
+    end
+    @test isfile(Nbody6Dynamics.plot_imbh_companions(companions, vis))
+    @test isfile(
+        Nbody6Dynamics.plot_imbh_companions(
+            companions,
+            vis;
+            max_named = 1,
+            filename = "imbh_companions_other",
+        ),
+    )
+    @test isfile(
+        Nbody6Dynamics.plot_imbh_companions(
+            [unbound(Float64(t)) for t in 0:4],
+            vis;
+            filename = "imbh_companions_unbound",
+        ),
+    )
+    @test_throws ErrorException Nbody6Dynamics.plot_imbh_companions(IMBHCompanion[], vis)
+end

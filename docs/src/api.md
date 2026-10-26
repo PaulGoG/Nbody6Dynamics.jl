@@ -486,6 +486,8 @@ plot_binary_timeline
 plot_binary_population_series
 plot_survival_curves
 plot_gw_planes
+plot_imbh_wandering
+plot_imbh_companions
 ```
 
 ## Stellar Population

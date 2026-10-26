@@ -288,6 +288,20 @@ function Nbody6Dynamics.generate_plots(
         end
     end
 
+    # IMBH: wandering without the Brownian predictions (σ_c and ρ_c are not
+    # known here; the utility scripts pass them), and the bound companions
+    if haskey(results, :imbh)
+        bh = results[:imbh]
+        if !isempty(bh.trajectory)
+            @info "Plotting IMBH wandering..."
+            Nbody6Dynamics.plot_imbh_wandering(bh.trajectory, bh.wandering, vis)
+        end
+        if !isempty(bh.companions)
+            @info "Plotting IMBH companions..."
+            Nbody6Dynamics.plot_imbh_companions(bh.companions, vis)
+        end
+    end
+
     # Run telemetry: the sampler's CSVs live in the run directory above the
     # output directory (absent for output produced outside the pipeline).
     if !isempty(sim_dir) && isdir(sim_dir)
