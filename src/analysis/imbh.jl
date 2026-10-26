@@ -613,14 +613,15 @@ function imbh_companions(
             continue
         end
         # Perturbation by the other candidates, in N-body units (γ is dimensionless)
+        jb = best   # a fixed copy: `best` is reassigned in the loop above and must not be captured
         mb = Float64(snap.mass[i])
-        mj = Float64(snap.mass[best])
-        xj = ntuple(c -> Float64(snap.pos[c, best]), 3)
+        mj = Float64(snap.mass[jb])
+        xj = ntuple(c -> Float64(snap.pos[c, jb]), 3)
         x_cm = ntuple(c -> (mb * xb[c] + mj * xj[c]) / (mb + mj), 3)
         d³ = sqrt(sum(c -> (xj[c] - xb[c])^2, 1:3))^3
         γ = 0.0
         for p in candidates
-            p == best && continue
+            p == jb && continue
             r_p = sqrt(sum(c -> (Float64(snap.pos[c, p]) - x_cm[c])^2, 1:3))
             γ = max(γ, 2 * Float64(snap.mass[p]) * d³ / ((mb + mj) * r_p^3))
         end
