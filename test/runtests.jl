@@ -109,6 +109,7 @@ end
     include("test_energy_budget.jl")
     include("test_static_models.jl")
     include("test_rotating_king.jl")
+    include("test_imbh.jl")
     include("test_angular_momentum.jl")
     include("test_equipartition.jl")
     include("test_merger_tree.jl")

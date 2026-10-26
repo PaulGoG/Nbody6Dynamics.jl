@@ -387,7 +387,8 @@ _checkpoint_dump_bytes(n::Integer, nnbopt::Integer)::Int =
 
 """
     generate_merger_inp(path, N_total, rbar, zmbar; nbody6, stellar = StellarSpec(),
-                        kz14 = 0, tcrit, dtadj, deltat, nrand, mass_bounds = (0.08, 100.0))
+                        kz14 = 0, tcrit, dtadj, deltat, nrand, mass_bounds = (0.08, 100.0),
+                        imbh = nothing)
 
 Generate an Nbody6++ `.inp` file configured for external particle
 input via `dat.10` in N-body units (`KZ(22) = 2`, the only supported
@@ -395,7 +396,25 @@ input mode).
 
 Follows the Fortran NAMELIST read order expected by `nbody6.F → start.F`:
   `&INNBODY6` → `&ININPUT` → `&INSSE` → `&INBSE` → `&INCOLL` →
-  `&INDATA` → `&INSCALE` (→ `&INXTRNL0` if KZ(14)>0).
+  `&INDATA` → `&INSCALE` (→ `&INXTRNL0` if KZ(14) = 2, 5) (→ the
+  list-directed `IMBHINIT` line `BIMBH XIMBH(1:3) VIMBH(1:3) DTBH` if
+  KZ(24) = 1).
+
+`imbh`, a named tuple `(mass_nb, pos_nb, vel_nb, dtbh_nb)` holding the last
+`dat.10` row (the IMBH, N-body units) and the `mbh.45` interval `DTBH` [NB],
+sets `KZ(24) = 1` with the other fixed options (before the `kz` overrides)
+and writes the `IMBHINIT` line in the units the engine reads it (M☉, pc,
+km s⁻¹). The engine overwrites particle N with `BODY(N) = BIMBH/ZMBAR`,
+`X = XIMBH/RBAR`, `XDOT = VIMBH/VSTAR`, `VSTAR = 1e-5 √(GM/PC) √(ZMASS ZMBAR/RBAR)`,
+where under `KZ(22) = 2` its `ZMBAR` is already the mass scale
+`ZMBAR N / ZMASS` (`start.F`), not the mean mass written to `&ININPUT`. With
+`rbar_w`, `zmbar_w` the values of the `RBAR=%.6f`, `ZMBAR=%.6f` fields and
+`zmass_w = zmbar_w N_total` (`ZMASS = 1`), the line carries
+`BIMBH = mass_nb zmass_w`, `XIMBH = pos_nb rbar_w` and
+`VIMBH = vel_nb VSTAR(zmass_w, rbar_w)`, so the engine's conversion returns
+the `dat.10` state to rounding (an identity overwrite). An IMBH under stellar
+evolution (`stellar.kz19 ≥ 3`) needs the Peters decay of `KZ(27) = 3`; a
+smaller final `KZ(27)` is refused.
 
 # Key settings
 - `nbody6`: resolved [`Nbody6ParameterSpec`](@ref); obtain it from
@@ -426,6 +445,7 @@ function generate_merger_inp(
     nrand::Int = 10000,
     mass_bounds::Tuple{Float64,Float64} = (0.08, 100.0),
     nbin0::Int = 0,
+    imbh::Union{Nothing,NamedTuple} = nothing,
 )
     _assert_resolved(nbody6)
     _validate_tidal(tidal)
@@ -445,6 +465,7 @@ function generate_merger_inp(
     kz[23] = _ESCAPERS_KZ23[nbody6.escapers]
     kz[26] = 1
     kz[30] = 1
+    imbh === nothing || (kz[24] = 1)   # IMBHINIT: particle N is the IMBH
     if nbody6.binary_physics == "full"
         for (i, v) in _FULL_BINARY_KZ
             kz[i] = v
@@ -457,6 +478,29 @@ function generate_merger_inp(
     end
     kz[46] > 0 &&
         @warn "KZ(46) = $(kz[46]) writes the per-binary custom output (ASCII, several GB per N-body time unit at 6×10⁵ bodies); meant for test arms"
+    (imbh !== nothing && stellar.kz19 ≥ 3 && kz[27] < 3) && error(
+        "an IMBH under stellar evolution needs the Peters decay of KZ(27) = 3 " *
+        "(binary_physics = \"full\" or kz = {27 = 3}); got KZ(27) = $(kz[27])",
+    )
+    # The IMBHINIT line in the units the engine reads it, from the RBAR and
+    # ZMBAR it parses and its mass scale ZMBAR N / ZMASS (ZMASS = 1)
+    imbh_line = if imbh === nothing
+        nothing
+    else
+        (length(imbh.pos_nb) == 3 && length(imbh.vel_nb) == 3 && imbh.dtbh_nb > 0) || throw(
+            ArgumentError("imbh: pos_nb and vel_nb need three components and dtbh_nb must be > 0"),
+        )
+        rbar_w = parse(Float64, @sprintf("%.6f", rbar))
+        zmbar_w = parse(Float64, @sprintf("%.6f", zmbar))
+        zmass_w = zmbar_w * N_total
+        vstar_w = _imbh_engine_vstar_kms(zmass_w, rbar_w)
+        (
+            bimbh = Float64(imbh.mass_nb) * zmass_w,
+            ximbh = Float64.(imbh.pos_nb) .* rbar_w,
+            vimbh = Float64.(imbh.vel_nb) .* vstar_w,
+            dtbh = Float64(imbh.dtbh_nb),
+        )
+    end
 
     # Build KZ lines: KZ(1:10) = ... etc.
     kz_strs = String[]
@@ -580,10 +624,27 @@ function generate_merger_inp(
             println(io)
         end
 
+        # --- 10. IMBHINIT (KZ(24) = 1): mass, position, velocity, DTBH ---
+        if imbh_line !== nothing
+            @printf(
+                io,
+                "%.15e %.15e %.15e %.15e %.15e %.15e %.15e %.15e\n",
+                imbh_line.bimbh,
+                imbh_line.ximbh[1],
+                imbh_line.ximbh[2],
+                imbh_line.ximbh[3],
+                imbh_line.vimbh[1],
+                imbh_line.vimbh[2],
+                imbh_line.vimbh[3],
+                imbh_line.dtbh
+            )
+        end
+
         # --- No binaries (NBIN0=0) or hierarchical triples ---
     end
 
-    @info "Wrote .inp file: $path (N=$N_total, NBIN0=$nbin0, KZ(22)=2, KZ(14)=$kz14, binary_physics=$(nbody6.binary_physics), RBAR=$rbar, ZMBAR=$zmbar)"
+    kz24_note = kz[24] == 1 && imbh !== nothing ? ", KZ(24)=1" : ""
+    @info "Wrote .inp file: $path (N=$N_total, NBIN0=$nbin0, KZ(22)=2, KZ(14)=$kz14$kz24_note, binary_physics=$(nbody6.binary_physics), RBAR=$rbar, ZMBAR=$zmbar)"
     if nbody6.checkpoint
         n_dumps = floor(Int, tcrit / dtadj) + 1
         dump_bytes = _checkpoint_dump_bytes(N_total, nbody6.nnbopt)
@@ -1025,6 +1086,16 @@ With `cfg.seed_streams = "per_cluster"` (always in complex mode) and no
 external `rng`, cluster `i` is sampled and its pairs expanded from its own
 stream (`_cluster_rng(seed, i)`); an external `rng` replaces every stream.
 
+A cluster with an [`IMBHSpec`](@ref) (one per configuration) gets its IMBH
+on the systems after truncation and before pair expansion: centred on their
+centre of mass (plus the offset), its velocity from the cluster's stream for
+`velocity = "equipartition"`, and with `response = "jeans"` the systems'
+velocities rescaled. It is written as the last body of `dat.10` and repeated
+on the `IMBHINIT` line of `merger.inp` (`KZ(24) = 1`); `N_total` and
+`M_total` include it, the cluster ranges and `RBAR` (the stars' half-mass
+radius) do not. Refused: M•/M_stars > 0.05 and M•/⟨m⟩ < 20 (warned above
+0.02, below 50 and above 10⁴).
+
 Returns a [`MergerICResult`](@ref) for downstream plotting and inspection.
 """
 function generate_merger_ic(
@@ -1052,6 +1123,17 @@ function generate_merger_ic(
     _validate_binary_physics(cfg.nbody6, cfg.stellar)
     _validate_tidal(cfg.tidal)
     _validate_tidal_tolerance(cfg.tidal, cfg.nbody6)
+    # IMBH route checks of the loader, for configurations built in code
+    n_imbh = count(c -> c.imbh !== nothing, cfg.clusters)
+    cfg.nbody6.imbh_route == "flag" && error(
+        "generate_merger_ic: merger.nbody6.imbh_route \"flag\" needs the IMBH-1 amendment of " *
+        "the engine (fork item 9.14), which this build does not have; use \"kz24\" with one IMBH",
+    )
+    n_imbh > 1 &&
+        error("generate_merger_ic: the kz24 route takes one IMBH; $n_imbh clusters carry one")
+    (n_imbh > 0 && haskey(cfg.nbody6.kz, 24)) && error(
+        "generate_merger_ic: merger.nbody6.kz KZ(24) is set by the IMBH route; remove the override",
+    )
     cfg.seed_streams in _SEED_STREAMS || throw(
         ArgumentError(
             "seed_streams must be \"shared\" or \"per_cluster\"; got \"$(cfg.seed_streams)\"",
@@ -1334,6 +1416,88 @@ function generate_merger_ic(
         control_info = merge(control_info, (e_realised = T_r + W_r, q_realised = T_r / abs(W_r)))
     end
 
+    # IMBH (kz24 route) on the systems of its cluster, before pair expansion:
+    # a primordial pair counts as one system in ⟨m⟩ and in the dispersion.
+    k_imbh = findfirst(c -> c.imbh !== nothing, specs)
+    imbh_state = nothing
+    if k_imbh !== nothing
+        spec_bh = specs[k_imbh].imbh::IMBHSpec
+        members_bh = collect(Int, system_ranges[k_imbh])
+        M_i = sum(mass_combined[members_bh])
+        m_mean = M_i / length(members_bh)
+        M_bh = isfinite(spec_bh.mass) ? spec_bh.mass : spec_bh.mass_fraction * M_i
+        frac_bh = M_bh / M_i
+        μ_bh = M_bh / m_mean
+        frac_bh > 0.05 && error(
+            "IMBH of cluster $k_imbh: M•/M_stars = $(round(frac_bh; sigdigits = 3)) exceeds 0.05 " *
+            "(BME04a: the cusp extends to M(<r) = M• above 5 %)",
+        )
+        frac_bh > 0.02 &&
+            @warn "IMBH of cluster $k_imbh: M•/M_stars = $(round(frac_bh; sigdigits = 3)) exceeds 0.02"
+        μ_bh < 20 && error(
+            "IMBH of cluster $k_imbh: not a massive particle (M•/⟨m⟩ = $(round(μ_bh; sigdigits = 3)) " *
+            "< 20); raise the mass",
+        )
+        μ_bh < 50 &&
+            @warn "IMBH of cluster $k_imbh: M•/⟨m⟩ = $(round(μ_bh; sigdigits = 3)) lies below 50, " *
+                  "outside the calibrated range of the Brownian tests"
+        μ_bh > 1e4 &&
+            @warn "IMBH of cluster $k_imbh: M•/⟨m⟩ = $(round(μ_bh; sigdigits = 3)); the wandering " *
+                  "law and the FP32 regular force are untested above μ ≈ 10⁴"
+        x_c, v_c = _imbh_centre(pos_combined, vel_combined, mass_combined, members_bh)
+        σ_c = _imbh_central_dispersion(
+            pos_combined,
+            vel_combined,
+            mass_combined,
+            members_bh,
+            x_c,
+            v_c,
+        )
+        x_bh, v_bh = _imbh_body(
+            spec_bh,
+            M_bh,
+            m_mean,
+            x_c,
+            v_c,
+            σ_c,
+            per_cluster ? cluster_rngs[k_imbh] : use_rng,
+        )
+        jeans_factors = if spec_bh.response == "jeans"
+            _imbh_jeans_response!(
+                pos_combined,
+                vel_combined,
+                mass_combined,
+                members_bh,
+                v_c,
+                M_bh,
+                x_bh,
+            )
+        else
+            Float64[]
+        end
+        imbh_state = (
+            cluster = k_imbh,
+            spec = spec_bh,
+            mass = M_bh,
+            mass_fraction = frac_bh,
+            m_mean = m_mean,
+            σ_c = σ_c,
+            pos = x_bh,
+            vel = v_bh,
+            jeans_factors = jeans_factors,
+        )
+        @info @sprintf(
+            "IMBH: cluster %d, M• = %.4g M☉ (M•/M_stars = %.3g, M•/⟨m⟩ = %.3g), σ_c = %.3g km/s, velocity %s, response %s",
+            k_imbh,
+            M_bh,
+            frac_bh,
+            μ_bh,
+            σ_c * _CODE_VSTAR_KMS,
+            spec_bh.velocity,
+            spec_bh.response
+        )
+    end
+
     # Expand primordial pairs into bodies: every cluster's pairs first, then
     # the singles (the engine's convention for the first 2·NBIN0 bodies).
     expanded = expand_binaries(
@@ -1346,6 +1510,15 @@ function generate_merger_ic(
         rng = per_cluster ? cluster_rngs : use_rng,
     )
     pos_combined, vel_combined, mass_combined = expanded.pos, expanded.vel, expanded.mass
+    # The IMBH is the last body (particle N of IMBHINIT), in no cluster's
+    # blocks; it counts in N_total and M_total, while RBAR stays the
+    # half-mass radius of the stars.
+    if imbh_state !== nothing
+        pos_combined = hcat(pos_combined, imbh_state.pos)
+        vel_combined = hcat(vel_combined, imbh_state.vel)
+        mass_combined = vcat(mass_combined, imbh_state.mass)
+        M_total += imbh_state.mass
+    end
     # Inertial velocities into the engine's rotating frame (kz14 = 1, 2): v − Ω × r,
     # with Ω converted to the code velocity unit per pc; no rotating frame otherwise.
     if cfg.tidal.velocity_frame == "inertial" && cfg.tidal.kz14 in (1, 2)
@@ -1467,6 +1640,37 @@ function generate_merger_ic(
     vel_combined .*= _CODE_VSTAR_KMS  # code units → km/s (match to_nbody_units! API)
     to_nbody_units!(mass_combined, pos_combined, vel_combined, M_total, rbar)
 
+    # IMBHINIT data (the last dat.10 row, DTBH with the realised T*) and the run record
+    imbh_inp = nothing
+    imbh_record = nothing
+    if imbh_state !== nothing
+        dtbh_nb = nbody6.imbh_output_dt_myr / t_star_myr
+        imbh_inp = (
+            mass_nb = mass_combined[end],
+            pos_nb = pos_combined[:, end],
+            vel_nb = vel_combined[:, end],
+            dtbh_nb = dtbh_nb,
+        )
+        imbh_record = Dict{String,Any}(
+            "name" => N_total,
+            "cluster" => imbh_state.cluster,
+            "mass_msun" => imbh_state.mass,
+            "mass_fraction" => imbh_state.mass_fraction,
+            "mean_stellar_mass_msun" => imbh_state.m_mean,
+            "sigma_c_kms" => imbh_state.σ_c * _CODE_VSTAR_KMS,
+            "placement" => imbh_state.spec.placement,
+            "velocity_mode" => imbh_state.spec.velocity,
+            "response" => imbh_state.spec.response,
+            "jeans_factors" => collect(Float64, imbh_state.jeans_factors),
+            "spin" => imbh_state.spec.spin,
+            "route" => "kz24",
+            "dtbh_nb" => dtbh_nb,
+            "position_pc" => pos_phys[:, end],
+            "velocity_kms" => vel_phys[:, end],
+            "rbar_note" => "length unit from the stars alone",
+        )
+    end
+
     # Write files
     write_dat10(joinpath(out_dir, "dat.10"), mass_combined, pos_combined, vel_combined)
     generate_merger_inp(
@@ -1486,6 +1690,7 @@ function generate_merger_ic(
             maximum(_imf_mass_bounds(c.imf)[2] for c in specs),
         ),
         nbin0 = nbin0,
+        imbh = imbh_inp,
     )
 
     # Summary log
@@ -1505,6 +1710,7 @@ function generate_merger_ic(
         cluster_specs = specs,
         complex_info = complex_info,
         control_info = control_info,
+        imbh_record = imbh_record,
     )
 
     # Structured metadata for post-hoc regeneration of IC plots
@@ -1527,6 +1733,7 @@ function generate_merger_ic(
         cluster_specs = specs,
         complex_info = complex_info,
         control_info = control_info,
+        imbh_record = imbh_record,
     )
 
     return MergerICResult(
@@ -1552,7 +1759,8 @@ end
                               d_apo = NaN, orbit_derived = nothing,
                               mass_truncated = Float64[], mass_kept = Float64[],
                               truncation_radii_pc = Float64[], cluster_specs = cfg.clusters,
-                              complex_info = nothing, control_info = nothing)
+                              complex_info = nothing, control_info = nothing,
+                              imbh_record = nothing)
 
 Write a machine-readable TOML snapshot of the IC generation (schema version 4),
 sufficient to reconstruct a [`MergerICResult`](@ref) from the `dat.10` file
@@ -1588,6 +1796,15 @@ With `control_info` (a monolithic control) the `[complex]` table holds the
 targets `e_target` [M☉ km² s⁻²] and `q_target` from the systems of the complex,
 the realised `e_realised` and `q_realised` of the control's systems,
 `r_h_pc` [pc], `n_stars` and `mass_total` [M☉] of the control.
+
+With `imbh_record` (a seeded IMBH, kz24 route) the top-level `[imbh]` table
+holds its body name `name` (= `N_total`, the last body), `cluster`,
+`mass_msun`, the realised `mass_fraction` M•/M_stars, `mean_stellar_mass_msun`
+(per system), `sigma_c_kms`, `placement`, `velocity_mode`, `response`,
+`jeans_factors` (empty for a rigid response), `spin`, `route`, `dtbh_nb`, the
+written state `position_pc` and `velocity_kms` (in the engine's frame) and
+`rbar_note`: `rbar` is the half-mass radius of the stars, while `N_total`,
+`M_total` and `zmbar` include the IMBH.
 """
 function _write_merger_ic_metadata(
     path::AbstractString,
@@ -1608,6 +1825,7 @@ function _write_merger_ic_metadata(
     cluster_specs::AbstractVector{ClusterSpec} = cfg.clusters,
     complex_info::Union{NamedTuple,Nothing} = nothing,
     control_info::Union{NamedTuple,Nothing} = nothing,
+    imbh_record::Union{Nothing,Dict{String,Any}} = nothing,
 )
     orbit_table =
         Dict{String,Any}(String(k) => getfield(cfg.orbit, k) for k in fieldnames(OrbitSpec))
@@ -1698,6 +1916,7 @@ function _write_merger_ic_metadata(
             "mass_total" => M_total,
         )
     end
+    imbh_record === nothing || (d["imbh"] = imbh_record)
 
     # One table per cluster so spec + post-truncation count are co-located
     for (i, spec) in enumerate(cluster_specs)
@@ -1887,6 +2106,7 @@ function _write_merger_summary(
     cluster_specs::AbstractVector{ClusterSpec} = cfg.clusters,
     complex_info::Union{NamedTuple,Nothing} = nothing,
     control_info::Union{NamedTuple,Nothing} = nothing,
+    imbh_record::Union{Nothing,Dict{String,Any}} = nothing,
 )
     n_clusters = length(cluster_specs)
     _backup_existing(path)
@@ -1946,6 +2166,20 @@ function _write_merger_summary(
                 )
             end
             println(io)
+        end
+        # Not a cluster line: parse_merger_summary reads the stellar ranges only
+        if imbh_record !== nothing
+            @printf(
+                io,
+                "  IMBH: name %d, M = %.4g M☉ (M•/M_stars = %.3g), cluster %d, route %s, velocity %s, response %s\n",
+                imbh_record["name"],
+                imbh_record["mass_msun"],
+                imbh_record["mass_fraction"],
+                imbh_record["cluster"],
+                imbh_record["route"],
+                imbh_record["velocity_mode"],
+                imbh_record["response"]
+            )
         end
         println(io)
         if complex_info !== nothing

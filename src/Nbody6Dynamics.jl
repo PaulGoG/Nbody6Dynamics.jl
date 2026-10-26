@@ -159,6 +159,7 @@ include("pipeline/external.jl")
 # Initial conditions generator (merger ICs)
 # ---------------------------------------------------------------------------
 include("ic/ic.jl")
+include("ic/imbh.jl")
 
 # ---------------------------------------------------------------------------
 # High-level orchestration
@@ -1252,6 +1253,7 @@ export write_compact_binary_catalogue, write_escaped_binary_catalogue, write_gw_
 export peters_semi_major_axis, band_residence, eccentricity_after
 export RotatingKingModel, solve_rotating_king, rotating_king_moments, sample_rotating_king
 export RotatingKingProfile, rotation_moments
+export IMBHSpec
 export CollisionRow,
     collision_catalogue, collision_summary, progenitor_of, write_collision_catalogue
 export EventTable, SurvivalCurve, CumulativeIncidence, event_table, kaplan_meier, nelson_aalen

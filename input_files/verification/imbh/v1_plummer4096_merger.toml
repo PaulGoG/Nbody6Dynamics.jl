@@ -1,0 +1,36 @@
+# IMBH validation block I1 (Brownian ladder, anchor V1 of the IMBH study §4.3; Chatterjee, Hernquist & Loeb 2002,
+# DOI 10.1086/339174): a Plummer sphere of 4096 equal-mass particles with a central IMBH of 1 % of the stellar mass at
+# rest, isolated, no stellar evolution, kz24 route; 300 N-body time units (T* = 0.233 Myr at r_h = 1 pc). Prediction per
+# coordinate: ⟨x²⟩ = (2/9) a² m/M• with a = r_h/1.305.
+
+[merger]
+seed = 814
+n_clusters = 1
+orbit_mode = "single"
+
+[merger.cluster1]
+N = 4096
+rbar = 1.0          # half-mass radius [pc]
+profile = { type = "plummer" }
+imf = { type = "equal", particle_mass = 1.0 }   # [M☉]
+imbh = { mass_fraction = 0.01, velocity = "rest", response = "rigid" }
+
+[merger.output]
+format = "nbody"
+truncate_jacobi = false   # untruncated Plummer sphere as in the anchor
+tcrit_myr = 69.89      # 300 N-body units
+dtadj_myr = 0.233      # 1 N-body unit
+deltat_myr = 0.233
+
+[merger.tidal]
+kz14 = 0            # one of: 0 | 1 | 2 | 5 (isolated)
+
+[merger.stellar]
+kz19 = 0            # point masses
+
+[merger.nbody6]
+preset = "baseline"  # one of: "engine" | "baseline"
+nnbopt = 40         # untruncated Plummer sphere: the baseline value loops in the engine's start-up (FPOLY0)
+qe = 0.01
+escapers = "keep"   # one of: "remove" | "keep"
+imbh_output_dt_myr = 0.233   # mbh.45 cadence, 1 N-body unit

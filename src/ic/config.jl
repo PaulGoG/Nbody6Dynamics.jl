@@ -149,6 +149,58 @@ imf_name(::EqualMassIMF) = "equal"
 imf_name(::PowerLawIMF) = "powerlaw"
 
 # -----------------------------------------------------------------------------
+# IMBHSpec
+# -----------------------------------------------------------------------------
+
+"""Values of `[merger.clusterK.imbh] placement`, `velocity` and `response`."""
+const _IMBH_PLACEMENTS = ("centre", "offset")
+const _IMBH_VELOCITIES = ("rest", "equipartition", "explicit")
+const _IMBH_RESPONSES = ("rigid", "jeans")
+
+"""Values of `[merger.nbody6] imbh_route`."""
+const _IMBH_ROUTES = ("auto", "kz24", "flag")
+
+"""
+    IMBHSpec(; mass = NaN, mass_fraction = NaN, placement = "centre", offset = zeros(3),
+               velocity = "rest", velocity_kms = zeros(3), response = "rigid", spin = 0.0)
+
+Intermediate-mass black hole seeded in a cluster (`[merger.clusterK.imbh]`).
+
+# Fields
+- `mass::Float64`: IMBH mass M• [M☉]; exclusive with `mass_fraction`.
+- `mass_fraction::Float64`: M•/M_stars of the cluster's systems,
+  `0 < mass_fraction ≤ 0.05`; exclusive with `mass`.
+- `placement::String`: `"centre"` (the stellar centre of mass) or `"offset"`
+  (the centre of mass plus `offset`).
+- `offset::Vector{Float64}`: displacement from the stellar centre of mass
+  [pc], cluster frame; used by `"offset"`.
+- `velocity::String`: `"rest"` (the cluster's mean velocity),
+  `"equipartition"` (a Gaussian draw of per-component variance
+  σ_c² ⟨m⟩/M• about it, Merritt 2005) or `"explicit"` (the mean velocity plus
+  `velocity_kms`).
+- `velocity_kms::Vector{Float64}`: velocity relative to the cluster [km s⁻¹];
+  used by `"explicit"`.
+- `response::String`: `"rigid"` (the stellar velocities unchanged) or
+  `"jeans"` (rescaled in shells to the isotropic Jeans equilibrium with the
+  added point mass).
+- `spin::Float64`: dimensionless spin χ, `0 ≤ χ ≤ 1`; recorded only, the
+  `kz24` route cannot pass it to the engine.
+
+The IMBH is written as the last body of `dat.10` and repeated on the engine's
+`IMBHINIT` line (`KZ(24) = 1`); one IMBH per configuration.
+"""
+Base.@kwdef struct IMBHSpec
+    mass::Float64 = NaN
+    mass_fraction::Float64 = NaN
+    placement::String = "centre"
+    offset::Vector{Float64} = zeros(3)
+    velocity::String = "rest"
+    velocity_kms::Vector{Float64} = zeros(3)
+    response::String = "rigid"
+    spin::Float64 = 0.0
+end
+
+# -----------------------------------------------------------------------------
 # ClusterSpec
 # -----------------------------------------------------------------------------
 
@@ -171,6 +223,7 @@ Specification for a single star cluster.
 - `binaries::BinarySpec`: primordial binary population (none by default).
 - `segregation::SegregationSpec`: primordial mass segregation of the systems
   (`SegregationSpec`; none by default).
+- `imbh::Union{Nothing,IMBHSpec}`: seeded IMBH ([`IMBHSpec`](@ref)); `nothing` by default.
 
 The keyword constructor takes the structured (tag-typed) fields only; the
 flat TOML schema is the concern of [`load_merger_config`](@ref), which
@@ -186,6 +239,7 @@ struct ClusterSpec
     velocity::Vector{Float64}
     binaries::BinarySpec
     segregation::SegregationSpec
+    imbh::Union{Nothing,IMBHSpec}
 end
 
 function ClusterSpec(;
@@ -197,6 +251,7 @@ function ClusterSpec(;
     velocity::AbstractVector = Float64[],
     binaries::BinarySpec = BinarySpec(),
     segregation::SegregationSpec = SegregationSpec(),
+    imbh::Union{Nothing,IMBHSpec} = nothing,
 )
     return ClusterSpec(
         N,
@@ -207,8 +262,21 @@ function ClusterSpec(;
         Float64.(velocity),
         binaries,
         segregation,
+        imbh,
     )
 end
+
+# The eight-field form of earlier versions (before `imbh`).
+ClusterSpec(
+    N::Integer,
+    rbar::Real,
+    profile::DensityProfile,
+    imf::IMFSpec,
+    position::AbstractVector,
+    velocity::AbstractVector,
+    binaries::BinarySpec,
+    segregation::SegregationSpec,
+) = ClusterSpec(N, rbar, profile, imf, position, velocity, binaries, segregation, nothing)
 
 # The seven-field form of earlier versions (before `segregation`).
 ClusterSpec(
@@ -550,6 +618,7 @@ const _FULL_BINARY_KZ = (
                           nfix = 1, ncrit = 10, nrun = 1, ncomm = 1, checkpoint = false,
                           preset = "engine", binary_physics = "inherited",
                           gw_recoil = "off", bh_spin = "zero", escapers = "remove",
+                          imbh_route = "auto", imbh_output_dt_myr = 1.0,
                           kz = Dict{Int,Int}())
 
 Every numerical field of the `&INNBODY6` and `&ININPUT` namelists that the
@@ -631,6 +700,12 @@ input manual.
   `"keep"` (`KZ(23) = 0`, every star stays in the integration with its full
   phase space, for tails and the escaper catalogues; the cost grows with the
   escaped population)
+- `imbh_route`: how a seeded IMBH ([`IMBHSpec`](@ref)) reaches the engine:
+  `"auto"` or `"kz24"` (`KZ(24) = 1`, the IMBH as the last body of `dat.10`
+  repeated on the `IMBHINIT` line; one IMBH) or `"flag"` (refused: it needs
+  an engine amendment this build does not have)
+- `imbh_output_dt_myr`: interval of the engine's IMBH record `mbh.45`
+  (`DTBH`) [Myr]; > 0
 - `kz`: explicit `KZ(i) = v` overrides applied last (`[merger.nbody6.kz]`,
   keys 1–50); an override of an index that also has a named key (8, 14, 16,
   19) warns. `KZ(18) ≥ 2` is refused: it runs the engine's primordial-triple
@@ -691,6 +766,8 @@ Base.@kwdef struct Nbody6ParameterSpec
     gw_recoil::String = "off"
     bh_spin::String = "zero"
     escapers::String = "remove"
+    imbh_route::String = "auto"
+    imbh_output_dt_myr::Float64 = 1.0
     kz::Dict{Int,Int} = Dict{Int,Int}()
 end
 
@@ -1250,6 +1327,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
             velocity = spec.velocity,
             binaries = spec.binaries,
             segregation = spec.segregation,
+            imbh = spec.imbh,
         )
     end
 
@@ -1314,6 +1392,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
     _validate_binary_physics(nbody6, stellar)
     _validate_tidal(tidal)
     _validate_tidal_tolerance(tidal, nbody6)
+    _validate_imbh_configuration(clusters, nbody6, stellar)
 
     return MergerConfig(
         clusters,
@@ -1344,7 +1423,7 @@ function _section_table(parent::AbstractDict, name::AbstractString, section::Abs
 end
 
 """Keys of the member template `[merger.complex.member]` that the complex sets itself and that are therefore refused."""
-const _COMPLEX_MEMBER_REFUSED = ("N", "rbar", "position", "velocity", "density_ratio")
+const _COMPLEX_MEMBER_REFUSED = ("N", "rbar", "position", "velocity", "density_ratio", "imbh")
 
 """
     _parse_complex_section(c::AbstractDict) -> (ComplexSpec, ClusterSpec)
@@ -1353,7 +1432,7 @@ const _COMPLEX_MEMBER_REFUSED = ("N", "rbar", "position", "velocity", "density_r
 `[merger.complex.member]` as a `ClusterSpec` (parsed as a cluster table whose
 errors name `merger.complex.member`) with the placeholders
 `N = member_n_min`, `rbar = 1.0`. The template refuses `N`, `rbar`,
-`position`, `velocity` and `density_ratio`, which the complex sets, and an
+`position`, `velocity` and `density_ratio`, which the complex sets, `imbh`, and an
 IMF with a target mass (`mass_total`, `target_mass`): the member masses come
 from the mass function. A control (`control ≠ "none"`) refuses template
 binaries that change the stellar masses (`pairing = "uniform_q"` with
@@ -1372,6 +1451,8 @@ function _parse_complex_section(c)::Tuple{ComplexSpec,ClusterSpec}
     for k in _COMPLEX_MEMBER_REFUSED
         haskey(t, k) && _config_error(
             "merger.complex.member.$k",
+            k == "imbh" ?
+            "is not taken by a cluster complex (the kz24 route seeds one IMBH, in a cluster table); remove it" :
             "is set by the complex (mass function, size–mass relation, centres); remove it",
         )
     end
@@ -1582,6 +1663,49 @@ function _validate_binary_physics(p::Nbody6ParameterSpec, s::StellarSpec)
     return nothing
 end
 
+"""
+    _validate_imbh_configuration(clusters, nbody6, stellar)
+
+Configuration-level checks of IMBH seeding in [`load_merger_config`](@ref):
+`imbh_route = "flag"` is refused (it needs an engine amendment this build does
+not have), and with an IMBH in some cluster: a second IMBH (the `kz24` route
+takes one), a `kz` override of index 24 (set by the route) and, under stellar
+evolution (`kz19 ≥ 3`), a `mass` below 100 M☉ are refused; `escapers =
+"remove"` warns (an ejected IMBH is removed and every later restart aborts).
+"""
+function _validate_imbh_configuration(
+    clusters::AbstractVector{ClusterSpec},
+    nbody6::Nbody6ParameterSpec,
+    stellar::StellarSpec,
+)
+    nbody6.imbh_route == "flag" && _config_error(
+        "merger.nbody6.imbh_route",
+        "\"flag\" needs the IMBH-1 amendment of the engine (fork item 9.14), which this build " *
+        "does not have; use \"kz24\" with one IMBH",
+    )
+    carriers = findall(c -> c.imbh !== nothing, clusters)
+    isempty(carriers) && return nothing
+    n_imbh = length(carriers)
+    n_imbh > 1 && _config_error(
+        "merger.cluster$(carriers[2]).imbh",
+        "the kz24 route takes one IMBH; $n_imbh clusters carry one",
+    )
+    k = carriers[1]
+    haskey(nbody6.kz, 24) &&
+        _config_error("merger.nbody6.kz", "KZ(24) is set by the IMBH route; remove the override")
+    s = clusters[k].imbh::IMBHSpec
+    (stellar.kz19 ≥ 3 && isfinite(s.mass) && s.mass < 100) && _config_error(
+        "merger.cluster$(k).imbh.mass",
+        "an IMBH under stellar evolution must be ≥ 100 M☉ (below, indistinguishable from the " *
+        "SSE black holes); got $(s.mass) M☉",
+    )
+    nbody6.escapers == "remove" &&
+        @warn "merger.cluster$(k).imbh: with escapers = \"remove\" an IMBH ejected beyond twice " *
+              "the tidal radius is removed and every later restart aborts (imbhinit.F); use " *
+              "escapers = \"keep\" for segmented runs"
+    return nothing
+end
+
 """Fail-fast bounds of `[merger.stellar]` (the engine's own limits on `zmet`; `level` one of A, B, C, 0)."""
 function _validate_stellar(s::StellarSpec, output::MergerOutputSpec)
     s.kz19 ≥ 0 || _config_error("merger.stellar.kz19", "must be ≥ 0; got $(s.kz19)")
@@ -1633,6 +1757,14 @@ function _validate_nbody6(p::Nbody6ParameterSpec)
     haskey(_ESCAPERS_KZ23, p.escapers) || _config_error(
         "merger.nbody6.escapers",
         "must be \"remove\" or \"keep\"; got \"$(p.escapers)\"",
+    )
+    p.imbh_route in _IMBH_ROUTES || _config_error(
+        "merger.nbody6.imbh_route",
+        "must be one of \"auto\", \"kz24\", \"flag\"; got \"$(p.imbh_route)\"",
+    )
+    (isfinite(p.imbh_output_dt_myr) && p.imbh_output_dt_myr > 0) || _config_error(
+        "merger.nbody6.imbh_output_dt_myr",
+        "must be finite and > 0 [Myr]; got $(p.imbh_output_dt_myr)",
     )
     p.bh_spin in ("uniform", "gaussian", "maxwellian") &&
         @warn "merger.nbody6.bh_spin = \"$(p.bh_spin)\": the engine draws these spins with an unseeded " *
@@ -1719,6 +1851,7 @@ const _CLUSTER_TABLE_KEYS = (
     "binaries",
     "segregation",
     "density_ratio",
+    "imbh",
 )
 
 """Flat keys that a structured `imf` table (first entry) or `profile` table (second) excludes."""
@@ -1850,11 +1983,76 @@ function _parse_cluster_table(
         SegregationSpec()
     end
 
-    return ClusterSpec(N, rbar, profile, imf, position, velocity, binaries, segregation)
+    imbh = if haskey(c, "imbh")
+        imbh_raw = c["imbh"]
+        imbh_raw isa AbstractDict ||
+            _config_error("$key.imbh", "must be a table; got $imbh_raw ($(typeof(imbh_raw)))")
+        _parse_imbh_table(imbh_raw, key)
+    else
+        nothing
+    end
+
+    return ClusterSpec(N, rbar, profile, imf, position, velocity, binaries, segregation, imbh)
 end
 
 _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractString)::ClusterSpec =
     _parse_cluster_table(c, "merger.cluster$idx", orbit_mode)
+
+"""
+    _parse_imbh_table(t::AbstractDict, key::AbstractString) -> IMBHSpec
+
+`[<key>.imbh]` as a validated [`IMBHSpec`](@ref) ([`_validate_imbh`](@ref));
+`key` is the dotted cluster table. Keys other than the eight fields are refused.
+"""
+function _parse_imbh_table(t::AbstractDict, key::AbstractString)::IMBHSpec
+    s = _parse_section(IMBHSpec, t, "$key.imbh")
+    _validate_imbh(s, key)
+    return s
+end
+
+"""
+    _validate_imbh(s::IMBHSpec, key)
+
+Fail-fast bounds of an [`IMBHSpec`](@ref), naming `<key>.imbh.<field>`:
+exactly one of `mass > 0` [M☉] and `0 < mass_fraction ≤ 0.05` (warned above
+0.02), the enumerations of `placement`, `velocity` and `response`, finite
+three-component `offset` and `velocity_kms`, and `0 ≤ spin ≤ 1`.
+"""
+function _validate_imbh(s::IMBHSpec, key::AbstractString)
+    k = "$key.imbh"
+    has_mass, has_fraction = isfinite(s.mass), isfinite(s.mass_fraction)
+    xor(has_mass, has_fraction) ||
+        _config_error("$k.mass", "exactly one of mass and mass_fraction must be given")
+    has_mass && (s.mass > 0 || _config_error("$k.mass", "must be > 0 [M☉]; got $(s.mass)"))
+    if has_fraction
+        (0 < s.mass_fraction ≤ 0.05) || _config_error(
+            "$k.mass_fraction",
+            "must satisfy 0 < mass_fraction ≤ 0.05 (BME04a: the cusp extends to M(<r) = M• " *
+            "above 5 %); got $(s.mass_fraction)",
+        )
+        s.mass_fraction > 0.02 &&
+            @warn "$k.mass_fraction = $(s.mass_fraction) exceeds 0.02: the IMBH dominates the " *
+                  "central potential and the cluster leaves the equilibrium it was sampled in"
+    end
+    s.placement in _IMBH_PLACEMENTS || _config_error(
+        "$k.placement",
+        "must be one of \"centre\", \"offset\"; got \"$(s.placement)\"",
+    )
+    s.velocity in _IMBH_VELOCITIES || _config_error(
+        "$k.velocity",
+        "must be one of \"rest\", \"equipartition\", \"explicit\"; got \"$(s.velocity)\"",
+    )
+    s.response in _IMBH_RESPONSES ||
+        _config_error("$k.response", "must be one of \"rigid\", \"jeans\"; got \"$(s.response)\"")
+    (length(s.offset) == 3 && all(isfinite, s.offset)) ||
+        _config_error("$k.offset", "must be three finite components [pc]; got $(s.offset)")
+    (length(s.velocity_kms) == 3 && all(isfinite, s.velocity_kms)) || _config_error(
+        "$k.velocity_kms",
+        "must be three finite components [km s⁻¹]; got $(s.velocity_kms)",
+    )
+    (0 ≤ s.spin ≤ 1) || _config_error("$k.spin", "must satisfy 0 ≤ spin ≤ 1; got $(s.spin)")
+    return nothing
+end
 
 # ---------------------------------------------------------------------------
 # Fail-fast validation of parsed cluster specifications

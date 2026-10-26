@@ -161,7 +161,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | Component | Status | Notes |
 |-----------|--------|-------|
 | Install / build | Working | Clones my engine fork at its release tag `v2026.07.10` (any upstream ref also builds, with the source amendments of `deps/engine/amendments.toml`), runs `configure` and a parallel make, and writes `BUILD_INFO.toml` next to the binary. GPU builds target the visible devices' compute capabilities or an explicit `cuda_arch` list; validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3, see the manual, Validated hardware) |
-| Initial-condition generator | Working | Plummer and King clusters with a Kroupa (2001) IMF, alone, as a Kepler pair, on explicit orbits or as a cluster complex with its energy-matched controls, each cluster truncated at its Roche lobe (Eggleton 1983) with respect to its neighbour. Primordial mass segregation (Baumgardt, De Marchi & Kroupa 2008), primordial binaries with the Sana et al. (2012) branch for massive primaries and a periastron Roche guard, seeded throughout; output intervals are dyadic rationals, which upstream builds need (my fork bounds the digit counter since `v2026.07-campaign.3`) |
+| Initial-condition generator | Working | Plummer and King clusters with a Kroupa (2001) IMF, alone, as a Kepler pair, on explicit orbits or as a cluster complex with its energy-matched controls, each cluster truncated at its Roche lobe (Eggleton 1983) with respect to its neighbour. Primordial mass segregation (Baumgardt, De Marchi & Kroupa 2008), primordial binaries with the Sana et al. (2012) branch for massive primaries and a periastron Roche guard, IMBH seeding (`kz24` route), seeded throughout; output intervals are dyadic rationals, which upstream builds need (my fork bounds the digit counter since `v2026.07-campaign.3`) |
 | Snapshot integrals and bound sets | Working | Exact Newtonian potential in Float64 with regularised pairs as centres of mass, and the bound set by iterative energetic unbinding with an explicit convergence status. Per snapshot the momenta, energies, the pairs' internal energy and the Jacobi integral of a linearised tide (`snapshot_integrals.csv`) |
 | Energy-jump localisation and mass budget | Working | The engine's `DE` per adjustment interval with its correction channels and event counts, flagged by a floor and a robust scale (`energy_intervals.csv`, `engine_events.csv`). Mass and energy closed per snapshot against escapers, stellar-evolution and collision losses and the engine's corrections (`mass_budget.csv`, `energy_budget.csv`) |
 | Remnant diagnostics | Working | Core radii, density, half-mass radius, rotation with sign-flip floors, mass segregation (Λ_MSR, Λ̃_MSR, Γ_MSR), coalescence time and core-collapse markers of the bound remnant per snapshot (`remnant_diagnostics.csv`, four figures per merger run) |
@@ -327,6 +327,7 @@ Nbody6Dynamics/
 │       ├── orbits.jl                # Kepler two-body (size, orientation, derived quantities), explicit and single placement, tidal frame, Jacobi radii
 │       ├── binaries.jl              # Primordial binary populations; Sana 2012 and Moe & Di Stefano 2017 branches for massive primaries, periastron Roche guard
 │       ├── stellar_radius.jl        # ZAMS radii of the engine (Tout et al. 1996 fit of SSE)
+│       ├── imbh.jl                  # IMBH seeding (kz24 route): placement, Brownian velocity, isotropic Jeans response
 │       └── output.jl                # dat.10 writer, merger.inp generator, integration-parameter resolution per preset
 ├── ext/
 │   ├── Nbody6DynamicsMakieExt.jl    # Extension module, loaded by `using CairoMakie`
@@ -387,6 +388,7 @@ Nbody6Dynamics/
 │   ├── test_energy_budget.jl        # Jacobi integral, energy-jump localisation, mass budget
 │   ├── test_static_models.jl        # Estimators against the static test models with known answers
 │   ├── test_rotating_king.jl        # Rotating King model against the Einsel & Spurzem (1999) moments
+│   ├── test_imbh.jl                 # IMBH seeding: keys and guards, IMBHINIT identity, velocity modes, Jeans response
 │   ├── test_angular_momentum.jl     # Angular-momentum budget and rotation by radius and mass class
 │   ├── test_equipartition.jl        # Bianchini equipartition-mass fit
 │   ├── test_merger_tree.jl          # Merger tree and per-progenitor budget
