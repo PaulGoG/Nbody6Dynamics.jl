@@ -386,7 +386,7 @@ tcrit           = 10.0
 Accepted table keys:
 
 - `profile`: `type = "king"` (+ `W0`, default 6.0) or `type = "plummer"`
-- `imf`: `type = "kroupa" | "kroupa_rescaled" | "equal"`; mass bounds either as `bounds = [lo, hi]` or as separate `bodyn`/`body1` keys (defaults 0.08 / 100.0); `kroupa_rescaled` requires `target_mass`; `equal` requires `particle_mass` **or** `target_mass` (divided by `N`)
+- `imf`: `type = "kroupa" | "kroupa_rescaled" | "equal" | "powerlaw"`; mass bounds either as `bounds = [lo, hi]` or as separate `bodyn`/`body1` keys (defaults 0.08 / 100.0); `kroupa_rescaled` requires `target_mass`; `equal` requires `particle_mass` **or** `target_mass` (divided by `N`); `powerlaw` takes the slope `alpha` of `dN/dm ∝ m^{−alpha}` (default 2.35, Salpeter) with the same bounds
 
 The metadata file `merger_ic.toml` written next to `dat.10` stores cluster specs in this structured form, and the same parser reads it back — see `load_merger_ic_result`.
 

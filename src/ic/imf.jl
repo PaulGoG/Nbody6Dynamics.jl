@@ -140,6 +140,46 @@ sample_masses(imf::EqualMassIMF, N::Int, ::AbstractRNG) = fill(imf.particle_mass
 sample_masses(imf::KroupaIMF, N::Int, rng::AbstractRNG) =
     sample_kroupa(N; m_low = imf.bodyn, m_up = imf.body1, rng = rng)
 
+"""
+    powerlaw_mean_mass(alpha, m_low, m_up) -> Float64
+
+Mean mass [M☉] of the single power law `dN/dm ∝ m^{−alpha}` on `[m_low, m_up]`,
+`∫ m^{1−alpha} dm / ∫ m^{−alpha} dm` (logarithmic forms at `alpha` = 1 and 2);
+Salpeter's 2.35 on 0.15–50 M☉ gives 0.504 M☉.
+"""
+function powerlaw_mean_mass(alpha::Real, m_low::Real, m_up::Real)::Float64
+    0 < m_low < m_up ||
+        throw(ArgumentError("powerlaw_mean_mass: need 0 < m_low < m_up; got [$m_low, $m_up]"))
+    return _powlaw_mass_integral(m_low, m_up, 1.0, alpha) /
+           _powlaw_integral(m_low, m_up, 1.0, alpha)
+end
+
+"""
+    sample_masses(imf::PowerLawIMF, N, rng) -> Vector{Float64}
+
+`N` masses [M☉] of the power law `dN/dm ∝ m^{−alpha}` on `[bodyn, body1]` by
+the inverse cumulative distribution, `m = [m_lo^{1−α} + u (m_hi^{1−α} − m_lo^{1−α})]^{1/(1−α)}`
+(`m = m_lo (m_hi/m_lo)^u` at `α = 1`).
+"""
+function sample_masses(imf::PowerLawIMF, N::Int, rng::AbstractRNG)
+    α, lo, hi = imf.alpha, imf.bodyn, imf.body1
+    m = Vector{Float64}(undef, N)
+    if abs(α - 1) < 1e-10
+        ratio = hi / lo
+        for i in 1:N
+            m[i] = lo * ratio^rand(rng)
+        end
+    else
+        p = 1 - α
+        lo_p = lo^p
+        span = hi^p - lo_p
+        for i in 1:N
+            m[i] = clamp((lo_p + rand(rng) * span)^(1 / p), lo, hi)
+        end
+    end
+    return m
+end
+
 function sample_masses(imf::RescaledKroupaIMF, N::Int, rng::AbstractRNG)
     raw = sample_kroupa(N; m_low = imf.bodyn, m_up = imf.body1, rng = rng)
     c = imf.target_mass / sum(raw)

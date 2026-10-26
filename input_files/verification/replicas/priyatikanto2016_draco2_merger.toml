@@ -1,0 +1,46 @@
+# Replica of Priyatikanto et al. 2016 (MNRAS 457, 1339, DOI 10.1093/mnras/stw060), model draco2:
+# two Plummer clusters of 2048 stars (R_vir = 1 pc, Salpeter 0.15-50 Msun, Z = 0.02, stellar evolution) on a
+# circular orbit of semi-major axis 10 pc in the solar-neighbourhood tide.
+
+[merger]
+seed = 7501
+n_clusters = 2
+orbit_mode = "kepler"
+
+[merger.cluster1]
+N = 2048
+rbar = 0.77         # half-mass radius [pc] (1.305 R_p, R_vir = 1 pc)
+profile = { type = "plummer" }
+imf = { type = "powerlaw", alpha = 2.35, bounds = [0.15, 50.0] }
+
+[merger.cluster2]
+N = 2048
+rbar = 0.77
+profile = { type = "plummer" }
+imf = { type = "powerlaw", alpha = 2.35, bounds = [0.15, 50.0] }
+
+[merger.orbit]
+apocentre = 10.0    # [pc]
+eccentricity = 0.0
+orbit_normal = [0, 0, -1]
+apocentre_angle = 0.0
+
+[merger.output]
+format = "nbody"
+truncate_jacobi = false   # the published models are untruncated Plummer spheres
+tcrit_myr = 80.0
+dtadj_myr = 1.0
+deltat_myr = 2.0
+
+[merger.tidal]
+kz14 = 1            # one of: 0 | 1 | 2 | 5 (solar-neighbourhood tide)
+
+[merger.stellar]
+level = "C"         # one of: "A" | "B" | "C" | "0"
+zmet = 0.02         # metal abundance; 0.0001 <= zmet <= 0.03
+dtplot_myr = 10.0
+
+[merger.nbody6]
+preset = "baseline"  # one of: "engine" | "baseline"
+nnbopt = 40         # the baseline value (100) leaves no admissible neighbour sphere for the outermost stars of an untruncated Plummer sphere: the engine loops in its start-up (FPOLY0)
+qe = 0.01

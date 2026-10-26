@@ -111,10 +111,25 @@ Base.@kwdef struct EqualMassIMF <: IMFSpec
     particle_mass::Float64     # required
 end
 
+"""
+    PowerLawIMF(; alpha = 2.35, bodyn = 0.08, body1 = 100.0)
+
+Single power-law mass function `dN/dm ∝ m^{−alpha}` on `[bodyn, body1]` [M☉]
+(`alpha = 2.35` is the Salpeter 1955 slope, DOI 10.1086/145971), drawn by the
+inverse cumulative distribution; `alpha` is any finite real (the logarithmic
+forms apply at 1 and 2).
+"""
+Base.@kwdef struct PowerLawIMF <: IMFSpec
+    alpha::Float64 = 2.35
+    bodyn::Float64 = 0.08
+    body1::Float64 = 100.0
+end
+
 "Short label used in metadata TOML and logs."
 imf_name(::KroupaIMF) = "kroupa"
 imf_name(::RescaledKroupaIMF) = "kroupa_rescaled"
 imf_name(::EqualMassIMF) = "equal"
+imf_name(::PowerLawIMF) = "powerlaw"
 
 # -----------------------------------------------------------------------------
 # ClusterSpec
@@ -317,6 +332,13 @@ Expected total cluster mass [M☉] for `N` bodies drawn from `imf` — exact for
 expected_mass(imf::KroupaIMF, N::Int) = N * kroupa_mean_mass(imf.bodyn, imf.body1)
 expected_mass(imf::RescaledKroupaIMF, N::Int) = imf.target_mass
 expected_mass(imf::EqualMassIMF, N::Int) = N * imf.particle_mass
+expected_mass(imf::PowerLawIMF, N::Int) = N * powerlaw_mean_mass(imf.alpha, imf.bodyn, imf.body1)
+_imf_table(i::PowerLawIMF) = Dict{String,Any}(
+    "type" => "powerlaw",
+    "alpha" => i.alpha,
+    "bodyn" => i.bodyn,
+    "body1" => i.body1,
+)
 
 # -----------------------------------------------------------------------------
 # Orbit and output specs
@@ -1771,6 +1793,15 @@ end
 _validate_profile(::PlummerProfile, ::String) = nothing
 
 "Validate an IMF tag; `key` names the owning cluster table."
+function _validate_imf(i::PowerLawIMF, ::Int, key::String)
+    (0 < i.bodyn < i.body1) || _config_error(
+        "$key.imf",
+        "must satisfy 0 < bodyn < body1; got bodyn = $(i.bodyn), body1 = $(i.body1)",
+    )
+    isfinite(i.alpha) || _config_error("$key.imf.alpha", "must be finite; got $(i.alpha)")
+    return nothing
+end
+
 function _validate_imf(i::KroupaIMF, ::Int, key::String)
     (0 < i.bodyn < i.body1) || _config_error(
         "$key.imf",
@@ -1839,6 +1870,7 @@ const _IMF_TABLE_KEYS = Dict(
     "kroupa" => ("type", "bounds", "bodyn", "body1"),
     "kroupa_rescaled" => ("type", "bounds", "bodyn", "body1", "target_mass"),
     "equal" => ("type", "particle_mass", "target_mass"),
+    "powerlaw" => ("type", "alpha", "bounds", "bodyn", "body1"),
 )
 
 function _parse_imf_table(imf::AbstractDict, N::Int, table::AbstractString)::IMFSpec
@@ -1846,7 +1878,7 @@ function _parse_imf_table(imf::AbstractDict, N::Int, table::AbstractString)::IMF
     t = _typed(get(imf, "type", "kroupa"), String, "$key.type")
     haskey(_IMF_TABLE_KEYS, t) || _config_error(
         "$key.type",
-        "unknown type '$t'; supported: 'kroupa', 'kroupa_rescaled', 'equal'",
+        "unknown type '$t'; supported: 'kroupa', 'kroupa_rescaled', 'equal', 'powerlaw'",
     )
     _reject_unknown(imf, _IMF_TABLE_KEYS[t], key)
     (haskey(imf, "bounds") && (haskey(imf, "bodyn") || haskey(imf, "body1"))) && _config_error(
@@ -1892,10 +1924,16 @@ function _parse_imf_table(imf::AbstractDict, N::Int, table::AbstractString)::IMF
             "or $key.target_mass is required for type = 'equal'",
         )
         return EqualMassIMF(particle_mass = _typed(tm, Float64, "$key.target_mass") / N)
+    elseif t == "powerlaw"
+        return PowerLawIMF(
+            alpha = _typed(get(imf, "alpha", 2.35), Float64, "$key.alpha"),
+            bodyn = bodyn,
+            body1 = body1,
+        )
     else
         _config_error(
             "$key.type",
-            "unknown type '$t'; supported: 'kroupa', 'kroupa_rescaled', 'equal'",
+            "unknown type '$t'; supported: 'kroupa', 'kroupa_rescaled', 'equal', 'powerlaw'",
         )
     end
 end

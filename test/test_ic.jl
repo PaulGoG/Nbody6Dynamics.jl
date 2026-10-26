@@ -1507,3 +1507,40 @@ rbar = 1.0
 end
 
 # =====================================================================
+
+@testset "Power-law IMF" begin
+    using StableRNGs: StableRNG
+    nd = Nbody6Dynamics
+    imf = nd.PowerLawIMF(alpha = 2.35, bodyn = 0.15, body1 = 50.0)
+    # Salpeter 0.15–50 M☉: ⟨m⟩ = 0.504 M☉ (Priyatikanto et al. 2016, §4)
+    @test nd.powerlaw_mean_mass(2.35, 0.15, 50.0) ≈ 0.504 atol = 0.002
+    @test nd.expected_mass(imf, 2048) ≈ 2048 * nd.powerlaw_mean_mass(2.35, 0.15, 50.0)
+    m = nd.sample_masses(imf, 200_000, StableRNG(5))
+    @test minimum(m) ≥ 0.15 && maximum(m) ≤ 50.0
+    @test isapprox(sum(m) / length(m), 0.504; rtol = 0.02)
+    frac(lo, hi) = (lo^(-1.35) - hi^(-1.35)) / (0.15^(-1.35) - 50.0^(-1.35))
+    @test isapprox(count(>(1.0), m) / length(m), frac(1.0, 50.0); atol = 0.003)
+    @test nd.powerlaw_mean_mass(1.0, 0.1, 10.0) ≈ (10 - 0.1) / log(100)
+    @test nd.powerlaw_mean_mass(2.0, 0.1, 10.0) ≈ log(100) / (1 / 0.1 - 1 / 10)
+    m1 = nd.sample_masses(
+        nd.PowerLawIMF(alpha = 1.0, bodyn = 0.1, body1 = 10.0),
+        100_000,
+        StableRNG(6),
+    )
+    @test isapprox(sum(m1) / length(m1), (10 - 0.1) / log(100); rtol = 0.02)
+    table = Dict{String,Any}("type" => "powerlaw", "alpha" => 2.35, "bounds" => [0.15, 50.0])
+    @test nd._parse_imf_table(table, 2048, "merger.cluster1") == imf
+    @test nd._parse_imf_table(nd._imf_table(imf), 2048, "merger.cluster1") == imf
+    @test nd.imf_name(imf) == "powerlaw"
+    @test nd._imf_mass_bounds(imf) == (0.15, 50.0)
+    @test_throws ArgumentError nd._validate_imf(
+        nd.PowerLawIMF(alpha = 2.35, bodyn = 1.0, body1 = 0.5),
+        10,
+        "merger.cluster1",
+    )
+    @test_throws ArgumentError nd._parse_imf_table(
+        Dict{String,Any}("type" => "powerlaw", "target_mass" => 1.0),
+        10,
+        "merger.cluster1",
+    )
+end

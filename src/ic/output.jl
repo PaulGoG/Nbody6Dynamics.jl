@@ -24,6 +24,7 @@ _nbody_time_myr(M_total::Real, rbar_pc::Real)::Float64 = _CODE_TIME_MYR * sqrt(r
 _imf_mass_bounds(i::KroupaIMF) = (i.bodyn, i.body1)
 _imf_mass_bounds(i::RescaledKroupaIMF) = (i.bodyn, i.body1)
 _imf_mass_bounds(i::EqualMassIMF) = (i.particle_mass, i.particle_mass)
+_imf_mass_bounds(i::PowerLawIMF) = (i.bodyn, i.body1)
 _imf_mass_bounds(i::ExplicitMassesIMF) = extrema(i.masses)
 
 """
