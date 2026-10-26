@@ -304,4 +304,313 @@
         )
         @test keys(m) == union(bev_names, Set(Int(r.name) for r in sev.records))
     end
+
+    # Circular pair of masses m1, m2 and separation a about the centre of mass x moving with v
+    function circular_pair(name0, m1, m2, a, x, v)
+        m = m1 + m2
+        vrel = sqrt(m / a)
+        ehat = [1.0, 0, 0]
+        uhat = [0, 1.0, 0]
+        return [
+            (name0, m1, x .- (m2 / m) * a .* ehat, v .- (m2 / m) * vrel .* uhat),
+            (name0 + 1, m2, x .+ (m1 / m) * a .* ehat, v .+ (m1 / m) * vrel .* uhat),
+        ]
+    end
+    # Systems (masses, centre-of-mass positions and velocities) of a snapshot whose first npairs KS slots are pairs
+    function systems_of(s, npairs)
+        m = Float64.(s.mass)
+        x = Float64.(s.pos)
+        v = Float64.(s.vel)
+        ms = [m[2p - 1] + m[2p] for p in 1:npairs]
+        cm(u) = reduce(
+            hcat,
+            [(m[2p - 1] .* u[:, 2p - 1] .+ m[2p] .* u[:, 2p]) ./ ms[p] for p in 1:npairs],
+        )
+        tail = (2npairs + 1):length(m)
+        return vcat(ms, m[tail]), hcat(cm(x), x[:, tail]), hcat(cm(v), v[:, tail])
+    end
+    # Hard/soft boundary ⟨m⟩σ² about the origin: mean mass and 1-D velocity dispersion inside the half-mass radius
+    function ehs_of(m, x, v)
+        r = vec(sqrt.(sum(abs2, x; dims = 1)))
+        o = sortperm(r)
+        inside = r .≤ r[o[findfirst(≥(0.5), cumsum(m[o]) ./ sum(m))]]
+        vi = v[:, inside]
+        n = count(inside)
+        return sum(m[inside]) / n * sum(abs2, vi .- sum(vi; dims = 2) ./ n) / (3n)
+    end
+    # Plummer systems of equal mass in virial equilibrium for the pair-type, hardness and distribution cases
+    rng_h = StableRNG(1032)
+    n_h = 200
+    xh, vh = nd.sample_plummer(n_h, 1.0; rng = rng_h)
+    mh = fill(1.0 / n_h, n_h)
+
+    @testset "Pair types" begin
+        kinds = [(1, 1), (0, 1), (1, 11), (10, 11), (14, 14), (14, 1), (13, 0), (3, 4)]
+        np = length(kinds)
+        tb = vcat(
+            reduce(
+                vcat,
+                [
+                    circular_pair(2p - 1, mh[p] / 2, mh[p] / 2, 1.0e-3, xh[:, p], vh[:, p]) for
+                    p in 1:np
+                ],
+            ),
+            [(1000 + i, mh[i], xh[:, i], vh[:, i]) for i in (np + 1):n_h],
+        )
+        s_t = snap(0.0, tb; npairs = np)
+        kmap_t = Dict{Int,Int}(1000 + i => 1 for i in (np + 1):n_h)
+        for (p, (k1, k2)) in enumerate(kinds)
+            kmap_t[2p - 1] = k1
+            kmap_t[2p] = k2
+        end
+        trows = nd.binary_pair_type_series(
+            [s_t];
+            levels = (:ks,),
+            radius_frame = :rh,
+            centre = :origin,
+            kstar = [kmap_t],
+        )
+        @test trows isa Vector{nd.BinaryPairTypeRow}
+        # Bin 0 and the five default shells in r/r_h
+        @test length(trows) == 6
+        t0 = only(filter(r -> r.bin == 0, trows))
+        @test t0.n_binaries == np
+        @test (t0.n_ms_ms, t0.n_ms_wd, t0.n_wd_wd, t0.n_bh_bh, t0.n_bh_star, t0.n_ns_any) ==
+              (2, 1, 1, 1, 1, 1)
+        @test t0.n_other == 1 && t0.n_ms_evolved == 0 && t0.n_untyped == 0
+        ncols(r) =
+            r.n_ms_ms +
+            r.n_ms_evolved +
+            r.n_ms_wd +
+            r.n_wd_wd +
+            r.n_ns_any +
+            r.n_bh_bh +
+            r.n_bh_star +
+            r.n_other +
+            r.n_untyped
+        @test all(r -> ncols(r) == r.n_binaries, trows)
+        @test sum(r.n_binaries for r in trows if r.bin > 0) == np
+        @test t0.median_q ≈ 1.0 rtol = 1e-6
+        @test t0.median_a_nb ≈ 1.0e-3 rtol = 1e-2
+        # Without stellar types every binary is untyped
+        urows = nd.binary_pair_type_series([s_t]; levels = (:ks,), centre = :origin)
+        @test only(filter(r -> r.bin == 0, urows)).n_untyped == np
+    end
+
+    @testset "Hardness" begin
+        e_guess = ehs_of(mh, xh, vh)
+        # |E_b| = 10 ⟨m⟩σ² for three pairs and 0.1 ⟨m⟩σ² for two
+        fac = [10.0, 10.0, 10.0, 0.1, 0.1]
+        hb = vcat(
+            reduce(
+                vcat,
+                [
+                    circular_pair(
+                        2p - 1,
+                        mh[p] / 2,
+                        mh[p] / 2,
+                        (mh[p] / 2)^2 / (2fac[p] * e_guess),
+                        xh[:, p],
+                        vh[:, p],
+                    ) for p in 1:5
+                ],
+            ),
+            [(1000 + i, mh[i], xh[:, i], vh[:, i]) for i in 6:n_h],
+        )
+        s_hd = snap(0.0, hb; npairs = 5)
+        hrows = nd.binary_pair_type_series(
+            [s_hd];
+            levels = (:ks,),
+            radius_frame = :rh,
+            centre = :origin,
+        )
+        hrow = only(filter(r -> r.bin == 0, hrows))
+        @test hrow.e_hs_nb ≈ ehs_of(systems_of(s_hd, 5)...) rtol = 1e-10
+        @test hrow.n_hard == 3 && hrow.n_soft == 2
+        @test hrow.f_hard == 0.6
+    end
+
+    @testset "Projected frames" begin
+        ring = [
+            (5, 0),
+            (-5, 0),
+            (0, 5),
+            (0, -5),
+            (3, 4),
+            (-3, 4),
+            (3, -4),
+            (-3, -4),
+            (4, 3),
+            (-4, 3),
+            (4, -3),
+            (-4, -3),
+        ]
+        s_ring = snap(
+            0.0,
+            [
+                (i, 0.05 + 0.01i, [Float64(p[1]), Float64(p[2]), 0.0], zeros(3)) for
+                (i, p) in enumerate(ring)
+            ],
+        )
+        projected(axis) = nd.binary_population_series(
+            [s_ring];
+            levels = (:ks,),
+            radius_frame = :projected_rh,
+            centre = :origin,
+            projection_axis = axis,
+        )
+        # Bin 3 of the default edges spans [R_h, 2R_h)
+        rh_of(prows) = only(filter(r -> r.bin == 3, prows)).r_lo_nb
+        p3 = projected(3)
+        @test all(r -> r.radius_frame == :projected_rh, p3)
+        @test only(filter(r -> r.bin == 3, p3)).edge_lo == 1.0
+        @test rh_of(p3) ≈ 5.0 atol = 1e-12
+        # Seen along x the ring projects onto the y axis: R = |y|
+        mr = Float64.(s_ring.mass)
+        Ry = abs.(Float64.(s_ring.pos[2, :]))
+        oy = sortperm(Ry)
+        R_h1 = Ry[oy[findfirst(≥(0.5), cumsum(mr[oy]) ./ sum(mr))]]
+        @test rh_of(projected(1)) ≈ R_h1 atol = 1e-12
+        @test R_h1 < 5.0
+        @test_throws ArgumentError projected(4)
+
+        # Milone regions on the injected Plummer population
+        mrows = nd.binary_population_series(
+            [s_ks];
+            levels = (:ks,),
+            radius_frame = :milone,
+            centre = :origin,
+        )
+        @test length(mrows) == 4
+        mb(b) = only(filter(r -> r.bin == b, mrows))
+        Rp = vec(sqrt.(sum(abs2, sys_x[1:2, :]; dims = 1)))
+        oR = sortperm(Rp)
+        R_h = Rp[oR[findfirst(≥(0.5), cumsum(sys_m[oR]) ./ sum(sys_m))]]
+        @test mb(3).r_lo_nb ≈ R_h && mb(3).r_hi_nb ≈ 2R_h
+        @test (mb(3).edge_lo, mb(3).edge_hi) == (1.0, 2.0)
+        @test 0 < mb(1).r_hi_nb < R_h
+        @test mb(2).r_lo_nb == mb(1).r_hi_nb && mb(2).r_hi_nb ≈ R_h
+        @test mb(1).edge_hi ≈ mb(1).r_hi_nb / R_h
+        n_of(r) = r.n_singles + r.n_binaries
+        @test sum(n_of(mb(b)) for b in 1:3) == count(Rp .< 2R_h)
+        @test n_of(mb(0)) == n_sys
+        @test_throws ArgumentError nd.binary_population_series(
+            [s_ks];
+            levels = (:ks,),
+            radius_frame = :milone,
+            edges = [0.0, 1.0, 2.0],
+        )
+    end
+
+    @testset "Tidal filter" begin
+        o_r = sortperm(sys_r)
+        far = o_r[end]
+        r_t = 0.5 * (sys_r[o_r[end - 1]] + sys_r[far])
+        n_b_in = n_b - sys_bin[far]
+        frows = @test_logs (:info, r"tidal filter") match_mode = :any nd.binary_population_series(
+            [s_ks];
+            levels = (:ks,),
+            radius_frame = :rh,
+            edges = edges,
+            centre = :origin,
+            r_tide_nb = r_t,
+        )
+        f0 = only(filter(r -> r.bin == 0, frows))
+        @test f0.n_singles + f0.n_binaries == n_sys - 1
+        @test f0.n_binaries == n_b_in
+        @test sum(r.n_singles + r.n_binaries for r in frows if r.bin > 0) == n_sys - 1
+        prows = @test_logs (:info, r"tidal filter") match_mode = :any nd.binary_pair_type_series(
+            [s_ks];
+            levels = (:ks,),
+            centre = :origin,
+            r_tide_nb = r_t,
+        )
+        @test only(filter(r -> r.bin == 0, prows)).n_binaries == n_b_in
+        drows = @test_logs (:info, r"tidal filter") match_mode = :any nd.binary_distribution_series(
+            [s_ks];
+            levels = (:ks,),
+            centre = :origin,
+            r_tide_nb = r_t,
+        )
+        @test sum(r.count for r in drows if r.quantity == :e) == n_b_in
+        for f in
+            (nd.binary_population_series, nd.binary_pair_type_series, nd.binary_distribution_series)
+            @test_throws ArgumentError f([s_ks]; r_tide_nb = 0)
+            @test_throws ArgumentError f([s_ks]; r_tide_nb = -1.0)
+        end
+    end
+
+    @testset "Distributions" begin
+        # log10(a/au) at the centres of the bins [2, 2.25) and [2.5, 2.75); rbar = 1 pc
+        log_a = (2.125, 2.625)
+        np = 40
+        qd = 0.55
+        db = vcat(
+            reduce(
+                vcat,
+                [
+                    circular_pair(
+                        2p - 1,
+                        mh[p] / (1 + qd),
+                        qd * mh[p] / (1 + qd),
+                        10^log_a[isodd(p) ? 1 : 2] / 206264.806,
+                        xh[:, p],
+                        vh[:, p],
+                    ) for p in 1:np
+                ],
+            ),
+            [(1000 + i, mh[i], xh[:, i], vh[:, i]) for i in (np + 1):n_h],
+        )
+        s_d = snap(0.0, db; npairs = np)
+        drows = nd.binary_distribution_series([s_d]; levels = (:ks,), centre = :origin)
+        @test drows isa Vector{nd.BinaryDistributionRow}
+        dq(qty) = filter(r -> r.quantity == qty, drows)
+        @test [length(dq(qty)) for qty in (:log_a_au, :e, :q, :log_eb)] == [25, 11, 11, 25]
+        # Every binary has finite elements here, so each histogram with its out-of-range row counts all of them
+        @test all(qty -> sum(r.count for r in dq(qty)) == np, (:log_a_au, :e, :q, :log_eb))
+        @test only(filter(r -> r.bin == 1, dq(:e))).count == np
+        q6 = only(filter(r -> r.bin == 6, dq(:q)))
+        @test q6.edge_lo ≈ 0.5 && q6.edge_hi ≈ 0.6 && q6.count == np
+        la(lo) = only(filter(r -> r.edge_lo == lo, dq(:log_a_au))).count
+        @test la(2.0) == np ÷ 2 && la(2.5) == np ÷ 2
+        @test sum(r.count for r in dq(:log_a_au) if r.bin > 0) == np
+        out_a = only(filter(r -> r.bin == 0, dq(:log_a_au)))
+        @test out_a.count == 0 && isnan(out_a.edge_lo) && isnan(out_a.edge_hi)
+        # Values beyond the edges are counted in bin 0
+        far_rows = nd.binary_distribution_series(
+            [s_d];
+            levels = (:ks,),
+            centre = :origin,
+            edges_log_eb = [100.0, 101.0],
+        )
+        @test only(filter(r -> r.quantity == :log_eb && r.bin == 0, far_rows)).count == np
+        @test_throws ArgumentError nd.binary_distribution_series(
+            [s_d];
+            levels = (:ks,),
+            centre = :origin,
+            edges_e = [0.5, 0.2],
+        )
+    end
+
+    @testset "Pair-type and distribution writers" begin
+        dir = mktempdir()
+        prows = nd.binary_pair_type_series(
+            [s_ks];
+            levels = (:ks,),
+            radius_frame = :rh,
+            edges = edges,
+            centre = :origin,
+        )
+        p_path = joinpath(dir, "binary_pair_types.csv")
+        @test nd.write_binary_pair_types(p_path, prows) == p_path
+        p_lines = readlines(p_path)
+        @test p_lines[1] == join(string.(fieldnames(nd.BinaryPairTypeRow)), ",")
+        @test length(p_lines) == length(prows) + 1
+        drows = nd.binary_distribution_series([s_ks]; levels = (:ks,), centre = :origin)
+        d_path = joinpath(dir, "binary_distributions.csv")
+        @test nd.write_binary_distributions(d_path, drows) == d_path
+        d_lines = readlines(d_path)
+        @test d_lines[1] == join(string.(fieldnames(nd.BinaryDistributionRow)), ",")
+        @test length(d_lines) == length(drows) + 1
+    end
 end

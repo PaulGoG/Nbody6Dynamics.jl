@@ -135,6 +135,7 @@ include("analysis/bound_spans.jl")
 include("analysis/binary_census.jl")
 include("analysis/gw_observables.jl")
 include("analysis/binary_population_series.jl")
+include("analysis/gw_catalogues.jl")
 
 # ---------------------------------------------------------------------------
 # Parameter sweeps
@@ -478,8 +479,10 @@ function postprocess(
             )
             collisions = _span_restart_dedup(collisions, restarts)
             coalescences = _span_restart_dedup(coalescences, restarts)
+            results[:binary_event_log] = read_binary_events(joinpath(sim_dir, pp.stdout_file))
+            results[:coalescences] = coalescences
             results[:binary_spans] = binary_spans(
-                read_binary_events(joinpath(sim_dir, pp.stdout_file));
+                results[:binary_event_log];
                 listings = read_all_ks_pair_listings(sim_dir),
                 collisions = collisions,
                 coalescences = coalescences,
@@ -529,6 +532,90 @@ function postprocess(
         )
     end
     lap!("binary_population")
+    # Pair-type composition, hardness and the orbital-element distributions
+    if (pp.binary_pair_types || pp.binary_distributions) && haskey(results, :snapshots)
+        kstar_pt =
+            haskey(results, :stellar_evo) ?
+            _bpop_pipeline_kstar(
+                results[:snapshots],
+                results[:stellar_evo],
+                get(results, :binary_evo, BinaryEvolutionSnapshot[]),
+            ) : nothing
+        r_tide = pp.population_r_tide_nb > 0 ? pp.population_r_tide_nb : NaN
+        if pp.binary_pair_types
+            @info "Binary pair types and hardness over $(length(results[:snapshots])) snapshots..."
+            results[:binary_pair_types] = binary_pair_type_series(
+                results[:snapshots];
+                radius_frame = Symbol(pp.population_frame),
+                edges = isempty(pp.population_edges) ? nothing : pp.population_edges,
+                centre_kwargs = _centre_keywords(pp),
+                kstar = kstar_pt,
+                gamma_max = pp.bound_gamma_max,
+                r_tide_nb = r_tide,
+                projection_axis = pp.population_projection_axis,
+            )
+        end
+        if pp.binary_distributions
+            @info "Binary orbital-element distributions over $(length(results[:snapshots])) snapshots..."
+            results[:binary_distributions] = binary_distribution_series(
+                results[:snapshots];
+                centre_kwargs = _centre_keywords(pp),
+                gamma_max = pp.bound_gamma_max,
+                r_tide_nb = r_tide,
+            )
+        end
+    end
+    lap!("binary_pair_types")
+    # Gravitational-wave catalogues of the compact pairs (event lines, spans, coal.24, esc.11)
+    if pp.gw_catalogues && !pp.parse_stdout
+        @warn "postprocess.gw_catalogues needs the stdout capture, but parse_stdout = false: " *
+              "GW catalogues skipped"
+    elseif pp.gw_catalogues && haskey(results, :diagnostics)
+        scaling = extract_scaling(results[:diagnostics])
+        if !(isfinite(scaling.tscale) && scaling.tscale > 0)
+            @warn "No T* in the stdout capture: GW catalogues skipped"
+        else
+            @info "Gravitational-wave catalogues of the compact pairs..."
+            log = get!(results, :binary_event_log) do
+                read_binary_events(joinpath(sim_dir, pp.stdout_file))
+            end
+            coalescences = get!(results, :coalescences) do
+                coal_path = joinpath(sim_dir, "coal.24")
+                isfile(coal_path) ? read_coalescence_log(coal_path) : CoalescenceRecord[]
+            end
+            spans = get(results, :binary_spans, BinarySpan[])
+            band = (pp.gw_band_hz[1], pp.gw_band_hz[2])
+            t_now = pp.gw_t_now_myr > 0 ? pp.gw_t_now_myr : NaN
+            results[:gw_catalogues] = (
+                compact = compact_binary_catalogue(
+                    log,
+                    spans;
+                    tstar_myr = scaling.tscale,
+                    rbar_pc = scaling.rbar,
+                    binary_evo = get(results, :binary_evo, BinaryEvolutionSnapshot[]),
+                    band_hz = band,
+                ),
+                escaped = escaped_binary_catalogue(
+                    log;
+                    tstar_myr = scaling.tscale,
+                    rbar_pc = scaling.rbar,
+                    vstar_kms = scaling.vstar,
+                    escapers = get(results, :escapers, EscaperRecord[]),
+                    t_now_myr = t_now,
+                    band_hz = band,
+                ),
+                mergers = gw_merger_catalogue(
+                    log,
+                    coalescences,
+                    spans;
+                    tstar_myr = scaling.tscale,
+                    rbar_pc = scaling.rbar,
+                    vstar_kms = scaling.vstar,
+                ),
+            )
+        end
+    end
+    lap!("gw_catalogues")
     # Validity record: built from the products above, with the build record of
     # the output directory and the run record of its parent.
     if pp.validity
@@ -854,6 +941,30 @@ function _finish_pipeline(
             results[:binary_population],
         )
     end
+    if haskey(results, :binary_pair_types) && !isempty(products_dir)
+        write_binary_pair_types(
+            joinpath(products_dir, "binary_pair_types.csv"),
+            results[:binary_pair_types],
+        )
+    end
+    if haskey(results, :binary_distributions) && !isempty(products_dir)
+        write_binary_distributions(
+            joinpath(products_dir, "binary_distributions.csv"),
+            results[:binary_distributions],
+        )
+    end
+    if haskey(results, :gw_catalogues) && !isempty(products_dir)
+        cat = results[:gw_catalogues]
+        write_compact_binary_catalogue(
+            joinpath(products_dir, "compact_binary_catalogue.csv"),
+            cat.compact,
+        )
+        write_escaped_binary_catalogue(
+            joinpath(products_dir, "escaped_binary_catalogue.csv"),
+            cat.escaped,
+        )
+        write_gw_merger_catalogue(joinpath(products_dir, "gw_merger_catalogue.csv"), cat.mergers)
+    end
     if haskey(results, :progenitor_budget) && !isempty(products_dir)
         write_progenitor_budget(
             joinpath(products_dir, "progenitor_budget.csv"),
@@ -1072,6 +1183,13 @@ export gw_enhancement,
     gw_frequency,
     eccentricity_at_frequency
 export BinaryPopulationRow, binary_population_series, write_binary_population, stellar_type_map
+export BinaryPairTypeRow, binary_pair_type_series, write_binary_pair_types
+export BinaryDistributionRow, binary_distribution_series, write_binary_distributions
+export CompactBinaryRow, EscapedBinaryRow, GWMergerRow, pair_class
+export compact_binary_catalogue, escaped_binary_catalogue, gw_merger_catalogue
+export write_compact_binary_catalogue, write_escaped_binary_catalogue, write_gw_merger_catalogue
+export peters_semi_major_axis, band_residence, eccentricity_after
+export RotatingKingModel, solve_rotating_king, rotating_king_moments, sample_rotating_king
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
@@ -1091,7 +1209,7 @@ export ClusterSpec,
     MergerConfig,
     MergerICResult
 export DensityProfile,
-    KingProfile, PlummerProfile, IMFSpec, KroupaIMF, RescaledKroupaIMF, EqualMassIMF
+    KingProfile, PlummerProfile, IMFSpec, KroupaIMF, RescaledKroupaIMF, EqualMassIMF, PowerLawIMF
 export load_merger_config, generate_merger_ic, run_merger_pipeline, load_merger_ic_result
 export engine_interval
 export publication_theme, plotting_available, PlottingUnavailable

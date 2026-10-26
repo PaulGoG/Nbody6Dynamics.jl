@@ -356,6 +356,39 @@ BinaryPopulationRow
 binary_population_series
 write_binary_population
 stellar_type_map
+BinaryPairTypeRow
+binary_pair_type_series
+write_binary_pair_types
+BinaryDistributionRow
+binary_distribution_series
+write_binary_distributions
+```
+
+## Gravitational-Wave Catalogues
+
+```@docs
+pair_class
+peters_semi_major_axis
+band_residence
+eccentricity_after
+CompactBinaryRow
+compact_binary_catalogue
+write_compact_binary_catalogue
+EscapedBinaryRow
+escaped_binary_catalogue
+write_escaped_binary_catalogue
+GWMergerRow
+gw_merger_catalogue
+write_gw_merger_catalogue
+```
+
+## Rotating King Model
+
+```@docs
+RotatingKingModel
+solve_rotating_king
+rotating_king_moments
+sample_rotating_king
 ```
 
 ## Bound Spans
@@ -499,6 +532,7 @@ profile_name
 IMFSpec
 KroupaIMF
 RescaledKroupaIMF
+PowerLawIMF
 EqualMassIMF
 imf_name
 expected_mass

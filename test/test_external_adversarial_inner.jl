@@ -350,8 +350,15 @@ end
             "energy_events",
             "budgets",
         ]
-        @test labels[(end - 4):end] ==
-              ["binary_spans", "bound_spans", "binary_census", "binary_population", "validity"]
+        @test labels[(end - 6):end] == [
+            "binary_spans",
+            "bound_spans",
+            "binary_census",
+            "binary_population",
+            "binary_pair_types",
+            "gw_catalogues",
+            "validity",
+        ]
         @test haskey(results, :validity) &&
               results[:validity].sections["energy"]["verdict"] in ("ok", "flag", "unavailable")
         @test all(≥(0), last.(results[:timings]))

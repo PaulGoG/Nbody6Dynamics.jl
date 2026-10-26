@@ -571,10 +571,37 @@ function _validate_estimators(pp::PostprocessConfig)
     )
     pp.bound_n_miss ≥ 0 ||
         _config_error("postprocess.bound_n_miss", "must be ≥ 0; got $(pp.bound_n_miss)")
-    pp.population_frame in ("lagrangian", "rh") || _config_error(
+    pp.population_frame in ("lagrangian", "rh", "projected_rh", "milone") || _config_error(
         "postprocess.population_frame",
-        "must be one of \"lagrangian\", \"rh\"; got \"$(pp.population_frame)\"",
+        "must be one of \"lagrangian\", \"rh\", \"projected_rh\", \"milone\"; " *
+        "got \"$(pp.population_frame)\"",
     )
+    pp.population_projection_axis in 1:3 || _config_error(
+        "postprocess.population_projection_axis",
+        "must be 1, 2 or 3; got $(pp.population_projection_axis)",
+    )
+    (isfinite(pp.population_r_tide_nb) && pp.population_r_tide_nb ≥ 0) || _config_error(
+        "postprocess.population_r_tide_nb",
+        "must be finite and ≥ 0 (0 = no filter); got $(pp.population_r_tide_nb)",
+    )
+    (
+        length(pp.gw_band_hz) == 2 &&
+        all(isfinite, pp.gw_band_hz) &&
+        0 < pp.gw_band_hz[1] < pp.gw_band_hz[2]
+    ) || _config_error(
+        "postprocess.gw_band_hz",
+        "must be two increasing positive frequencies [Hz]; got $(pp.gw_band_hz)",
+    )
+    (isfinite(pp.gw_t_now_myr) && pp.gw_t_now_myr ≥ 0) || _config_error(
+        "postprocess.gw_t_now_myr",
+        "must be finite and ≥ 0 (0 = none); got $(pp.gw_t_now_myr)",
+    )
+    pp.gw_catalogues &&
+        !pp.parse_stdout &&
+        _config_error(
+            "postprocess.gw_catalogues",
+            "needs parse_stdout = true (the catalogues are built from the stdout capture)",
+        )
     0 < pp.population_q_min < 1 || _config_error(
         "postprocess.population_q_min",
         "must lie in (0, 1); got $(pp.population_q_min)",
@@ -591,12 +618,13 @@ function _validate_estimators(pp::PostprocessConfig)
             length(pe) ≥ 2 &&
             pe[1] == 0 &&
             all(diff(pe) .> 0) &&
-            (pp.population_frame == "rh" || pe[end] == 1)
+            (pp.population_frame in ("rh", "projected_rh") || pe[end] == 1) &&
+            pp.population_frame != "milone"
         ) ||
         _config_error(
             "postprocess.population_edges",
             "must be empty (the frame's default) or strictly increasing from 0, ending at 1 for " *
-            "population_frame = \"lagrangian\"; got $pe",
+            "population_frame = \"lagrangian\", and empty for \"milone\"; got $pe",
         )
     pp.validity_interval_de > 0 || _config_error(
         "postprocess.validity_interval_de",

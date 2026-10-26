@@ -18,6 +18,53 @@ entries say so.
 
 ### Added
 
+- Gravitational-wave catalogues (`[postprocess] gw_catalogues`, default `false`):
+  `compact_binary_catalogue` (one row per Peters-application line, NS/BH BINARY
+  line or `bev.82` record of a pair of white dwarfs, neutron stars or black
+  holes: masses, chirp mass, elements, GW frequencies, Peters, Mandel and
+  circular coalescence times, eccentricities and times at 10 mHz and 10 Hz,
+  band residence times, channel from the covering span),
+  `escaped_binary_catalogue` (one row per `BINARY ESCAPE` of a compact pair,
+  with the escape mode, the Peters evolution and the state at an observation
+  epoch) and `gw_merger_catalogue` (one row per compact coalescence of
+  `coal.24` joined with the last decay line and the recoil line: trigger
+  elements, kick, retention, generation). `band_residence` and
+  `eccentricity_after` evolve a state along the Peters track
+  (`peters_semi_major_axis`); keys `gw_band_hz`, `gw_t_now_myr`.
+- Binary pair types, hardness and element distributions:
+  `binary_pair_type_series` (`binary_pair_types.csv`: MS–MS, MS–evolved,
+  MS–WD, WD–WD, NS–any, BH–BH, BH–star, other and untyped pairs, the hard/soft
+  split against the ⟨m⟩σ² of the systems inside the half-mass radius, median
+  a, e and q per shell and census level) and `binary_distribution_series`
+  (`binary_distributions.csv`: histograms of log a, e, q and log |E_b|/⟨m⟩σ²
+  per snapshot and level); stages `binary_pair_types`, `binary_distributions`.
+  The population frames gain `"projected_rh"` and `"milone"` (the three
+  projected regions of Milone et al. 2012 with the core radius from the
+  projected number-density profile), a `population_projection_axis` and a
+  tidal filter `population_r_tide_nb`.
+- `[merger.clusterN.binaries.massive] model = "moe2017"`: the joint
+  period–mass-ratio–eccentricity distribution of Moe & Di Stefano (2017) with
+  the inner-binary sampler of Moe's code (period table per primary mass, twin
+  excess, small- and large-q power laws, eccentricity law with the turnover
+  of `ecc_turnover`), the primary mass clamped to 0.8–40 M☉ with a count of the
+  clamped primaries; `moe2017_integrals` reproduces the published companion
+  frequencies and the 0.41/0.96 inner-binary fractions.
+- `PowerLawIMF` (`imf = { type = "powerlaw", alpha = 2.35, bounds = [lo, hi] }`):
+  a single power-law mass function sampled by the inverse cumulative
+  distribution, `powerlaw_mean_mass`; the Salpeter populations of the
+  published two-cluster replicas.
+- `solve_rotating_king`, `sample_rotating_king`, `rotating_king_moments`,
+  `RotatingKingModel`: the rotating King model of Einsel & Spurzem (1999),
+  `f ∝ (e^{−βE} − 1) e^{βΩ₀J_z}`, solved self-consistently by a Legendre
+  expansion and under-relaxed iteration, with exact velocity sampling at every
+  position (speed by rejection against the King law, azimuthal angle by the
+  closed-form inverse); model units `r_K = σ = 1`.
+- Replica configurations of published two-cluster mergers under
+  `input_files/verification/replicas/`: Priyatikanto et al. (2016) models
+  notide, draco1, draco2 and draco5 (2 × 2048, Plummer, Salpeter 0.15–50 M☉,
+  10 pc circular orbit in the solar-neighbourhood tide) and de la Fuente
+  Marcos & de la Fuente Marcos (2010) q = 1 pairs (2 × 4096, S₀ = 10 pc,
+  e₀ = 0 and 0.6) with their single-cluster control of 8192 stars.
 - `simulation.stall_timeout` (default `0`, off): a stall watchdog armed after
   the first adjustment beyond t = 0. When neither the stdout capture grows nor
   a new restart dump appears for that wall-clock time, the engine is asked to

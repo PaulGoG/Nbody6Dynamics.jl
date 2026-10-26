@@ -192,8 +192,25 @@ relative calibrated bias above which an estimator is masked.
   perturbation test within one span; ≥ 0
 - `binary_population`: write `binary_population.csv` (binary fractions per radial
   shell, stellar class and census level at every snapshot)
-- `population_frame`: radial shells, `"lagrangian"` (mass fractions) or `"rh"`
-  (multiples of the half-mass radius)
+- `population_frame`: radial shells, `"lagrangian"` (mass fractions), `"rh"`
+  (multiples of the half-mass radius), `"projected_rh"` (multiples of the
+  projected half-mass radius) or `"milone"` (the three projected regions of
+  Milone et al. 2012: inside the core radius, core to half-mass radius, one to
+  two half-mass radii)
+- `population_projection_axis`: line of sight of the projected frames, 1, 2 or 3
+- `population_r_tide_nb`: tidal filter, systems beyond this radius [NB] are left
+  out of the population, pair-type and distribution series; 0 = off; ≥ 0
+- `binary_pair_types`: write `binary_pair_types.csv` (pair-type composition,
+  hard/soft split and median elements per shell and census level)
+- `binary_distributions`: write `binary_distributions.csv` (histograms of
+  log a, e, q and log |E_b|/⟨m⟩σ² per snapshot and census level)
+- `gw_catalogues`: write `compact_binary_catalogue.csv`,
+  `escaped_binary_catalogue.csv` and `gw_merger_catalogue.csv` from the event
+  lines, the spans, `coal.24` and `esc.11`; requires `parse_stdout`
+- `gw_band_hz`: gravitational-wave band of the residence times [Hz], two
+  increasing positive values
+- `gw_t_now_myr`: observation epoch of the escaped pairs [Myr] for their
+  present-epoch state; 0 = none; ≥ 0
 - `population_q_min`: mass-ratio limit of the q-restricted fraction; 0 < q_min < 1
 - `population_m1_min`, `population_m1_max`: primary-mass window of the q-restricted
   fraction [M☉], by default 0.47–0.76 (Milone et al. 2012,
@@ -269,6 +286,13 @@ Base.@kwdef struct PostprocessConfig
     population_m1_min::Float64 = 0.47         # M☉
     population_m1_max::Float64 = 0.76         # M☉
     population_edges::Vector{Float64} = Float64[]   # empty: the frame's default shells
+    population_projection_axis::Int = 3
+    population_r_tide_nb::Float64 = 0.0       # 0: no tidal filter
+    binary_pair_types::Bool = false
+    binary_distributions::Bool = false
+    gw_catalogues::Bool = false
+    gw_band_hz::Vector{Float64} = [1.0e-4, 1.0e-1]
+    gw_t_now_myr::Float64 = 0.0               # 0: no present-epoch state
     validity::Bool = true
     validity_interval_de::Float64 = 1.0e-4
     validity_cumulative_de::Float64 = 1.0e-3

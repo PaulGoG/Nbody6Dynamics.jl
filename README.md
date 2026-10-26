@@ -166,7 +166,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | Energy-jump localisation and mass budget | Working | The engine's `DE` per adjustment interval with its correction channels and event counts, flagged by a floor and a robust scale (`energy_intervals.csv`, `engine_events.csv`). Mass and energy closed per snapshot against escapers, stellar-evolution and collision losses and the engine's corrections (`mass_budget.csv`, `energy_budget.csv`) |
 | Remnant diagnostics | Working | Core radii, density, half-mass radius, rotation with sign-flip floors, mass segregation (Λ_MSR, Λ̃_MSR, Γ_MSR), coalescence time and core-collapse markers of the bound remnant per snapshot (`remnant_diagnostics.csv`, four figures per merger run) |
 | Angular momentum, equipartition, merger tree | Working | Angular-momentum budget and rotation by radius and initial-mass class (`angular_momentum.csv`), the Bianchini equipartition mass (`equipartition.csv`), and the merger tree with the per-progenitor mass budget (`merger_tree.csv`, `progenitor_budget.csv`) |
-| Binaries | Working | KS episodes joined per pair into spans with origin and end class (`binary_spans.csv`), physically bound pairs and their spans across the snapshots (`bound_spans.csv`), their union per pair (`binary_census.csv`), and binary fractions per shell, stellar class and census level (`binary_population` stage, `binary_population.csv`); all off by default |
+| Binaries | Working | KS episodes joined per pair into spans with origin and end class (`binary_spans.csv`), physically bound pairs and their spans across the snapshots (`bound_spans.csv`), their union per pair (`binary_census.csv`), binary fractions per shell, stellar class and census level (`binary_population` stage, `binary_population.csv`), pair-type composition and hardness (`binary_pair_types.csv`), orbital-element distributions (`binary_distributions.csv`) and the gravitational-wave catalogues of the compact pairs (`compact_binary_catalogue.csv`, `escaped_binary_catalogue.csv`, `gw_merger_catalogue.csv`); all off by default |
 | Gravitational-wave observables | Working | `gw_inspiral_time` (Peters 1964), `chirp_mass`, `gw_frequency` (f₂₂, Wen 2003 peak, pericentre) and `eccentricity_at_frequency` along the Peters track |
 | Validity record | Working | Energy, mass and angular-momentum checks with a verdict, snapshot cadence, the windows excluded from equilibrium estimators and the calibrated bias of the tracked estimators (`validity.toml`, `validity_snapshots.csv`) |
 | Shape, segregation and mixing | Working | Axis ratios from the iterative shape tensor (Zemp et al. 2011), projected ellipticities, the A⁺ index, the two-sample Kolmogorov–Smirnov distance with its null floor, and the mixing of two tagged populations |
@@ -294,7 +294,8 @@ Nbody6Dynamics/
 │   │   ├── bound_spans.jl           # Physically bound pairs at the snapshots and their spans; bound_spans.csv
 │   │   ├── binary_census.jl         # Union of the regularised and the bound spans per pair; binary_census.csv
 │   │   ├── gw_observables.jl        # Peters inspiral time, chirp mass, GW frequencies, eccentricity at a reference frequency
-│   │   ├── binary_population_series.jl # Binary fractions per shell, stellar class and census level; binary_population.csv
+│   │   ├── binary_population_series.jl # Binary fractions per shell, stellar class and census level; pair types, hardness, element distributions
+│   │   ├── gw_catalogues.jl         # Compact-binary, escaped-binary and GW-merger catalogues; band residence times on the Peters track
 │   │   └── ensemble.jl              # Seeded ensembles: series extractors, common-grid percentiles (median, 68/95 %)
 │   ├── io/
 │   │   ├── io.jl                    # I/O submodule includes
@@ -318,10 +319,11 @@ Nbody6Dynamics/
 │       ├── complex.jl               # Cluster complexes: member masses and radii, centre distributions, bulk velocity scaling
 │       ├── segregation.jl           # Primordial mass segregation: McLuster slot order, energy-ranked BDK08 slices
 │       ├── models.jl                # Plummer & King (ODE-solved) density samplers
+│       ├── rotating_king.jl         # Einsel & Spurzem (1999) rotating King model: Legendre–Poisson solution and exact sampling
 │       ├── static_models.jl         # Static test models: Osipkov–Merritt Plummer, Lynden-Bell flip, stretched, energy-ranked masses
-│       ├── imf.jl                   # Kroupa (2001) IMF, rescaled & equal-mass variants
+│       ├── imf.jl                   # Kroupa (2001) IMF, rescaled, equal-mass and single power-law variants
 │       ├── orbits.jl                # Kepler two-body (size, orientation, derived quantities), explicit and single placement, tidal frame, Jacobi radii
-│       ├── binaries.jl              # Primordial binary populations; Sana 2012 branch for massive primaries, periastron Roche guard
+│       ├── binaries.jl              # Primordial binary populations; Sana 2012 and Moe & Di Stefano 2017 branches for massive primaries, periastron Roche guard
 │       ├── stellar_radius.jl        # ZAMS radii of the engine (Tout et al. 1996 fit of SSE)
 │       └── output.jl                # dat.10 writer, merger.inp generator, integration-parameter resolution per preset
 ├── ext/
@@ -373,11 +375,13 @@ Nbody6Dynamics/
 │   ├── test_bound_spans.jl          # Bound pairs and their spans (level P)
 │   ├── test_binary_census.jl        # Union of the level-E and level-P spans per pair
 │   ├── test_gw_observables.jl       # Peters inspiral time, GW frequencies, eccentricity at a frequency
-│   ├── test_binary_population.jl    # Binary fractions per shell, stellar class and census level
+│   ├── test_binary_population.jl    # Binary fractions per shell, stellar class and census level; pair types, frames, distributions
+│   ├── test_gw_catalogues.jl        # GW catalogues: Peters track, band residence, catalogue rows from a synthetic event log
 │   ├── test_diagnostics.jl          # Binary population, remnant, stellar classes, cluster structure
 │   ├── test_potential.jl            # Pair potential, reduced systems, bound sets, snapshot integrals
 │   ├── test_energy_budget.jl        # Jacobi integral, energy-jump localisation, mass budget
 │   ├── test_static_models.jl        # Estimators against the static test models with known answers
+│   ├── test_rotating_king.jl        # Rotating King model against the Einsel & Spurzem (1999) moments
 │   ├── test_angular_momentum.jl     # Angular-momentum budget and rotation by radius and mass class
 │   ├── test_equipartition.jl        # Bianchini equipartition-mass fit
 │   ├── test_merger_tree.jl          # Merger tree and per-progenitor budget
@@ -385,7 +389,7 @@ Nbody6Dynamics/
 │   ├── test_cluster_complex.jl      # Cluster complexes: member masses, sizes, centres, bulk velocities
 │   ├── test_complex_controls.jl     # Global IMF partition and the energy-matched controls
 │   ├── test_segregation.jl          # Primordial mass segregation
-│   ├── test_massive_binaries.jl     # Sana et al. (2012) branch and the periastron Roche guard
+│   ├── test_massive_binaries.jl     # Sana et al. (2012) and Moe & Di Stefano (2017) branches, the periastron Roche guard
 │   ├── test_generator_physics.jl    # Roche truncation, frame conversion, strict cluster tables
 │   ├── test_analysis_corrections.jl # Regression tests of the binary and budget analysis
 │   ├── test_run_safety.jl           # Run-directory guard, chain stops, completed-run checks
@@ -420,7 +424,7 @@ Nbody6Dynamics/
 │   ├── engine/                      # Single-cluster engine inputs with engine-generated initial conditions: N1k_quick … N100k_production
 │   ├── clusters/                    # Single-cluster generator configurations: the four science cases
 │   ├── mergers/                     # Merger initial-condition TOMLs: demo, equal-mass, minor Plummer, triple, 3- and 5-cluster, 27-cluster grid
-│   ├── verification/                # verif_triorbit (Lagrange triangle), verif_3d5cluster (five clusters in 3D)
+│   ├── verification/                # verif_triorbit (Lagrange triangle), verif_3d5cluster (five clusters in 3D), replicas/ (published two-cluster mergers)
 │   ├── sweeps/                      # sweep_demo (eccentricity × secondary size × seeds over the demo merger)
 │   ├── showcase/                    # Five end-to-end cases with Myr intervals: equal, binary, tidal, flagship, sweep with controls
 │   └── gpu/                         # CUDA-host recipe: GPU and CPU builds, the 2 × 25k merger, the 6 × 10⁵-body probes
