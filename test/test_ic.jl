@@ -1591,6 +1591,21 @@ end
     @test_throws ArgumentError nd.load_merger_config(keys_config("gw_recoil = \"nr_fits\"", 0))
     @test_throws ArgumentError nd.load_merger_config(keys_config("gw_recoil = \"always\"", 3))
     @test_throws ArgumentError nd.load_merger_config(keys_config("escapers = \"sometimes\"", 3))
+    # post_newtonian: KZ(43) = 7 with the Peters path of KZ(27) = 3, refused without it
+    kz4150(txt) = parse.(Int, split(match(r"KZ\(41:50\)=([0-9 -]+)", txt).captures[1]))
+    @test kz4150(inp2)[3] == 0
+    dir3 = mktempdir()
+    nd.generate_merger_ic(
+        nd.load_merger_config(
+            keys_config("post_newtonian = \"full\"\n\n[merger.nbody6.kz]\n27 = 3", 0),
+        );
+        output_dir = dir3,
+    )
+    inp3 = read(joinpath(dir3, "merger.inp"), String)
+    @test kz4150(inp3)[3] == 7
+    @test parse(Int, split(match(r"KZ\(21:30\)=([0-9 -]+)", inp3).captures[1])[7]) == 3
+    @test_throws ArgumentError nd.load_merger_config(keys_config("post_newtonian = \"full\"", 3))
+    @test_throws ArgumentError nd.load_merger_config(keys_config("post_newtonian = \"1pn\"", 3))
     @test_logs (:warn, r"unseeded") match_mode = :any nd.load_merger_config(
         keys_config("bh_spin = \"uniform\"", 3),
     )

@@ -624,6 +624,7 @@ const _FULL_BINARY_KZ = (
                           preset = "engine", binary_physics = "inherited",
                           gw_recoil = "off", bh_spin = "zero", escapers = "remove",
                           imbh_route = "auto", imbh_output_dt_myr = 1.0,
+                          post_newtonian = "off",
                           kz = Dict{Int,Int}())
 
 Every numerical field of the `&INNBODY6` and `&ININPUT` namelists that the
@@ -714,6 +715,15 @@ input manual.
   see [`resolved_imbh_route`](@ref)
 - `imbh_output_dt_myr`: interval of the engine's IMBH record `mbh.45`
   (`DTBH`) [Myr]; > 0
+- `post_newtonian`: `"off"` (`KZ(43) = 0`) or `"full"` (`KZ(43) = 7`, engine
+  fork ≥ v2026.07.12): the 1PN, 2PN and 2.5PN relative accelerations of
+  Blanchet (2024, DOI 10.1007/s41114-024-00050-z) in every perturbed KS step
+  of a bound pair of two neutron stars or black holes (seeded IMBHs
+  included) with a pericentre compactness `m/(c² q) ≥ 10⁻⁶`; such steps run
+  without slow-down and replace the orbit-averaged Peters decay, which
+  unperturbed pairs keep. `"full"` requires the Peters path, `KZ(27) = 3`
+  (from `binary_physics = "full"` or a `kz` override), which also holds the
+  merger test
 - `kz`: explicit `KZ(i) = v` overrides applied last (`[merger.nbody6.kz]`,
   keys 1–50); an override of an index that also has a named key (8, 14, 16,
   19) warns. `KZ(18) ≥ 2` is refused: it runs the engine's primordial-triple
@@ -776,8 +786,12 @@ Base.@kwdef struct Nbody6ParameterSpec
     escapers::String = "remove"
     imbh_route::String = "auto"
     imbh_output_dt_myr::Float64 = 1.0
+    post_newtonian::String = "off"
     kz::Dict{Int,Int} = Dict{Int,Int}()
 end
+
+"""`KZ(43)` per `post_newtonian` value (fork v2026.07.12 kspn.f: bits 1, 2, 4 = 1PN, 2PN, 2.5PN)."""
+const _POST_NEWTONIAN_KZ43 = Dict("off" => 0, "full" => 7)
 
 """`kicktype` of `&INBSE` per `gw_recoil` value (kickGW.f: −2 none, 0 mass-ratio fit, 1 numerical-relativity fits with random spin orientations, −1 the 10⁴ km s⁻¹ test value)."""
 const _GW_RECOIL_KICKTYPE = Dict("off" => -2, "fit_q" => 0, "nr_fits" => 1, "test_1e4" => -1)
@@ -1654,13 +1668,20 @@ function _validate_tidal(t::TidalSpec)
     return nothing
 end
 
-"""Refuse `binary_physics = "full"` without stellar evolution (`kz19 ≥ 3`): the gravitational-wave decay, tides and Roche transfer of the set act on the stellar types."""
+"""Refuse `binary_physics = "full"` without stellar evolution (`kz19 ≥ 3`): the gravitational-wave decay, tides and Roche transfer of the set act on the stellar types; refuse `post_newtonian` without the Peters path `KZ(27) = 3`, which decays unperturbed pairs and holds the merger test."""
 function _validate_binary_physics(p::Nbody6ParameterSpec, s::StellarSpec)
     (p.gw_recoil != "off" && s.kz19 < 3) && _config_error(
         "merger.nbody6.gw_recoil",
         "= \"$(p.gw_recoil)\" requires stellar evolution (merger.stellar.kz19 ≥ 3): the recoil " *
         "is applied by the collision and coalescence routines of the stellar-evolution path; " *
         "got kz19 = $(s.kz19)",
+    )
+    kz27 = get(p.kz, 27, p.binary_physics == "full" ? 3 : 0)
+    (p.post_newtonian != "off" && kz27 < 3) && _config_error(
+        "merger.nbody6.post_newtonian",
+        "= \"$(p.post_newtonian)\" requires the Peters path KZ(27) = 3 (binary_physics = \"full\" " *
+        "or merger.nbody6.kz 27 = 3), which decays unperturbed pairs and holds the merger test; " *
+        "got KZ(27) = $kz27",
     )
     (p.binary_physics == "full" && s.kz19 < 3) && _config_error(
         "merger.nbody6.binary_physics",
@@ -1822,6 +1843,10 @@ function _validate_nbody6(p::Nbody6ParameterSpec)
         "merger.nbody6.bh_spin",
         "must be one of \"zero\", \"uniform\", \"gaussian\", \"maxwellian\", \"geneva\", \"mesa\"; " *
         "got \"$(p.bh_spin)\"",
+    )
+    haskey(_POST_NEWTONIAN_KZ43, p.post_newtonian) || _config_error(
+        "merger.nbody6.post_newtonian",
+        "must be \"off\" or \"full\"; got \"$(p.post_newtonian)\"",
     )
     haskey(_ESCAPERS_KZ23, p.escapers) || _config_error(
         "merger.nbody6.escapers",

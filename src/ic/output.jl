@@ -490,6 +490,7 @@ function generate_merger_inp(
     # kz24: IMBHINIT overwrites particle N; flag: the listed names are the IMBHs
     imbh_route === :kz24 && (kz[24] = 1)
     imbh_route === :flag && (kz[24] = 3)
+    kz[43] = _POST_NEWTONIAN_KZ43[nbody6.post_newtonian]
     if nbody6.binary_physics == "full"
         for (i, v) in _FULL_BINARY_KZ
             kz[i] = v
