@@ -285,6 +285,24 @@ end
     @test !isempty(diag.profile.radius)
     @test_throws ArgumentError remnant_diagnostics(Snapshot[], ranges_o)
 
+    # A seeded IMBH (name 601, 5 % of the mass, at rest at the centre) stays in the bound set
+    # but leaves the stellar estimators; the densities are those of the stars among themselves
+    pos_b = hcat(p1, zeros(3))
+    vel_b = hcat(v1, zeros(3))
+    mass_b = vcat(m1, 0.05 * sum(m1))
+    sb = _rsnap(pos_b, vel_b, mass_b, 0.0)
+    pp_b = PostprocessConfig(; msr_n_tracer = 20, msr_n_random = 20)
+    with_bh = remnant_diagnostics([sb, sb], [1:601]; settings = pp_b, exclude_names = [601])
+    b_sb = bound_set(sb)
+    stars = filter(!=(601), b_sb.stars)
+    ps = Float64.(sb.pos[:, stars])
+    ms = Float64.(sb.mass[stars])
+    @test 601 in b_sb.stars && with_bh.n_bound[1] == length(b_sb.stars)
+    @test with_bh.r_core[1] ≈ core_radius(ps, local_density(ps, ms)).r_core rtol = 1e-10
+    @test with_bh.f_max[1] ≈ 1.0                          # equal stellar masses, the IMBH left out
+    no_bh = remnant_diagnostics([sb, sb], [1:601]; settings = pp_b)
+    @test no_bh.f_max[1] > 20
+
     csv_path = joinpath(mktempdir(), "remnant.csv")
     @test write_remnant_diagnostics(csv_path, diag) == csv_path
     lines = readlines(csv_path)

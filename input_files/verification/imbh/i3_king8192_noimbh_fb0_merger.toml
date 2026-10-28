@@ -2,6 +2,7 @@
 # King W0 = 7 cluster of 8192 equal-mass particles without an IMBH (the control),
 # no primordial binaries, isolated, no stellar evolution, 140 Myr ≈ 5 t_rh(0); the density-weighted core radius over the
 # half-mass radius after ≥ 5 t_rh is the anchor (0.27–0.29 with an IMBH, 0.015 without, f_b = 0).
+# King variant of the paper's Fig. 4 series (there 1.4 % and f_b = 0.1); the Table 2 configuration is i3p_*.
 
 [merger]
 seed = 8302

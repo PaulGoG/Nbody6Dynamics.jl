@@ -247,21 +247,25 @@ function _local_density(
 end
 
 """
-    _snapshot_density(snap, idx; weighting = :mass, k = _DENSITY_NEIGHBOURS) -> Vector{Float64}
+    _snapshot_density(snap, idx; weighting = :mass, k = _DENSITY_NEIGHBOURS,
+                      engine = true) -> Vector{Float64}
 
 Local densities of the particles `idx`. Mass densities are the engine's
-values when the snapshot carries a density column with positive entries for
-most of them, otherwise [`_local_density`](@ref) on the subset with
-neighbour rank `k`; number densities (`weighting = :number`) are always
-computed locally, the engine column being a mass density.
+values when `engine` is set and the snapshot carries a density column with
+positive entries for most of them, otherwise [`_local_density`](@ref) on the
+subset with neighbour rank `k`; number densities (`weighting = :number`) are
+always computed locally, the engine column being a mass density. `engine =
+false` is for subsets that leave out bodies the engine counted as neighbours
+(a seeded IMBH would otherwise enter the density of every star around it).
 """
 function _snapshot_density(
     snap::Snapshot,
     idx::AbstractVector{Int};
     weighting::Symbol = :mass,
     k::Int = _DENSITY_NEIGHBOURS,
+    engine::Bool = true,
 )
-    if weighting === :mass && length(snap.rho) == nparticles(snap)
+    if engine && weighting === :mass && length(snap.rho) == nparticles(snap)
         ρ = Float64.(snap.rho[idx])
         count(>(0), ρ) ≥ length(idx) ÷ 2 && return ρ
     end
@@ -1079,7 +1083,7 @@ const _MSR_THRESHOLD = 2.0
 """
     remnant_diagnostics(snaps, cluster_ranges; settings = PostprocessConfig(),
                         bound_sets = nothing, max_passes = 100,
-                        min_members = 10) -> RemnantDiagnostics
+                        min_members = 10, exclude_names = Int[]) -> RemnantDiagnostics
 
 Bound remnant of the whole system at every snapshot (the bound set of all
 stars, regularised pairs at their centres of mass, [`bound_set`](@ref) with
@@ -1088,7 +1092,12 @@ density, core density, half-mass radius, rotation, mass segregation and
 snapshot pairs, plus the coalescence, segregation and core-collapse times.
 `bound_sets` passes the bound sets when they are already known, one per
 snapshot (the `bound` of [`snapshot_integrals`](@ref)); otherwise each costs
-one O(N²) pair sum.
+one O(N²) pair sum. The bodies named in `exclude_names` (the seeded IMBHs)
+stay in the bound set and in `n_bound` and `bound_mass_fraction`, but every
+stellar estimator below leaves them out, and the local densities are then
+computed from the remaining stars instead of read from the engine's column,
+whose neighbour sums include the IMBH (Trenti et al. 2007, DOI
+10.1111/j.1365-2966.2006.11189.x, measure the core of the stars alone).
 
 Every estimator parameter comes from `settings`, a
 [`PostprocessConfig`](@ref). The local densities use the neighbour rank
@@ -1120,8 +1129,10 @@ function remnant_diagnostics(
     bound_sets::Union{Nothing,AbstractVector{BoundSet}} = nothing,
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
+    exclude_names::AbstractVector{<:Integer} = Int[],
 )::RemnantDiagnostics
     isempty(snaps) && throw(ArgumentError("remnant_diagnostics needs at least one snapshot"))
+    excluded = Set{Int32}(Int32.(exclude_names))
     settings.msr_n_tracer ≥ 2 ||
         throw(ArgumentError("settings.msr_n_tracer must be ≥ 2, got $(settings.msr_n_tracer)"))
     bound_sets === nothing ||
@@ -1184,6 +1195,8 @@ function remnant_diagnostics(
         sel = b.stars
         n_bound[k] = length(sel)
         fbound[k] = sum(mass_all[sel]) / sum(mass_all)
+        # Excluded bodies (seeded IMBHs) stay in the bound set but not in the stellar estimators
+        isempty(excluded) || (sel = filter(i -> snap.name[i] ∉ excluded, sel))
         if k == 1
             # Tracer class: fixed identities, in decreasing mass at the first snapshot
             n_tr = min(settings.msr_n_tracer, length(sel))
@@ -1218,7 +1231,7 @@ function remnant_diagnostics(
 
         k_nb = settings.density_neighbours
         if n_sel > k_nb
-            ρ = _snapshot_density(snap, sel; k = k_nb)
+            ρ = _snapshot_density(snap, sel; k = k_nb, engine = isempty(excluded))
             cr = core_radius(pos, ρ)
             r_core[k] = cr.r_core
             ρ_core[k] = maximum(ρ)

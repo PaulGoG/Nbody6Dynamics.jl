@@ -106,7 +106,13 @@ using StableRNGs: StableRNG
         @test isapprox(s.v_kms[2], 0.2 * vs; atol = 0.02 * vs)
         @test !s.in_pair && s.partner_name == 0
         @test isapprox(s.r_half_pc, 1.538 * 0.5; rtol = 0.2)
-        @test isnan(s.r_core_pc)
+        # Core radius of the stars from their own densities: the IMBH is no neighbour
+        ρ_s = nd.local_density(Float64.(Float32.(pos_s)), Float64.(Float32.(m_s)))
+        @test isapprox(
+            s.r_core_pc,
+            nd.core_radius(Float64.(Float32.(pos_s)), ρ_s).r_core;
+            rtol = 1e-10,
+        )
         @test isapprox(s.r_cm_pc, 0.3; atol = 0.05)
         # KS component: the IMBH in column 1 of a snapshot with one pair
         ks = mksnap(
@@ -122,7 +128,7 @@ using StableRNGs: StableRNG
         @test s_ks.in_pair
         @test s_ks.partner_name == 1
         @test_throws ArgumentError nd.imbh_trajectory(nd.Snapshot[], bh)
-        # Effective mass of the stage: all stars without a core radius
+        # Effective mass of the stage over the stars inside the core radius (equal masses)
         @test isapprox(nd._imbh_core_effective_mass(snaps, bh, traj), 0.99 / N * M_tot; rtol = 1e-5)
     end
 
@@ -300,6 +306,21 @@ using StableRNGs: StableRNG
         P = 2π * sqrt(a_pc^3 / (G * M12)) * (3.0856775814913673e13 / 3.15576e13)
         @test isapprox(r.period_myr, P; rtol = 1e-9)
         @test isfinite(r.t_gw_myr) && r.t_gw_myr > 0
+        # Influence radius: the stars nearest the pair's centre of mass (the origin) holding 2 (M₁ + M₂)
+        ps = Float64.(Float32.(pos_s))
+        vs_s = Float64.(Float32.(vel_s))
+        ms_s = Float64.(Float32.(m_s))
+        mp = Float64(Float32(m_pair))
+        dist = vec(sqrt.(sum(abs2, ps; dims = 1)))
+        o = sortperm(dist)
+        n_in = findfirst(≥(4mp), cumsum(ms_s[o]))
+        inner = o[1:n_in]
+        m_in = sum(ms_s[inner])
+        v̄ = sum(ms_s[inner]' .* vs_s[:, inner]; dims = 2) ./ m_in
+        σ_ref = sqrt(sum(ms_s[inner]' .* sum(abs2, vs_s[:, inner] .- v̄; dims = 1)) / (3m_in))
+        @test isapprox(r.r_infl_pc, dist[o[n_in]]; rtol = 1e-6)
+        @test isapprox(r.sigma_infl_kms, σ_ref * vs; rtol = 1e-5)
+        @test isapprox(r.rho_infl_msun_pc3, 3m_in * M_tot / (4π * dist[o[n_in]]^3); rtol = 1e-5)
         # Twice the circular speed: unbound
         u = only(nd.imbh_pairs([pair_snap(0.0, 2v_pair)], pair_names))
         @test !u.bound && u.specific_energy_km2s2 > 0
@@ -309,6 +330,7 @@ using StableRNGs: StableRNG
         rows3 = nd.imbh_pairs([pair_snap(0.0, v_pair; third = true)], [N + 3, N + 1, N + 2])
         @test length(rows3) == 3
         @test [(q.name1, q.name2) for q in rows3] == [(N + 1, N + 2), (N + 1, N + 3), (N + 2, N + 3)]
+        @test rows3[1].r_infl_pc == r.r_infl_pc               # the third IMBH is no star
         @test isempty(nd.imbh_pairs([pair_snap(0.0, v_pair)], [N + 1]))
         @test isempty(nd.imbh_pairs([snaps[1]], pair_names))   # N + 2 absent
         # The two IMBHs as the components of the first KS pair
@@ -348,6 +370,8 @@ using StableRNGs: StableRNG
                 period_myr = NaN,
                 t_gw_myr = NaN,
                 in_pair = false,
+                sigma_infl_kms = 3.0,
+                rho_infl_msun_pc3 = 2.0e3,
             )
         end
         rows = [hrow(t) for t in 0.0:1.0:20.0]
@@ -359,6 +383,12 @@ using StableRNGs: StableRNG
         @test isapprox(h.s_au_per_myr, 5.0e-4; rtol = 1e-9)
         @test isapprox(h.s_err_au_per_myr, 0.0; atol = 1e-12)
         @test isapprox(h.k_de_dlninva, 0.1; rtol = 1e-9)
+        @test h.sigma_infl_kms == 3.0 && h.rho_infl_msun_pc3 == 2.0e3
+        @test isapprox(
+            h.h_dimensionless,
+            nd.hardening_rate_dimensionless(h.s_au_per_myr, 3.0, 2.0e3);
+            rtol = 1e-12,
+        )
         hw = nd.imbh_pair_hardening(rows; window_myr = 7)
         @test length(hw) == 3
         @test [q.t_start_myr for q in hw] == [0.0, 7.0, 14.0]
@@ -573,13 +603,15 @@ using StableRNGs: StableRNG
             @test lh[1] == "# imbh_name=$(N + 1);$(N + 2) n_pairs=1 n_rows=1"
             @test lh[2] ==
                   "name1,name2,t_start_myr,t_end_myr,n,a_mean_au,s_au_per_myr," *
-                  "s_err_au_per_myr,k_de_dlninva"
+                  "s_err_au_per_myr,k_de_dlninva,sigma_infl_kms,rho_infl_msun_pc3,h_dimensionless"
             @test length(lh) == 3
             hc = split(lh[3], ",")
-            @test length(hc) == 9
+            @test length(hc) == 12
             @test hc[1:2] == [string(N + 1), string(N + 2)]
             @test hc[5] == "4"
             @test hc[9] == ""   # K undefined for a constant 1/a
+            @test parse(Float64, hc[10]) > 0 && parse(Float64, hc[11]) > 0
+            @test parse(Float64, hc[12]) == 0   # no hardening
         end
     end
 end

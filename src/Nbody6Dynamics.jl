@@ -390,6 +390,7 @@ function postprocess(
                 settings = pp,
                 bound_sets,
                 bound...,
+                exclude_names = _imbh_names(joinpath(sim_dir, "merger_ic.toml")),
             )
             lap!("remnant")
             if pp.merger_tree && bound_sets !== nothing

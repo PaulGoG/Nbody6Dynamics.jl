@@ -25,6 +25,20 @@ entries say so.
   remnant, validity, gravitational-wave observables, ensembles) under
   `src/analysis/`; the core types, configuration, utilities and the figure
   interface stay at `src/`. No name or interface changed.
+- Seeded IMBHs no longer enter the stellar estimators of `remnant_diagnostics`
+  (new keyword `exclude_names`, filled by the pipeline from the IC record):
+  they stay in the bound set, but the core radius, density, half-mass radius,
+  rotation, segregation tracers and snapshot pairs are those of the stars, with
+  local densities computed among the stars instead of the engine's column, whose
+  neighbour sums include the IMBH. The core radius of `imbh_trajectory` likewise
+  uses the stars' own densities. With the engine column the cusp around a 1 %
+  IMBH dominated the density weights and the core radius came out a factor of
+  ten small.
+- `IMBHPair` rows carry the influence radius (the radius about the pair's centre
+  of mass enclosing twice its mass in stars) with the one-dimensional dispersion
+  and mean density of the stars inside it; `imbh_pair_hardening` rows add their
+  window means and the dimensionless hardening rate `h_dimensionless` (Sesana &
+  Khan 2015). The two CSV products gain the columns.
 
 ### Added
 

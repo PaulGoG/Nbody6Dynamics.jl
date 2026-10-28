@@ -109,7 +109,7 @@ stars are every body of the snapshot but the IMBH.
 | `v_kms` | velocity relative to the stellar centre-of-mass velocity | km s⁻¹ |
 | `r_cm_pc` | distance to the stellar centre of mass | pc |
 | `x_cm_pc` | offset from the stellar centre of mass | pc |
-| `r_core_pc` | Casertano–Hut core radius of the stars ([`core_radius`](@ref)); `NaN` without densities | pc |
+| `r_core_pc` | Casertano–Hut core radius of the stars ([`core_radius`](@ref)) from their sixth-neighbour mass densities among themselves, the IMBH excluded; `NaN` with ≤ 6 stars | pc |
 | `r_half_pc` | half-mass radius of the stars about the density centre | pc |
 | `in_pair` | the IMBH is a KS component (`index ≤ 2 npairs`) | — |
 | `partner_name` | name of its KS partner, 0 otherwise | — |
@@ -166,9 +166,11 @@ function _imbh_snapshot_state(snap::Snapshot, i::Int; centre_kwargs...)::IMBHSta
     x_about_cm = ntuple(k -> (xb[k] - x_cm[k]) * L, 3)
     r_cm = sqrt(x_about_cm[1]^2 + x_about_cm[2]^2 + x_about_cm[3]^2)
     r_half = _lagrangian_radii(pos, mass, c, (0.5,))[1] * L
+    # Densities of the stars among themselves: the engine's column counts the IMBH
+    # among the neighbours and lets the cusp around it dominate the weights
     r_core = NaN
-    if !isempty(snap.rho)
-        ρ = Float64.(snap.rho[stars])
+    if length(stars) > _DENSITY_NEIGHBOURS
+        ρ = local_density(pos, mass; k = _DENSITY_NEIGHBOURS)
         sum(ρ) > 0 && (r_core = core_radius(pos, ρ).r_core * L)
     end
     j = _imbh_partner_index(snap, i)
@@ -731,6 +733,12 @@ Two-body state of a pair of seeded IMBHs at one snapshot, from
 | `period_myr` | Kepler period `2π √(a³/(G (M₁ + M₂)))` | Myr |
 | `t_gw_myr` | Peters coalescence time [`gw_inspiral_time`](@ref) | Myr |
 | `in_pair` | the two are the components of one KS pair | — |
+| `r_infl_pc` | influence radius: the radius about the pair's centre of mass enclosing a stellar mass `2 (M₁ + M₂)` | pc |
+| `sigma_infl_kms` | one-dimensional velocity dispersion of the stars inside `r_infl_pc` about their mean velocity | km s⁻¹ |
+| `rho_infl_msun_pc3` | mean stellar density inside `r_infl_pc` | M☉ pc⁻³ |
+
+The stars are all bodies but the seeded IMBHs; the three influence
+quantities are `NaN` when the stars hold less than `2 (M₁ + M₂)`.
 """
 Base.@kwdef struct IMBHPair
     time_myr::Float64
@@ -744,10 +752,61 @@ Base.@kwdef struct IMBHPair
     period_myr::Float64
     t_gw_myr::Float64
     in_pair::Bool
+    r_infl_pc::Float64 = NaN
+    sigma_infl_kms::Float64 = NaN
+    rho_infl_msun_pc3::Float64 = NaN
 end
 
-"""[`IMBHPair`](@ref) of the bodies in columns `i` (name `n1`) and `j` (name `n2`) of `snap`."""
-function _imbh_pair_row(snap::Snapshot, i::Int, j::Int, n1::Int, n2::Int)::IMBHPair
+"""
+    _imbh_influence(snap, i, j, skip) -> (r_pc, sigma_kms, rho_msun_pc3)
+
+Influence radius of the bodies in columns `i` and `j` of `snap`, the radius
+about their centre of mass enclosing a stellar mass of twice theirs, with
+the one-dimensional velocity dispersion and the mean density of the stars
+inside it (Sesana & Khan 2015, DOI 10.1093/mnrasl/slv131, measure `σ` and
+`ρ` of the hardening rate there). The stars are the columns not in `skip`;
+`NaN` for all three when their mass falls short.
+"""
+function _imbh_influence(snap::Snapshot, i::Int, j::Int, skip::Set{Int})
+    h = snap.header
+    L = rbar(h)
+    V = vstar(h)
+    Mu = zmbar(h)
+    mi = Float64(snap.mass[i])
+    mj = Float64(snap.mass[j])
+    xc = ntuple(c -> (mi * snap.pos[c, i] + mj * snap.pos[c, j]) / (mi + mj), 3)
+    stars = [k for k in 1:nparticles(snap) if k ∉ skip]
+    target = 2 * (mi + mj)
+    sum(k -> Float64(snap.mass[k]), stars; init = 0.0) ≥ target || return (NaN, NaN, NaN)
+    d2 = [sum(c -> (snap.pos[c, k] - xc[c])^2, 1:3) for k in stars]
+    order = sortperm(d2)
+    m_in = 0.0
+    n_in = 0
+    while m_in < target
+        n_in += 1
+        m_in += Float64(snap.mass[stars[order[n_in]]])
+    end
+    inner = stars[order[1:n_in]]
+    v̄ = ntuple(c -> sum(k -> Float64(snap.mass[k]) * snap.vel[c, k], inner) / m_in, 3)
+    s2 =
+        sum(k -> Float64(snap.mass[k]) * sum(c -> (snap.vel[c, k] - v̄[c])^2, 1:3), inner) /
+        (3 * m_in)
+    r = sqrt(d2[order[n_in]]) * L
+    return (r, sqrt(s2) * V, 3 * m_in * Mu / (4π * r^3))
+end
+
+"""
+[`IMBHPair`](@ref) of the bodies in columns `i` (name `n1`) and `j` (name
+`n2`) of `snap`; the columns `skip` (the seeded IMBHs) are no stars.
+"""
+function _imbh_pair_row(
+    snap::Snapshot,
+    i::Int,
+    j::Int,
+    n1::Int,
+    n2::Int,
+    skip::Set{Int} = Set((i, j)),
+)::IMBHPair
     G = _G_PC_KMS2_MSUN
     h = snap.header
     L = rbar(h)
@@ -762,7 +821,9 @@ function _imbh_pair_row(snap::Snapshot, i::Int, j::Int, n1::Int, n2::Int)::IMBHP
     μ = G * (M1 + M2)
     ε = d > 0 ? 0.5 * (v[1]^2 + v[2]^2 + v[3]^2) - μ / d : NaN
     in_pair = _imbh_partner_index(snap, i) == j
-    ε < 0 || return IMBHPair(t, n1, n2, d, ε, false, NaN, NaN, NaN, NaN, in_pair)
+    r_inf, σ_inf, ρ_inf = _imbh_influence(snap, i, j, skip)
+    ε < 0 ||
+        return IMBHPair(t, n1, n2, d, ε, false, NaN, NaN, NaN, NaN, in_pair, r_inf, σ_inf, ρ_inf)
     a_pc = -μ / (2ε)
     hx = r[2] * v[3] - r[3] * v[2]
     hy = r[3] * v[1] - r[1] * v[3]
@@ -771,7 +832,7 @@ function _imbh_pair_row(snap::Snapshot, i::Int, j::Int, n1::Int, n2::Int)::IMBHP
     a_au = a_pc * _IMBH_AU_PER_PC
     period = 2π * sqrt(a_pc^3 / μ) * _IMBH_MYR_PER_PC_KMS
     t_gw = (M1 > 0 && M2 > 0 && e < 1) ? gw_inspiral_time(M1, M2, a_au, e) / 1.0e6 : NaN
-    return IMBHPair(t, n1, n2, d, ε, true, a_au, e, period, t_gw, in_pair)
+    return IMBHPair(t, n1, n2, d, ε, true, a_au, e, period, t_gw, in_pair, r_inf, σ_inf, ρ_inf)
 end
 
 """
@@ -808,9 +869,10 @@ function imbh_pairs(
     n_bh < 2 && return rows
     for snap in snaps
         idx = [_imbh_index(snap, n) for n in ns]
+        skip = Set(k for k in idx if k > 0)
         for a in 1:(n_bh - 1), b in (a + 1):n_bh
             (idx[a] > 0 && idx[b] > 0) || continue
-            push!(rows, _imbh_pair_row(snap, idx[a], idx[b], ns[a], ns[b]))
+            push!(rows, _imbh_pair_row(snap, idx[a], idx[b], ns[a], ns[b], skip))
         end
     end
     sort!(rows; by = r -> (r.name1, r.name2, r.time_myr))
@@ -889,8 +951,11 @@ const _IMBHHardeningRow = NamedTuple{
         :s_au_per_myr,
         :s_err_au_per_myr,
         :k_de_dlninva,
+        :sigma_infl_kms,
+        :rho_infl_msun_pc3,
+        :h_dimensionless,
     ),
-    Tuple{Int,Int,Float64,Float64,Int,Float64,Float64,Float64,Float64},
+    Tuple{Int,Int,Float64,Float64,Int,Float64,Float64,Float64,Float64,Float64,Float64,Float64},
 }
 
 """Least-squares slope of `y` against `x`; `NaN` when `x` does not vary."""
@@ -922,6 +987,11 @@ function _imbh_hardening_row(
         s_err = sqrt(res_var / Stt)
     end
     k_e = _imbh_ls_slope(log.(inv_a), Float64[r.eccentricity for r in sel])
+    σs = Float64[r.sigma_infl_kms for r in sel if isfinite(r.sigma_infl_kms)]
+    ρs = Float64[r.rho_infl_msun_pc3 for r in sel if isfinite(r.rho_infl_msun_pc3)]
+    σ̄ = isempty(σs) ? NaN : sum(σs) / length(σs)
+    ρ̄ = isempty(ρs) ? NaN : sum(ρs) / length(ρs)
+    H = (isfinite(s) && σ̄ > 0 && ρ̄ > 0) ? hardening_rate_dimensionless(s, σ̄, ρ̄) : NaN
     return (
         name1 = sel[1].name1,
         name2 = sel[1].name2,
@@ -932,6 +1002,9 @@ function _imbh_hardening_row(
         s_au_per_myr = s,
         s_err_au_per_myr = s_err,
         k_de_dlninva = k_e,
+        sigma_infl_kms = σ̄,
+        rho_infl_msun_pc3 = ρ̄,
+        h_dimensionless = H,
     )
 end
 
@@ -946,7 +1019,8 @@ consecutive windows `[t₀ + k w, t₀ + (k + 1) w)` of length `w = window_myr`
 from the first bound time `t₀`, the last window taking the remainder up to
 the last bound time, as in [`imbh_wandering`](@ref). A window with fewer
 than three bound rows is left out. Rows `(name1, name2, t_start_myr,
-t_end_myr, n, a_mean_au, s_au_per_myr, s_err_au_per_myr, k_de_dlninva)`:
+t_end_myr, n, a_mean_au, s_au_per_myr, s_err_au_per_myr, k_de_dlninva,
+sigma_infl_kms, rho_infl_msun_pc3, h_dimensionless)`:
 
 - `n` the bound rows of the window and `a_mean_au` their mean `a` [au];
 - `s_au_per_myr`: the least-squares slope `s = d(1/a)/dt` of `1/a` [au⁻¹]
@@ -959,7 +1033,11 @@ t_end_myr, n, a_mean_au, s_au_per_myr, s_err_au_per_myr, k_de_dlninva)`:
   degrees of freedom; `NaN` for fewer than four rows;
 - `k_de_dlninva`: the least-squares slope `K = de/d ln(1/a)` of `e` against
   `ln(1/a)`, the eccentricity growth rate of Quinlan (1996); `NaN` when
-  `1/a` does not vary.
+  `1/a` does not vary;
+- `sigma_infl_kms`, `rho_infl_msun_pc3`: the means over the window's rows of
+  the dispersion and density inside the influence radius
+  ([`IMBHPair`](@ref)), and `h_dimensionless` the rate `H = s σ/(G ρ)` at
+  those means; `NaN` when the rows carry no influence quantities.
 
 `ArgumentError` when the rows mix several pairs; an empty vector without
 three bound rows.
@@ -968,7 +1046,7 @@ three bound rows.
 ```julia
 rows = imbh_pairs(read_all_conf3(dir), [5001, 5002])
 h = only(imbh_pair_hardening(rows))
-hardening_rate_dimensionless(h.s_au_per_myr, σ_kms, ρ_msun_pc3)
+h.h_dimensionless   # H at the influence radius
 ```
 """
 function imbh_pair_hardening(rows::AbstractVector{IMBHPair}; window_myr::Real = 0.0)
