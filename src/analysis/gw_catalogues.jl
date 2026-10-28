@@ -303,7 +303,12 @@ const _GWCAT_NO_ORBIT = (
     amp_ldc22_kpc = NaN,
     h2_avg_kpc = NaN,
     hc2_kpc = NaN,
+    snr_lisa_kpc = NaN,
 )
+
+"""Largest eccentricity and the f₂₂ range [Hz] for which the catalogues give a LISA SNR (the harmonic sum of more eccentric orbits is too long for every record; outside the range S_n is not modelled)."""
+const _GWCAT_SNR_E_MAX = 0.99
+const _GWCAT_SNR_F_RANGE = (1.0e-5, 1.0)
 
 """Orbit, frequencies, coalescence times and strains at 1 kpc of a record (masses M☉, a in au); `NaN` for an invalid orbit."""
 function _gwcat_orbit_state(m1::Float64, m2::Float64, a::Float64, e::Float64)
@@ -330,6 +335,9 @@ function _gwcat_orbit_state(m1::Float64, m2::Float64, a::Float64, e::Float64)
         amp_ldc22_kpc = strains ? gw_amplitude_ldc(chirp_mass(m1, m2), f22) : NaN,
         h2_avg_kpc = strains ? gw_harmonic_strain(m1, m2, a, e, 2) : NaN,
         hc2_kpc = strains ? gw_characteristic_strain(m1, m2, a, e, 2) : NaN,
+        snr_lisa_kpc = (
+            strains && e ≤ _GWCAT_SNR_E_MAX && _GWCAT_SNR_F_RANGE[1] ≤ f22 ≤ _GWCAT_SNR_F_RANGE[2]
+        ) ? gw_snr(m1, m2, a, e; n_time = 3) : NaN,
     )
 end
 
@@ -488,10 +496,12 @@ times to frequency crossings are counted from the record.
 | `amp_ldc22_kpc` | LDC 22-mode amplitude [`gw_amplitude_ldc`](@ref)(𝓜, f₂₂) at 1 kpc | kpc |
 | `h2_avg_kpc` | orientation-averaged strain of the n = 2 harmonic, [`gw_harmonic_strain`](@ref) at 1 kpc | kpc |
 | `hc2_kpc` | characteristic strain of the n = 2 harmonic, [`gw_characteristic_strain`](@ref) at 1 kpc | kpc |
+| `snr_lisa_kpc` | sky- and orientation-averaged LISA SNR over 4 yr with the Galactic confusion noise, [`gw_snr`](@ref) (three time samples) at 1 kpc | kpc |
 
-The three strain columns are distance-free products h × D with D in kpc: the
-strain at a distance D is the stored value divided by D in kpc. They are
-`NaN` where the orbit or the masses are not finite and positive.
+The three strain columns and the SNR are distance-free products h × D (ρ × D)
+with D in kpc: the value at a distance D is the stored one divided by D in kpc.
+They are `NaN` where the orbit or the masses are not finite and positive; the
+SNR also for e > 0.99 and for f₂₂ outside 10⁻⁵–1 Hz.
 
 An application of the decay writes a decision line (GR KSINT2 or GR TIDES) and
 the KSTIDE line at the same time with the same state: the decision line is
@@ -546,6 +556,7 @@ Base.@kwdef struct CompactBinaryRow
     amp_ldc22_kpc::Float64 = NaN
     h2_avg_kpc::Float64 = NaN
     hc2_kpc::Float64 = NaN
+    snr_lisa_kpc::Float64 = NaN
 end
 
 """Count a record for source `i`: `false` (and counted) for an absent type, `false` for a non-compact pair."""
@@ -646,6 +657,7 @@ function _gwcat_compact_row(
         amp_ldc22_kpc = orb.amp_ldc22_kpc,
         h2_avg_kpc = orb.h2_avg_kpc,
         hc2_kpc = orb.hc2_kpc,
+        snr_lisa_kpc = orb.snr_lisa_kpc,
     )
 end
 
@@ -848,6 +860,7 @@ counted from the escape.
 | `amp_ldc22_kpc` | LDC 22-mode amplitude [`gw_amplitude_ldc`](@ref)(𝓜, f₂₂) of the escape orbit at 1 kpc | kpc |
 | `h2_avg_kpc` | orientation-averaged strain of the n = 2 harmonic, [`gw_harmonic_strain`](@ref) at 1 kpc | kpc |
 | `hc2_kpc` | characteristic strain of the n = 2 harmonic, [`gw_characteristic_strain`](@ref) at 1 kpc | kpc |
+| `snr_lisa_kpc` | sky- and orientation-averaged LISA SNR of the escape orbit over 4 yr with the Galactic confusion noise, [`gw_snr`](@ref) (three time samples) at 1 kpc; `NaN` for e > 0.99 and f₂₂ outside 10⁻⁵–1 Hz | kpc |
 
 The present-epoch columns are `NaN` when `t_now_myr` is `NaN` or earlier than
 the escape, and when the pair merges before it. The three strain columns are
@@ -892,6 +905,7 @@ Base.@kwdef struct EscapedBinaryRow
     amp_ldc22_kpc::Float64 = NaN
     h2_avg_kpc::Float64 = NaN
     hc2_kpc::Float64 = NaN
+    snr_lisa_kpc::Float64 = NaN
 end
 
 """Escape mode of an escape line: a GW recoil, then a natal kick within the preceding interval, else dynamical."""
@@ -1052,6 +1066,7 @@ function escaped_binary_catalogue(
                 amp_ldc22_kpc = orb.amp_ldc22_kpc,
                 h2_avg_kpc = orb.h2_avg_kpc,
                 hc2_kpc = orb.hc2_kpc,
+                snr_lisa_kpc = orb.snr_lisa_kpc,
             ),
         )
     end

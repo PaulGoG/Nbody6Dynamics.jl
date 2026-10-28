@@ -1378,6 +1378,7 @@ export gw_enhancement,
     eccentricity_at_frequency
 export peters_mathews_g,
     gw_amplitude_ldc, gw_harmonic_strain, gw_characteristic_strain, gw_harmonic_frequency_derivative
+export lisa_psd, gw_snr
 export BinaryPopulationRow, binary_population_series, write_binary_population, stellar_type_map
 export BinaryPairTypeRow, binary_pair_type_series, write_binary_pair_types
 export BinaryDistributionRow, binary_distribution_series, write_binary_distributions

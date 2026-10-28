@@ -352,6 +352,8 @@ gw_amplitude_ldc
 gw_harmonic_strain
 gw_characteristic_strain
 gw_harmonic_frequency_derivative
+lisa_psd
+gw_snr
 ```
 
 ## Binary Population Series

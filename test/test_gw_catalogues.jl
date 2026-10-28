@@ -523,6 +523,9 @@ using StableRNGs: StableRNG
             @test r.amp_ldc22_kpc ≈ gw_amplitude_ldc(r.mchirp_msun, r.f_gw22_hz) rtol = 1e-12
             @test r.h2_avg_kpc ≈ gw_harmonic_strain(r.m1_msun, r.m2_msun, r.a_au, r.e, 2) rtol =
                 1e-12
+            snr_ok = r.e ≤ 0.99 && 1e-5 ≤ r.f_gw22_hz ≤ 1.0
+            @test snr_ok ? r.snr_lisa_kpc ≈ gw_snr(r.m1_msun, r.m2_msun, r.a_au, r.e; n_time = 3) :
+                  isnan(r.snr_lisa_kpc)
         end
 
         ldc_names = [

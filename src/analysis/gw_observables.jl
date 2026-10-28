@@ -650,3 +650,146 @@ function gw_characteristic_strain(
     hc² = 2^(5 / 3) / (3 * π^(4 / 3)) * gm^(5 / 3) / _GW_C^3 * f_orb^(-1 / 3) * ratio
     return sqrt(hc²) / (Float64(distance_kpc) * _GW_KPC)
 end
+
+# ---------------------------------------------------------------------------
+# LISA sensitivity and signal-to-noise ratio
+# ---------------------------------------------------------------------------
+
+"""LISA arm length [m] and transfer frequency f* = c/(2πL) [Hz] of Robson, Cornish & Liu (2019)."""
+const _LISA_L = 2.5e9
+const _LISA_FSTAR = 19.09e-3
+
+"""Galactic confusion noise of Robson, Cornish & Liu (2019, Table 1): (α, β, κ, γ, f_k [Hz]) per observation time [yr], amplitude 9×10⁻⁴⁵."""
+const _ROBSON19_CONFUSION = Dict(
+    0.5 => (0.133, 243.0, 482.0, 917.0, 0.00258),
+    1.0 => (0.171, 292.0, 1020.0, 1680.0, 0.00215),
+    2.0 => (0.165, 299.0, 611.0, 1340.0, 0.00173),
+    4.0 => (0.138, -221.0, 521.0, 1680.0, 0.00113),
+)
+
+"""
+    lisa_psd(f_hz::Real; t_obs_yr::Real = 4.0, confusion::Bool = true) -> Float64
+
+Effective sky- and polarisation-averaged strain noise power spectral density
+S_n(f) [Hz⁻¹] of LISA (Robson, Cornish & Liu 2019, DOI
+10.1088/1361-6382/ab1101, Eqs. 10, 11, 13 and 14):
+
+    S_n(f) = 10/(3L²) [P_OMS + 2(1 + cos²(f/f*)) P_acc/(2πf)⁴] [1 + 0.6 (f/f*)²] + S_c(f),
+
+with L = 2.5 Gm, f* = 19.09 mHz, P_OMS = (1.5×10⁻¹¹ m)² [1 + (2 mHz/f)⁴] Hz⁻¹,
+P_acc = (3×10⁻¹⁵ m s⁻²)² [1 + (0.4 mHz/f)²] [1 + (f/8 mHz)⁴] Hz⁻¹ and the
+Galactic confusion noise S_c(f) = A f^{−7/3} exp(−f^α + β f sin κf)
+[1 + tanh γ(f_k − f)], A = 9×10⁻⁴⁵, with the fit parameters of their Table 1
+for the observation time `t_obs_yr` (0.5, 1, 2 or 4 yr). `confusion = false`
+leaves out S_c (any positive `t_obs_yr` is then accepted). The curve is the one
+LEGWORK uses (Wagg et al. 2022, DOI 10.3847/1538-4365/ac5c52, Eq. 64), so the
+SNRs of [`gw_snr`](@ref) follow its conventions. Throws an `ArgumentError` for
+`f_hz ≤ 0` or an observation time without a confusion fit.
+
+# Example
+```julia
+sqrt(lisa_psd(3.0e-3))   # ≈ 1.8×10⁻²⁰ Hz^{-1/2} with the 4-yr confusion noise
+```
+"""
+function lisa_psd(f_hz::Real; t_obs_yr::Real = 4.0, confusion::Bool = true)::Float64
+    f = Float64(f_hz)
+    f > 0 || throw(ArgumentError("lisa_psd: the frequency must be > 0 Hz; got $f_hz"))
+    t_obs = Float64(t_obs_yr)
+    (confusion && !haskey(_ROBSON19_CONFUSION, t_obs)) && throw(
+        ArgumentError(
+            "lisa_psd: the confusion noise is fitted for t_obs_yr ∈ {0.5, 1, 2, 4}; got $t_obs_yr " *
+            "(confusion = false accepts any)",
+        ),
+    )
+    p_oms = (1.5e-11)^2 * (1 + (2.0e-3 / f)^4)
+    p_acc = (3.0e-15)^2 * (1 + (0.4e-3 / f)^2) * (1 + (f / 8.0e-3)^4)
+    x = f / _LISA_FSTAR
+    s_n = 10 / (3 * _LISA_L^2) * (p_oms + 2 * (1 + cos(x)^2) * p_acc / (2π * f)^4) * (1 + 0.6 * x^2)
+    if confusion
+        α, β, κ, γ, f_k = _ROBSON19_CONFUSION[t_obs]
+        s_n += 9.0e-45 * f^(-7 / 3) * exp(-f^α + β * f * sin(κ * f)) * (1 + tanh(γ * (f_k - f)))
+    end
+    return s_n
+end
+
+"""Highest harmonic summed for eccentricity `e`: five times the peak harmonic 2(1 + e)^{1.1954}/(1 − e²)^{3/2} of Wen (2003, DOI 10.1086/378794), at least 4."""
+_gw_n_max(e::Float64)::Int = max(4, ceil(Int, 10 * (1 + e)^1.1954 / (1 - e^2)^1.5))
+
+"""Σₙ hₙ²/S_n(fₙ) [s⁻¹] of the binary (`m1`, `m2` [M☉], `a_au`, `e`) at `distance_kpc`."""
+function _gw_snr_rate(m1, m2, a_au, e, distance_kpc, t_obs_yr, confusion)::Float64
+    f_orb = orbital_frequency(m1, m2, a_au)
+    s = 0.0
+    for n in 1:_gw_n_max(e)
+        e == 0 && n != 2 && continue
+        h = gw_harmonic_strain(m1, m2, a_au, e, n; distance_kpc)
+        h > 0 || continue
+        s += h^2 / lisa_psd(n * f_orb; t_obs_yr, confusion)
+    end
+    return s
+end
+
+"""
+    gw_snr(m1::Real, m2::Real, a_au::Real, e::Real; distance_kpc::Real = 1.0,
+           t_obs_yr::Real = 4.0, confusion::Bool = true, n_time::Integer = 65) -> Float64
+
+Sky-, orientation- and polarisation-averaged LISA signal-to-noise ratio of a
+binary of masses `m1`, `m2` [M☉], semi-major axis `a_au` [au] and eccentricity
+`e` at distance `distance_kpc` [kpc], observed for `t_obs_yr` years from the
+given state (Wagg et al. 2022, LEGWORK, DOI 10.3847/1538-4365/ac5c52, Eq. 32):
+
+    ρ² = Σₙ ∫ h_{c,n}²/(fₙ² S_n(fₙ)) dfₙ = ∫₀^T Σₙ hₙ²(t)/S_n(fₙ(t)) dt,
+
+the second form by h_{c,n}² = (fₙ²/ḟₙ) hₙ², with hₙ the
+[`gw_harmonic_strain`](@ref), S_n the [`lisa_psd`](@ref) (`t_obs_yr`,
+`confusion`) and (a, e) evolved over the observation by the Peters (1964)
+equations (Tsit5, relative tolerance 10⁻¹⁰), up to the time the pericentre
+reaches 6GM/c². The time integral uses Simpson's rule on `n_time` (odd)
+equally spaced points; for a stationary source the integrand is constant and
+ρ² = Σₙ hₙ² T/S_n(fₙ) (LEGWORK Eq. 35), for a circular one only n = 2 enters.
+Harmonics up to five times the Wen (2003) peak are summed. ρ scales as 1/D, so
+the value at 1 kpc divided by the distance in kpc gives the SNR at that
+distance. Throws an `ArgumentError` for non-positive masses, `a_au`, distance
+or `t_obs_yr`, `e` outside [0, 1) or an even `n_time` below 3.
+
+# Example
+```julia
+gw_snr(0.5, 0.25, a, 0.0)   # SDSS J0651+2844 at 1 kpc (f = 2.6 mHz): ≈ 140 (Robson et al. 2019)
+```
+"""
+function gw_snr(
+    m1::Real,
+    m2::Real,
+    a_au::Real,
+    e::Real;
+    distance_kpc::Real = 1.0,
+    t_obs_yr::Real = 4.0,
+    confusion::Bool = true,
+    n_time::Integer = 65,
+)::Float64
+    _gw_check_binary(m1, m2, a_au, e)
+    _gw_check_distance(distance_kpc)
+    t_obs_yr > 0 || throw(ArgumentError("gw_snr: t_obs_yr must be > 0; got $t_obs_yr"))
+    (n_time ≥ 3 && isodd(n_time)) ||
+        throw(ArgumentError("gw_snr: n_time must be odd and ≥ 3; got $n_time"))
+    M1 = Float64(m1)
+    M2 = Float64(m2)
+    T = Float64(t_obs_yr) * _GW_YR
+    β = _gw_beta(M1 * _GW_MSUN, M2 * _GW_MSUN)
+    a_m = Float64(a_au) * _GW_AU
+    q_stop = 6 * _GW_G * (M1 + M2) * _GW_MSUN / _GW_C^2
+    ts = collect(range(0.0, T; length = n_time))
+    rate = fill(0.0, n_time)
+    if a_m * (1 - Float64(e)) ≤ q_stop
+        return 0.0
+    end
+    cb = ContinuousCallback((u, t, integrator) -> u[1] + log1p(-u[2]) - log(q_stop), terminate!)
+    prob = ODEProblem(_gw_peters_rhs!, [log(a_m), Float64(e)], (0.0, T), β)
+    sol = solve(prob, Tsit5(); callback = cb, saveat = ts, reltol = 1e-10, abstol = 1e-12)
+    for (k, u) in enumerate(sol.u)
+        ek = clamp(u[2], 0.0, 1 - 1e-12)
+        rate[k] = _gw_snr_rate(M1, M2, exp(u[1]) / _GW_AU, ek, distance_kpc, t_obs_yr, confusion)
+    end
+    h = ts[2] - ts[1]
+    w = [k == 1 || k == n_time ? 1.0 : (iseven(k) ? 4.0 : 2.0) for k in 1:n_time]
+    return sqrt(h / 3 * sum(w .* rate))
+end

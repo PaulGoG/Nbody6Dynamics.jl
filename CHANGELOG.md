@@ -8,6 +8,9 @@ entries say so.
 
 ### Changed
 
+- Engine pin `v2026.07.12` (fork): a body at exact rest gets a finite first step (the start-up abort in
+  `SORT_TLIST` with a step of 2×10⁻³¹⁴ is gone; the generator's speed floor for a seeded IMBH stays), and the
+  post-Newtonian terms of compact KS pairs below.
 - Engine pin `v2026.07.10`: the Peters decay of compact KS pairs is accumulated
   at every check from the elements of that interval and applied as sums
   (`GWACCUM`; an encounter that changes e no longer charges the interval before
@@ -42,6 +45,19 @@ entries say so.
 
 ### Added
 
+- `[merger.nbody6] post_newtonian = "off" | "full"`: with `"full"` the generated input sets `KZ(43) = 7`, the
+  1PN, 2PN and 2.5PN relative accelerations of Blanchet (2024) in every perturbed KS step of a bound pair of
+  two neutron stars or black holes (seeded IMBHs included) above a pericentre compactness m/(c²q) of 10⁻⁶.
+  Such steps run without KS slow-down and replace the orbit-averaged Peters decay, which unperturbed pairs
+  keep; the key requires `KZ(27) = 3` (`binary_physics = "full"` or a `kz` override). On a planted 30 + 30 M☉
+  binary the periastron advance agrees with an independent integration of the same equations to 5×10⁻⁴, the
+  2.5PN decay follows Peters (1964) to 10⁻⁶ (circular) and 3×10⁻⁴ (e = 0.9), and the engine's energy books to
+  4×10⁻⁵ of the radiated energy at the merger.
+- LISA signal-to-noise ratios: `lisa_psd` (Robson, Cornish & Liu 2019 instrument curve with their Galactic
+  confusion noise for 0.5, 1, 2 or 4 yr) and `gw_snr`, the sky- and orientation-averaged SNR of LEGWORK
+  (Wagg et al. 2022) integrated over the Peters track of the observation, which reduces to the stationary
+  harmonic sum; SDSS J0651+2844 at 1 kpc gives 139.8 over 4 yr (published 140). The compact- and
+  escaped-binary catalogues gain `snr_lisa_kpc` (ρ × D at 1 kpc, 4 yr, e ≤ 0.99, f₂₂ in 10⁻⁵–1 Hz).
 - Engine pin `v2026.07.11` (fork): the `KZ(24) = 3` flag route for a list of up to 16 massive black holes named by their `dat.10` index, `mbh.45` rows ending with the body name under both routes, the list kept across restarts, a missing black hole dropped with a warning after a restart.
 
 - Gravitational-wave strains: `peters_mathews_g` (Peters & Mathews 1963),

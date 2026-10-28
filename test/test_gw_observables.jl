@@ -158,4 +158,69 @@
         @test_throws ArgumentError gw_harmonic_frequency_derivative(m1, m2, a, e, 0)
         @test_throws ArgumentError gw_harmonic_frequency_derivative(m1, m2, -a, e, 1)
     end
+
+    @testset "LISA sensitivity and SNR" begin
+        # Robson et al. (2019) instrument curve: Eq. 1 (4 P_acc) is its limit for f ≪ f*
+        L = 2.5e9
+        f = 1.0e-4
+        p_oms = (1.5e-11)^2 * (1 + (2.0e-3 / f)^4)
+        p_acc = (3.0e-15)^2 * (1 + (0.4e-3 / f)^2) * (1 + (f / 8.0e-3)^4)
+        @test lisa_psd(f; confusion = false) ≈ 10 / (3L^2) * (p_oms + 4p_acc / (2π * f)^4) rtol =
+            1e-4
+        # Confusion noise: present below the knee, negligible far above it, shrinking with T_obs
+        @test lisa_psd(1.0e-3) > 1.5 * lisa_psd(1.0e-3; confusion = false)
+        @test lisa_psd(2.0e-2) ≈ lisa_psd(2.0e-2; confusion = false) rtol = 1e-10
+        @test lisa_psd(1.0e-3; t_obs_yr = 0.5) > lisa_psd(1.0e-3; t_obs_yr = 4.0)
+        @test lisa_psd(1.0e-3; t_obs_yr = 3.0, confusion = false) ==
+              lisa_psd(1.0e-3; confusion = false)
+        @test_throws ArgumentError lisa_psd(0.0)
+        @test_throws ArgumentError lisa_psd(1.0e-3; t_obs_yr = 3.0)
+
+        # SDSS J0651+2844 at 1 kpc (0.5 + 0.25 M☉, f = 2.6 mHz, 4 yr): SNR ≈ 140 (Robson et al. 2019)
+        G = 6.67430e-11
+        msun = 1.98840987e30
+        au = 1.495978707e11
+        yr = 3.15576e7
+        a_gb = cbrt(G * 0.75 * msun / (π * 2.6e-3)^2) / au
+        ρ_gb = gw_snr(0.5, 0.25, a_gb, 0.0)
+        @test isapprox(ρ_gb, 140; rtol = 0.02)
+        # Stationary circular: h₂² T / S_n(f₂) (J0651 chirps by 2×10⁻⁶ of the SNR in 4 yr);
+        # eccentric: the harmonic sum (LEGWORK Eqs. 35, 34)
+        @test ρ_gb ≈ sqrt(gw_harmonic_strain(0.5, 0.25, a_gb, 0.0, 2)^2 * 4yr / lisa_psd(2.6e-3)) rtol =
+            1e-5
+        ae, ee = 0.003, 0.5
+        f_orb = orbital_frequency(0.6, 0.6, ae)
+        sum_n = sum(
+            gw_harmonic_strain(0.6, 0.6, ae, ee, n)^2 / lisa_psd(n * f_orb) for
+            n in 1:nd._gw_n_max(ee)
+        )
+        @test gw_snr(0.6, 0.6, ae, ee) ≈ sqrt(sum_n * 4yr) rtol = 1e-6
+        # 1/D scaling and the confusion-free curve
+        @test gw_snr(0.6, 0.6, ae, ee; distance_kpc = 8.0) ≈ gw_snr(0.6, 0.6, ae, ee) / 8 rtol =
+            1e-12
+        @test gw_snr(0.5, 0.25, a_gb, 0.0; confusion = false) > ρ_gb
+        # Evolving circular source: the time integral against ∫ h_c²/(f² S_n) df over the chirp
+        m1c, m2c, ac = 30.0, 30.0, 9.8e-4   # t_c ≈ 5.4 yr
+        t_obs = 4.0
+        β = nd._gw_beta(m1c * msun, m2c * msun)
+        a_end = ((ac * au)^4 - 4β * t_obs * yr)^(1 / 4) / au
+        f2(a) = 2 * orbital_frequency(m1c, m2c, a)
+        fs = range(f2(ac), f2(a_end); length = 4001)
+        a_of_f(fq) = cbrt(G * (m1c + m2c) * msun / (π * fq)^2) / au
+        g = [
+            gw_characteristic_strain(m1c, m2c, a_of_f(fq), 0.0, 2)^2 / (fq^2 * lisa_psd(fq)) for
+            fq in fs
+        ]
+        ρ_f = sqrt(
+            step(fs) / 3 * sum(
+                g[k] * (k == 1 || k == length(fs) ? 1 : (iseven(k) ? 4 : 2)) for k in eachindex(fs)
+            ),
+        )
+        @test f2(a_end) > 1.5 * f2(ac)   # the source chirps over the observation
+        @test gw_snr(m1c, m2c, ac, 0.0; n_time = 1025) ≈ ρ_f rtol = 1e-3
+
+        @test_throws ArgumentError gw_snr(0.5, 0.25, a_gb, 0.0; n_time = 4)
+        @test_throws ArgumentError gw_snr(0.5, 0.25, a_gb, 0.0; t_obs_yr = 0.0)
+        @test_throws ArgumentError gw_snr(0.5, 0.25, a_gb, 1.0)
+    end
 end
