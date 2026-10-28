@@ -34,7 +34,7 @@ the one whose name the product keeps (engine convention, see
 | `progenitor1`, `progenitor2` | index of the progenitor cluster of each component in `cluster_ranges`; `0` when in no range | — |
 | `mixed` | both progenitors known and different | — |
 | `primordial_pair` | the two names are a primordial `dat.10` pair (2k − 1, 2k), k ≤ `nbin0` | — |
-| `generation` | 1 + the number of earlier rows whose product name is `name1` or `name2` | — |
+| `generation` | 1 + the number of earlier rows whose product may carry `name1` or `name2` | — |
 | `separation_rsun` | separation at the event; coal.24: R12 · R̄ in R☉ (`NaN` without R̄) | R☉ |
 | `eccentricity`, `period_d` | orbit at the event, as recorded | —, d |
 | `r_centre` | distance from the density centre: coll.13 in core radii (RI/RC), coal.24 in NB (RI) | RC or NB |
@@ -218,11 +218,11 @@ The product keeps the name of the component listed first in the row. For
 coll.13 this is the engine rule of `mix.f` and `cmbody.f`: the product takes
 the name of the heavier body (record masses, the record order on a tie), so
 the components are swapped when `mass2_msun > mass1_msun`. For coal.24 the
-record order is kept and `name1` taken as the product's name; `coal.f`
-exchanges the names when BODY0(I1) < BODY0(I2), which the record does not
-carry, so for those events the product's later name is `name2` and the
-generation of a later event involving it is undercounted. `generation` counts
-earlier rows in the sorted order. `kicked_before` uses the `:binary_kick`
+record order is kept; `coal.f` gives the product the name of the progenitor
+with the larger initial mass (BODY0), which the record does not carry, so
+either name may continue. The absorbed body becomes a ghost and its name does
+not recur, so `generation` counts a coal.24 row for both of its names; it
+counts earlier rows in the sorted order. `kicked_before` uses the `:binary_kick`
 lines ([`MassLossEvent`](@ref)), which name both members of the kicked KS
 pair; a kick of the companion therefore flags the row as well. `r_centre` is
 in core radii for coll.13 and in N-body units for coal.24, as recorded.
@@ -276,6 +276,8 @@ function collision_catalogue(
     for (_, n1, n2, source, i) in order
         generation = 1 + get(products, n1, 0) + (n2 == n1 ? 0 : get(products, n2, 0))
         products[n1] = get(products, n1, 0) + 1
+        # coal.24: either name may be the product's (coal.f, BODY0); the other is a ghost's
+        (source == 2 && n2 != n1) && (products[n2] = get(products, n2, 0) + 1)
         row = if source == 1
             _collcat_row(collisions[i], table, first_kick, generation; units...)
         else

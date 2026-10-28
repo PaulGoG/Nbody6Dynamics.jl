@@ -390,6 +390,16 @@ using StableRNGs: StableRNG
         @test first_merger.generation == 1
         @test first_merger.span_primordial
         @test second_merger.generation == 2
+        # coal.f may give the remnant the second name (larger BODY0): a later merger naming it counts
+        swapped = nd.gw_merger_catalogue(
+            evlog,
+            [coal(250.0, 3, 7), coal(600.0, 7, 12)],
+            [span];
+            tstar_myr = tstar,
+            rbar_pc = rbar,
+            vstar_kms = vstar,
+        )
+        @test [m.generation for m in swapped] == [1, 2]
         @test second_merger.trigger_kind === :unknown
         @test isnan(second_merger.a_trigger_au) && isnan(second_merger.v_kick_kms)
         @test !second_merger.retained && !second_merger.span_primordial

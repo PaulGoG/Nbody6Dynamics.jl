@@ -1104,10 +1104,14 @@ GR TIDES) of the pair at or before the merger.
 | `v_esc_kms` | escape speed of that line (printed with a KS index that may be stale) | km s⁻¹ |
 | `retained` | `v_kick_kms < v_esc_kms`; `false` when either is `NaN` | — |
 | `e_at_fref_hi` | e when f₂₂ of the trigger state reaches 10 Hz; `NaN` when already above | — |
-| `generation` | 1 + the number of earlier mergers whose remnant is `name1` or `name2` | — |
+| `generation` | 1 + the number of earlier mergers in which `name1` or `name2` took part | — |
 | `span_primordial` | the covering [`BinarySpan`](@ref) is primordial | — |
 
-The remnant of a merger keeps the `name1` of its coalescence record.
+The remnant of a merger takes the name of the progenitor with the larger
+initial mass (`coal.f` exchanges the names when BODY0(I1) < BODY0(I2)),
+which the coal.24 record does not carry; the absorbed body becomes a ghost
+and its name does not recur, so a later record that names either component
+of an earlier merger concerns its remnant, and `generation` counts both.
 """
 Base.@kwdef struct GWMergerRow
     t_merge_nb::Float64
@@ -1242,7 +1246,9 @@ function gw_merger_catalogue(
         span = _gwcat_covering_span(span_index, c.name1, c.name2, t, _SPAN_JOIN_TOL)
         generation =
             1 + get(remnants, c.name1, 0) + (c.name2 == c.name1 ? 0 : get(remnants, c.name2, 0))
+        # Either name may be the remnant's (coal.f, BODY0); the other is a ghost's
         remnants[c.name1] = get(remnants, c.name1, 0) + 1
+        c.name2 == c.name1 || (remnants[c.name2] = get(remnants, c.name2, 0) + 1)
 
         push!(
             rows,

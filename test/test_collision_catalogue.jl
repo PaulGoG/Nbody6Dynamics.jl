@@ -133,6 +133,14 @@
             ),
         )
         @test (tie.name1, tie.name2) == (3, 120)
+        # coal.24: either name may continue (coal.f keeps the larger BODY0), both count
+        later = nd.collision_catalogue(
+            [coll(2.0, 201, 120)],
+            [coal(0.5, 200, 201)],
+            ranges;
+            tstar_myr = tstar,
+        )
+        @test [r.generation for r in later] == [1, 2]
         @test nd.progenitor_of(150, ranges) == 2
         @test nd.progenitor_of(1, ranges) == 1
         @test nd.progenitor_of(999, ranges) == 0
