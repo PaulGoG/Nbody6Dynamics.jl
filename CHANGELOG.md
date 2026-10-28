@@ -50,6 +50,11 @@ entries say so.
 
 ### Added
 
+- Observer-dependent GW catalogue (`gw_observer_catalogue`, `[postprocess] gw_observer` with
+  `gw_observer_distance_kpc`, `gw_observer_t_obs_yr`, `gw_observer_seed`, product
+  `gw_observer_catalogue.csv`): the last record of every compact pair at a chosen luminosity distance with its
+  Planck 2018 redshift, drawn ecliptic position, inclination, polarisation and phase, the observed f₂₂ and the
+  LISA SNR at the drawn inclination of the detector-frame binary.
 - `[merger.nbody6] post_newtonian = "off" | "full"`: with `"full"` the generated input sets `KZ(43) = 7`, the
   1PN, 2PN and 2.5PN relative accelerations of Blanchet (2024) in every perturbed KS step of a bound pair of
   two neutron stars or black holes (seeded IMBHs included) above a pericentre compactness m/(c²q) of 10⁻⁶.

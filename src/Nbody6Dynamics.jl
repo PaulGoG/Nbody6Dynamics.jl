@@ -1158,6 +1158,15 @@ function _finish_pipeline(
             e_max = pp.ldc_e_max,
             rng = MersenneTwister(pp.ldc_seed),
         )
+        pp.gw_observer && write_gw_observer_catalogue(
+            joinpath(products_dir, "gw_observer_catalogue.csv"),
+            gw_observer_catalogue(
+                cat.compact;
+                distance_kpc = pp.gw_observer_distance_kpc,
+                t_obs_yr = pp.gw_observer_t_obs_yr,
+                rng = MersenneTwister(pp.gw_observer_seed),
+            ),
+        )
     end
     if haskey(results, :progenitor_budget) && !isempty(products_dir)
         write_progenitor_budget(
@@ -1385,7 +1394,8 @@ export BinaryDistributionRow, binary_distribution_series, write_binary_distribut
 export CompactBinaryRow, EscapedBinaryRow, GWMergerRow, pair_class
 export compact_binary_catalogue, escaped_binary_catalogue, gw_merger_catalogue
 export write_compact_binary_catalogue, write_escaped_binary_catalogue, write_gw_merger_catalogue
-export write_ldc_galactic_binaries
+export write_ldc_galactic_binaries,
+    GWObserverRow, gw_observer_catalogue, write_gw_observer_catalogue
 export peters_semi_major_axis, band_residence, eccentricity_after
 export RotatingKingModel, solve_rotating_king, rotating_king_moments, sample_rotating_king
 export RotatingKingProfile, rotation_moments

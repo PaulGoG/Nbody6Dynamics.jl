@@ -445,6 +445,9 @@ GWMergerRow
 gw_merger_catalogue
 write_gw_merger_catalogue
 write_ldc_galactic_binaries
+GWObserverRow
+gw_observer_catalogue
+write_gw_observer_catalogue
 ```
 
 ## Rotating King Model

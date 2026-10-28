@@ -217,6 +217,12 @@ relative calibrated bias above which an estimator is masked.
 - `ldc_distance_kpc`: distance of every exported source [kpc]; > 0
 - `ldc_e_max`: largest eccentricity of an exported pair; 0 < e_max < 1
 - `ldc_seed`: seed of the sky position and orientation angles of the export
+- `gw_observer`: write `gw_observer_catalogue.csv`, the observer-dependent
+  columns of the last record of every compact pair
+  ([`gw_observer_catalogue`](@ref)); requires `gw_catalogues`
+- `gw_observer_distance_kpc`: luminosity distance of every pair [kpc]; > 0
+- `gw_observer_t_obs_yr`: LISA observation time [yr]; one of 0.5, 1, 2, 4
+- `gw_observer_seed`: seed of the drawn sky positions and orientation angles
 - `collision_catalogue`: write `collision_catalogue.csv` (every collision of
   `coll.13` and coalescence of `coal.24` with the progenitor cluster of each
   star, the primordial-pair, mixed-origin and generation flags) when either
@@ -314,6 +320,10 @@ Base.@kwdef struct PostprocessConfig
     ldc_distance_kpc::Float64 = 8.0
     ldc_e_max::Float64 = 0.01
     ldc_seed::Int = 1
+    gw_observer::Bool = false
+    gw_observer_distance_kpc::Float64 = 8.0
+    gw_observer_t_obs_yr::Float64 = 4.0
+    gw_observer_seed::Int = 1
     collision_catalogue::Bool = true
     binary_survival::Bool = false
     imbh::Bool = true

@@ -602,6 +602,15 @@ function _validate_estimators(pp::PostprocessConfig)
     )
     0 < pp.ldc_e_max < 1 ||
         _config_error("postprocess.ldc_e_max", "must lie in (0, 1); got $(pp.ldc_e_max)")
+    (isfinite(pp.gw_observer_distance_kpc) && pp.gw_observer_distance_kpc > 0) || _config_error(
+        "postprocess.gw_observer_distance_kpc",
+        "must be finite and > 0 [kpc]; got $(pp.gw_observer_distance_kpc)",
+    )
+    pp.gw_observer_t_obs_yr in (0.5, 1.0, 2.0, 4.0) || _config_error(
+        "postprocess.gw_observer_t_obs_yr",
+        "must be one of 0.5, 1, 2, 4 [yr] (the observation times of the Robson et al. 2019 " *
+        "confusion-noise fit); got $(pp.gw_observer_t_obs_yr)",
+    )
     pp.gw_catalogues &&
         !pp.parse_stdout &&
         _config_error(

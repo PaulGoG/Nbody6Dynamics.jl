@@ -613,5 +613,60 @@ using StableRNGs: StableRNG
             distance_kpc = 8.0,
             e_max = 1.0,
         )
+
+        # Observer-dependent catalogue: distance, redshift, drawn angles, inclination-dependent SNR
+        obs = gw_observer_catalogue(rows; distance_kpc = 8.0, rng = StableRNG(7))
+        @test length(obs) == 3 && [(o.name1, o.name2) for o in obs] == [(1, 2), (3, 4), (5, 6)]
+        c_kms = 299792.458
+        @test all(o -> o.d_l_mpc == 0.008 && isapprox(o.z, 67.66 * 0.008 / c_kms; rtol = 1e-4), obs)
+        @test all(
+            o -> abs(o.ecl_lat_rad) ≤ π / 2 && 0 ≤ o.ecl_lon_rad < 2π && 0 ≤ o.incl_rad ≤ π,
+            obs,
+        )
+        @test all(
+            o -> 0 ≤ o.psi_rad < π && 0 ≤ o.phi0_rad < 2π && o.noise_model === :robson2019,
+            obs,
+        )
+        for (o, r) in zip(obs, rows)
+            @test o.f_gw22_obs_hz ≈ r.f_gw22_hz / (1 + o.z) rtol = 1e-12
+            zf = 1 + o.z
+            ρ̄ = gw_snr(
+                r.m1_msun * zf,
+                r.m2_msun * zf,
+                r.a_au * zf,
+                r.e;
+                distance_kpc = 8.0,
+                n_time = 3,
+            )
+            ci = cos(o.incl_rad)
+            @test o.snr_lisa ≈ ρ̄ * sqrt((((1 + ci^2) / 2)^2 + ci^2) / 0.8) rtol = 1e-10
+        end
+        # Same seed, same draws; the low-redshift expansion of d_L in the Planck 2018 cosmology
+        @test [
+            o.incl_rad for o in gw_observer_catalogue(rows; distance_kpc = 8.0, rng = StableRNG(7))
+        ] == [o.incl_rad for o in obs]
+        q0 = 1.5 * 0.3111 - 1
+        zt = 0.01   # third-order expansion, j₀ = 1 in flat ΛCDM
+        @test nd._gwcat_luminosity_distance_mpc(zt) ≈
+              c_kms / 67.66 * zt * (1 + (1 - q0) * zt / 2 - (1 - q0 - 3q0^2 + 1) * zt^2 / 6) rtol =
+            1e-6
+        @test nd._gwcat_redshift(nd._gwcat_luminosity_distance_mpc(0.5)) ≈ 0.5 rtol = 1e-9
+        far =
+            gw_observer_catalogue(rows; distance_kpc = 1.0e5, confusion = false, rng = StableRNG(7))
+        @test all(o -> o.noise_model === :robson2019_noconf && o.z > 0.02, far)
+        po = write_gw_observer_catalogue(joinpath(dir, "obs.csv"), obs)
+        lo = readlines(po)
+        @test length(lo) == 4 && startswith(lo[1], "name1,name2,time_nb")
+        @test_throws ArgumentError gw_observer_catalogue(
+            rows;
+            distance_kpc = 0.0,
+            rng = StableRNG(1),
+        )
+        @test_throws ArgumentError gw_observer_catalogue(
+            rows;
+            distance_kpc = 8.0,
+            t_obs_yr = 3.0,
+            rng = StableRNG(1),
+        )
     end
 end

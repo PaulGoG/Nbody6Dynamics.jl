@@ -188,6 +188,10 @@ Every key below is parsed by `load_config` (`src/config.jl`). Missing keys fall 
 | `ldc_distance_kpc`    | Float  | `8.0`    | Distance assumed for every exported source [kpc]; > 0 |
 | `ldc_e_max`           | Float  | `0.01`   | Largest eccentricity of an exported pair; 0 < e_max < 1 |
 | `ldc_seed`            | Int    | `1`      | Seed of the isotropic sky positions and orientation angles of the export |
+| `gw_observer`         | Bool   | `false`  | Write `gw_observer_catalogue.csv`, the observer-dependent columns of the last record of every compact pair: luminosity distance and Planck 2018 redshift, drawn ecliptic position, inclination, polarisation and phase, observed f₂₂ and the LISA SNR at that inclination (Robson et al. 2019 curve with confusion noise). Needs `gw_catalogues` |
+| `gw_observer_distance_kpc` | Float | `8.0` | Luminosity distance of every pair [kpc]; > 0 |
+| `gw_observer_t_obs_yr` | Float | `4.0`   | LISA observation time [yr]; one of 0.5, 1, 2, 4 (the confusion-noise fits) |
+| `gw_observer_seed`    | Int    | `1`      | Seed of the drawn sky positions and orientation angles |
 | `population_q_min`    | Float  | `0.5`    | Mass-ratio limit of the q-restricted fraction; 0 < q_min < 1 |
 | `population_m1_min`, `population_m1_max` | Float | `0.47`, `0.76` | Primary-mass window of the q-restricted fraction [M☉], by default that of Milone et al. (2012, doi:10.1051/0004-6361/201016384); 0 ≤ m1_min < m1_max |
 | `population_edges`    | [Float] | `[]`    | Shell edges replacing the frame's default: mass fractions from 0 to 1 (`"lagrangian"`) or multiples of r_h from 0 (`"rh"`, `inf` allowed); strictly increasing |

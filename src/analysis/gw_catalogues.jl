@@ -1489,3 +1489,175 @@ function write_ldc_galactic_binaries(
     end
     return String(path)
 end
+
+# ---------------------------------------------------------------------------
+# Observer-dependent catalogue
+# ---------------------------------------------------------------------------
+
+"""Flat ΛCDM of Planck 2018 (Planck Collaboration 2020, DOI 10.1051/0004-6361/201833910, Tab. 2, TT,TE,EE+lowE+lensing+BAO): H₀ [km s⁻¹ Mpc⁻¹] and Ω_m."""
+const _GWCAT_H0 = 67.66
+const _GWCAT_OMEGA_M = 0.3111
+
+"""Luminosity distance [Mpc] at redshift `z` in the flat ΛCDM of `_GWCAT_H0`, `_GWCAT_OMEGA_M`."""
+function _gwcat_luminosity_distance_mpc(z::Float64)::Float64
+    E(x) = sqrt(_GWCAT_OMEGA_M * (1 + x)^3 + 1 - _GWCAT_OMEGA_M)
+    return (1 + z) * (_GW_C / 1000 / _GWCAT_H0) * first(quadgk(x -> 1 / E(x), 0.0, z; rtol = 1e-10))
+end
+
+"""Redshift of the luminosity distance `d_mpc` [Mpc] (bisection on 0–20, to 10⁻¹² in z)."""
+function _gwcat_redshift(d_mpc::Float64)::Float64
+    lo, hi = 0.0, 20.0
+    while hi - lo > 1e-12
+        mid = (lo + hi) / 2
+        _gwcat_luminosity_distance_mpc(mid) < d_mpc ? (lo = mid) : (hi = mid)
+    end
+    return (lo + hi) / 2
+end
+
+"""Row type of [`gw_observer_catalogue`](@ref)."""
+Base.@kwdef struct GWObserverRow
+    name1::Int
+    name2::Int
+    time_nb::Float64
+    time_myr::Float64
+    kstar1::Int
+    kstar2::Int
+    m1_msun::Float64
+    m2_msun::Float64
+    a_au::Float64
+    e::Float64
+    d_l_mpc::Float64
+    z::Float64
+    ecl_lat_rad::Float64
+    ecl_lon_rad::Float64
+    incl_rad::Float64
+    psi_rad::Float64
+    phi0_rad::Float64
+    f_gw22_obs_hz::Float64
+    snr_lisa::Float64
+    t_obs_yr::Float64
+    noise_model::Symbol
+end
+
+"""
+    gw_observer_catalogue(rows::AbstractVector{CompactBinaryRow}; distance_kpc::Real,
+                          t_obs_yr::Real = 4.0, confusion::Bool = true,
+                          rng::AbstractRNG) -> Vector{GWObserverRow}
+
+The observer-dependent columns of the GW/LISA catalogue schema for the last
+record (in `time_nb`) of every compact pair of `rows` with a finite orbit:
+the pair is placed at the luminosity distance `distance_kpc` [kpc] (`d_l_mpc`)
+with the redshift `z` of the flat ΛCDM of Planck 2018 (H₀ = 67.66 km s⁻¹ Mpc⁻¹,
+Ω_m = 0.3111, DOI 10.1051/0004-6361/201833910), an ecliptic latitude
+asin(2u − 1), longitude 2πu, inclination acos(2u − 1), polarisation πu and
+initial phase 2πu drawn from `rng` in that order (u uniform on [0, 1)), and
+observed for `t_obs_yr` years with the [`lisa_psd`](@ref) curve (`confusion`
+switches the Galactic confusion noise; `noise_model` is `:robson2019` or
+`:robson2019_noconf`).
+
+`f_gw22_obs_hz` = f₂₂/(1 + z). `snr_lisa` is the sky- and polarisation-averaged
+SNR at the drawn inclination, ρ̄ [((1 + cos²ι)/2)² + cos²ι]^{1/2}/(4/5)^{1/2},
+with ρ̄ the [`gw_snr`](@ref) (three time samples) of the detector-frame binary
+(masses and semi-major axis scaled by 1 + z, so that the frequencies are
+divided by it and the strain carries the redshifted chirp mass) at
+`distance_kpc`; the inclination factor is that of the quadrupole n = 2 mode,
+exact for circular orbits. `snr_lisa` is `NaN` for e > 0.99 or an observed f₂₂
+outside 10⁻⁵–1 Hz. Rows are ordered by (`name1`, `name2`). Throws an
+`ArgumentError` for a non-positive `distance_kpc` or `t_obs_yr`, or an
+observation time without a confusion fit when `confusion` is set.
+
+# Example
+```julia
+obs = gw_observer_catalogue(cat.compact; distance_kpc = 8.0, rng = MersenneTwister(1))
+```
+"""
+function gw_observer_catalogue(
+    rows::AbstractVector{CompactBinaryRow};
+    distance_kpc::Real,
+    t_obs_yr::Real = 4.0,
+    confusion::Bool = true,
+    rng::AbstractRNG,
+)::Vector{GWObserverRow}
+    caller = "gw_observer_catalogue"
+    _gwcat_check_positive(distance_kpc, "distance_kpc", caller)
+    _gwcat_check_positive(t_obs_yr, "t_obs_yr", caller)
+    lisa_psd(1.0e-3; t_obs_yr, confusion)   # refuses an observation time without a confusion fit
+    d_kpc = Float64(distance_kpc)
+    d_mpc = d_kpc / 1000
+    z = _gwcat_redshift(d_mpc)
+    last_record = Dict{Tuple{Int,Int},CompactBinaryRow}()
+    for r in rows
+        key = _gwcat_key(r.name1, r.name2)
+        prev = get(last_record, key, nothing)
+        (prev === nothing || r.time_nb ≥ prev.time_nb) && (last_record[key] = r)
+    end
+    selected = sort!(
+        filter(
+            r -> _gwcat_valid_orbit(r.m1_msun, r.m2_msun, r.a_au, r.e),
+            collect(values(last_record)),
+        );
+        by = r -> (r.name1, r.name2),
+    )
+    out = GWObserverRow[]
+    for r in selected
+        β = asin(2 * rand(rng) - 1)
+        λ = 2π * rand(rng)
+        ι = acos(2 * rand(rng) - 1)
+        ψ = π * rand(rng)
+        φ₀ = 2π * rand(rng)
+        f_obs = r.f_gw22_hz / (1 + z)
+        ρ = NaN
+        if r.e ≤ _GWCAT_SNR_E_MAX && _GWCAT_SNR_F_RANGE[1] ≤ f_obs ≤ _GWCAT_SNR_F_RANGE[2]
+            ρ̄ = gw_snr(
+                r.m1_msun * (1 + z),
+                r.m2_msun * (1 + z),
+                r.a_au * (1 + z),
+                r.e;
+                distance_kpc = d_kpc,
+                t_obs_yr,
+                confusion,
+                n_time = 3,
+            )
+            ci = cos(ι)
+            ρ = ρ̄ * sqrt((((1 + ci^2) / 2)^2 + ci^2) / 0.8)
+        end
+        push!(
+            out,
+            GWObserverRow(;
+                name1 = r.name1,
+                name2 = r.name2,
+                time_nb = r.time_nb,
+                time_myr = r.time_myr,
+                kstar1 = r.kstar1,
+                kstar2 = r.kstar2,
+                m1_msun = r.m1_msun,
+                m2_msun = r.m2_msun,
+                a_au = r.a_au,
+                e = r.e,
+                d_l_mpc = d_mpc,
+                z = z,
+                ecl_lat_rad = β,
+                ecl_lon_rad = λ,
+                incl_rad = ι,
+                psi_rad = ψ,
+                phi0_rad = φ₀,
+                f_gw22_obs_hz = f_obs,
+                snr_lisa = ρ,
+                t_obs_yr = Float64(t_obs_yr),
+                noise_model = confusion ? :robson2019 : :robson2019_noconf,
+            ),
+        )
+    end
+    return out
+end
+
+"""
+    write_gw_observer_catalogue(path, rows::AbstractVector{GWObserverRow}) -> String
+
+Write the observer-dependent catalogue of [`gw_observer_catalogue`](@ref) as
+CSV, one column per field of [`GWObserverRow`](@ref) in declaration order,
+with the cell conventions of [`write_compact_binary_catalogue`](@ref). An
+existing file is backed up, never overwritten. Returns the path.
+"""
+write_gw_observer_catalogue(path::AbstractString, rows::AbstractVector{GWObserverRow})::String =
+    _gwcat_write(path, rows, GWObserverRow)
