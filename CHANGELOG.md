@@ -8,6 +8,9 @@ entries say so.
 
 ### Changed
 
+- The generator warns when a seeded IMBH meets few-body regularisation (`KZ(15) > 0`): in the I3 validation runs
+  chains and merged hierarchies holding an IMBH of 0.014 of the mass halted the run on the energy check (two of two
+  runs; none without the IMBH). `kz = {15 = 0}` keeps the IMBH's encounters in KS.
 - `gw_merger_catalogue` and `collision_catalogue`: a coal.24 merger counts for both of its names in the
   `generation` of later events. `coal.f` gives the remnant the name of the progenitor with the larger initial
   mass, which the record does not carry; the absorbed body is a ghost and its name does not recur, so either
