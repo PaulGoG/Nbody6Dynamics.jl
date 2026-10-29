@@ -74,7 +74,9 @@ entries say so.
   the analytic pericentre time to 3×10⁻⁵, and the energy check across the removal closes to the integration
   error of the approach, about 10⁻⁵ of the star's kinetic energy at pericentre.
 - `read_tde_events`, `TDEEvent`, `tde_summary`, `write_tde_events` and the `[postprocess] tde` stage (default
-  on): the events of the engine stdout in `tde_events.csv`.
+  on): the events of the engine stdout in `tde_events.csv`; `tde_rate_series` (events and mass removed per time
+  bin) and `plot_tde_events` (cumulative events by kind and the penetration factor of every event, drawn by the
+  dispatcher).
 - Observer-dependent GW catalogue (`gw_observer_catalogue`, `[postprocess] gw_observer` with
   `gw_observer_distance_kpc`, `gw_observer_t_obs_yr`, `gw_observer_seed`, product
   `gw_observer_catalogue.csv`): the last record of every compact pair at a chosen luminosity distance with its

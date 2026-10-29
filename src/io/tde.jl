@@ -150,3 +150,52 @@ function write_tde_events(path::AbstractString, events::AbstractVector{TDEEvent}
     end
     return String(path)
 end
+
+"""
+    tde_rate_series(events::AbstractVector{TDEEvent}; bin_myr, t_end_myr = NaN)
+        -> Vector{NamedTuple}
+
+Events per time bin of width `bin_myr` [Myr] from 0 to `t_end_myr` (default:
+the last event): one row per bin with `t_start_myr`, `t_end_myr`, the counts
+`n_full`, `n_partial`, `n_plunge`, the mass removed `dm_msun` and the rate of
+all kinds `rate_per_myr` (events per Myr). Throws an `ArgumentError` for a
+non-positive `bin_myr` or events without a physical time (`time_myr` NaN).
+
+# Example
+```julia
+rates = tde_rate_series(events; bin_myr = 1.0)
+```
+"""
+function tde_rate_series(
+    events::AbstractVector{TDEEvent};
+    bin_myr::Real,
+    t_end_myr::Real = NaN,
+)::Vector{NamedTuple}
+    (isfinite(bin_myr) && bin_myr > 0) ||
+        throw(ArgumentError("tde_rate_series: bin_myr must be finite and > 0; got $bin_myr"))
+    any(e -> !isfinite(e.time_myr), events) &&
+        throw(ArgumentError("tde_rate_series: events without time_myr (read with tstar_myr)"))
+    t_end =
+        isfinite(t_end_myr) ? Float64(t_end_myr) : maximum((e.time_myr for e in events); init = 0.0)
+    nbins = max(1, ceil(Int, t_end / bin_myr))
+    rows = NamedTuple[]
+    for k in 1:nbins
+        t0 = (k - 1) * bin_myr
+        t1 = k * bin_myr
+        inbin = [e for e in events if (t0 ≤ e.time_myr < t1) || (k == nbins && e.time_myr == t1)]
+        n = length(inbin)
+        push!(
+            rows,
+            (
+                t_start_myr = t0,
+                t_end_myr = t1,
+                n_full = count(e -> e.kind === :full, inbin),
+                n_partial = count(e -> e.kind === :partial, inbin),
+                n_plunge = count(e -> e.kind === :plunge, inbin),
+                dm_msun = sum(e -> e.dm_msun, inbin; init = 0.0),
+                rate_per_myr = n / bin_myr,
+            ),
+        )
+    end
+    return rows
+end

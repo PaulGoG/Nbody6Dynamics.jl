@@ -405,7 +405,9 @@ write_imbh_pair_hardening
 TDEEvent
 read_tde_events
 tde_summary
+tde_rate_series
 write_tde_events
+plot_tde_events
 ```
 
 ## Survival Statistics

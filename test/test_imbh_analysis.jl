@@ -657,6 +657,13 @@ end
         @test split(lines[2], ',') == string.(collect(fieldnames(nd.TDEEvent)))
         @test length(lines) == 5
         @test split(lines[3], ',')[1] == "partial" && split(lines[3], ',')[end] == ""
+        rates = nd.tde_rate_series(ev; bin_myr = 0.05)
+        @test length(rates) == 3
+        @test [(r.n_partial, r.n_full, r.n_plunge) for r in rates] == [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
+        @test all(r -> r.rate_per_myr ≈ 20.0, rates) && rates[3].dm_msun ≈ 1.4
+        @test length(nd.tde_rate_series(ev; bin_myr = 0.05, t_end_myr = 1.0)) == 20
+        @test_throws ArgumentError nd.tde_rate_series(ev; bin_myr = 0.0)
+        @test_throws ArgumentError nd.tde_rate_series(nd.read_tde_events(path); bin_myr = 1.0)
         nd.write_tde_events(csv, ev[2:2])
         @test isfile(joinpath(dir, "tde_events#1.csv")) && length(readlines(csv)) == 3
     end

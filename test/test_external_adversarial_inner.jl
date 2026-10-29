@@ -350,7 +350,7 @@ end
             "energy_events",
             "budgets",
         ]
-        @test labels[(end - 9):end] == [
+        @test labels[(end - 10):end] == [
             "binary_spans",
             "bound_spans",
             "binary_census",
@@ -358,6 +358,7 @@ end
             "binary_pair_types",
             "gw_catalogues",
             "collision_catalogue",
+            "tde",
             "binary_survival",
             "imbh",
             "validity",

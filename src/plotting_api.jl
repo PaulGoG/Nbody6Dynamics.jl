@@ -106,6 +106,8 @@ const _PLOTTING_ENTRY_POINTS = (
     # IMBH
     :plot_imbh_wandering,
     :plot_imbh_companions,
+    # static black hole
+    :plot_tde_events,
     # remnant of a merger
     :plot_remnant_rotation,
     :plot_rotation_profile,

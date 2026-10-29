@@ -1416,7 +1416,8 @@ export RotatingKingProfile, rotation_moments
 export IMBHSpec
 export CollisionRow,
     collision_catalogue, collision_summary, progenitor_of, write_collision_catalogue
-export TDEEvent, read_tde_events, tde_summary, write_tde_events
+export TDEEvent, read_tde_events, tde_summary, tde_rate_series, write_tde_events
+export plot_tde_events
 export EventTable, SurvivalCurve, CumulativeIncidence, event_table, kaplan_meier, nelson_aalen
 export aalen_johansen, turnbull, logrank_test, cox_snell_residuals, survival_at, confidence_interval
 export write_survival_curve, write_cumulative_incidence

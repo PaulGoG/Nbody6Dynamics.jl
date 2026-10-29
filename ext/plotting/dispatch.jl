@@ -315,6 +315,12 @@ function Nbody6Dynamics.generate_plots(
         end
     end
 
+    # Events at the static black hole ([merger.mbh])
+    if haskey(results, :tde_events) && any(e -> isfinite(e.time_myr), results[:tde_events])
+        @info "Plotting the events at the static black hole..."
+        Nbody6Dynamics.plot_tde_events(results[:tde_events], vis; filename = "tde_events")
+    end
+
     # Run telemetry: the sampler's CSVs live in the run directory above the
     # output directory (absent for output produced outside the pipeline).
     if !isempty(sim_dir) && isdir(sim_dir)

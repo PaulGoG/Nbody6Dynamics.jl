@@ -513,7 +513,14 @@ end
     end
     # A single stellar mass (one equal-mass cluster) still gives the IMF figure
     cfg_eq = MergerConfig(
-        [ClusterSpec(profile = PlummerProfile(), N = 80, rbar = 1.0, imf = EqualMassIMF(particle_mass = 1.0))],
+        [
+            ClusterSpec(
+                profile = PlummerProfile(),
+                N = 80,
+                rbar = 1.0,
+                imf = EqualMassIMF(particle_mass = 1.0),
+            ),
+        ],
         "single",
         OrbitSpec(),
         MergerOutputSpec(format = "nbody", output_dir = mktempdir()),
@@ -524,6 +531,36 @@ end
         VisualizationConfig(; format = "png", output_dir = eq_dir),
     )
     @test isfile(joinpath(eq_dir, "merger_ic_imf.png"))
+
+    # Events at the static black hole: three kinds, then a single kind
+    tde_ev = [
+        TDEEvent(;
+            kind = k,
+            time_nb = t,
+            time_myr = 0.2t,
+            name = i,
+            kstar = 1,
+            mass_msun = 1.0,
+            radius_rsun = 1.0,
+            q_pc = 1e-3 / b,
+            r_t_pc = 1e-3,
+            beta = b,
+            e_nb = -0.1,
+            dm_msun = k === :partial ? 0.1 : 1.0,
+            mbh_msun = k === :partial ? NaN : 410.0,
+        ) for (i, (k, t, b)) in enumerate([
+            (:partial, 1.0, 0.8),
+            (:full, 2.0, 2.5),
+            (:partial, 3.0, 1.2),
+            (:plunge, 4.0, 40.0),
+            (:full, 5.0, 3.0),
+        ])
+    ]
+    tde_dir = mktempdir()
+    vis_tde = VisualizationConfig(; format = "png", output_dir = tde_dir)
+    @test isfile(plot_tde_events(tde_ev, vis_tde))
+    @test isfile(plot_tde_events(tde_ev[[2, 5]], vis_tde; filename = "tde_full"))
+    @test_throws ErrorException plot_tde_events(TDEEvent[], vis_tde)
 
     # Synthetic two-cluster snapshots: converging COMs, NB units
     function _smoke_snapshot(t, d)
