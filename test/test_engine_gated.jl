@@ -389,8 +389,10 @@ poll_interval = 1.0
             ) if m !== nothing
         ]
         @test maximum(escapers_per_step) > 1000
-        @test sum(escapers_per_step) == n_shell
-        @test length(read_escapers(joinpath(fout, "esc.11"))) == n_shell
+        # every shell body escapes; a core star ejected on the way may join them
+        esc_names = [r.name for r in read_escapers(joinpath(fout, "esc.11"))]
+        @test issubset((n_core + 1):n_flood, esc_names)
+        @test length(esc_names) == sum(escapers_per_step)
         _keep(frun, "escaper_flood")
     end
 end
