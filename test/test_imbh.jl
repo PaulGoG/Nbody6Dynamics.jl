@@ -98,6 +98,11 @@ using StableRNGs: StableRNG
         @test_throws ArgumentError nd.load_merger_config(
             imbh_config(; nbody6_lines = "imbh_output_dt_myr = 0"),
         )
+        # few-body regularisation with an IMBH: generated, with a warning
+        @test_logs (:warn, r"few-body regularisation with a seeded IMBH") match_mode = :any nd.generate_merger_ic(
+            nd.load_merger_config(imbh_config(; nbody6_lines = "kz = {15 = 2}"));
+            output_dir = mktempdir(),
+        )
         @test_throws ArgumentError nd.load_merger_config(
             imbh_config(; imbh = "imbh = {mass = 50.0, placement = \"edge\"}"),
         )

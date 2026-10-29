@@ -552,6 +552,12 @@ function generate_merger_inp(
         "an IMBH under stellar evolution needs the Peters decay of KZ(27) = 3 " *
         "(binary_physics = \"full\" or kz = {27 = 3}); got KZ(27) = $(kz[27])",
     )
+    # Chains and merged hierarchies holding the IMBH: two of two I3 Plummer runs with an IMBH of
+    # 0.014 of the mass halted on the energy check (fork v2026.07.11 and .17), none without it
+    (imbh !== nothing && kz[15] > 0) &&
+        @warn "few-body regularisation with a seeded IMBH (KZ(15) = $(kz[15])): chains and merged hierarchies " *
+              "that hold the IMBH can halt the run on the energy check; KZ(15) = 0 (kz = {15 = 0}) keeps its " *
+              "encounters in KS"
 
     # Build KZ lines: KZ(1:10) = ... etc.
     kz_strs = String[]
