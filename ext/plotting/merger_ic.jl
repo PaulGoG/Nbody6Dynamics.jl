@@ -255,8 +255,9 @@ All plots use the publication theme and are saved to `vis.output_dir`.
     m_min = max(minimum(mass_solar), 1e-3)
     m_max = maximum(mass_solar)
     # A single mass (equal-mass IMF without a seeded IMBH) gets one bar on a
-    # factor-of-two window instead of zero-width bins.
-    if m_max ≤ m_min * (1 + 1e-9)
+    # factor-of-two window instead of zero-width bins, and no Kroupa slopes.
+    single_mass = m_max ≤ m_min * (1 + 1e-9)
+    if single_mass
         m_min /= 2
         m_max *= 2
     end
@@ -305,7 +306,7 @@ All plots use the publication theme and are saved to `vis.output_dir`.
     # Reference slopes (the canonical Kroupa segment exponents and break
     # masses from imf.jl), normalised to the most populated bin (more robust
     # than picking m≈0.3 when the sample doesn't span the full Kroupa range).
-    if any(mask)
+    if any(mask) && !single_mass
         i_ref = argmax(dn)
         norm_val = dn[i_ref]
         m_ref = m_centres[i_ref]
@@ -343,6 +344,7 @@ All plots use the publication theme and are saved to `vis.output_dir`.
         ylims!(ax_h, y_floor, dn_max * 2)
         n_slopes ≥ 2 && _top_legend!(fig_h, ax_h)
     end
+    single_mass && ylims!(ax_h, y_floor, dn_max * 2)
 
     _save_fig(vis, "merger_ic_imf", fig_h)
 
