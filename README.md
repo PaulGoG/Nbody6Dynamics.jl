@@ -168,6 +168,8 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | Angular momentum, equipartition, merger tree | Working | Angular-momentum budget and rotation by radius and initial-mass class (`angular_momentum.csv`), the Bianchini equipartition mass (`equipartition.csv`), and the merger tree with the per-progenitor mass budget (`merger_tree.csv`, `progenitor_budget.csv`) |
 | Binaries | Working | KS episodes joined per pair into spans with origin and end class (`binary_spans.csv`), physically bound pairs and their spans across the snapshots (`bound_spans.csv`), their union per pair (`binary_census.csv`), binary fractions per shell, stellar class and census level (`binary_population` stage, `binary_population.csv`), pair-type composition and hardness (`binary_pair_types.csv`), orbital-element distributions (`binary_distributions.csv`) the gravitational-wave catalogues of the compact pairs (`compact_binary_catalogue.csv`, `escaped_binary_catalogue.csv`, `gw_merger_catalogue.csv`) with the export of the quasi-circular pairs as an LDC galactic-binary table (`ldc_galactic_binaries.csv`, `ldc_export`), the collision catalogue with progenitor tags (`collision_catalogue.csv`, on by default) and the lifetime statistics (`binary_survival.csv`, `binary_incidence.csv`); figures: timeline, population series, survival curves, a–e and f–e planes; the binary stages are off by default |
 | IMBH diagnostics | Working | For a run seeded with one or several IMBHs (`[imbh]` of `merger_ic.toml`, up to 16 under the flag route, on by default), per IMBH and with an `imbh_name` column: its offset and velocity about the stellar density centre with the core and half-mass radii of the stars (`imbh_trajectory.csv`), the wandering moments against the Brownian predictions of a Plummer sphere and a harmonic core (`imbh_wandering.csv`), the most bound two-body companion per snapshot with its elements and Peters time (`imbh_companions.csv`), and the tidal disruptions, collisions, coalescences, GW recoils and escape of the IMBH (`imbh_events.csv`); for several IMBHs the two-body state, elements, Kepler period and Peters time of every pair (`imbh_pairs.csv`); reader of the engine's `mbh.45`; figures: wandering, companions, one each per IMBH |
+| Static black hole and tidal disruptions | Working | `[merger.mbh]`: a fixed black hole at the centre of a single isolated cluster (engine `KZ(44)`), with full and partial disruptions (Guillochon & Ramirez-Ruiz 2013) at a fixed or stellar disruption radius, plunges and optional growth by accretion; the events in `tde_events.csv`, their rate series and a figure |
+| Post-Newtonian compact pairs | Working | `post_newtonian = "full"`: the 1PN, 2PN and 2.5PN relative accelerations (Blanchet 2024) in the perturbed KS steps of bound neutron-star and black-hole pairs (engine `KZ(43)`), with their work booked exactly into the energy check |
 | Gravitational-wave observables | Working | `gw_inspiral_time` (Peters 1964), `chirp_mass`, `gw_frequency` (f₂₂, Wen 2003 peak, pericentre) and `eccentricity_at_frequency` along the Peters track; strains: the Peters–Mathews harmonic power `peters_mathews_g`, the LDC 22-mode amplitude `gw_amplitude_ldc`, and the harmonic and characteristic strains of LEGWORK (Wagg et al. 2022) `gw_harmonic_strain`, `gw_characteristic_strain`, stored per kpc in the catalogues |
 | Validity record | Working | Energy, mass and angular-momentum checks with a verdict, snapshot cadence, the windows excluded from equilibrium estimators and the calibrated bias of the tracked estimators (`validity.toml`, `validity_snapshots.csv`) |
 | Shape, segregation and mixing | Working | Axis ratios from the iterative shape tensor (Zemp et al. 2011), projected ellipticities, the A⁺ index, the two-sample Kolmogorov–Smirnov distance with its null floor, and the mixing of two tagged populations |
@@ -315,6 +317,7 @@ Nbody6Dynamics/
 │   │   ├── events_evolution.jl      # GW, binary-escape, mass-loss, tidal and Roche records
 │   │   ├── binary_files.jl          # bdat.9, bwdat.19, merger.84, hiarch.12, coll.13, coal.24, cmbody.26, binev.17, degen.4, escbin.31, hbin.39
 │   │   ├── mbh45.jl                 # mbh.45 IMBH record reader (bhplot.f, KZ(24) = 1)
+│   │   ├── tde.jl                   # TDE, TDE PLUNGE and TDE PARTIAL lines of the static black hole (KZ(44)), rate series
 │   │   ├── stellar_evolution.jl     # sev.83_* single-star evolution reader
 │   │   └── binary_evolution.jl      # bev.82_* regularised-binary reader
 │   └── ic/
@@ -348,6 +351,7 @@ Nbody6Dynamics/
 │       ├── binaries.jl              # Binary population, a–e diagram, period distribution
 │       ├── binary_diagnostics.jl    # Binary timeline, population series, survival curves, a–e and f–e planes
 │       ├── imbh.jl                  # IMBH figures: wandering against the Brownian predictions, bound companions
+│       ├── tde.jl                   # Events at the static black hole: cumulative counts by kind, penetration factor
 │       ├── remnant.jl               # Remnant figures: rotation parameters and profile, structure, mass segregation
 │       ├── sweep.jl                 # Sweep comparison figures on common axes (Lagrangian radius, energy error)
 │       ├── control.jl               # Merger against isolated control, paired series per sweep point
@@ -436,7 +440,7 @@ Nbody6Dynamics/
 │   ├── engine/                      # Single-cluster engine inputs with engine-generated initial conditions: N1k_quick … N100k_production
 │   ├── clusters/                    # Single-cluster generator configurations: the four science cases
 │   ├── mergers/                     # Merger initial-condition TOMLs: demo, equal-mass, minor Plummer, triple, 3- and 5-cluster, 27-cluster grid
-│   ├── verification/                # verif_triorbit (Lagrange triangle), verif_3d5cluster (five clusters in 3D), replicas/ (published two-cluster mergers)
+│   ├── verification/                # verif_triorbit (Lagrange triangle), verif_3d5cluster (five clusters in 3D), replicas/ (published two-cluster mergers), imbh/ (IMBH validation runs), mbh/ (static black hole and TDEs)
 │   ├── sweeps/                      # sweep_demo (eccentricity × secondary size × seeds over the demo merger)
 │   ├── showcase/                    # Five end-to-end cases with Myr intervals: equal, binary, tidal, flagship, sweep with controls
 │   └── gpu/                         # CUDA-host recipe: GPU and CPU builds, the 2 × 25k merger, the 6 × 10⁵-body probes
