@@ -1,6 +1,6 @@
 # IMBH validation block I3, Table 2 configuration of Trenti, Ardi, Mineshige & Hut (2007, DOI
 # 10.1111/j.1365-2966.2006.11189.x): Plummer model of 8192 equal-mass systems with a central IMBH of 0.014 of the total mass,
-# 10 % primordial binaries (5–680 kT, flat in log E_b, thermal e), isolated, point masses, chain regularisation, 650 Myr ≈ 24 t_rh(0).
+# 10 % primordial binaries (5–680 kT, flat in log E_b, thermal e), isolated, point masses, KS only (KZ(15) = 0), 650 Myr ≈ 24 t_rh(0).
 
 [merger]
 seed = 8313
@@ -33,8 +33,5 @@ preset = "baseline"  # one of: "engine" | "baseline"
 qe = 0.01
 escapers = "keep"   # one of: "remove" | "keep"
 imbh_output_dt_myr = 1.0
+checkpoint = true   # restart dump at every adjustment (KZ(2) = 1)
 
-[merger.nbody6.kz]
-15 = 2              # chain and stable hierarchies
-18 = 1              # hierarchy census
-26 = 2              # KS and chain slow-down
