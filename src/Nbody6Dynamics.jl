@@ -1413,7 +1413,7 @@ export write_ldc_galactic_binaries,
 export peters_semi_major_axis, band_residence, eccentricity_after
 export RotatingKingModel, solve_rotating_king, rotating_king_moments, sample_rotating_king
 export RotatingKingProfile, rotation_moments
-export IMBHSpec
+export IMBHSpec, MBHSpec
 export CollisionRow,
     collision_catalogue, collision_summary, progenitor_of, write_collision_catalogue
 export TDEEvent, read_tde_events, tde_summary, tde_rate_series, write_tde_events

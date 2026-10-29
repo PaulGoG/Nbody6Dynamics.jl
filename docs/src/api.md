@@ -467,6 +467,7 @@ write_gw_observer_catalogue
 RotatingKingModel
 RotatingKingProfile
 IMBHSpec
+MBHSpec
 resolved_imbh_route
 solve_rotating_king
 rotating_king_moments
