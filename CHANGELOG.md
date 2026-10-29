@@ -13,6 +13,7 @@ entries say so.
   mass, which the record does not carry; the absorbed body is a ghost and its name does not recur, so either
   name continuing marks the remnant. Before, a remnant that took the second name started its next merger at
   generation 1.
+- Engine pin `v2026.07.13` (fork): the static massive black hole below (`KZ(44)`).
 - Engine pin `v2026.07.12` (fork): a body at exact rest gets a finite first step (the start-up abort in
   `SORT_TLIST` with a step of 2×10⁻³¹⁴ is gone; the generator's speed floor for a seeded IMBH stays), and the
   post-Newtonian terms of compact KS pairs below.

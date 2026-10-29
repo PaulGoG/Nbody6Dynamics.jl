@@ -3,7 +3,7 @@
 [install]
 enabled = true
 install_dir = "../../backend/Nbody6PPGPU-beijing"
-ref = "v2026.07.12"
+ref = "v2026.07.13"
 reinstall = false
 clean_build = true
 
