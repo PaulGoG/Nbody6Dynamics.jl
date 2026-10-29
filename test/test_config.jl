@@ -114,7 +114,7 @@ export_width = 7.0
 
     cfg2 = load_config(save_path)
     @test cfg2.install.ref == "v2026.07"
-    @test InstallConfig().ref == "v2026.07.17"
+    @test InstallConfig().ref == "v2026.07.18"
     @test cfg2.build.enable_gpu == cfg.build.enable_gpu
     @test cfg2.build.cuda_path == cfg.build.cuda_path
     @test cfg2.simulation.run_id_prefix == cfg.simulation.run_id_prefix

@@ -16,6 +16,11 @@ entries say so.
   mass, which the record does not carry; the absorbed body is a ghost and its name does not recur, so either
   name continuing marks the remnant. Before, a remnant that took the second name started its next merger at
   generation 1.
+- Engine pin `v2026.07.18` (fork), from a review of the new engine code: a disruption corrects the force
+  polynomials of all other bodies and books the star's energy as a mass loss (`EMDOT`, before `ECOLL`); KS pairs
+  inside the black hole's tidal range are perturbed by it; the PN state of a KS pair follows its renumbering at a
+  termination; an output between two adjustments no longer leaves the external potential energy out of the check.
+  The 4096-star verification run ends at DETOT −1.8×10⁻⁶ (−5.3×10⁻⁶ before).
 - Engine pin `v2026.07.17` (fork): growth of the static black hole (below).
 - Engine pin `v2026.07.16` (fork): with `[merger.mbh]` and stellar evolution the energy of mass lost by winds,
   supernovae and envelope ejection includes the black hole's potential (a 4096-star Kroupa cluster with a 2000 M☉
@@ -81,7 +86,7 @@ entries say so.
   v2026.07.13, `KZ(44) = 1` and the `&INMBH` namelist; keys `mass_msun`, `softening_pc`, `rt_mode`,
   `r_acc_pc`, `partial`, `beta_full`, `response`). It acts on every body as a fixed point mass, on KS pairs as
   a tidal perturbation, and its potential enters the energy; a single star whose orbit about it reaches the
-  disruption radius within a step is removed at the pericentre passage with its energy booked into `ECOLL`
+  disruption radius within a step is removed at the pericentre passage with its energy booked as a mass loss
   (`TDE`, `TDE PLUNGE` inside 4 G M/c²), or, with `partial = "gamma43" | "gamma53"`, stripped by the fraction
   of Guillochon & Ramirez-Ruiz (2013) and kept (`TDE PARTIAL`). The disruption radius is fixed (`r_acc_pc`) or
   stellar, R★ (M/m★)^{1/3} under stellar evolution. The generator rescales the stellar velocities to the
