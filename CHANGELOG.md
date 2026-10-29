@@ -13,6 +13,9 @@ entries say so.
   mass, which the record does not carry; the absorbed body is a ghost and its name does not recur, so either
   name continuing marks the remnant. Before, a remnant that took the second name started its next merger at
   generation 1.
+- Engine pin `v2026.07.15` (fork): long runs on the CPU force libraries no longer die of SIGSEGV when a kept
+  escaper reaches about 255 N-body units from the centre, where the library's padding particle entered its
+  neighbour list (two of the I3 validation runs, at 804 and 1313 N-body times).
 - Engine pin `v2026.07.14` (fork): the work of the post-Newtonian terms is booked as their part of the KS energy
   integration, so the energy check closes exactly; with `v2026.07.12` and `.13` a compact binary inspiralling under
   `post_newtonian = "full"` inside a cluster left about 4×10⁻⁴ of its radiated energy in the check and halted the run.

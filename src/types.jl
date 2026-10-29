@@ -11,13 +11,13 @@
 
 Configuration for the Nbody6++ source installation phase.
 Controls git clone, the checked-out reference (`ref`: commit, tag, or
-branch of the backend; the default is the fork tag `v2026.07.14`), reinstall
+branch of the backend; the default is the fork tag `v2026.07.15`), reinstall
 behaviour, and clean builds.
 """
 Base.@kwdef struct InstallConfig
     enabled::Bool = true
     source_url::String = "https://github.com/PaulGoG/Nbody6PPGPU-beijing.git"
-    ref::String = "v2026.07.14"   # validated engine tag (the fork's main branch on upstream v2026.07); "" = clone default branch
+    ref::String = "v2026.07.15"   # validated engine tag (the fork's main branch on upstream v2026.07); "" = clone default branch
     install_dir::String = joinpath("backend", "Nbody6PPGPU-beijing")
     reinstall::Bool = false
     clean_build::Bool = true
