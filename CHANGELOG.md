@@ -13,6 +13,9 @@ entries say so.
   mass, which the record does not carry; the absorbed body is a ghost and its name does not recur, so either
   name continuing marks the remnant. Before, a remnant that took the second name started its next merger at
   generation 1.
+- Engine pin `v2026.07.16` (fork): with `[merger.mbh]` and stellar evolution the energy of mass lost by winds,
+  supernovae and envelope ejection includes the black hole's potential (a 4096-star Kroupa cluster with a 2000 M☉
+  black hole drifted to DETOT 8×10⁻² over 20 Myr without it, 3×10⁻³ with it).
 - Engine pin `v2026.07.15` (fork): long runs on the CPU force libraries no longer die of SIGSEGV when a kept
   escaper reaches about 255 N-body units from the centre, where the library's padding particle entered its
   neighbour list (two of the I3 validation runs, at 804 and 1313 N-body times).
