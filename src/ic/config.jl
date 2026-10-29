@@ -882,6 +882,49 @@ end
 # -----------------------------------------------------------------------------
 
 """
+    MBHSpec(; mass_msun, softening_pc = 0.0, rt_mode = "fixed", r_acc_pc = 0.0,
+              partial = "off", beta_full = 1.0, response = "jeans")
+
+Static massive black hole at the coordinate origin (`[merger.mbh]`; engine
+fork ≥ v2026.07.13, `KZ(44) = 1` and the `&INMBH` namelist). The black hole
+is a fixed point mass acting on every body (irregular force, KS
+perturbations as a tidal difference); a single star whose orbit about it
+reaches the capture radius is disrupted at its pericentre passage, its energy
+booked and its mass removed (engine line `TDE`).
+
+# Fields
+- `mass_msun`: black-hole mass [M☉]; > 0
+- `softening_pc`: Plummer softening of its force [pc]; ≥ 0 (0: a point mass)
+- `rt_mode`: `"fixed"` (every star disrupted at `r_acc_pc`, the practice of
+  Cho et al. 2026a) or `"stellar"` (r_t = R★ (M/m★)^{1/3} with the
+  stellar-evolution radius; requires `stellar.kz19 ≥ 3`)
+- `r_acc_pc`: disruption radius of `"fixed"` [pc]; > 0 there
+- `partial`: `"off"` (full disruption when r_t/q ≥ `beta_full`), `"gamma43"`
+  or `"gamma53"` (full disruption above β = 1.85 or 0.9 and partial
+  disruption down to 0.6 or 0.5, the star losing the fraction of Guillochon &
+  Ramirez-Ruiz 2013, DOI 10.1088/0004-637X/767/1/25)
+- `beta_full`: threshold of `partial = "off"`; > 0
+- `response`: `"jeans"` (the stellar velocities rescaled by the isotropic
+  Jeans equation with the black hole's potential, as for a seeded IMBH) or
+  `"rigid"` (velocities unchanged)
+
+Requires `orbit_mode = "single"` (the cluster at the origin) and no external
+field (`tidal.kz14 = 0`).
+"""
+Base.@kwdef struct MBHSpec
+    mass_msun::Float64 = NaN
+    softening_pc::Float64 = 0.0
+    rt_mode::String = "fixed"
+    r_acc_pc::Float64 = 0.0
+    partial::String = "off"
+    beta_full::Float64 = 1.0
+    response::String = "jeans"
+end
+
+"""`IPART` of `&INMBH` per `MBHSpec.partial` value."""
+const _MBH_IPART = Dict("off" => 0, "gamma43" => 1, "gamma53" => 2)
+
+"""
     MergerConfig(clusters, orbit_mode, orbit, output[, nbody6, stellar, tidal, seed, virial_max_n,
                  seed_streams, complex])
 
@@ -926,6 +969,8 @@ Top-level configuration for multi-cluster merger initial conditions.
   on the orbit
 - `complex::ComplexSpec`: parameters of `orbit_mode = "complex"`; default
   `ComplexSpec()`, unused in the other modes
+- `mbh::Union{Nothing,MBHSpec}`: static massive black hole at the origin
+  (`[merger.mbh]`, [`MBHSpec`](@ref)); `nothing` by default
 """
 struct MergerConfig
     clusters::Vector{ClusterSpec}
@@ -939,7 +984,36 @@ struct MergerConfig
     virial_max_n::Int
     seed_streams::String
     complex::ComplexSpec
+    mbh::Union{Nothing,MBHSpec}
 end
+
+# The eleven-field form of earlier versions (before `mbh`).
+MergerConfig(
+    clusters::Vector{ClusterSpec},
+    orbit_mode::String,
+    orbit::OrbitSpec,
+    output::MergerOutputSpec,
+    nbody6::Nbody6ParameterSpec,
+    stellar::StellarSpec,
+    tidal::TidalSpec,
+    seed::Union{Int,Nothing},
+    virial_max_n::Int,
+    seed_streams::String,
+    complex::ComplexSpec,
+) = MergerConfig(
+    clusters,
+    orbit_mode,
+    orbit,
+    output,
+    nbody6,
+    stellar,
+    tidal,
+    seed,
+    virial_max_n,
+    seed_streams,
+    complex,
+    nothing,
+)
 
 """Values of `[merger] seed_streams`."""
 const _SEED_STREAMS = ("shared", "per_cluster")
@@ -959,6 +1033,7 @@ MergerConfig(
     virial_max_n::Int = _VIRIAL_NMAX,
     seed_streams::AbstractString = "shared",
     complex::ComplexSpec = ComplexSpec(),
+    mbh::Union{Nothing,MBHSpec} = nothing,
 ) = MergerConfig(
     clusters,
     String(orbit_mode),
@@ -971,6 +1046,7 @@ MergerConfig(
     virial_max_n,
     String(seed_streams),
     complex,
+    mbh,
 )
 
 MergerConfig(
@@ -1209,6 +1285,7 @@ function load_merger_config(path::AbstractString)::MergerConfig
                 "stellar",
                 "tidal",
                 "complex",
+                "mbh",
             ],
             cluster_keys,
         ),
@@ -1415,6 +1492,9 @@ function load_merger_config(path::AbstractString)::MergerConfig
     _validate_tidal(tidal)
     _validate_tidal_tolerance(tidal, nbody6)
     _validate_imbh_configuration(clusters, nbody6, stellar)
+    mbh_raw = _section_table(m, "mbh", "merger.mbh")
+    mbh = isempty(mbh_raw) ? nothing : _parse_section(MBHSpec, mbh_raw, "merger.mbh")
+    mbh === nothing || _validate_mbh(mbh, orbit_mode, stellar, tidal, nbody6)
 
     return MergerConfig(
         clusters,
@@ -1428,7 +1508,58 @@ function load_merger_config(path::AbstractString)::MergerConfig
         virial_max_n,
         seed_streams,
         complex_spec,
+        mbh,
     )
+end
+
+"""Fail-fast checks of `[merger.mbh]` against the other sections."""
+function _validate_mbh(
+    b::MBHSpec,
+    orbit_mode::AbstractString,
+    stellar::StellarSpec,
+    tidal::TidalSpec,
+    nbody6::Nbody6ParameterSpec,
+)
+    (isfinite(b.mass_msun) && b.mass_msun > 0) ||
+        _config_error("merger.mbh.mass_msun", "must be finite and > 0 [M☉]; got $(b.mass_msun)")
+    (isfinite(b.softening_pc) && b.softening_pc ≥ 0) || _config_error(
+        "merger.mbh.softening_pc",
+        "must be finite and ≥ 0 [pc]; got $(b.softening_pc)",
+    )
+    b.rt_mode in ("fixed", "stellar") || _config_error(
+        "merger.mbh.rt_mode",
+        "must be \"fixed\" or \"stellar\"; got \"$(b.rt_mode)\"",
+    )
+    (b.rt_mode == "fixed" && !(isfinite(b.r_acc_pc) && b.r_acc_pc > 0)) && _config_error(
+        "merger.mbh.r_acc_pc",
+        "must be finite and > 0 [pc] under rt_mode = \"fixed\"; got $(b.r_acc_pc)",
+    )
+    (b.rt_mode == "stellar" && stellar.kz19 < 3) && _config_error(
+        "merger.mbh.rt_mode",
+        "= \"stellar\" needs stellar radii (merger.stellar.kz19 ≥ 3); got kz19 = $(stellar.kz19)",
+    )
+    haskey(_MBH_IPART, b.partial) || _config_error(
+        "merger.mbh.partial",
+        "must be one of \"off\", \"gamma43\", \"gamma53\"; got \"$(b.partial)\"",
+    )
+    (isfinite(b.beta_full) && b.beta_full > 0) ||
+        _config_error("merger.mbh.beta_full", "must be finite and > 0; got $(b.beta_full)")
+    b.response in ("jeans", "rigid") || _config_error(
+        "merger.mbh.response",
+        "must be \"jeans\" or \"rigid\"; got \"$(b.response)\"",
+    )
+    orbit_mode == "single" || _config_error(
+        "merger.mbh",
+        "needs orbit_mode = \"single\" (the black hole sits at the origin, at the cluster centre); " *
+        "got \"$orbit_mode\"",
+    )
+    tidal.kz14 == 0 || _config_error(
+        "merger.mbh",
+        "needs an isolated cluster (merger.tidal.kz14 = 0); got kz14 = $(tidal.kz14)",
+    )
+    haskey(nbody6.kz, 44) &&
+        _config_error("merger.nbody6.kz", "KZ(44) is set by [merger.mbh]; remove the override")
+    return nothing
 end
 
 """

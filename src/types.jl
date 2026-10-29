@@ -227,6 +227,9 @@ relative calibrated bias above which an estimator is masked.
   `coll.13` and coalescence of `coal.24` with the progenitor cluster of each
   star, the primordial-pair, mixed-origin and generation flags) when either
   file exists
+- `tde`: write `tde_events.csv`, the disruptions, partial disruptions and
+  plunges at the static black hole of a `[merger.mbh]` run
+  ([`read_tde_events`](@ref)), when the engine stdout carries `TDE` lines
 - `binary_survival`: write `binary_survival.csv` (Kaplan–Meier survival of
   the regularised binaries against their age, every end an event, the open
   ends censored) and `binary_incidence.csv` (Aalen–Johansen cumulative
@@ -325,6 +328,7 @@ Base.@kwdef struct PostprocessConfig
     gw_observer_t_obs_yr::Float64 = 4.0
     gw_observer_seed::Int = 1
     collision_catalogue::Bool = true
+    tde::Bool = true
     binary_survival::Bool = false
     imbh::Bool = true
     validity::Bool = true

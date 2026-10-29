@@ -648,6 +648,17 @@ function postprocess(
         end
     end
     lap!("collision_catalogue")
+    # Disruptions and plunges at the static black hole (KZ(44) = 1)
+    if pp.tde && haskey(results, :diagnostics)
+        scaling = extract_scaling(results[:diagnostics])
+        events = read_tde_events(joinpath(sim_dir, pp.stdout_file); tstar_myr = scaling.tscale)
+        if !isempty(events)
+            s = tde_summary(events)
+            @info "Static black hole: $(s.n_full) disruptions, $(s.n_partial) partial, $(s.n_plunge) plunges"
+            results[:tde_events] = events
+        end
+    end
+    lap!("tde")
     # Lifetimes of the regularised binaries: Kaplan–Meier on the age axis and the
     # cumulative incidence of the end classes (escape and the open ends censor)
     if pp.binary_survival && haskey(results, :binary_spans) && haskey(results, :diagnostics)
@@ -1139,6 +1150,9 @@ function _finish_pipeline(
             results[:collision_catalogue],
         )
     end
+    if haskey(results, :tde_events) && !isempty(products_dir)
+        write_tde_events(joinpath(products_dir, "tde_events.csv"), results[:tde_events])
+    end
     if haskey(results, :gw_catalogues) && !isempty(products_dir)
         cat = results[:gw_catalogues]
         write_compact_binary_catalogue(
@@ -1402,6 +1416,7 @@ export RotatingKingProfile, rotation_moments
 export IMBHSpec
 export CollisionRow,
     collision_catalogue, collision_summary, progenitor_of, write_collision_catalogue
+export TDEEvent, read_tde_events, tde_summary, write_tde_events
 export EventTable, SurvivalCurve, CumulativeIncidence, event_table, kaplan_meier, nelson_aalen
 export aalen_johansen, turnbull, logrank_test, cox_snell_residuals, survival_at, confidence_interval
 export write_survival_curve, write_cumulative_incidence

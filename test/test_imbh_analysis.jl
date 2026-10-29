@@ -615,3 +615,49 @@ using StableRNGs: StableRNG
         end
     end
 end
+
+@testset "TDE events at the static black hole" begin
+    nd = Nbody6Dynamics
+    mktempdir() do dir
+        path = joinpath(dir, "out")
+        write(
+            path,
+            """
+             ADJUST:  TIME    1.00000E-02  T[Myr]   0.100E+00
+             TDE PARTIAL T[NB] NAME K* M[M*] R*[R*] Q[PC] RT[PC] BETA E[NB] DM[M*] 8.2855224609E-03         1   0  9.99975E-01  0.00000E+00  1.00007E-02  1.00000E-02  9.999E-01 -5.34077E-03  8.08630E-02
+             TDE        T[NB] NAME K* M[M*] R*[R*] Q[PC] RT[PC] BETA E[NB] MBH[M*] 4.1399511229E-02       142   1  9.99975E-03  1.20000E+00  3.31501E-06  1.00000E-05  3.017E+00 -7.39236E+00  1.00000E+04
+             TDE PLUNGE T[NB] NAME K* M[M*] R*[R*] Q[PC] RT[PC] BETA E[NB] MBH[M*] 6.7252578025E-02       140  13  1.40000E+00  1.00000E-05  4.36891E-10  1.00000E-11  2.289E-02 -5.57977E+00  1.00000E+04
+             TDE        T[NB] NAME K* M[M*] R*[R*] Q[PC] RT[PC] BETA E[NB] MBH[M*] ****************       141   1  1.0E+00
+            """,
+        )
+        ev = @test_logs (:warn, r"1 TDE lines") nd.read_tde_events(path; tstar_myr = 2.0)
+        @test [e.kind for e in ev] == [:partial, :full, :plunge]
+        p, f, g = ev
+        @test p.name == 1 &&
+              p.kstar == 0 &&
+              p.time_nb ≈ 8.2855224609e-3 &&
+              p.time_myr ≈ 2 * p.time_nb
+        @test p.dm_msun ≈ 8.0863e-2 && isnan(p.mbh_msun) && p.beta ≈ 0.9999
+        @test f.name == 142 && f.kstar == 1 && f.radius_rsun ≈ 1.2 && f.q_pc ≈ 3.31501e-6
+        @test f.r_t_pc ≈ 1.0e-5 &&
+              f.e_nb ≈ -7.39236 &&
+              f.dm_msun == f.mass_msun &&
+              f.mbh_msun ≈ 1.0e4
+        @test g.kstar == 13 && g.dm_msun ≈ 1.4
+        s = nd.tde_summary(ev)
+        @test (s.n_full, s.n_partial, s.n_plunge) == (1, 1, 1)
+        @test s.dm_msun ≈ 8.0863e-2 + 9.99975e-3 + 1.4
+        @test s.rate_per_myr ≈ 2 / (2 * (6.7252578025e-2 - 8.2855224609e-3))
+        @test isnan(nd.tde_summary(ev[1:1]).rate_per_myr)
+        @test_throws ErrorException nd.read_tde_events(joinpath(dir, "absent"))
+        csv = joinpath(dir, "tde_events.csv")
+        nd.write_tde_events(csv, ev)
+        lines = readlines(csv)
+        @test lines[1] == "# n_full=1 n_partial=1 n_plunge=1 dm_msun=$(s.dm_msun)"
+        @test split(lines[2], ',') == string.(collect(fieldnames(nd.TDEEvent)))
+        @test length(lines) == 5
+        @test split(lines[3], ',')[1] == "partial" && split(lines[3], ',')[end] == ""
+        nd.write_tde_events(csv, ev[2:2])
+        @test isfile(joinpath(dir, "tde_events#1.csv")) && length(readlines(csv)) == 3
+    end
+end

@@ -50,6 +50,19 @@ entries say so.
 
 ### Added
 
+- `[merger.mbh]`: a static massive black hole at the origin of a single isolated cluster (engine fork
+  v2026.07.13, `KZ(44) = 1` and the `&INMBH` namelist; keys `mass_msun`, `softening_pc`, `rt_mode`,
+  `r_acc_pc`, `partial`, `beta_full`, `response`). It acts on every body as a fixed point mass, on KS pairs as
+  a tidal perturbation, and its potential enters the energy; a single star whose orbit about it reaches the
+  disruption radius within a step is removed at the pericentre passage with its energy booked into `ECOLL`
+  (`TDE`, `TDE PLUNGE` inside 4 G M/c²), or, with `partial = "gamma43" | "gamma53"`, stripped by the fraction
+  of Guillochon & Ramirez-Ruiz (2013) and kept (`TDE PARTIAL`). The disruption radius is fixed (`r_acc_pc`) or
+  stellar, R★ (M/m★)^{1/3} under stellar evolution. The generator rescales the stellar velocities to the
+  isotropic Jeans equilibrium with the black hole by default. On a parabolic test orbit the disruption falls at
+  the analytic pericentre time to 3×10⁻⁵, and the energy check across the removal closes to the integration
+  error of the approach, about 10⁻⁵ of the star's kinetic energy at pericentre.
+- `read_tde_events`, `TDEEvent`, `tde_summary`, `write_tde_events` and the `[postprocess] tde` stage (default
+  on): the events of the engine stdout in `tde_events.csv`.
 - Observer-dependent GW catalogue (`gw_observer_catalogue`, `[postprocess] gw_observer` with
   `gw_observer_distance_kpc`, `gw_observer_t_obs_yr`, `gw_observer_seed`, product
   `gw_observer_catalogue.csv`): the last record of every compact pair at a chosen luminosity distance with its

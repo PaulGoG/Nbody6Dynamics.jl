@@ -1610,3 +1610,108 @@ end
         keys_config("bh_spin = \"uniform\"", 3),
     )
 end
+
+@testset "Static massive black hole [merger.mbh]" begin
+    nd = Nbody6Dynamics
+    function mbh_config(mbh_lines::String; kz19::Int = 0, extra::String = "")
+        text = """
+        [merger]
+        seed = 5
+        n_clusters = 1
+        orbit_mode = "single"
+
+        [merger.cluster1]
+        N = 400
+        rbar = 1.0
+        model = "plummer"
+
+        [merger.stellar]
+        kz19 = $kz19
+        $extra
+        [merger.mbh]
+        $mbh_lines
+        """
+        path = joinpath(mktempdir(), "mbh.toml")
+        write(path, text)
+        return path
+    end
+    kz4150(txt) = parse.(Int, split(match(r"KZ\(41:50\)=([0-9 -]+)", txt).captures[1]))
+    kinetic(r) = 0.5 * sum(r.mass_physical .* vec(sum(abs2, r.vel_physical; dims = 1)))
+    cfg = nd.load_merger_config(mbh_config("mass_msun = 100.0\nr_acc_pc = 1.0e-3"))
+    @test cfg.mbh isa nd.MBHSpec && cfg.mbh.rt_mode == "fixed" && cfg.mbh.response == "jeans"
+    dir = mktempdir()
+    res = nd.generate_merger_ic(cfg; output_dir = dir)
+    inp = read(joinpath(dir, "merger.inp"), String)
+    @test kz4150(inp)[4] == 1
+    @test strip(last(filter(!isempty, split(inp, '\n')))) ==
+          "&INMBH MBH=1.0000000000E+02,EPSPC=0.0000000000E+00,RTMODE=2," *
+          "RACCRPC=1.0000000000E-03,FACC=0.5,BETAF=1,IPART=0 /"
+    rec = nd.TOML.parsefile(joinpath(dir, "merger_ic.toml"))["mbh"]
+    @test rec["mass_msun"] == 100.0 && rec["rt_mode"] == "fixed"
+    @test !isempty(rec["jeans_factors"]) && all(>(1), rec["jeans_factors"])
+    # the Jeans response raises the kinetic energy; the rigid response leaves it
+    rigid = nd.generate_merger_ic(
+        nd.load_merger_config(
+            mbh_config("mass_msun = 100.0\nr_acc_pc = 1.0e-3\nresponse = \"rigid\""),
+        );
+        output_dir = mktempdir(),
+    )
+    @test kinetic(res) > 1.05 * kinetic(rigid)
+    @test isempty(
+        nd.TOML.parsefile(joinpath(rigid.output_dir, "merger_ic.toml"))["mbh"]["jeans_factors"],
+    )
+    # stellar disruption radius and partial disruptions
+    dir2 = mktempdir()
+    nd.generate_merger_ic(
+        nd.load_merger_config(
+            mbh_config(
+                "mass_msun = 1.0e3\nrt_mode = \"stellar\"\npartial = \"gamma53\"";
+                kz19 = 3,
+                extra = "\n[merger.nbody6.kz]\n27 = 3\n",
+            ),
+        );
+        output_dir = dir2,
+    )
+    inp2 = read(joinpath(dir2, "merger.inp"), String)
+    @test occursin("RTMODE=1,", inp2) && occursin("IPART=2 /", inp2)
+    # refusals
+    @test_throws ArgumentError nd.load_merger_config(mbh_config("r_acc_pc = 1.0e-3"))
+    @test_throws ArgumentError nd.load_merger_config(mbh_config("mass_msun = 100.0"))
+    @test_throws ArgumentError nd.load_merger_config(
+        mbh_config("mass_msun = 100.0\nrt_mode = \"stellar\""),
+    )
+    @test_throws ArgumentError nd.load_merger_config(
+        mbh_config("mass_msun = 100.0\nr_acc_pc = 1.0e-3\npartial = \"gamma2\""),
+    )
+    @test_throws ArgumentError nd.load_merger_config(
+        mbh_config("mass_msun = 100.0\nr_acc_pc = 1.0e-3\nresponse = \"virial\""),
+    )
+    @test_throws ArgumentError nd.load_merger_config(
+        mbh_config(
+            "mass_msun = 100.0\nr_acc_pc = 1.0e-3";
+            extra = "\n[merger.nbody6.kz]\n44 = 1\n",
+        ),
+    )
+    @test_throws ArgumentError nd._validate_mbh(
+        cfg.mbh,
+        "kepler",
+        cfg.stellar,
+        cfg.tidal,
+        cfg.nbody6,
+    )
+    @test_throws ArgumentError nd._validate_mbh(
+        cfg.mbh,
+        "single",
+        cfg.stellar,
+        nd.TidalSpec(; kz14 = 1),
+        cfg.nbody6,
+    )
+    # an empty table is no black hole: KZ(44) = 0 and no namelist
+    plain = mktempdir()
+    cfg0 = nd.load_merger_config(mbh_config(""))
+    @test cfg0.mbh === nothing
+    nd.generate_merger_ic(cfg0; output_dir = plain)
+    inp0 = read(joinpath(plain, "merger.inp"), String)
+    @test kz4150(inp0)[4] == 0 && !occursin("INMBH", inp0)
+    @test !haskey(nd.TOML.parsefile(joinpath(plain, "merger_ic.toml")), "mbh")
+end

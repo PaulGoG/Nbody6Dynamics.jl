@@ -477,6 +477,20 @@ The `flag` route needs engine fork v2026.07.11 or later (the package pin) and ta
 
 On both routes the engine excludes the IMBHs from the initial single-star mass and from the Lagrangian radii and writes `mbh.45` every `imbh_output_dt_myr`; from fork v2026.07.11 on each record ends with the body name of its IMBH as a 21st number, which `read_mbh45` returns as `name` (0 for the 20-number records of older builds). A `kz` override of index 24 is refused, and under stellar evolution both routes need `KZ(27) = 3` (`binary_physics = "full"` or `kz = {27 = 3}`) and every IMBH at least 100 M☉. With `escapers = "remove"` an IMBH ejected beyond twice the tidal radius is removed and every later restart aborts (`imbhinit.F`), so segmented runs use `escapers = "keep"`. `spin` cannot be passed to the engine on either route. `merger_ic.toml` records the IMBHs under `[imbh]`: the fields of the first IMBH (body name, cluster, mass and realised mass fraction, ⟨m⟩, σ_c, the modes, the Jeans factors per shell and the written position and velocity), `route`, the `names` and `clusters` of all IMBHs, the same per-IMBH fields for each under the array of tables `bodies`, and `DTBH`. `merger_summary.txt` carries one `IMBH:` line per IMBH after the cluster lines, each ending with its route.
 
+### `[merger.mbh]` — static massive black hole
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `mass_msun` | Float | *required* | Black-hole mass M_BH [M☉]; > 0 |
+| `softening_pc` | Float | `0.0` | Plummer softening of its force [pc]; ≥ 0 (0: a point mass) |
+| `rt_mode` | String | `"fixed"` | `"fixed"`: every star is disrupted at `r_acc_pc`; `"stellar"`: r_t = R★ (M_BH/m★)^{1/3} with the radius of the stellar evolution (`stellar.kz19 ≥ 3`) |
+| `r_acc_pc` | Float | `0.0` | Disruption radius of `"fixed"` [pc]; > 0 there |
+| `partial` | String | `"off"` | `"off"`: full disruption when β = r_t/q ≥ `beta_full`; `"gamma43"`, `"gamma53"`: the stripped fraction of [Guillochon & Ramirez-Ruiz (2013)](https://doi.org/10.1088/0004-637X/767/1/25) for a γ = 4/3 or 5/3 polytrope, full disruption above β = 1.85 or 0.9 and partial disruption down to β = 0.6 or 0.5 |
+| `beta_full` | Float | `1.0` | Penetration threshold of `partial = "off"`; > 0 |
+| `response` | String | `"jeans"` | `"jeans"`: the stellar velocities are rescaled to the isotropic Jeans equilibrium with the black hole, as for a seeded IMBH (above); `"rigid"`: they stay as sampled |
+
+The table places a fixed point mass at the coordinate origin, the centre of a single cluster (`orbit_mode = "single"`, no external field: `tidal.kz14 = 0`); it needs engine fork v2026.07.13 or later. The generator sets `KZ(44) = 1` and writes after the IMBH input the namelist `&INMBH MBH, EPSPC, RTMODE, RACCRPC, FACC, BETAF, IPART /` (`RTMODE` 1 stellar, 2 fixed; `IPART` 0, 1, 2 for `"off"`, `"gamma43"`, `"gamma53"`), and a `kz` override of index 44 is refused. The black hole is not a body: it acts on every star through the irregular force and on the KS pairs as a tidal perturbation, and its potential enters the total energy. A single star whose two-body orbit about it reaches the disruption radius within a step is disrupted at the pericentre passage: its mass leaves the cluster and its energy in the cluster and black-hole potentials is booked into `ECOLL`, and the engine writes a `TDE` line (`TDE PLUNGE` for a pericentre inside 4 G M_BH/c², `TDE PARTIAL` for a partial disruption, which strips the mass and keeps the star). KS pair members and centres of mass are not tested (a star is tested again once its pair has dissolved), and the black hole does not grow. `merger_ic.toml` records the table under `[mbh]` with the Jeans factors per shell. The pipeline writes the events to `tde_events.csv` (postprocess key `tde`, [`read_tde_events`](@ref)).
+
 ### `[merger.complex]` — cluster complexes
 
 With `orbit_mode = "complex"` the generator builds a complex of member clusters from distribution parameters instead of per-cluster tables. Masses in M☉, lengths in pc, speeds in km s⁻¹.

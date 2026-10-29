@@ -399,6 +399,15 @@ write_imbh_pairs
 write_imbh_pair_hardening
 ```
 
+## Static Black Hole: Tidal Disruptions
+
+```@docs
+TDEEvent
+read_tde_events
+tde_summary
+write_tde_events
+```
+
 ## Survival Statistics
 
 ```@docs

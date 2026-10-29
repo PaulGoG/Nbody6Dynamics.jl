@@ -458,6 +458,7 @@ function generate_merger_inp(
     mass_bounds::Tuple{Float64,Float64} = (0.08, 100.0),
     nbin0::Int = 0,
     imbh::Union{Nothing,NamedTuple} = nothing,
+    mbh::Union{Nothing,NamedTuple} = nothing,
 )
     _assert_resolved(nbody6)
     _validate_tidal(tidal)
@@ -490,6 +491,7 @@ function generate_merger_inp(
     # kz24: IMBHINIT overwrites particle N; flag: the listed names are the IMBHs
     imbh_route === :kz24 && (kz[24] = 1)
     imbh_route === :flag && (kz[24] = 3)
+    mbh === nothing || (kz[44] = 1)
     kz[43] = _POST_NEWTONIAN_KZ43[nbody6.post_newtonian]
     if nbody6.binary_physics == "full"
         for (i, v) in _FULL_BINARY_KZ
@@ -686,6 +688,19 @@ function generate_merger_inp(
         if imbh_flag !== nothing
             @printf(io, "%d %.15e\n", length(imbh_flag.names), imbh_flag.dtbh)
             println(io, join(string.(imbh_flag.names), " "))
+        end
+        # --- 11. &INMBH (KZ(44) = 1): static black hole at the origin ---
+        if mbh !== nothing
+            @printf(
+                io,
+                "&INMBH MBH=%.10E,EPSPC=%.10E,RTMODE=%d,RACCRPC=%.10E,FACC=0.5,BETAF=%.6G,IPART=%d /\n",
+                mbh.mass_msun,
+                mbh.softening_pc,
+                mbh.rtmode,
+                mbh.r_acc_pc,
+                mbh.beta_full,
+                mbh.ipart
+            )
         end
 
         # --- No binaries (NBIN0=0) or hierarchical triples ---
@@ -1549,6 +1564,34 @@ function generate_merger_ic(
         )
     end
 
+    # Static black hole at the origin ([merger.mbh]): the stellar velocities
+    # respond to its potential as to a seeded IMBH's (isotropic Jeans rescale)
+    mbh_factors = Float64[]
+    if cfg.mbh !== nothing
+        members_all = collect(Int, 1:size(pos_combined, 2))
+        M_sys = sum(mass_combined)
+        v_mean = [sum(mass_combined .* vel_combined[k, :]) / M_sys for k in 1:3]
+        if cfg.mbh.response == "jeans"
+            mbh_factors = _imbh_jeans_response!(
+                pos_combined,
+                vel_combined,
+                mass_combined,
+                members_all,
+                v_mean,
+                cfg.mbh.mass_msun,
+                zeros(3),
+            )
+        end
+        @info @sprintf(
+            "Static MBH: M = %.4g M☉ (M/M_stars = %.3g), r_t mode %s, partial %s, response %s",
+            cfg.mbh.mass_msun,
+            cfg.mbh.mass_msun / M_sys,
+            cfg.mbh.rt_mode,
+            cfg.mbh.partial,
+            cfg.mbh.response
+        )
+    end
+
     # Expand primordial pairs into bodies: every cluster's pairs first, then
     # the singles (the engine's convention for the first 2·NBIN0 bodies).
     expanded = expand_binaries(
@@ -1765,6 +1808,15 @@ function generate_merger_ic(
         ),
         nbin0 = nbin0,
         imbh = imbh_inp,
+        mbh = cfg.mbh === nothing ? nothing :
+              (
+            mass_msun = cfg.mbh.mass_msun,
+            softening_pc = cfg.mbh.softening_pc,
+            rtmode = cfg.mbh.rt_mode == "stellar" ? 1 : 2,
+            r_acc_pc = cfg.mbh.r_acc_pc,
+            beta_full = cfg.mbh.beta_full,
+            ipart = _MBH_IPART[cfg.mbh.partial],
+        ),
     )
 
     # Summary log
@@ -1808,6 +1860,17 @@ function generate_merger_ic(
         complex_info = complex_info,
         control_info = control_info,
         imbh_record = imbh_record,
+        mbh_record = cfg.mbh === nothing ? nothing :
+                     Dict{String,Any}(
+            "mass_msun" => cfg.mbh.mass_msun,
+            "softening_pc" => cfg.mbh.softening_pc,
+            "rt_mode" => cfg.mbh.rt_mode,
+            "r_acc_pc" => cfg.mbh.r_acc_pc,
+            "partial" => cfg.mbh.partial,
+            "beta_full" => cfg.mbh.beta_full,
+            "response" => cfg.mbh.response,
+            "jeans_factors" => mbh_factors,
+        ),
     )
 
     return MergerICResult(
@@ -1902,6 +1965,7 @@ function _write_merger_ic_metadata(
     complex_info::Union{NamedTuple,Nothing} = nothing,
     control_info::Union{NamedTuple,Nothing} = nothing,
     imbh_record::Union{Nothing,Dict{String,Any}} = nothing,
+    mbh_record::Union{Nothing,Dict{String,Any}} = nothing,
 )
     orbit_table =
         Dict{String,Any}(String(k) => getfield(cfg.orbit, k) for k in fieldnames(OrbitSpec))
@@ -1993,6 +2057,7 @@ function _write_merger_ic_metadata(
         )
     end
     imbh_record === nothing || (d["imbh"] = imbh_record)
+    mbh_record === nothing || (d["mbh"] = mbh_record)
 
     # One table per cluster so spec + post-truncation count are co-located
     for (i, spec) in enumerate(cluster_specs)
