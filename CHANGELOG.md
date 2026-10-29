@@ -13,6 +13,11 @@ entries say so.
   mass, which the record does not carry; the absorbed body is a ghost and its name does not recur, so either
   name continuing marks the remnant. Before, a remnant that took the second name started its next merger at
   generation 1.
+- Engine pin `v2026.07.14` (fork): the work of the post-Newtonian terms is booked as their part of the KS energy
+  integration, so the energy check closes exactly; with `v2026.07.12` and `.13` a compact binary inspiralling under
+  `post_newtonian = "full"` inside a cluster left about 4×10⁻⁴ of its radiated energy in the check and halted the run.
+  The start-up no longer loops when a star far outside an untruncated Plummer sphere finds no admissible neighbour
+  radius.
 - Engine pin `v2026.07.13` (fork): the static massive black hole below (`KZ(44)`).
 - Engine pin `v2026.07.12` (fork): a body at exact rest gets a finite first step (the start-up abort in
   `SORT_TLIST` with a step of 2×10⁻³¹⁴ is gone; the generator's speed floor for a seeded IMBH stays), and the
@@ -48,6 +53,12 @@ entries say so.
   and mean density of the stars inside it; `imbh_pair_hardening` rows add their
   window means and the dimensionless hardening rate `h_dimensionless` (Sesana &
   Khan 2015). The two CSV products gain the columns.
+
+### Fixed
+
+- `plot_merger_ic`: the IMF figure of a configuration with a single stellar mass (equal-mass clusters without a
+  seeded IMBH) failed with zero-width bins and a NaN tick position, which ended the pipeline after a complete run;
+  it now draws one bar on a factor-of-two window.
 
 ### Added
 

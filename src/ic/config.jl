@@ -716,10 +716,11 @@ input manual.
 - `imbh_output_dt_myr`: interval of the engine's IMBH record `mbh.45`
   (`DTBH`) [Myr]; > 0
 - `post_newtonian`: `"off"` (`KZ(43) = 0`) or `"full"` (`KZ(43) = 7`, engine
-  fork ≥ v2026.07.12): the 1PN, 2PN and 2.5PN relative accelerations of
-  Blanchet (2024, DOI 10.1007/s41114-024-00050-z) in every perturbed KS step
-  of a bound pair of two neutron stars or black holes (seeded IMBHs
-  included) with a pericentre compactness `m/(c² q) ≥ 10⁻⁶`; such steps run
+  fork ≥ v2026.07.14, whose booking of the PN work closes the energy check;
+  v2026.07.12 and .13 halt embedded runs): the 1PN, 2PN and 2.5PN relative
+  accelerations of Blanchet (2024, DOI 10.1007/s41114-024-00050-z) in every
+  perturbed KS step of a bound pair of two neutron stars or black holes
+  (seeded IMBHs included) with a pericentre compactness `m/(c² q) ≥ 10⁻⁶`; such steps run
   without slow-down and replace the orbit-averaged Peters decay, which
   unperturbed pairs keep. `"full"` requires the Peters path, `KZ(27) = 3`
   (from `binary_physics = "full"` or a `kz` override), which also holds the

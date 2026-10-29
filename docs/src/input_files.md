@@ -100,9 +100,18 @@ particle number (`gavagnin2016_m2rho025`: two King W₀ = 5 clusters of equal-ma
 four times denser, on an explicit parabolic encounter with pericentre 6 pc). The `*_rotating` variants take the generated circular orbit as rotating-frame
 velocities (`velocity_frame = "rotating"`), the convention under which the published orientation dependence of the
 merger times is recovered; the plain variants keep the inertial-frame default. All set `nnbopt = 40`: with the
-baseline value of 100 the engine's start-up finds no admissible neighbour sphere for the outermost stars of an
-untruncated Plummer sphere and loops until the start-up watchdog fires. The published merger times, mass loss and
-remnant densities are compared outside the package, with the runs.
+baseline value of 100, engine tags before v2026.07.14 find no admissible neighbour sphere for the outermost stars of
+an untruncated Plummer sphere and loop in their start-up until the watchdog fires. The published merger times, mass
+loss and remnant densities are compared outside the package, with the runs.
+
+`verification/imbh/` holds the IMBH validation runs: `v1_plummer{4096,8192}` (Brownian motion of a central IMBH),
+`i0_king8192` (start-up of a seeded IMBH), `i3_king8192_*` and `i3p_plummer8192_{imbh,noimbh}_{fb0,fb01}` (core radius
+with and without an IMBH of 0.014 of the total mass, without and with 10 % primordial binaries, the Plummer set after
+Table 2 of Trenti et al. 2007, DOI 10.1111/j.1365-2966.2006.11189.x) and `i9lite_pair` (two 2048-star King clusters
+with one IMBH each on a Kepler orbit, the IMBH pair binding and hardening). `verification/mbh/tde_plummer4096` places a
+static black hole of 0.1 of the stellar mass at the centre of a 4096-star Plummer sphere with a fixed disruption radius
+of 10⁻³ pc and the γ = 4/3 partial disruptions, and runs 10 Myr (about two minutes on three threads), a smoke test of
+`[merger.mbh]` and the `tde` stage.
 
 ## Sweep configurations
 
@@ -227,7 +236,7 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 | `escapers` | String | `"remove"` | `"remove"` writes `KZ(23) = 2` (escapers beyond twice the tidal radius removed), `"keep"` writes `KZ(23) = 0` (every star integrated with its full phase space) |
 | `imbh_route` | String | `"auto"` | How the seeded IMBHs (`[merger.clusterN.imbh]`) reach the engine: `"kz24"` (`KZ(24) = 1`, one IMBH), `"flag"` (`KZ(24) = 3`, engine fork ≥ v2026.07.11, one IMBH per cluster and 1 to 16 in all; refused without an IMBH) or `"auto"` (`kz24` for one IMBH, `flag` for several); see below |
 | `imbh_output_dt_myr` | Float | `1.0` | Interval of the engine's IMBH record `mbh.45` (`DTBH`) [Myr], converted with the realised `T*`; must be > 0 |
-| `post_newtonian` | String | `"off"` | `"off"` (`KZ(43) = 0`) or `"full"` (`KZ(43) = 7`, engine fork ≥ v2026.07.12): 1PN, 2PN and 2.5PN relative accelerations (Blanchet 2024) in the perturbed KS steps of bound neutron-star and black-hole pairs, seeded IMBHs included, with pericentre compactness m/(c²q) ≥ 10⁻⁶; those steps run without slow-down and replace the orbit-averaged Peters decay, which unperturbed pairs keep; requires `KZ(27) = 3` (`binary_physics = "full"` or `kz` override 27 = 3) |
+| `post_newtonian` | String | `"off"` | `"off"` (`KZ(43) = 0`) or `"full"` (`KZ(43) = 7`, engine fork ≥ v2026.07.14, whose booking of the PN work closes the energy check; with v2026.07.12 and .13 an embedded inspiral halts the run): 1PN, 2PN and 2.5PN relative accelerations (Blanchet 2024) in the perturbed KS steps of bound neutron-star and black-hole pairs, seeded IMBHs included, with pericentre compactness m/(c²q) ≥ 10⁻⁶; those steps run without slow-down and replace the orbit-averaged Peters decay, which unperturbed pairs keep; requires `KZ(27) = 3` (`binary_physics = "full"` or `kz` override 27 = 3) |
 | `preset` | String | `"engine"` | Source of every zero entry below; one of `"engine"`, `"baseline"` (table above; the former name `"campaign"` is read as `"baseline"` with a deprecation warning) |
 | `binary_physics` | String | `"inherited"` | Few-body and binary options of the input; one of `"inherited"`, `"full"` (table below; the former name `"campaign"` is read as `"full"` with a deprecation warning); `"full"` requires `stellar.kz19 ≥ 3` |
 | `qe` | Float | `2.0e-4` | Energy-error tolerance per adjustment interval (`QE`); must be > 0 |
@@ -254,7 +263,7 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 
 Runs with stellar evolution need the relaxed tolerance `qe ≈ 1e-2`: supernova kicks change the energy budget between adjustments, and the default tolerance halts the run.
 
-`binary_physics` selects the few-body and binary options. `"inherited"` keeps the block the generator has always written: no chain and no stable hierarchies (`KZ(15) = 0`), no gravitational-wave decay of compact pairs (`KZ(27) = 0`), no binary event files. `"full"` writes the complete set adopted for the binary programme, with the Level defaults of `&INSSE`, `&INBSE` and `&INCOLL` (zero recoil of GW mergers, `fctorcl = 0.5`); it needs an engine from the fork tag `v2026.07.6` on (the default pin is `v2026.07.13`): the decay of compact KS pairs follows the Peters equations from `v2026.07-campaign.5` on, and earlier builds end the run at the first binary–binary chain (a run-time FORMAT error) and can end a run with an unrestartable dump inside a chain.
+`binary_physics` selects the few-body and binary options. `"inherited"` keeps the block the generator has always written: no chain and no stable hierarchies (`KZ(15) = 0`), no gravitational-wave decay of compact pairs (`KZ(27) = 0`), no binary event files. `"full"` writes the complete set adopted for the binary programme, with the Level defaults of `&INSSE`, `&INBSE` and `&INCOLL` (zero recoil of GW mergers, `fctorcl = 0.5`); it needs an engine from the fork tag `v2026.07.6` on (the default pin is `v2026.07.14`): the decay of compact KS pairs follows the Peters equations from `v2026.07-campaign.5` on, and earlier builds end the run at the first binary–binary chain (a run-time FORMAT error) and can end a run with an unrestartable dump inside a chain.
 
 | `KZ` | `"inherited"` | `"full"` | Effect |
 |---|---|---|---|

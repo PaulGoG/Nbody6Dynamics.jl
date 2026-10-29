@@ -1,0 +1,37 @@
+# Static black hole of 0.1 of the stellar mass at the centre of a Plummer cluster: tidal disruptions from the
+# initially full loss cone, full and partial (Guillochon & Ramirez-Ruiz 2013, γ = 4/3) at a fixed disruption radius.
+[merger]
+seed = 4413
+n_clusters = 1
+orbit_mode = "single"
+
+[merger.cluster1]
+N = 4096
+rbar = 1.0          # half-mass radius [pc]
+profile = { type = "plummer" }
+imf = { type = "equal", particle_mass = 1.0 }   # [M☉]
+
+[merger.mbh]
+mass_msun = 410.0   # black-hole mass [M☉]
+r_acc_pc = 1.0e-3   # disruption radius [pc]
+rt_mode = "fixed"   # one of: "fixed" | "stellar"
+partial = "gamma43" # one of: "off" | "gamma43" | "gamma53"
+response = "jeans"  # one of: "jeans" | "rigid"
+
+[merger.output]
+format = "nbody"
+tcrit_myr = 10.0
+dtadj_myr = 0.5
+deltat_myr = 1.0
+
+[merger.tidal]
+kz14 = 0            # one of: 0 | 1 | 2 | 5 (isolated)
+
+[merger.stellar]
+kz19 = 0            # point masses
+dtplot_myr = 1.0    # inert without stellar evolution; must be ≥ deltat
+
+[merger.nbody6]
+preset = "baseline"  # one of: "engine" | "baseline"
+qe = 0.01
+escapers = "keep"   # one of: "remove" | "keep"
