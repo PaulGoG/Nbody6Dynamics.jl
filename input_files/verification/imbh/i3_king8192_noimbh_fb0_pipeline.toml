@@ -3,7 +3,7 @@
 [install]
 enabled = false
 install_dir = "../../../backend/Nbody6PPGPU-beijing"
-ref = "v2026.07.16"
+ref = "v2026.07.17"
 
 [build]
 configure_flags = ["--enable-mcmodel=large", "--with-par=b1m"]
