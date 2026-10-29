@@ -1645,7 +1645,7 @@ end
     @test kz4150(inp)[4] == 1
     @test strip(last(filter(!isempty, split(inp, '\n')))) ==
           "&INMBH MBH=1.0000000000E+02,EPSPC=0.0000000000E+00,RTMODE=2," *
-          "RACCRPC=1.0000000000E-03,FACC=0.5,BETAF=1,IPART=0 /"
+          "RACCRPC=1.0000000000E-03,FACC=0,BETAF=1,IPART=0 /"
     rec = nd.TOML.parsefile(joinpath(dir, "merger_ic.toml"))["mbh"]
     @test rec["mass_msun"] == 100.0 && rec["rt_mode"] == "fixed"
     @test !isempty(rec["jeans_factors"]) && all(>(1), rec["jeans_factors"])
@@ -1674,6 +1674,19 @@ end
     )
     inp2 = read(joinpath(dir2, "merger.inp"), String)
     @test occursin("RTMODE=1,", inp2) && occursin("IPART=2 /", inp2)
+    # growth by accretion: FACC from accretion_fraction, bounded to [0, 1]
+    dir3 = mktempdir()
+    nd.generate_merger_ic(
+        nd.load_merger_config(
+            mbh_config("mass_msun = 100.0\nr_acc_pc = 1.0e-3\naccretion_fraction = 0.5"),
+        );
+        output_dir = dir3,
+    )
+    @test occursin("FACC=0.5,", read(joinpath(dir3, "merger.inp"), String))
+    @test nd.TOML.parsefile(joinpath(dir3, "merger_ic.toml"))["mbh"]["accretion_fraction"] == 0.5
+    @test_throws ArgumentError nd.load_merger_config(
+        mbh_config("mass_msun = 100.0\nr_acc_pc = 1.0e-3\naccretion_fraction = 1.5"),
+    )
     # refusals
     @test_throws ArgumentError nd.load_merger_config(mbh_config("r_acc_pc = 1.0e-3"))
     @test_throws ArgumentError nd.load_merger_config(mbh_config("mass_msun = 100.0"))

@@ -884,7 +884,8 @@ end
 
 """
     MBHSpec(; mass_msun, softening_pc = 0.0, rt_mode = "fixed", r_acc_pc = 0.0,
-              partial = "off", beta_full = 1.0, response = "jeans")
+              partial = "off", beta_full = 1.0, accretion_fraction = 0.0,
+              response = "jeans")
 
 Static massive black hole at the coordinate origin (`[merger.mbh]`; engine
 fork ≥ v2026.07.13, `KZ(44) = 1` and the `&INMBH` namelist). The black hole
@@ -905,6 +906,9 @@ booked and its mass removed (engine line `TDE`).
   disruption down to 0.6 or 0.5, the star losing the fraction of Guillochon &
   Ramirez-Ruiz 2013, DOI 10.1088/0004-637X/767/1/25)
 - `beta_full`: threshold of `partial = "off"`; > 0
+- `accretion_fraction`: fraction of every disrupted or stripped mass the black
+  hole gains (`FACC`; a plunging star is gained whole when it is > 0;
+  engine fork ≥ v2026.07.17); 0 ≤ value ≤ 1, 0 keeps the mass fixed
 - `response`: `"jeans"` (the stellar velocities rescaled by the isotropic
   Jeans equation with the black hole's potential, as for a seeded IMBH) or
   `"rigid"` (velocities unchanged)
@@ -919,6 +923,7 @@ Base.@kwdef struct MBHSpec
     r_acc_pc::Float64 = 0.0
     partial::String = "off"
     beta_full::Float64 = 1.0
+    accretion_fraction::Float64 = 0.0
     response::String = "jeans"
 end
 
@@ -1545,6 +1550,10 @@ function _validate_mbh(
     )
     (isfinite(b.beta_full) && b.beta_full > 0) ||
         _config_error("merger.mbh.beta_full", "must be finite and > 0; got $(b.beta_full)")
+    (isfinite(b.accretion_fraction) && 0 ≤ b.accretion_fraction ≤ 1) || _config_error(
+        "merger.mbh.accretion_fraction",
+        "must lie in [0, 1]; got $(b.accretion_fraction)",
+    )
     b.response in ("jeans", "rigid") || _config_error(
         "merger.mbh.response",
         "must be \"jeans\" or \"rigid\"; got \"$(b.response)\"",

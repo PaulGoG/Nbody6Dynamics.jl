@@ -388,7 +388,7 @@ _checkpoint_dump_bytes(n::Integer, nnbopt::Integer)::Int =
 """
     generate_merger_inp(path, N_total, rbar, zmbar; nbody6, stellar = StellarSpec(),
                         kz14 = 0, tcrit, dtadj, deltat, nrand, mass_bounds = (0.08, 100.0),
-                        imbh = nothing)
+                        imbh = nothing, mbh = nothing)
 
 Generate an Nbody6++ `.inp` file configured for external particle
 input via `dat.10` in N-body units (`KZ(22) = 2`, the only supported
@@ -427,6 +427,12 @@ position and velocity of these bodies and flags them as IMBHs (type 14).
 
 An IMBH under stellar evolution (`stellar.kz19 ≥ 3`) needs the Peters decay
 of `KZ(27) = 3` on either route; a smaller final `KZ(27)` is refused.
+
+`mbh = (mass_msun, softening_pc, rtmode, r_acc_pc, beta_full, ipart[, facc])`
+places the static black hole of `[merger.mbh]` (engine fork ≥ v2026.07.13):
+`KZ(44) = 1` and, after the IMBH input, the namelist `&INMBH` with `MBH`,
+`EPSPC`, `RTMODE` (1 stellar radii, 2 fixed), `RACCRPC`, `FACC` (`facc`,
+default 0: no growth; fork ≥ v2026.07.17), `BETAF` and `IPART`.
 
 # Key settings
 - `nbody6`: resolved [`Nbody6ParameterSpec`](@ref); obtain it from
@@ -693,11 +699,12 @@ function generate_merger_inp(
         if mbh !== nothing
             @printf(
                 io,
-                "&INMBH MBH=%.10E,EPSPC=%.10E,RTMODE=%d,RACCRPC=%.10E,FACC=0.5,BETAF=%.6G,IPART=%d /\n",
+                "&INMBH MBH=%.10E,EPSPC=%.10E,RTMODE=%d,RACCRPC=%.10E,FACC=%.6G,BETAF=%.6G,IPART=%d /\n",
                 mbh.mass_msun,
                 mbh.softening_pc,
                 mbh.rtmode,
                 mbh.r_acc_pc,
+                hasproperty(mbh, :facc) ? mbh.facc : 0.0,
                 mbh.beta_full,
                 mbh.ipart
             )
@@ -1815,6 +1822,7 @@ function generate_merger_ic(
             rtmode = cfg.mbh.rt_mode == "stellar" ? 1 : 2,
             r_acc_pc = cfg.mbh.r_acc_pc,
             beta_full = cfg.mbh.beta_full,
+            facc = cfg.mbh.accretion_fraction,
             ipart = _MBH_IPART[cfg.mbh.partial],
         ),
     )
@@ -1868,6 +1876,7 @@ function generate_merger_ic(
             "r_acc_pc" => cfg.mbh.r_acc_pc,
             "partial" => cfg.mbh.partial,
             "beta_full" => cfg.mbh.beta_full,
+            "accretion_fraction" => cfg.mbh.accretion_fraction,
             "response" => cfg.mbh.response,
             "jeans_factors" => mbh_factors,
         ),

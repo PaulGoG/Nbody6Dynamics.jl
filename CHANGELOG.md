@@ -79,6 +79,10 @@ entries say so.
   isotropic Jeans equilibrium with the black hole by default. On a parabolic test orbit the disruption falls at
   the analytic pericentre time to 3×10⁻⁵, and the energy check across the removal closes to the integration
   error of the approach, about 10⁻⁵ of the star's kinetic energy at pericentre.
+- `[merger.mbh] accretion_fraction` (engine fork v2026.07.17, `FACC`): the black hole grows by that fraction of every
+  disrupted or stripped mass and by the whole of a plunging star; 0, the default, keeps its mass fixed. With 1 on the
+  4096-star verification run the black-hole mass of every event equals the initial mass plus the accreted masses,
+  and the energy error is unchanged (DETOT −5.6×10⁻⁶).
 - `read_tde_events`, `TDEEvent`, `tde_summary`, `write_tde_events` and the `[postprocess] tde` stage (default
   on): the events of the engine stdout in `tde_events.csv`; `tde_rate_series` (events and mass removed per time
   bin) and `plot_tde_events` (cumulative events by kind and the penetration factor of every event, drawn by the
