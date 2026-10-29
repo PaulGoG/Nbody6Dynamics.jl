@@ -69,6 +69,11 @@ entries say so.
 
 ### Added
 
+- `IMBHState.r_core_out_pc` (column `r_core_out_pc` of `imbh_trajectory.csv`): the Casertano–Hut core radius of the
+  stars without those inside the IMBH's influence radius (stellar mass 2 M• about it). The Bahcall–Wolf cusp there
+  carries the largest densities and sets `r_core_pc`; on the I3 Plummer run with an IMBH of 0.014 of the mass the
+  estimate without it gives r_c/r_h = 0.276 at 5–15 t_rh(0), against 0.27 in Table 2 of Trenti et al. (2007), while
+  the cusp-dominated one gives 0.10.
 - `[merger.mbh]`: a static massive black hole at the origin of a single isolated cluster (engine fork
   v2026.07.13, `KZ(44) = 1` and the `&INMBH` namelist; keys `mass_msun`, `softening_pc`, `rt_mode`,
   `r_acc_pc`, `partial`, `beta_full`, `response`). It acts on every body as a fixed point mass, on KS pairs as

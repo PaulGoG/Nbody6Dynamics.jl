@@ -114,6 +114,21 @@ using StableRNGs: StableRNG
             rtol = 1e-10,
         )
         @test isapprox(s.r_cm_pc, 0.3; atol = 0.05)
+        # A tight cusp of 30 stars about the IMBH pulls the core radius to the cusp; without the stars inside
+        # the influence radius (stellar mass 2 M• about the IMBH) it is the cloud's again
+        cusp = [0.3, 0.0, 0.0] .+ 0.003 .* randn(rng, 3, 30)
+        pos_c = hcat(pos_s, cusp, [0.3, 0.0, 0.0])
+        snap_c = mksnap(
+            0.0,
+            1:(N + 31),
+            vcat(m_s, fill(0.99 / N, 30), 0.01),
+            pos_c,
+            hcat(vel_s, zeros(3, 31)),
+        )
+        s_c = only(nd.imbh_trajectory([snap_c], N + 31))
+        @test s_c.r_core_pc < 0.5 * s.r_core_pc
+        @test isapprox(s_c.r_core_out_pc, s.r_core_pc; rtol = 0.15)
+        @test isfinite(s.r_core_out_pc)
         # KS component: the IMBH in column 1 of a snapshot with one pair
         ks = mksnap(
             0.0,

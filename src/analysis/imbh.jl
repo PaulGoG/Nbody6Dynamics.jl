@@ -111,6 +111,7 @@ stars are every body of the snapshot but the IMBH.
 | `x_cm_pc` | offset from the stellar centre of mass | pc |
 | `r_core_pc` | Casertano–Hut core radius of the stars ([`core_radius`](@ref)) from their sixth-neighbour mass densities among themselves, the IMBH excluded; `NaN` with ≤ 6 stars | pc |
 | `r_half_pc` | half-mass radius of the stars about the density centre | pc |
+| `r_core_out_pc` | the same core radius with the stars inside the IMBH's influence radius (stellar mass 2 M• about it) left out of the sums: the Bahcall–Wolf cusp there carries the largest densities and otherwise sets `r_core_pc` (Trenti et al. 2007, DOI 10.1111/j.1365-2966.2006.11189.x, place the influence radius near 0.2 r_c); `NaN` with ≤ 6 stars | pc |
 | `in_pair` | the IMBH is a KS component (`index ≤ 2 npairs`) | — |
 | `partner_name` | name of its KS partner, 0 otherwise | — |
 """
@@ -128,6 +129,7 @@ Base.@kwdef struct IMBHState
     r_half_pc::Float64
     in_pair::Bool
     partner_name::Int
+    r_core_out_pc::Float64 = NaN
 end
 
 """[`IMBHState`](@ref) of the body in column `i` of `snap`."""
@@ -169,9 +171,14 @@ function _imbh_snapshot_state(snap::Snapshot, i::Int; centre_kwargs...)::IMBHSta
     # Densities of the stars among themselves: the engine's column counts the IMBH
     # among the neighbours and lets the cusp around it dominate the weights
     r_core = NaN
+    r_core_out = NaN
     if length(stars) > _DENSITY_NEIGHBOURS
         ρ = local_density(pos, mass; k = _DENSITY_NEIGHBOURS)
-        sum(ρ) > 0 && (r_core = core_radius(pos, ρ).r_core * L)
+        if sum(ρ) > 0
+            cr = core_radius(pos, ρ)
+            r_core = cr.r_core * L
+            r_core_out = _core_radius_outside(pos, mass, ρ, xb, Float64(snap.mass[i])) * L
+        end
     end
     j = _imbh_partner_index(snap, i)
     return IMBHState(
@@ -188,7 +195,29 @@ function _imbh_snapshot_state(snap::Snapshot, i::Int; centre_kwargs...)::IMBHSta
         r_half,
         j > 0,
         j > 0 ? Int(snap.name[j]) : 0,
+        r_core_out,
     )
+end
+
+"""
+Casertano–Hut core radius (densities `ρ`, NB) of the stars farther from the
+black hole at `xb` than its influence radius, the radius enclosing the stellar
+mass `2 m_bh` about it, about their own density-weighted centre; `NaN` when no
+star lies outside.
+"""
+function _core_radius_outside(pos, mass, ρ, xb, m_bh)
+    d = [
+        sqrt((pos[1, j] - xb[1])^2 + (pos[2, j] - xb[2])^2 + (pos[3, j] - xb[3])^2) for
+        j in eachindex(mass)
+    ]
+    p = sortperm(d)
+    k = findfirst(≥(2m_bh), cumsum(mass[p]))
+    r_infl = k === nothing ? Inf : d[p[k]]
+    out = findall(>(r_infl), d)
+    isempty(out) && return NaN
+    ρo = ρ[out]
+    sum(ρo) > 0 || return NaN
+    return core_radius(pos[:, out], ρo).r_core
 end
 
 """
@@ -1296,6 +1325,7 @@ const _IMBH_TRAJECTORY_HEADER = [
     "r_half_pc",
     "in_pair",
     "partner_name",
+    "r_core_out_pc",
 ]
 
 """Cells of one [`IMBHState`](@ref), the vectors split into components."""
@@ -1313,6 +1343,7 @@ _imbh_state_cells(s::IMBHState) = (
     s.r_half_pc,
     s.in_pair,
     s.partner_name,
+    s.r_core_out_pc,
 )
 
 """
