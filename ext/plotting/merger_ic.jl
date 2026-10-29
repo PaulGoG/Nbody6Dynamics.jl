@@ -254,6 +254,12 @@ All plots use the publication theme and are saved to `vis.output_dir`.
     # ticks from the actual data extents.
     m_min = max(minimum(mass_solar), 1e-3)
     m_max = maximum(mass_solar)
+    # A single mass (equal-mass IMF without a seeded IMBH) gets one bar on a
+    # factor-of-two window instead of zero-width bins.
+    if m_max ≤ m_min * (1 + 1e-9)
+        m_min /= 2
+        m_max *= 2
+    end
     m_edges = 10.0 .^ range(log10(m_min), log10(m_max); length = 40)
     m_centres = sqrt.(m_edges[1:(end - 1)] .* m_edges[2:end])
     dm_log = diff(log10.(m_edges))

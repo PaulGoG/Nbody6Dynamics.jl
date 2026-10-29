@@ -511,6 +511,19 @@ end
     )
         @test isfile(joinpath(plots_dir, stem * ".png"))
     end
+    # A single stellar mass (one equal-mass cluster) still gives the IMF figure
+    cfg_eq = MergerConfig(
+        [ClusterSpec(profile = PlummerProfile(), N = 80, rbar = 1.0, imf = EqualMassIMF(particle_mass = 1.0))],
+        "single",
+        OrbitSpec(),
+        MergerOutputSpec(format = "nbody", output_dir = mktempdir()),
+    )
+    eq_dir = mktempdir()
+    plot_merger_ic(
+        generate_merger_ic(cfg_eq; rng = rng_plot),
+        VisualizationConfig(; format = "png", output_dir = eq_dir),
+    )
+    @test isfile(joinpath(eq_dir, "merger_ic_imf.png"))
 
     # Synthetic two-cluster snapshots: converging COMs, NB units
     function _smoke_snapshot(t, d)
