@@ -64,7 +64,7 @@ entries say so.
 
 - `plot_merger_ic`: the IMF figure of a configuration with a single stellar mass (equal-mass clusters without a
   seeded IMBH) failed with zero-width bins and a NaN tick position, which ended the pipeline after a complete run;
-  it now draws one bar on a factor-of-two window.
+  it now draws one bar on a factor-of-two window, without the Kroupa reference slopes.
 
 ### Added
 
