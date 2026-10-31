@@ -6,6 +6,8 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-31
+
 ### Changed
 
 - The generator warns when a seeded IMBH meets few-body regularisation (`KZ(15) > 0`): in the I3 validation runs
@@ -77,6 +79,12 @@ entries say so.
 
 ### Added
 
+- `input_files/verification/imbh/i3p_plummer8192_imbh_fb0_chain_*.toml` and `_fb01_chain_*.toml`: the I3 IMBH
+  configurations with few-body regularisation (`KZ(15) = 2`, hierarchical mergers, slow-down, chain diagnostics).
+  The KS-only pair of 2026-10-29 failed for one reason: with `KZ(15) = 0` the hard IMBH binary's three-body
+  encounters fall to the Hermite scheme at sub-au separations (one run stalled at its hardening event, the other
+  leaked 7 % of the binary's binding energy per adjustment interval); a restart of either from its last dump with
+  the chain switched on passed the failure point with |DE| ≤ 10⁻⁵.
 - `IMBHState.r_core_out_pc` (column `r_core_out_pc` of `imbh_trajectory.csv`): the Casertano–Hut core radius of the
   stars without those inside the IMBH's influence radius (stellar mass 2 M• about it). The Bahcall–Wolf cusp there
   carries the largest densities and sets `r_core_pc`; on the I3 Plummer run with an IMBH of 0.014 of the mass the
