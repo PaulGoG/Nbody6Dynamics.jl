@@ -6,6 +6,8 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-11-01
+
 ### Changed
 
 - Engine pin `v2026.07.20` (fork): the chain's consistency guard restores the chain ordering and slow-down state with
