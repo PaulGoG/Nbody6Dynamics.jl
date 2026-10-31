@@ -488,6 +488,15 @@ The `flag` route needs engine fork v2026.07.11 or later (the package pin) and ta
 
 On both routes the engine excludes the IMBHs from the initial single-star mass and from the Lagrangian radii and writes `mbh.45` every `imbh_output_dt_myr`; from fork v2026.07.11 on each record ends with the body name of its IMBH as a 21st number, which `read_mbh45` returns as `name` (0 for the 20-number records of older builds). Few-body regularisation with an IMBH (`KZ(15) > 0`, as in `binary_physics = "full"`) is generated with a warning: in the I3 validation runs chains and merged hierarchies holding an IMBH of 0.014 of the cluster mass halted the run on the energy check twice in two runs, and none of the runs without the IMBH did; `kz = {15 = 0}` keeps the IMBH's encounters in KS. A `kz` override of index 24 is refused, and under stellar evolution both routes need `KZ(27) = 3` (`binary_physics = "full"` or `kz = {27 = 3}`) and every IMBH at least 100 M☉. With `escapers = "remove"` an IMBH ejected beyond twice the tidal radius is removed and every later restart aborts (`imbhinit.F`), so segmented runs use `escapers = "keep"`. `spin` cannot be passed to the engine on either route. `merger_ic.toml` records the IMBHs under `[imbh]`: the fields of the first IMBH (body name, cluster, mass and realised mass fraction, ⟨m⟩, σ_c, the modes, the Jeans factors per shell and the written position and velocity), `route`, the `names` and `clusters` of all IMBHs, the same per-IMBH fields for each under the array of tables `bodies`, and `DTBH`. `merger_summary.txt` carries one `IMBH:` line per IMBH after the cluster lines, each ending with its route.
 
+A seeded IMBH needs few-body regularisation. Its binary hardens to sub-au separations, and with `KZ(15) = 0` the
+Hermite scheme integrates its three-body encounters at those separations: of the two KS-only I3 validation runs one
+stalled at a hardening event and the other leaked 7 % of the binary's binding energy per adjustment interval. The
+generator warns on `KZ(15) = 0` with an IMBH; the validated set is `kz = {15 = 2, 18 = 1, 26 = 2}` (triple, quad and
+chain regularisation, hierarchical mergers, slow-down), as in `input_files/verification/imbh/*_chain_*.toml`. The
+engine pin v2026.07.19 carries the chain changes this needs (a lifetime limit per chain membership, a consistency
+guard that terminates a degenerating chain from its last consistent state, the Mardling–Aarseth stability criterion
+where Mardling's 2008 algorithm is outside its mass-ratio validity, and a six-body termination fix).
+
 ### `[merger.mbh]` — static massive black hole
 
 | Key | Type | Default | Description |

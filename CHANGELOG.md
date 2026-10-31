@@ -6,6 +6,10 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- Manual: the IMBH section states the few-body regularisation a seeded IMBH needs and the validated option set.
+
 ## [0.6.1] — 2026-10-31
 
 ### Added
