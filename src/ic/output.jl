@@ -555,7 +555,7 @@ function generate_merger_inp(
     # Without few-body regularisation the Hermite scheme integrates the hard IMBH binary's encounters
     # at sub-au separations: of the two KS-only I3 Plummer runs one stalled at its hardening event and
     # the other leaked 7 % of the binary's binding energy per adjustment interval. The chain holding
-    # an IMBH binary is bounded in lifetime since fork v2026.07.19.
+    # an IMBH binary is bounded in lifetime since fork v2026.07.20.
     (imbh !== nothing && kz[15] == 0) &&
         @warn "a seeded IMBH without few-body regularisation (KZ(15) = 0): the IMBH binary's three-body " *
               "encounters fall to the Hermite scheme (stall or energy leak); kz = {15 = 2} with " *

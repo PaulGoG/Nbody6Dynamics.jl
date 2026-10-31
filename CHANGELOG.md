@@ -6,6 +6,15 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- Engine pin `v2026.07.20` (fork): the chain's consistency guard restores the chain ordering and slow-down state with
+  the state vector (a restore of the vector alone was as inconsistent as the degenerate state it replaced); a deferred
+  chain request is verified by the names of its bodies before it is carried out; for a binary–binary chain with an
+  inert second pair under `KZ(27) ≤ 0` the second pair's c.m. index was reduced twice, after which three unrelated
+  stars were chained under the c.m. of the IMBH pair (both halts of the second-realisation I3 runs on `v2026.07.19`;
+  the replays from their last checkpoints run on with DE ≤ 10⁻⁵).
+
 ### Added
 
 - `restart_simulation(run_dir; kz = Dict(index => value), engine = :backend)`: option overrides written into the
