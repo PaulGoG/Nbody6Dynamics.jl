@@ -559,6 +559,13 @@ The engine saves its state in COMMON dumps: `output/comm.1_<t>` when a run ends 
 restart_simulation("runs/merger_demo_20260907_181355_2b7f"; tcrit_extra = 5.0)
 ```
 
+Two keywords change what the restarted engine does. `kz` writes option overrides into the restart input only, never into the original input; the engine re-reads `&ININPUT` at `KSTART = 2`, so a run can continue with few-body regularisation switched on (`kz = Dict(15 => 2, 18 => 1, 26 => 2)`). `engine = :backend` replaces the run's binary copy by the build of the configured backend: the previous copy is kept as `nbody6++.avx.<commit>` and `BUILD_INFO.toml` is refreshed, so a run halted by an engine defect continues on a newer tag once `install.ref` is bumped and the backend rebuilt. Both are recorded in the segment (`kz_overrides`, `engine`).
+
+```julia
+restart_simulation("runs/merger_demo_20260907_181355_2b7f"; tcrit_extra = 5.0,
+                   kz = Dict(15 => 2, 18 => 1, 26 => 2), engine = :backend)
+```
+
 ### Hardware telemetry
 
 Every run records the exact CPU consumption of the backend process tree from `getrusage(RUSAGE_CHILDREN)` deltas: `cpu_user_s`, `cpu_system_s`, `threads_total` (effective OpenMP threads × MPI ranks), and `cpu_efficiency = (user + system) / (elapsed × threads_total)`, the fraction of the reserved CPU capacity the integration actually used. These land in the `[telemetry]` table of `RUN_INFO.toml`.

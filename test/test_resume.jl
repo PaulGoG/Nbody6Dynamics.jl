@@ -625,6 +625,23 @@ end
     @test rinfo["segments"][end]["dump"] == "comm.1_12.0"
     @test !haskey(rinfo["segments"][end], "discarded")
     @test !isfile(joinpath(kout, "comm.1"))
+    # A second restart with an option override on the backend build. The fake input has
+    # no KZ lines; the run's input copy gains the five the generator writes.
+    kinp = joinpath(kout, rinfo["run"]["input_file"])
+    kz_lines = join(("KZ($(10b + 1):$(10b + 10))=" * join(fill(0, 10), " ") for b in 0:4), "\n")
+    write(kinp, replace(read(kinp, String), "Level='C' /" => kz_lines * "\nLevel='C' /"))
+    withenv("FAKE_CHECKPOINT" => "1", "FAKE_DIE_AT" => nothing) do
+        restart_simulation(killed; tcrit_extra = 2.0, kz = Dict(15 => 2), engine = :backend)
+    end
+    @test info(killed)["segments"][end]["engine"] == "backend"
+    @test info(killed)["segments"][end]["kz_overrides"] == Dict("15" => 2)
+    @test occursin("KZ(11:20)=0 0 0 0 2 0 0 0 0 0", read(joinpath(kout, "restart.inp"), String))
+    binary_copy = basename(engine_path)
+    @test isfile(joinpath(kout, binary_copy))
+    @test any(
+        f -> startswith(f, binary_copy * ".") && occursin(r"^.+\.(previous|[0-9a-f]{7,40})$", f),
+        readdir(kout),
+    )
 
     # 7b. A dump written inside a subsystem (NSUB > 0) is refused before anything moves
     rec(p) = vcat(reinterpret(UInt8, [Int32(length(p))]), p, reinterpret(UInt8, [Int32(length(p))]))
@@ -655,6 +672,58 @@ end
     @test sseg["t_end"] == 3.0
     @test info(stall_run)["run"]["status"] == "stalled"
     @test_throws ArgumentError resume_run(stall_run)
+
+    # 7d. Option overrides in the restart input; the original input is left as it is
+    kz_dir = mktempdir()
+    kz_original = """
+        &INNBODY6
+        KSTART=1,TCOMP=1E+08,TCRTP0=3600,isernb=40,iserreg=40,iserks=0 /
+
+        &ININPUT
+        N=100,NFIX=1,NCRIT=10,NRAND=1,NNBOPT=20,NRUN=1,NCOMM=1,
+        ETAI=0.01,ETAR=0.02,RS0=0.5,DTADJ=1.0,DELTAT=2.0,TCRIT=10.0,QE=1.000E-02,RBAR=1.0,ZMBAR=1.0,
+        KZ(1:10)=1 1 2 0 0 0 3 2 0 0
+        KZ(11:20)=0 0 0 0 0 0 0 0 0 0
+        KZ(21:30)=0 2 0 1 0 1 0 0 0 1
+        KZ(31:40)=0 0 0 0 0 0 0 0 0 0
+        KZ(41:50)=0 0 0 0 0 0 0 0 0 0
+        DTMIN=1.0E-04,RMIN=1.0E-03,ETAU=0.1,ECLOSE=1,GMIN=1.000E-06,GMAX=0.01,SMAX=1,
+        Level='C' /
+
+        &INSSE /
+
+        &INBSE /
+
+        &INCOLL /
+        """
+    kz_orig = joinpath(kz_dir, "orig.inp")
+    kz_out = joinpath(kz_dir, "restart.inp")
+    write(kz_orig, kz_original)
+    Nbody6Dynamics._write_restart_inp(
+        kz_out,
+        kz_orig,
+        3.0;
+        kz = Dict(15 => 2, 18 => 1, 26 => 2, 30 => 2),
+    )
+    kz_text = read(kz_out, String)
+    @test occursin("KSTART=2", kz_text)
+    @test occursin("TCRIT=3.0", kz_text)
+    @test occursin("KZ(11:20)=0 0 0 0 2 0 0 1 0 0", kz_text)
+    @test occursin("KZ(21:30)=0 2 0 1 0 2 0 0 0 2", kz_text)
+    @test occursin("KZ(1:10)=1 1 2 0 0 0 3 2 0 0", kz_text)
+    @test read(kz_orig, String) == kz_original
+    @test_throws ArgumentError Nbody6Dynamics._write_restart_inp(
+        kz_out,
+        kz_orig,
+        3.0;
+        kz = Dict(51 => 1),
+    )
+    @test_throws ArgumentError Nbody6Dynamics._write_restart_inp(
+        kz_out,
+        kz_orig,
+        3.0;
+        kz = Dict(15 => -1),
+    )
 
     # 8. Pipeline: a stop request ends it without a stamp; resume_pipeline finishes it
     @test Nbody6Dynamics._run_status(mktempdir()) == ""

@@ -396,7 +396,8 @@ end
 
 """
     _launch_restart(cfg, run_dir, out_dir, original_inp, dump, tcrit_extra;
-                    t_start, base_dir, tcrtp0 = nothing, discarded = nothing) -> String
+                    t_start, base_dir, tcrtp0 = nothing, discarded = nothing,
+                    kz = nothing, engine = :run) -> String
 
 Launch a restart segment of the run in `run_dir` from the dump `dump` (file
 name in `out_dir`) for `tcrit_extra` N-body time units. The dump is copied to
@@ -406,7 +407,8 @@ not a link, and it is removed when the engine exits, whatever the outcome.
 The restart input `restart.inp` is written from `original_inp`
 ([`_write_restart_inp`](@ref)), an earlier one kept as a `#k` sibling. The
 segment record carries `t_start` and, when given, the record `discarded`
-of [`_discard_after`](@ref). Returns `run_dir`.
+of [`_discard_after`](@ref); `kz` and `engine` are those of
+[`restart_simulation`](@ref). Returns `run_dir`.
 """
 function _launch_restart(
     cfg::Nbody6Config,
@@ -419,21 +421,32 @@ function _launch_restart(
     base_dir::AbstractString,
     tcrtp0::Union{Nothing,Real} = nothing,
     discarded::Union{Nothing,AbstractDict} = nothing,
+    kz = nothing,
+    engine::Symbol = :run,
 )::String
     target = joinpath(out_dir, "comm.1")
     # No backup: the dump stays under its own name.
     cp(joinpath(out_dir, dump), target; force = true)
     restart_inp = joinpath(out_dir, "restart.inp")
     _backup_existing(restart_inp)
-    _write_restart_inp(restart_inp, original_inp, tcrit_extra; tcrtp0 = tcrtp0)
+    _write_restart_inp(restart_inp, original_inp, tcrit_extra; tcrtp0 = tcrtp0, kz = kz)
+    kz_record = kz === nothing ? nothing : Dict{Int,Int}(Int(k) => Int(v) for (k, v) in kz)
     restart =
         discarded === nothing ?
-        (dump = String(dump), tcrit_extra = Float64(tcrit_extra), t_start = Float64(t_start)) :
+        (
+            dump = String(dump),
+            tcrit_extra = Float64(tcrit_extra),
+            t_start = Float64(t_start),
+            kz = kz_record,
+            engine = engine,
+        ) :
         (
             dump = String(dump),
             tcrit_extra = Float64(tcrit_extra),
             t_start = Float64(t_start),
             discarded = discarded,
+            kz = kz_record,
+            engine = engine,
         )
     try
         _execute_simulation(

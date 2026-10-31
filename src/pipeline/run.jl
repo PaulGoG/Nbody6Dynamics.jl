@@ -130,7 +130,7 @@ function _latest_dump(out_dir::AbstractString)::Union{Nothing,String}
 end
 
 """
-    _write_restart_inp(path, original_inp, tcrit_extra; tcrtp0 = nothing)
+    _write_restart_inp(path, original_inp, tcrit_extra; tcrtp0 = nothing, kz = nothing)
 
 Write the restart input for `KSTART = 2` from the original input file: the
 `&INNBODY6` block with `KSTART=2` (and `TCRTP0` replaced when given) and
@@ -140,7 +140,10 @@ engine adds to the saved time (`modify.F`: `TCRIT = TTOT + TCRIT`), then the
 through `READSE`, which without them keeps the Level defaults (and logs an
 invalid namelist for each), so non-default stellar, binary-evolution or
 collision parameters would revert at the restart. `&INDATA` and the later
-namelists are not read on restart and are omitted.
+namelists are not read on restart and are omitted. With `kz`, a
+`Dict(index => value)`, the listed options are replaced in the `KZ(…)` lines
+of the `&ININPUT` block; the engine re-reads that block at `KSTART = 2`
+through `modify.F`, so the options take effect from the dump.
 
 The increment is written with round-trip precision: the engine ends a run at
 the first adjustment beyond `TCRIT − 20 DTMIN`, and four decimals moved the
@@ -151,6 +154,7 @@ function _write_restart_inp(
     original_inp::AbstractString,
     tcrit_extra::Real;
     tcrtp0::Union{Nothing,Real} = nothing,
+    kz::Union{Nothing,AbstractDict{<:Integer,<:Integer}} = nothing,
 )
     tcrit_extra > 0 || throw(ArgumentError("tcrit_extra must be > 0; got $tcrit_extra"))
     text = read(original_inp, String)
@@ -166,6 +170,28 @@ function _write_restart_inp(
         replace(mi.captures[1], r"TCRIT\s*=\s*[0-9.eE+-]+" => "TCRIT=" * repr(Float64(tcrit_extra)))
     occursin("TCRIT=", bi) ||
         error("restart: no TCRIT entry found in the &ININPUT block of $original_inp")
+    if kz !== nothing && !isempty(kz)
+        for (i, v) in kz
+            (1 <= i <= 50 && v >= 0) || throw(
+                ArgumentError(
+                    "restart: KZ($i) = $v is not an option index in 1:50 with a " *
+                    "non-negative value",
+                ),
+            )
+        end
+        for (i, v) in kz
+            b = (i - 1) ÷ 10
+            head = "KZ($(10b + 1):$(10b + 10))="
+            m = match(Regex("\\Q" * head * "\\E([^\\n]*)"), bi)
+            m === nothing && error(
+                "restart: no KZ($(10b + 1):$(10b + 10)) line in the &ININPUT block of " *
+                "$original_inp",
+            )
+            values = String.(split(m.captures[1]))
+            values[(i - 1) % 10 + 1] = string(v)
+            bi = replace(bi, m.match => head * join(values, " "); count = 1)
+        end
+    end
     # Values of these namelists hold no '/', which ends a block.
     se_blocks = String[]
     for name in ("INSSE", "INBSE", "INCOLL")
@@ -186,7 +212,7 @@ end
 
 """
     restart_simulation(run_dir; tcrit_extra, dump = nothing, tcrtp0 = nothing,
-                       base_dir = nothing) -> String
+                       base_dir = nothing, kz = nothing, engine = :run) -> String
 
 Continue a finished or interrupted run from one of the engine's COMMON
 dumps for `tcrit_extra` further N-body time units. The chosen dump
@@ -205,6 +231,18 @@ and stellar-evolution files continue. `RUN_INFO.toml` gains one entry in its
 CSV. The frozen `config.toml` of the run carries absolute paths, so the
 engine tree is found without a `base_dir`; one may still be given to
 override it. Returns `run_dir`.
+
+`kz` holds engine option overrides, `Dict(index => value)`, applied to the
+`&ININPUT` block of the restart input only (the original input file is
+untouched) and recorded in the segment record as `kz_overrides`. `engine`
+selects the binary: `:run` (the default) reuses the copy placed in `output/`
+at the first launch; `:backend` replaces that copy with the build of the
+configured backend (`install.install_dir`), keeps the previous copy as
+`<binary>.<commit>`, named by the `backend_commit` of the previous
+`output/BUILD_INFO.toml` (`previous` when absent), and refreshes
+`output/BUILD_INFO.toml`; it is recorded as `engine` in the segment record.
+Together they continue a run after an engine fix, or with few-body
+regularisation switched on.
 """
 function restart_simulation(
     run_dir::AbstractString;
@@ -212,7 +250,11 @@ function restart_simulation(
     dump::Union{Nothing,AbstractString} = nothing,
     tcrtp0::Union{Nothing,Real} = nothing,
     base_dir::Union{Nothing,AbstractString} = nothing,
+    kz::Union{Nothing,AbstractDict{<:Integer,<:Integer}} = nothing,
+    engine::Symbol = :run,
 )::String
+    engine in (:run, :backend) ||
+        throw(ArgumentError("restart: engine must be :run or :backend; got :$engine"))
     run_dir = abspath(run_dir)
     out_dir = joinpath(run_dir, "output")
     isdir(out_dir) || error("restart: $out_dir does not exist")
@@ -280,6 +322,8 @@ function restart_simulation(
         base_dir = base_dir,
         tcrtp0 = tcrtp0,
         discarded = isempty(discarded["moved"]) ? nothing : discarded,
+        kz = kz,
+        engine = engine,
     )
 end
 
@@ -334,7 +378,19 @@ function _execute_simulation(
 
     # --- Copy binary, build record and input for reproducibility (kept on restart) ---
     local_binary = joinpath(out_dir, basename(binary))
-    if !(is_restart && isfile(local_binary))
+    # `engine = :backend` on restart: the backend build replaces the run's copy.
+    refresh = is_restart && haskey(restart, :engine) && restart.engine == :backend
+    if refresh && isfile(local_binary)
+        out_build_info = joinpath(out_dir, "BUILD_INFO.toml")
+        prev =
+            isfile(out_build_info) ?
+            string(get(TOML.parsefile(out_build_info), "backend_commit", "previous")) : "previous"
+        isempty(prev) && (prev = "previous")
+        mv(local_binary, local_binary * "." * prev; force = true)
+        @info "Engine binary of the run replaced by the backend build; the previous copy is " *
+              "$(basename(local_binary)).$prev"
+    end
+    if !(is_restart && isfile(local_binary)) || refresh
         cp(binary, local_binary; force = true)
         chmod(local_binary, 0o755)
         build_info = joinpath(dirname(binary), "BUILD_INFO.toml")
@@ -412,6 +468,8 @@ function _execute_simulation(
             "input" => basename(input_copy),
             "dump" => is_restart ? restart.dump : "",
             "tcrit_extra" => is_restart ? restart.tcrit_extra : 0.0,
+            "engine" =>
+                (is_restart && haskey(restart, :engine)) ? String(restart.engine) : "run",
             "t_start" => t_start_nb,
             "host" => gethostname(),
             "pid" => script_pid,
@@ -430,6 +488,9 @@ function _execute_simulation(
         restart !== nothing &&
             haskey(restart, :discarded) &&
             (opening["discarded"] = restart.discarded)
+        if is_restart && haskey(restart, :kz) && restart.kz !== nothing
+            opening["kz_overrides"] = Dict{String,Int}(string(k) => v for (k, v) in restart.kz)
+        end
         _open_segment(run_dir, run_id, opening; input_file = basename(input_copy))
         # Known to the exit hook until reaped, so a terminated driver stops it.
         engine_pid = Int32(script_pid)

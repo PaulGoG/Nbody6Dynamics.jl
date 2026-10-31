@@ -6,6 +6,14 @@ entries say so.
 
 ## [Unreleased]
 
+### Added
+
+- `restart_simulation(run_dir; kz = Dict(index => value), engine = :backend)`: option overrides written into the
+  restart input (the engine re-reads `&ININPUT` at `KSTART = 2`) and the run's binary copy replaced by the configured
+  backend's build (the previous copy kept as `<binary>.<commit>`), both recorded in the segment record
+  (`kz_overrides`, `engine`); a run halted by an engine defect, or run without few-body regularisation, continues
+  from its last dump on the fixed tag or with the chain switched on.
+
 ### Changed
 
 - Manual: the IMBH section states the few-body regularisation a seeded IMBH needs and the validated option set.
