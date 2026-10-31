@@ -6,6 +6,25 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- Engine pin `v2026.07.19` (fork), the chain with an IMBH: the three-body stability test falls back to the
+  Mardling & Aarseth (2001) criterion below the mass-ratio validity of Mardling's 2008 algorithm (an IMBH binary with
+  stellar companions, m/M = 0.008, was judged unstable at every call, so its hierarchies never reached the merger
+  path and stayed in the chain); a chain whose integrated energy departs from the energy of its coordinates by more
+  than 1 % is terminated from the state of its last consistent return (the six-body chain of the I3 run degenerated
+  between two returns, 7×10⁻⁴ time units after forming — the energy halts and the stall of the chain-set I3 runs);
+  a chain membership lives at most 200 crossing times, the unit being the longer of the energy crossing time and the
+  free-fall time of the chain's size. Every six-body chain termination placed its members
+  about the origin at rest and wrote the first member's state to another body (the member names and indices
+  shared one array); the names have their own array now. Also: a KS pair diving through the static black hole's tidal range within one
+  period is terminated on the tide (its members were never disrupted before), and the IMBH output no longer reads
+  an undefined index when the IMBH is a KS component without neighbours (SIGSEGV of long IMBH runs). The fresh fb01
+  chain run halted on `v2026.07.18` at 415.2 N-body times exactly as on 2026-10-29; from its last dump the pinned
+  engine turns the halting triple into merged hierarchies and runs on with |DE| ≤ 7×10⁻⁴ per interval.
+- The generator's IMBH warning is reversed: it warns on `KZ(15) = 0` with a seeded IMBH (the Hermite scheme then
+  integrates the IMBH binary's encounters at sub-au separations) and no longer on `KZ(15) > 0`.
+
 ## [0.6.0] — 2026-10-31
 
 ### Changed

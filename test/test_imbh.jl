@@ -10,6 +10,7 @@
 # Julia versions.
 
 using StableRNGs: StableRNG
+using Logging: Logging
 
 @testset "IMBH seeding" begin
     nd = Nbody6Dynamics
@@ -98,11 +99,18 @@ using StableRNGs: StableRNG
         @test_throws ArgumentError nd.load_merger_config(
             imbh_config(; nbody6_lines = "imbh_output_dt_myr = 0"),
         )
-        # few-body regularisation with an IMBH: generated, with a warning
-        @test_logs (:warn, r"few-body regularisation with a seeded IMBH") match_mode = :any nd.generate_merger_ic(
-            nd.load_merger_config(imbh_config(; nbody6_lines = "kz = {15 = 2}"));
+        # an IMBH without few-body regularisation: generated, with a warning; with the chain, none
+        @test_logs (:warn, r"a seeded IMBH without few-body regularisation") match_mode = :any nd.generate_merger_ic(
+            nd.load_merger_config(imbh_config());
             output_dir = mktempdir(),
         )
+        logs, _ = Test.collect_test_logs(; min_level = Logging.Warn) do
+            nd.generate_merger_ic(
+                nd.load_merger_config(imbh_config(; nbody6_lines = "kz = {15 = 2}"));
+                output_dir = mktempdir(),
+            )
+        end
+        @test !any(r -> occursin("few-body regularisation", r.message), logs)
         @test_throws ArgumentError nd.load_merger_config(
             imbh_config(; imbh = "imbh = {mass = 50.0, placement = \"edge\"}"),
         )

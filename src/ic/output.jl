@@ -552,12 +552,14 @@ function generate_merger_inp(
         "an IMBH under stellar evolution needs the Peters decay of KZ(27) = 3 " *
         "(binary_physics = \"full\" or kz = {27 = 3}); got KZ(27) = $(kz[27])",
     )
-    # Chains and merged hierarchies holding the IMBH: two of two I3 Plummer runs with an IMBH of
-    # 0.014 of the mass halted on the energy check (fork v2026.07.11 and .17), none without it
-    (imbh !== nothing && kz[15] > 0) &&
-        @warn "few-body regularisation with a seeded IMBH (KZ(15) = $(kz[15])): chains and merged hierarchies " *
-              "that hold the IMBH can halt the run on the energy check; KZ(15) = 0 (kz = {15 = 0}) keeps its " *
-              "encounters in KS"
+    # Without few-body regularisation the Hermite scheme integrates the hard IMBH binary's encounters
+    # at sub-au separations: of the two KS-only I3 Plummer runs one stalled at its hardening event and
+    # the other leaked 7 % of the binary's binding energy per adjustment interval. The chain holding
+    # an IMBH binary is bounded in lifetime since fork v2026.07.19.
+    (imbh !== nothing && kz[15] == 0) &&
+        @warn "a seeded IMBH without few-body regularisation (KZ(15) = 0): the IMBH binary's three-body " *
+              "encounters fall to the Hermite scheme (stall or energy leak); kz = {15 = 2} with " *
+              "kz = {18 = 1, 26 = 2} is the validated set"
 
     # Build KZ lines: KZ(1:10) = ... etc.
     kz_strs = String[]
