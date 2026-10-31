@@ -187,9 +187,9 @@ function _write_restart_inp(
                 "restart: no KZ($(10b + 1):$(10b + 10)) line in the &ININPUT block of " *
                 "$original_inp",
             )
-            values = String.(split(m.captures[1]))
-            values[(i - 1) % 10 + 1] = string(v)
-            bi = replace(bi, m.match => head * join(values, " "); count = 1)
+            vals = String.(split(something(m.captures[1])))
+            vals[(i - 1) % 10 + 1] = string(v)
+            bi = replace(bi, m.match => head * join(vals, " ")::String; count = 1)
         end
     end
     # Values of these namelists hold no '/', which ends a block.
@@ -379,7 +379,7 @@ function _execute_simulation(
     # --- Copy binary, build record and input for reproducibility (kept on restart) ---
     local_binary = joinpath(out_dir, basename(binary))
     # `engine = :backend` on restart: the backend build replaces the run's copy.
-    refresh = is_restart && haskey(restart, :engine) && restart.engine == :backend
+    refresh = restart !== nothing && haskey(restart, :engine) && restart.engine == :backend
     if refresh && isfile(local_binary)
         out_build_info = joinpath(out_dir, "BUILD_INFO.toml")
         prev =
@@ -469,7 +469,7 @@ function _execute_simulation(
             "dump" => is_restart ? restart.dump : "",
             "tcrit_extra" => is_restart ? restart.tcrit_extra : 0.0,
             "engine" =>
-                (is_restart && haskey(restart, :engine)) ? String(restart.engine) : "run",
+                (restart !== nothing && haskey(restart, :engine)) ? String(restart.engine) : "run",
             "t_start" => t_start_nb,
             "host" => gethostname(),
             "pid" => script_pid,
@@ -488,7 +488,7 @@ function _execute_simulation(
         restart !== nothing &&
             haskey(restart, :discarded) &&
             (opening["discarded"] = restart.discarded)
-        if is_restart && haskey(restart, :kz) && restart.kz !== nothing
+        if restart !== nothing && haskey(restart, :kz) && restart.kz !== nothing
             opening["kz_overrides"] = Dict{String,Int}(string(k) => v for (k, v) in restart.kz)
         end
         _open_segment(run_dir, run_id, opening; input_file = basename(input_copy))
