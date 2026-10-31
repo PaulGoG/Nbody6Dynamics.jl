@@ -6,6 +6,13 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-10-31
+
+### Added
+
+- `input_files/verification/imbh/i3p_plummer8192_imbh_fb0_chain_s2_*.toml` and `_fb01_chain_s2_*.toml`: second
+  realisations (seeds 9311, 9313) of the chain-set I3 IMBH configurations.
+
 ### Changed
 
 - Engine pin `v2026.07.19` (fork), the chain with an IMBH: the three-body stability test falls back to the
