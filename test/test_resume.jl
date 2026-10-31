@@ -58,6 +58,18 @@
     write(joinpath(d, "comm.2_2.0"), dump_bytes()[1:20])
     mk_a = resume(d, so)
     @test mk_a !== nothing
+    # The dump written after an energy halt holds the failed state: passed over, even as the only
+    # reported dump, and the fallback by name does not take it either
+    dh = mktempdir()
+    soh = joinpath(dh, "out1000")
+    halt = "         CALCULATIONS HALTED * * *\n"
+    write(soh, head_a * halt * marker_lines(1.6, "comm.1_1.6", 201))
+    write(joinpath(dh, "comm.2_1.0"), dump_bytes())
+    write(joinpath(dh, "comm.1_1.6"), dump_bytes())
+    mk_h = @test_logs (:warn, r"written by the energy halt") resume(dh, soh)
+    @test mk_h !== nothing && mk_h.file == "comm.2_1.0"
+    rm(joinpath(dh, "comm.2_1.0"))
+    @test (@test_logs (:warn, r"written by the energy halt") resume(dh, soh)) === nothing
     @test mk_a.file == "comm.2_1.5" && mk_a.time_nb == 1.5
     @test mk_a.line_end == sizeof(head_a * first_line(marker_lines(1.5, "comm.2_1.5", 204)))
     write(joinpath(d, "comm.2_2.0"), dump_bytes())

@@ -87,18 +87,27 @@ last marker wrote. A complete dump passed over for an active subsystem is
 named in a warning. When no reported dump qualifies, the latest dump file by
 name ([`_latest_dump`](@ref)) is taken if restartable, with `line_end = -1`:
 such a dump has no stdout line, its time is the rounded one of its name, and
-the stdout capture cannot be cut at it. `nothing` when no restartable dump
-exists.
+the stdout capture cannot be cut at it. A dump reported after a
+`CALCULATIONS HALTED` line ([`_halt_position`](@ref)) is never taken: it
+holds the state that failed the energy check. `nothing` when no restartable
+dump exists.
 """
 function _resume_dump(
     out_dir::AbstractString,
     stdout_path::AbstractString,
 )::Union{Nothing,_DumpMarker}
     markers = _dump_markers(stdout_path)
+    halt_pos = _halt_position(stdout_path)
+    halted = Set{String}(mk.file for mk in markers if halt_pos ≥ 0 && mk.line_end > halt_pos)
     seen = Set{String}()
     for mk in Iterators.reverse(markers)
         mk.file in seen && continue
         push!(seen, mk.file)
+        if mk.file in halted
+            @warn "Dump $(mk.file) (t = $(mk.time_nb)) was written by the energy halt and holds " *
+                  "the state that failed the check; taking an earlier one"
+            continue
+        end
         path = joinpath(out_dir, mk.file)
         _restartable(path) && return mk
         _dump_complete(path) &&
@@ -106,10 +115,31 @@ function _resume_dump(
                   "(NSUB > 0) and cannot start a restart; taking an earlier one"
     end
     name = _latest_dump(out_dir)
-    if name !== nothing && _restartable(joinpath(out_dir, name))
+    if name !== nothing && !(name in halted) && _restartable(joinpath(out_dir, name))
         return (file = name, time_nb = _dump_time(name), line_end = -1)
     end
     return nothing
+end
+
+"""
+    _halt_position(stdout_path) -> Int
+
+Byte position after the last `CALCULATIONS HALTED` line of the stdout
+capture, `-1` when there is none. The dump the engine writes after that
+line holds the state that failed the energy check: a restart from it dies
+at once (SIGFPE on the I3 runs of 2026-10-31), so [`_resume_dump`](@ref)
+passes over every dump reported after it.
+"""
+function _halt_position(stdout_path::AbstractString)::Int
+    isfile(stdout_path) || return -1
+    pos = -1
+    open(stdout_path) do io
+        while !eof(io)
+            line = readline(io)
+            occursin("CALCULATIONS HALTED", line) && (pos = Int(position(io)))
+        end
+    end
+    return pos
 end
 
 """

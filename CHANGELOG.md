@@ -6,6 +6,12 @@ entries say so.
 
 ## [Unreleased]
 
+### Fixed
+
+- `restart_simulation` and `resume_run` never take the dump the engine writes after `CALCULATIONS HALTED` as the
+  default restart dump: it holds the state that failed the energy check, and a restart from it died at once with
+  SIGFPE on the I3 runs of 2026-10-31. The newest checkpoint before the halt is taken instead.
+
 ## [0.6.2] — 2026-11-01
 
 ### Changed
