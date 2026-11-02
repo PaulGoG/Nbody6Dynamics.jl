@@ -6,7 +6,7 @@ authors:
   - family-names: "Gogîță"
     given-names: "Paul-Adrian"
     email: "gogitapaul@yahoo.ro"
-version: 0.6.4
+version: 0.6.5
 date-released: 2026-11-02
 license: MIT
 repository-code: "https://github.com/PaulGoG/Nbody6Dynamics.jl"

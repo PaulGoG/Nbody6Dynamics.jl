@@ -6,6 +6,8 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-11-02
+
 ### Changed
 
 - The flagship showcase case is a triple merger: three King clusters of 25 000 stars at the vertices of an
