@@ -6,6 +6,16 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- Engine pin `v2026.07.21` (fork): the chain's consistency guard rebuilds the position-indexed mass arrays of the
+  ordering it restores (`CHMASS`, the mass block of `SWITCH`); without them `TRANSX` divided one member's momentum by
+  another's mass, and an IMBH restored into a star's former position left the chain at 128 times its speed (the halt
+  of the second fb01 realisation of the I3 set at 3488.2 NB, deterministic on every restart from the 3485.0 dump).
+  The guard's tolerance is 1e-3 of the chain energy (was 1e-2): healthy returns stay within 1e-5, a breakdown grows
+  geometrically, and the restore books the inconsistency of the last accepted return (DE 3e-4 against 1e-2 at the
+  termination of that chain).
+
 ### Fixed
 
 - `restart_simulation` and `resume_run` never take the dump the engine writes after `CALCULATIONS HALTED` as the
