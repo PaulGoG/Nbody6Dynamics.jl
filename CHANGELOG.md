@@ -15,6 +15,10 @@ entries say so.
   The guard's tolerance is 1e-3 of the chain energy (was 1e-2): healthy returns stay within 1e-5, a breakdown grows
   geometrically, and the restore books the inconsistency of the last accepted return (DE 3e-4 against 1e-2 at the
   termination of that chain).
+- Engine pin `v2026.07.22` (fork): a merged hierarchy keeps the original large-perturbation limit of 0.25 in the
+  KS integrator (upstream's 0.1 ran before the merger block, whose own apocentre criterion never applied between
+  0.1 and 0.25); the merger of an IMBH triple with a star bound inside its outer orbit was created and ended 378
+  times within 0.02 N-body units.
 
 ### Fixed
 
