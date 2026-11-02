@@ -6,6 +6,8 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.6.6] — 2026-11-02
+
 ### Changed
 
 - The initial-condition figures (`plot_merger_ic`, the walkthrough page) follow the figure standard of the
