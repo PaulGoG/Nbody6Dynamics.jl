@@ -639,11 +639,6 @@ seed = 5
                 "merger.tidal.kz14",
             ),
             (
-                "tidal_qe",
-                _merger_toml() * "\n[merger.tidal]\nkz14 = 2\ngmg = 1.0e11\nrg0 = 8.5\n",
-                "tidal work",
-            ),
-            (
                 "tidal_gmg",
                 _merger_toml() * "\n[merger.tidal]\nkz14 = 2\nrg0 = 8.5\n",
                 "merger.tidal.gmg",
@@ -687,6 +682,18 @@ seed = 5
         @test_logs (:warn, r"rescales the Kroupa IMF") match_mode = :any load_merger_config(
             warn_path,
         )
+
+        # A tidal field below the tolerance floor loads with a warning (the
+        # floor protects engines built outside the package only)
+        tidal_warn_path = joinpath(TESTDIR, "merger_val_warn_tidal.toml")
+        write(
+            tidal_warn_path,
+            _merger_toml() * "\n[merger.tidal]\nkz14 = 2\ngmg = 1.0e11\nrg0 = 8.5\n",
+        )
+        @test_logs (:warn, r"measures the tidal work") match_mode = :any load_merger_config(
+            tidal_warn_path,
+        )
+        @test load_merger_config(tidal_warn_path).tidal.kz14 == 2
     end
 
     # --- [merger.nbody6] integration parameters and regime guards ---
@@ -956,7 +963,7 @@ dtplot = 2.0
         @test_throws ArgumentError Nbody6Dynamics._validate_tidal(
             TidalSpec(; kz14 = 5, rg = [8.0, 0, 0]),
         )
-        @test_throws ArgumentError Nbody6Dynamics._validate_tidal_tolerance(
+        @test_logs (:warn, r"measures the tidal work") Nbody6Dynamics._validate_tidal_tolerance(
             td2,
             Nbody6ParameterSpec(),
         )

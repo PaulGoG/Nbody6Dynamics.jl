@@ -6,6 +6,18 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- The energy-tolerance floor of tidal configurations (`merger.nbody6.qe ≥ 0.01` with `kz14 > 0`) is a warning rather
+  than a refusal: engines built by this package book the tidal energy in every mode (the amendment for linearised
+  fields, fork v2026.07.23 for the Galactic field), so the usual tolerance applies; the warning names the builds that
+  still need the floor.
+
+### Added
+
+- Gated engine test of the tidal-work bookkeeping: a Plummer sphere of 2048 stars on the solar circle (`kz14 = 5`)
+  must keep its running energy error below 1.2×10⁻⁵ over 2.8 time units (the leak of v2026.07.22 gave 2.6×10⁻⁵).
+
 ## [0.6.4] — 2026-11-02
 
 ### Changed

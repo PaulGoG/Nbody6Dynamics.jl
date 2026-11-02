@@ -271,6 +271,66 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
               0
         _keep(trun, "merger_tidal")
 
+        # 3b. Galactic field (KZ(14) = 5): the tidal work booked per regular step
+        # must leave the energy check at the isolated level. Before fork
+        # v2026.07.23 the force of changed neighbours entered the tidal work and
+        # the running error reached 2.6e-5 over 2.8 time units (record
+        # kz5-2026-11-02); the corrected engine gives 5e-6 with intervals ≤ 3e-6.
+        kpath = joinpath(work, "merger_kz5.toml")
+        write(
+            kpath,
+            """
+            [merger]
+            seed = 9903
+            n_clusters = 1
+            orbit_mode = "single"
+
+            [merger.cluster1]
+            N = 2048
+            rbar = 1.0
+            profile = { type = "plummer" }
+            imf = { type = "kroupa", bodyn = 0.08, body1 = 100.0 }
+
+            [merger.output]
+            format = "nbody"
+            tcrit_myr = 1.25
+            dtadj_myr = 0.215
+            deltat_myr = 0.215
+
+            [merger.tidal]
+            kz14 = 5
+            rg = [8.5, 0.0, 0.0]
+            vg = [0.0, 220.0, 0.0]
+
+            [merger.stellar]
+            kz19 = 0
+
+            [merger.nbody6]
+            preset = "baseline"
+            """,
+        )
+        cfg_k_path = joinpath(work, "kz5.toml")
+        write(cfg_k_path, base_toml(runs_dir, "", "enabled = true\nconfig_file = \"$(kpath)\""))
+        cfg_k = load_config(cfg_k_path)
+        cfg_k = Nbody6Config(
+            InstallConfig(; enabled = false, install_dir = cfg_k.install.install_dir),
+            cfg_k.build,
+            cfg_k.simulation,
+            cfg_k.postprocess,
+            cfg_k.visualization,
+            cfg_k.merger,
+        )
+        kres = run_pipeline(cfg_k; base_dir = base)
+        krun5 = Nbody6Dynamics._find_latest_run(cfg_k, base)
+        @test Nbody6Dynamics.TOML.parsefile(joinpath(krun5, "RUN_INFO.toml"))["segments"][1]["exit_status"] ==
+              0
+        adj = kres[:diagnostics].adjust
+        @test adj[end].time_nb ≥ 2.5
+        @test all(a -> isfinite(a.etide), adj) && any(a -> a.etide != 0, adj)
+        @test maximum(abs(a.de_abs) for a in adj) ≤ 1.0e-5
+        @test abs(adj[end].detot) ≤ 1.2e-5
+        _keep(krun5, "merger_kz5")
+
         # 4. Two-point sweep through the worker processes
         swork = joinpath(work, "sweep")
         mkpath(swork)
