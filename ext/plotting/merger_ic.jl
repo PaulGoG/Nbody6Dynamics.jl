@@ -4,6 +4,15 @@
 # Uses the same publication theme, figure sizing, axis helpers, and output
 # conventions as the main simulation plotting pipeline (ext/plotting/).
 
+"""Fraction of a frame's half-width kept free beyond the mass quantile."""
+const _IC_PAD_FRAC = 0.05
+"""Lowest height-over-width of a projection box (a flat configuration is kept readable)."""
+const _IC_MIN_ASPECT = 0.4
+"""Largest number of stars drawn as velocity arrows."""
+const _IC_ARROWS_MAX = 400
+"""Length of the longest velocity arrow as a fraction of the frame width."""
+const _IC_ARROW_FRAC = 0.12
+
 """
     plot_merger_ic(result::MergerICResult, vis::VisualizationConfig)
 
@@ -35,61 +44,114 @@ All plots use the publication theme and are saved to `vis.output_dir`.
     log_m, cmin, cmax = _log_color_range(mass_solar)
 
     # Marker size — same formula as snapshot plots
-    ms = _marker_size(vis, N)
+    # Particles are not data points: the budget's size for a sparse sample
+    # is capped at the data-marker size, so a few hundred stars stay dots.
+    ms = min(_marker_size(vis, N), _STYLE.marker)
+    density = _density_render(vis, N)
+    # Half of the mass fraction outside the snapshot frames stays outside
+    # these: a sample of a few hundred stars shows every star but a sampler
+    # tail, a large one keeps its halo scale.
+    frac = 1 - (1 - vis.style.density_mass_frac) / 2
 
-    # ── Single-projection plots ──────────────────────────────────
+    # ── Frames ───────────────────────────────────────────────────
+    # The frame of a projection follows the mass, not the outermost star: a
+    # half-width per axis from the mass quantile `density_mass_frac` of the
+    # coordinate's magnitude (the quantile the snapshot figures take on the
+    # square), so a flat configuration gets a wide box instead of empty rows
+    # and an outlier of the sampler does not set the scale. A box never gets
+    # flatter than `_IC_MIN_ASPECT`. The overview shares one frame across its
+    # three panels (common scale); each projection figure takes its own.
+    half = Dict(
+        k => _mass_extent(c, c, mass_solar, frac) for
+        (k, c) in ((:x, x_pc), (:y, y_pc), (:z, z_pc))
+    )
     ic_projections = [
-        (:xy, x_pc, y_pc, L"x \; [\mathrm{pc}]", L"y \; [\mathrm{pc}]"),
-        (:xz, x_pc, z_pc, L"x \; [\mathrm{pc}]", L"z \; [\mathrm{pc}]"),
-        (:yz, y_pc, z_pc, L"y \; [\mathrm{pc}]", L"z \; [\mathrm{pc}]"),
+        (:xy, x_pc, y_pc, :x, :y, L"x \; [\mathrm{pc}]", L"y \; [\mathrm{pc}]"),
+        (:xz, x_pc, z_pc, :x, :z, L"x \; [\mathrm{pc}]", L"z \; [\mathrm{pc}]"),
+        (:yz, y_pc, z_pc, :y, :z, L"y \; [\mathrm{pc}]", L"z \; [\mathrm{pc}]"),
     ]
+    frame_half(hx, hy) =
+        (hx * (1 + _IC_PAD_FRAC), max(hy, _IC_MIN_ASPECT * hx) * (1 + _IC_PAD_FRAC))
 
-    for (proj, px, py, xlab, ylab) in ic_projections
-        label_str = uppercase(string(proj))
-        fig = Figure(; size = _fig_with_colorbar(vis))
-
-        xlo, xhi, ylo, yhi = _square_limits(px, py)
-        xtk = _nice_ticks(xlo, xhi; target_n = 5)
-        ytk = _nice_ticks(ylo, yhi; target_n = 5)
-
-        ax = Axis(
-            fig[1, 1];
-            xlabel = xlab,
-            ylabel = ylab,
-            aspect = DataAspect(),
-            limits = (xlo, xhi, ylo, yhi),
-            xticks = xtk,
-            yticks = ytk,
-            xgridvisible = false,
-            ygridvisible = false,
-        )
-        _annotate!(ax, label_str)
-        sc = scatter!(
+    # One panel: the surface-density map above `density_min_n` particles (the
+    # colour range is the caller's, shared by the panels of a montage), the
+    # mass-coloured scatter otherwise. Returns the scatter plot or `nothing`.
+    function draw_projection!(ax, px, py, hx, hy, lo, hi, marker)
+        if density
+            Σ = _surface_density(px, py, mass_solar, max(hx, hy), vis.style.density_bins)
+            _density_heatmap!(ax, Σ, max(hx, hy), lo, hi)
+            return nothing
+        end
+        return scatter!(
             ax,
             px,
             py;
             color = log_m,
             colormap = :viridis,
             colorrange = (cmin, cmax),
-            markersize = ms,
+            markersize = marker,
             strokewidth = 0,
             rasterize = true,
         )
-        Colorbar(
-            fig[1, 2],
-            sc;
-            label = L"\log_{10}(m \; [\mathrm{M}_\odot])",
-            ticks = _nice_colorbar_ticks(cmin, cmax),
+    end
+    # Colour range of the density maps of a set of projections: `density_decades`
+    # below the highest peak, so the panels of one figure share a scale.
+    function density_range(projs, hx, hy)
+        density || return (0.0, 0.0)
+        peak = maximum(
+            _log_peak(_surface_density(px, py, mass_solar, max(hx, hy), vis.style.density_bins)) for (_, px, py) in projs
         )
-        colgap!(fig.layout, _COLORBAR_COLGAP)
+        return (peak - vis.style.density_decades, peak)
+    end
+    projection_axis(position, xlab, ylab, hx, hy, band; kwargs...) = Axis(
+        position;
+        xlabel = xlab,
+        ylabel = ylab,
+        aspect = DataAspect(),
+        limits = (-hx, hx, -hy, hy + band),
+        xticks = _nice_ticks(-hx, hx; target_n = 5),
+        yticks = _nice_ticks(-hy, hy; target_n = 5),
+        xgridvisible = false,
+        ygridvisible = false,
+        _density_axis_attributes(density)...,
+        kwargs...,
+    )
+    annotate_projection!(ax, text) =
+        density ? _annotate!(ax, text; _DENSITY_ANNOTATION...) : _annotate!(ax, text)
+    mass_colorbar!(position, sc) = Colorbar(
+        position,
+        sc;
+        label = L"\log_{10}(m \; [\mathrm{M}_\odot])",
+        ticks = _nice_colorbar_ticks(cmin, cmax),
+    )
 
+    # ── Single-projection plots ──────────────────────────────────
+    # A data-free band above the data holds the projection label here too.
+    box_w = _figsize_px(vis)[1] - _AXIS_PROTRUSION
+    for (proj, px, py, kx, ky, xlab, ylab) in ic_projections
+        hx, hy = frame_half(half[kx], half[ky])
+        band = _MONTAGE_BAND_FRAC * 2hy
+        lo, hi = density_range(((proj, px, py),), hx, hy)
+        fig = Figure(; size = _fig_with_colorbar(vis))
+        ax = projection_axis(fig[1, 1], xlab, ylab, hx, hy, band)
+        sc = draw_projection!(ax, px, py, hx, hy, lo, hi, ms)
+        annotate_projection!(ax, uppercase(string(proj)))
+        density ? _density_colorbar!(fig[1, 2], lo, hi, true) : mass_colorbar!(fig[1, 2], sc)
+        colgap!(fig.layout, _COLORBAR_COLGAP)
+        # The box has the frame's shape: fix it and let the canvas follow.
+        _fit_canvas_to_boxes!(fig, 1, 1, box_w, (2hy + band) / (2hx))
         _save_fig(vis, "merger_ic_$(proj)", fig)
     end
 
     # ── 3-panel overview ─────────────────────────────────────────
-    # One column wide like every montage: three square panels share the
-    # width minus the shared colorbar column; inner y tick labels are hidden,
-    # so the compact gap applies, and the markers scale with the panel.
+    # One row of three boxes of the same shape on one frame (the largest
+    # horizontal and vertical extents of the three projections) with a
+    # data-free band above the data for the projection label; the inner y
+    # tick labels are hidden, so the compact gap applies, the markers scale
+    # with the box, and one colourbar serves the three panels.
+    hx3, hy3 = frame_half(max(half[:x], half[:y]), max(half[:y], half[:z]))
+    band3 = _MONTAGE_BAND_FRAC * 2hy3
+    panel_aspect = (2hy3 + band3) / (2hx3)
     gap3 = _multipanel_gap(3; inner_ticks = false)
     fig3 = Figure(;
         size = _fig_multipanel(
@@ -97,24 +159,14 @@ All plots use the publication theme and are saved to `vis.output_dir`.
             1,
             3;
             inner_ticks = false,
-            panel_aspect = 1 + _MONTAGE_BAND_FRAC,
+            panel_aspect = panel_aspect,
             extra_width = _COLORBAR_WIDTH,
             extra_height = 2 * _ANNOTATION_FONTSIZE,   # the orbit annotation row
         ),
     )
-    # A colorbar as tall as one small box holds few tick labels
-    cb_ticks = _nice_colorbar_ticks(cmin, cmax; target_n = vis.column == "single" ? 3 : 6)
-    ms3 = max(
-        vis.style.marker_min,
-        ms * _multipanel_scale(vis, 3; inner_ticks = false, extra_width = _COLORBAR_WIDTH),
-    )
-
-    # Global limits across all 3 projections, with a data-free band above the
-    # data for the projection label
-    all_coords = vcat(x_pc, y_pc, z_pc)
-    xlo, xhi, _, _ = _square_limits(all_coords, all_coords)
-    tk = _nice_ticks(xlo, xhi; target_n = 3)
-    yhi_band = xhi + _MONTAGE_BAND_FRAC * (xhi - xlo)
+    box3 = _multipanel_box_width(vis, 3; inner_ticks = false, extra_width = _COLORBAR_WIDTH)
+    ms3 = max(vis.style.marker_min, ms * box3 / _figsize_px(vis)[1])
+    lo3, hi3 = density_range(((proj, px, py) for (proj, px, py, _...) in ic_projections), hx3, hy3)
     # At the single-column preset a y label per panel would leave stamp-sized
     # boxes: the projection labels name both axes, so the first panel carries
     # one shared label and the others none. The double preset labels each.
@@ -129,63 +181,64 @@ All plots use the publication theme and are saved to `vis.output_dir`.
     else
         nothing
     end
-
-    for (col, (proj, px, py, xlab, ylab)) in enumerate(ic_projections)
-        label_str = uppercase(string(proj))
-        # Every panel carries its own ylabel — the y-quantities differ
-        # (Y, Z, Z); only the tick labels are shared/suppressed.
-        ax = Axis(
-            fig3[1, col];
-            xlabel = xlab,
-            ylabel = own_ylabels ? ylab : (col == 1 ? L"y,\; z \; [\mathrm{pc}]" : ""),
-            aspect = DataAspect(),
-            limits = (xlo, xhi, xlo, yhi_band),
-            xticks = tk,
-            yticks = tk,
-            yticklabelsvisible = col == 1,
-            xgridvisible = false,
-            ygridvisible = false,
-        )
-        _annotate!(ax, label_str)
-        sc = scatter!(
-            ax,
-            px,
-            py;
-            color = log_m,
-            colormap = :viridis,
-            colorrange = (cmin, cmax),
-            markersize = ms3,
-            strokewidth = 0,
-            rasterize = true,
-        )
-        col == 3 && Colorbar(
-            fig3[1, 4],
-            sc;
-            label = L"\log_{10}(m \; [\mathrm{M}_\odot])",
-            ticks = cb_ticks,
-        )
-    end
-    # The orbit parameters once, in an annotation row above the panels
+    # The orbit parameters once, in an annotation row above the panels (row 1,
+    # so that the panel row keeps its index for the box sizing below)
     orbit_annot === nothing || Label(
-        fig3[0, 1:3],
+        fig3[1, 1:3],
         orbit_annot;
         tellwidth = false,
         fontsize = _ANNOTATION_FONTSIZE,
         halign = :right,
     )
-
+    sc3 = nothing
+    for (col, (proj, px, py, _, _, xlab, ylab)) in enumerate(ic_projections)
+        ax = projection_axis(
+            fig3[2, col],
+            xlab,
+            own_ylabels ? ylab : (col == 1 ? L"y,\; z \; [\mathrm{pc}]" : ""),
+            hx3,
+            hy3,
+            band3;
+            xticks = _nice_ticks(-hx3, hx3; target_n = 3),
+            yticks = _nice_ticks(-hy3, hy3; target_n = 3),
+            yticklabelsvisible = col == 1,
+        )
+        sc = draw_projection!(ax, px, py, hx3, hy3, lo3, hi3, ms3)
+        sc === nothing || (sc3 = sc)
+        annotate_projection!(ax, uppercase(string(proj)))
+    end
+    if density
+        _density_colorbar!(fig3[2, 4], lo3, hi3, true)
+    else
+        # A colorbar as tall as one small box holds few tick labels
+        Colorbar(
+            fig3[2, 4],
+            sc3;
+            label = L"\log_{10}(m \; [\mathrm{M}_\odot])",
+            ticks = _nice_colorbar_ticks(cmin, cmax; target_n = vis.column == "single" ? 3 : 6),
+        )
+    end
     colgap!(fig3.layout, gap3)
-
+    foreach(c -> colsize!(fig3.layout, c, Fixed(box3)), 1:3)
+    rowsize!(fig3.layout, 2, Fixed(box3 * panel_aspect))
+    resize_to_layout!(fig3)
     _save_fig(vis, "merger_ic_overview", fig3)
 
     # ── Velocity field ───────────────────────────────────────────
-    # No side panel any more (legend sits above the axes) → single-panel size
+    # The xy frame of the overview; a subsample of the stars as arrows whose
+    # longest one spans `_IC_ARROW_FRAC` of the frame, over the stars as faint
+    # dots. The legend sits above the axes, so the single-panel canvas holds.
+    hxv, hyv = frame_half(half[:x], half[:y])
+    bandv = _MONTAGE_BAND_FRAC * 2hyv
     fig_v = Figure(; size = _figsize_px(vis))
     ax_v = Axis(
         fig_v[1, 1];
         xlabel = L"x \; [\mathrm{pc}]",
         ylabel = L"y \; [\mathrm{pc}]",
         aspect = DataAspect(),
+        limits = (-hxv, hxv, -hyv, hyv + bandv),
+        xticks = _nice_ticks(-hxv, hxv; target_n = 5),
+        yticks = _nice_ticks(-hyv, hyv; target_n = 5),
         xgridvisible = false,
         ygridvisible = false,
     )
@@ -199,15 +252,16 @@ All plots use the publication theme and are saved to `vis.output_dir`.
         ax_v,
         x_pc,
         y_pc;
-        color = (:grey70, 0.3),
-        markersize = 0.8,
+        color = (:grey60, 0.5),
+        markersize = max(2.0, 0.25 * ms),
         strokewidth = 0,
         rasterize = true,
     )
 
-    stride = max(1, N ÷ 500)
-    v_max = maximum(sqrt.(vx_kms[1:stride:N] .^ 2 .+ vy_kms[1:stride:N] .^ 2))
-    arrow_scale = 2.0 / max(v_max, 1e-10)
+    stride = max(1, N ÷ _IC_ARROWS_MAX)
+    sample = 1:stride:N
+    v_max = maximum(sqrt.(vx_kms[sample] .^ 2 .+ vy_kms[sample] .^ 2))
+    arrow_scale = _IC_ARROW_FRAC * 2hxv / max(v_max, 1e-10)
 
     # Cluster colours cycle the Okabe–Ito palette; when n_cl is large and a
     # per-cluster legend would overflow the figure, colour by density model
@@ -224,7 +278,7 @@ All plots use the publication theme and are saved to `vis.output_dir`.
         col = per_cluster_legend ? _OKABE_ITO[mod1(ci, length(_OKABE_ITO))] : model_color(model)
         in_cluster = falses(N)
         in_cluster[rng] .= true
-        sub = filter(i -> in_cluster[i], collect(1:stride:N))
+        sub = filter(i -> in_cluster[i], collect(sample))
         arrows!(
             ax_v,
             x_pc[sub],
@@ -233,7 +287,7 @@ All plots use the publication theme and are saved to `vis.output_dir`.
             vy_kms[sub] .* arrow_scale;
             color = col,
             linewidth = _STYLE.envelope,
-            arrowsize = 4,
+            arrowsize = 7,
         )
         if per_cluster_legend
             push!(legend_elems, [PolyElement(color = col)])
@@ -246,6 +300,7 @@ All plots use the publication theme and are saved to `vis.output_dir`.
         end
     end
     length(legend_labels) ≥ 2 && _top_legend!(fig_v, legend_elems, legend_labels)
+    _fit_canvas_to_boxes!(fig_v, 1, 1, box_w, (2hyv + bandv) / (2hxv))
 
     _save_fig(vis, "merger_ic_velocity", fig_v)
 
@@ -384,7 +439,9 @@ All plots use the publication theme and are saved to `vis.output_dir`.
         cy = sum(m_cl .* py_cl) / M_cl
         cz = sum(m_cl .* pz_cl) / M_cl
         r = sqrt.((px_cl .- cx) .^ 2 .+ (py_cl .- cy) .^ 2 .+ (pz_cl .- cz) .^ 2)
-        n_bins = 30
+        # Shells follow the sample: √N bins between 8 and 30 keep the profile
+        # readable for a few hundred stars as for 10⁵
+        n_bins = clamp(round(Int, sqrt(length(r))), 8, 30)
         r_lo = max(minimum(r), 0.01)
         r_hi = maximum(r)
         r_hi > r_lo || continue

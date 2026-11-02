@@ -6,6 +6,16 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- The initial-condition figures (`plot_merger_ic`, the walkthrough page) follow the figure standard of the
+  simulation figures: every projection frame is set by the mass quantile of each coordinate (half of the fraction the
+  snapshot frames leave outside) rather than by the outermost star, so a flat configuration gets a wide box with no
+  empty rows and a sampler tail no longer sets the scale; a data-free band above the data holds the projection
+  label; systems above `density_min_n` particles are drawn as surface-density maps with the snapshot colour scale;
+  particle markers are capped at the data-marker size; the velocity arrows span at most 12 % of the frame over at
+  most 400 stars; the radial profile takes √N shells.
+
 ## [0.6.5] — 2026-11-02
 
 ### Changed
