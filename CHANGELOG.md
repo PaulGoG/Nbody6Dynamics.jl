@@ -6,6 +6,14 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- Engine pin `v2026.07.23` (fork): under `KZ(14) = 3` and `5` the tidal work per regular step no longer carries the
+  force of the neighbours whose list membership changed during the step (the SIMD and GPU corrector took its pre-tide
+  copy of the regular force before the lost-neighbour correction). The energy check of a Plummer sphere on the solar
+  circle drifted by −4e-6 per half time unit with a systematic sign, 1.5 times the booked tidal energy; it is at the
+  level of the isolated control now, with the dynamics unchanged. Closes roadmap item 9.9b.
+
 ## [0.6.3] — 2026-11-02
 
 ### Changed
