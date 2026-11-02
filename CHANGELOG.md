@@ -6,6 +6,8 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.6.4] — 2026-11-02
+
 ### Changed
 
 - Engine pin `v2026.07.23` (fork): under `KZ(14) = 3` and `5` the tidal work per regular step no longer carries the
