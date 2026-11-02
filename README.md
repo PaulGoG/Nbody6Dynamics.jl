@@ -233,7 +233,7 @@ If this package contributes to published work, please cite it through the metada
 @software{Nbody6Dynamics_jl,
   author  = {Gogîță, Paul-Adrian},
   title   = {Nbody6Dynamics.jl},
-  version = {0.6.2},
+  version = {0.6.3},
   year    = {2026},
   url     = {https://github.com/PaulGoG/Nbody6Dynamics.jl},
   license = {MIT}

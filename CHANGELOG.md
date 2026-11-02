@@ -6,6 +6,8 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-11-02
+
 ### Changed
 
 - Engine pin `v2026.07.21` (fork): the chain's consistency guard rebuilds the position-indexed mass arrays of the
