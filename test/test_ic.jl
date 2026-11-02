@@ -591,6 +591,11 @@ seed = 5
             ),
             ("nbody6_qe", _merger_toml() * "\n[merger.nbody6]\nqe = 0.0\n", "merger.nbody6.qe"),
             ("nbody6_kz16", _merger_toml() * "\n[merger.nbody6]\nkz16 = 5\n", "merger.nbody6.kz16"),
+            (
+                "nbody6_iserks",
+                _merger_toml() * "\n[merger.nbody6]\niserks = 1\n",
+                "merger.nbody6.iserks",
+            ),
             ("nbody6_rs0", _merger_toml() * "\n[merger.nbody6]\nrs0 = -0.1\n", "merger.nbody6.rs0"),
             (
                 "nbody6_tcomp",

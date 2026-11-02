@@ -651,8 +651,12 @@ input manual.
   systems); 0–3
 - `tcomp`: run-time limit [s]; > 0
 - `tcrtp0`: termination time [Myr]; > 0
-- `isernb`, `iserreg`, `iserks`: MPI block-size thresholds for serial
-  execution of irregular, regular, and KS blocks; ≥ 0
+- `isernb`, `iserreg`: MPI block-size thresholds for serial execution of
+  the irregular and regular blocks; ≥ 0
+- `iserks`: the same threshold for the KS block; must be `0` (every rank
+  integrates every pair), because the engine's parallel KS branch does not
+  exchange the energy bookings and the stellar states changed inside the KS
+  routines between the ranks
 - `nfix`: multiplier of `DELTAT` for `conf.3` and binary output; ≥ 1
 - `ncrit`: minimum particle number, alternative termination criterion; ≥ 1
 - `nrun`: run identification index; ≥ 1
@@ -2024,10 +2028,16 @@ function _validate_nbody6(p::Nbody6ParameterSpec)
     p.smax > 0 || _config_error("merger.nbody6.smax", "must be > 0; got $(p.smax)")
     p.tcomp > 0 || _config_error("merger.nbody6.tcomp", "must be > 0 [s]; got $(p.tcomp)")
     p.tcrtp0 > 0 || _config_error("merger.nbody6.tcrtp0", "must be > 0 [Myr]; got $(p.tcrtp0)")
-    for k in (:isernb, :iserreg, :iserks)
+    for k in (:isernb, :iserreg)
         getfield(p, k) ≥ 0 ||
             _config_error("merger.nbody6.$k", "must be ≥ 0; got $(getfield(p, k))")
     end
+    p.iserks == 0 || _config_error(
+        "merger.nbody6.iserks",
+        "must be 0; got $(p.iserks): the engine's parallel KS branch (a block of more than iserks pairs " *
+        "on an MPI build) does not exchange the energy bookings and the stellar states changed inside " *
+        "the KS routines between the ranks, so every rank integrates every pair",
+    )
     for k in (:nfix, :ncrit, :nrun, :ncomm)
         getfield(p, k) ≥ 1 ||
             _config_error("merger.nbody6.$k", "must be ≥ 1; got $(getfield(p, k))")

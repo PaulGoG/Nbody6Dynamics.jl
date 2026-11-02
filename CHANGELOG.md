@@ -8,6 +8,9 @@ entries say so.
 
 ### Changed
 
+- `merger.nbody6.iserks` must be `0`: the engine's parallel KS branch of an MPI build (a block of more than `iserks`
+  pairs) does not exchange the energy bookings and the stellar states changed inside the KS routines between the
+  ranks, so every rank integrates every pair, as the shipped inputs have always requested.
 - The energy-tolerance floor of tidal configurations (`merger.nbody6.qe ≥ 0.01` with `kz14 > 0`) is a warning rather
   than a refusal: engines built by this package book the tidal energy in every mode (the amendment for linearised
   fields, fork v2026.07.23 for the Galactic field), so the usual tolerance applies; the warning names the builds that
