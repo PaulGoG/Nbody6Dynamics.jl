@@ -6,21 +6,21 @@
 
 A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations end to end: it clones and builds the Fortran engine, generates initial conditions for single clusters and multi-cluster mergers, launches and supervises the integration (with restart dumps, wall budgets and resumption across queue segments), reads every standard output file, computes the cluster diagnostics and draws the figures. One TOML configuration drives every phase through a single entry point, `run_pipeline`.
 
-![Projected surface density of two merging star clusters: the pair at release, the two cores at 4 Myr and the remnant at 50 Myr](docs/src/assets/merger_evolution.png)
+![Projected surface density of three merging star clusters: the triple at release, the three cores at 4 Myr and the remnant at 50 Myr](docs/src/assets/merger_evolution.png)
 
-*Two King clusters of 25 000 stars each, released 10 pc apart at the apocentre of an orbit of
-eccentricity 0.5, drawn as projected surface mass density: the pair at release, the two cores
-still distinct at 4 Myr, and the remnant with its halo at 50 Myr. The integration took 34 min
-of engine time on the AVX build at eight threads of a laptop (Intel Core Ultra 7 155H); the same
-case ran in 6–8 min on a datacentre or desktop GPU. Initial conditions, integration, analysis and
-figure were all produced by this package; the case is `input_files/showcase/flagship_pipeline.toml`.*
+*Three King clusters of 25 000 stars each, released at the vertices of an equilateral triangle of
+side 10 pc on sub-virial rotating orbits, drawn as projected surface mass density: the triple at
+release, the three cores still distinct inside a common envelope at 4 Myr, and the remnant with its
+halo at 50 Myr. The integration took 55 min of engine time on the AVX build at eight threads of a
+laptop (Intel Core Ultra 7 155H). Initial conditions, integration, analysis and figure were all
+produced by this package; the case is `input_files/showcase/flagship_pipeline.toml`.*
 
 ![Animation of the same merger over 50 Myr](docs/src/assets/merger_evolution.gif)
 
-*The same run animated on fixed axes, one frame per 2 Myr. The cores fall together and merge
-between 6 and 8 Myr; the remnant then relaxes while its halo of loosely bound stars spreads past
-the frame, which holds 99 % of the mass at every epoch. Every run writes animations like this
-one alongside its static figures.*
+*The same run animated on fixed axes, one frame per 2 Myr. The three cores pass through a first
+close configuration at 6 Myr, rebound to 7 pc and coalesce at 14 Myr; the remnant then relaxes while
+its halo of loosely bound stars spreads past the frame, which holds 99 % of the mass at every epoch.
+Every run writes animations like this one alongside its static figures.*
 
 ## Project structure
 

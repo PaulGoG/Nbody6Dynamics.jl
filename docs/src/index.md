@@ -2,11 +2,11 @@
 
 A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations end to end, from the engine build and the initial conditions to the diagnostics and figures.
 
-![Projected surface density of two merging star clusters: the pair at release, the two cores at 4 Myr and the remnant at 50 Myr](assets/merger_evolution.png)
+![Projected surface density of three merging star clusters: the triple at release, the three cores at 4 Myr and the remnant at 50 Myr](assets/merger_evolution.png)
 
-*Two King clusters of 25 000 stars each, released 10 pc apart on an orbit of eccentricity 0.5,
-drawn as projected surface mass density at release, at 4 Myr and at 50 Myr; produced end to end
-by this package.*
+*Three King clusters of 25 000 stars each, released at the vertices of an equilateral triangle of
+side 10 pc on sub-virial rotating orbits, drawn as projected surface mass density at release, at
+4 Myr and at 50 Myr; produced end to end by this package.*
 
 ## Features
 

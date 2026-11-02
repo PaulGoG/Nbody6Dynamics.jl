@@ -8,6 +8,11 @@ entries say so.
 
 ### Changed
 
+- The flagship showcase case is a triple merger: three King clusters of 25 000 stars at the vertices of an
+  equilateral triangle of side 10 pc, each on a sub-virial rotating orbit (virial ratio 0.25 of the three point
+  masses), followed for 50 Myr (`input_files/showcase/flagship_merger.toml`, explicit placement). The README montage
+  and animation come from it; every documentation asset was re-rendered from the five showcase cases run on
+  2026-11-02 at engine pin `v2026.07.23` (`docs/src/assets/PROVENANCE.md`).
 - `merger.nbody6.iserks` must be `0`: the engine's parallel KS branch of an MPI build (a block of more than `iserks`
   pairs) does not exchange the energy bookings and the stellar states changed inside the KS routines between the
   ranks, so every rank integrates every pair, as the shipped inputs have always requested.

@@ -1,9 +1,10 @@
-# Two equal King clusters of 25 000 stars on a wide eccentric orbit, followed for 50 Myr
-
+# Three equal King clusters of 25 000 stars at the vertices of an equilateral triangle of side 10 pc, each on a
+# sub-virial rotating orbit about the common centre (virial ratio 0.25 of the three point masses, the same as a pair
+# released at the apocentre of an orbit of eccentricity 0.5), followed for 50 Myr
 [merger]
 seed = 31
-n_clusters = 2
-orbit_mode = "kepler"
+n_clusters = 3
+orbit_mode = "explicit"
 
 [merger.cluster1]
 model = "king"
@@ -13,19 +14,30 @@ rbar = 2.0          # half-mass radius [pc]
 imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
+position = [0.0, 5.7735, 0.0]      # [pc]
+velocity = [-1.796, 0.0, 0.0]      # [km/s]
 
 [merger.cluster2]
 model = "king"
 N = 25000
 W0 = 6.0
-rbar = 2.0
+rbar = 2.0          # half-mass radius [pc]
 imf = "kroupa"
 body1 = 100.0
 bodyn = 0.08
+position = [-5, -2.8868, 0.0]      # [pc]
+velocity = [0.898, -1.5554, 0.0]      # [km/s]
 
-[merger.orbit]
-apocentre = 10.0    # [pc]
-eccentricity = 0.5
+[merger.cluster3]
+model = "king"
+N = 25000
+W0 = 6.0
+rbar = 2.0          # half-mass radius [pc]
+imf = "kroupa"
+body1 = 100.0
+bodyn = 0.08
+position = [5, -2.8868, 0.0]      # [pc]
+velocity = [0.898, 1.5554, 0.0]      # [km/s]
 
 [merger.output]
 format = "nbody"

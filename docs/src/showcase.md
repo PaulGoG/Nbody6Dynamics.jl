@@ -2,8 +2,9 @@
 
 `input_files/showcase/` holds five cases that take the pipeline from a merger
 configuration to a finished, figured run: four small ones that complete within
-minutes on a workstation, and the 2 × 25 000-star merger over 50 Myr at which
-the package's CUDA path was validated. Each case is a merger TOML with a
+minutes on a workstation, and the 3 × 25 000-star triple merger over 50 Myr of
+the README (its two-cluster predecessor, the pair at which the package's CUDA
+path was validated, is `gpu/merger_50k.toml`). Each case is a merger TOML with a
 matching pipeline TOML (paths relative to the folder), so one invocation runs
 it end to end:
 
@@ -26,29 +27,34 @@ TOMLs use the AVX engine built under `backend/Nbody6PPGPU-beijing`
 | `binary` | 4000 (`W0 = 6`, 1 pc) + 1000 (`W0 = 5`, 0.7 pc), `q ≈ 0.25`, 20 % primordial binaries in both | apocentre 5 pc, `e = 0.7` | 15 Myr | 0.01 | the binary suite (pair counts with the hard/soft split, `a`–`e` diagrams, period distributions) on an unequal pair, and the relaxed tolerance a binary-rich run needs |
 | `tidal` | 2 × 2500 as `equal` | apocentre 6 pc, `e = 0.9`, point-mass galaxy of 10¹¹ M☉ at 8.5 kpc (`KZ(14) = 2`) | 20 Myr | 0.05 | the same encounter inside an external field: escapers removed on the distance criterion, and an engine energy check that measures the tidal work rather than the integration error |
 | `sweep` | 2 × 500, King `W0 = 6`, `r_h = 1` pc | apocentre 5 pc, `e ∈ {0.5, 0.9}`, seeds 2, 3, 4, with an isolated control per point | 20 Myr | 0.01 | a twelve-point grid: comparison figures on common axes, seed ensembles with 68/95 % bands, and each merger against its control |
-| `flagship` | 2 × 25 000, King `W0 = 6`, `r_h = 2` pc, Kroupa 0.08–100 M☉ | apocentre 10 pc, `e = 0.5` | 50 Myr | 0.01 | the merger of the hardware validation: the same configuration as `gpu/merger_50k.toml`, run on every validated host on both engine builds |
+| `flagship` | 3 × 25 000, King `W0 = 6`, `r_h = 2` pc, Kroupa 0.08–100 M☉ | equilateral triangle of side 10 pc, each cluster on a sub-virial rotating orbit about the common centre (virial ratio 0.25 of the three point masses, 1.80 km/s tangential), explicit placement | 50 Myr | 0.01 | the triple merger of the README: a first close configuration at 6 Myr, a rebound to 7 pc, coalescence of all three at 14 Myr, the remnant to 50 Myr |
 
 The infall time from apocentre is half the Kepler period, so the eccentric
 cases coalesce early in the run (`equal` at about 3 Myr) and the sweep's two
 eccentricities separate in time (12 Myr at `e = 0.5` against 8 Myr at
-`e = 0.9`), which is what its eccentricity axis is for.
+`e = 0.9`), which is what its eccentricity axis is for. The triple of the
+flagship is released at the same virial ratio as a pair at apocentre with
+`e = 0.5`; its three pairwise separations fall from 10 pc to 5 pc by 6 Myr,
+rebound to 7 pc at 8 Myr and drop below the half-mass radii together at
+14 Myr, the coalescence epoch the merger tree records.
 
 ## Reference runs
 
-The cases were run on 2026-10-23 on a laptop (Intel Core Ultra 7 155H, four
-OpenMP threads per run and eight for the flagship, the small cases four at a
-time; package commit `063a40a` (plus the source-layout move of the following commit, which changed no code), engine pin `v2026.07.9`). Engine wall
-time is the integration alone; the pipeline adds the initial conditions, the
-readers, the diagnostics and about fifty figures and five animations per run,
-a few minutes at these sizes.
+The cases were run on 2026-11-02 on a laptop (Intel Core Ultra 7 155H, four
+OpenMP threads per run and eight for the flagship, the cases one after another;
+package commit `916fb0a` with the three-cluster flagship configuration of the
+following commit, engine pin `v2026.07.23`). Engine wall time is the
+integration alone; the pipeline adds the initial conditions, the readers, the
+diagnostics and about fifty figures and five animations per run, a few minutes
+at these sizes.
 
 | Case | Run | Bodies after truncation | Engine wall | Final `DETOT` |
 |---|---|---|---|---|
-| `equal` | `merger_showcase_equal_20261023_154447_8ace` | 6894 | 149 s | +2.2×10⁻³ |
-| `binary` | `merger_showcase_binary_20261023_154448_eb6e` | 4212, 703 primordial pairs | 235 s | −2.4×10⁻² |
-| `tidal` | `merger_showcase_tidal_20261023_154446_b65d` | 4301 | 79 s | +4.2×10⁻³ (`ETIDE` −3.3×10⁻³, the tidal work) |
-| `sweep` | `sweep_showcase_20261023_154908` | 737–802 per merger, 995–999 per control | 114–146 s per point, four at a time | ≤ 4.3×10⁻² in magnitude over the eleven finished points; the merger at `e = 0.5`, seed 4 stalled at 15 Myr and was killed |
-| `flagship` | `merger_showcase_flagship_20261023_154446_4dd7` | 39 283 | 2044 s (34 min; AVX build, eight threads) | −1.1×10⁻³ |
+| `equal` | `merger_showcase_equal_20261102_165008_d8ff` | 6894 | 176 s | +4.4×10⁻⁴ |
+| `binary` | `merger_showcase_binary_20261102_165418_b7bf` | 4212, 703 primordial pairs | 212 s | +5.8×10⁻³ |
+| `tidal` | `merger_showcase_tidal_20261102_165852_4a2d` | 4301 | 88 s | +4.2×10⁻³ (`ETIDE` −3.3×10⁻³, the tidal work) |
+| `sweep` | `sweep_showcase_20261102_170236` | 737–802 per merger, 995–999 per control | 106–128 s per point, four at a time; all twelve finished | last interval within ±3×10⁻⁶ for the mergers and ±1.4×10⁻⁵ for the controls |
+| `flagship` | `merger_showcase_flagship_20261102_170948_a01b` | 58 221 | 3328 s (55 min; AVX build, eight threads) | +2.9×10⁻³ |
 
 `DETOT` is the engine's cumulative relative energy change at the end of the
 run; the merger runs evolve stars and form binaries, so it sits well above
@@ -73,7 +79,7 @@ after that the two centres of the single remnant stay within 0.3 pc.*
 
 *`binary`: the regularised pairs at the end of the run in the a–e plane, hard
 and soft by the Heggie criterion at the mean pair mass; the hard fraction
-rose from 66 % to 70 % over the 15 Myr as the soft pairs were disrupted.*
+rose from 66 % to 68 % over the 15 Myr as the soft pairs were disrupted.*
 
 ![Escapers of the tidal case: cumulative escaped mass and escape velocities](assets/showcase_tidal_escapers.png)
 
