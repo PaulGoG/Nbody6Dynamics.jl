@@ -6,8 +6,8 @@ authors:
   - family-names: "Gogîță"
     given-names: "Paul-Adrian"
     email: "gogitapaul@yahoo.ro"
-version: 0.6.6
-date-released: 2026-11-02
+version: 0.7.0
+date-released: 2026-11-03
 license: MIT
 repository-code: "https://github.com/PaulGoG/Nbody6Dynamics.jl"
 abstract: "Julia automation of the lifecycle of Nbody6++GPU star-cluster simulations: backend build, multi-cluster merger initial conditions, run orchestration, post-processing of the engine output, and publication figures."

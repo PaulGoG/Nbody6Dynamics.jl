@@ -6,6 +6,8 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-11-03
+
 ### Added
 
 - Merger epochs (`merger_epochs`, `MergerEpochs`): the contact of two progenitors (Roche-lobe overflow of a
