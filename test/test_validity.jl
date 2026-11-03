@@ -162,14 +162,16 @@ end
     @test th.t_start == 2.0 && th.t_end == 3.0
     @test issorted([x.t_start for x in rec.epochs])
 
-    # The pericentre before coalescence and the coalescence phase
+    # The pericentre before the core coalescence and the coalescence phase up to it
     st = rec.sections["stages"]
     @test st["coalescence_time_nb"] == remn.coalescence_time == 4.0
+    @test st["t_core_nb"] == remn.t_core == 4.0 && st["t_contact_nb"] == remn.t_contact
     @test st["pericentres"] == [2.0]
     pe = only(filter(x -> x.kind === :pericentre, rec.epochs))
     @test pe.t_start < 2.0 < pe.t_end
     cp = only(filter(x -> x.kind === :coalescence_phase, rec.epochs))
     @test cp.t_start ≈ pe.t_start && cp.t_end == 4.0
+    @test cp.detail == "clusters 1–2 until core coalescence"
     @test st["virialised"] in ("reached", "not_reached", "undetermined")
     @test rec.sections["cadence"]["pericentre_resolved"] == "yes"
     @test isnan(st["r10_drift_per_tcr"]) && st["r10_stationary"] == "not_applicable"   # no lagr.7
@@ -248,9 +250,11 @@ end
     csv = write_validity_snapshots(joinpath(dir, "validity_snapshots.csv"), rec)
     lines = readlines(csv)
     header = split(lines[1], ',')
-    @test length(header) == 10 + 3 * length(Nbody6Dynamics.VALIDITY_TRACKED)
+    @test length(header) == 11 + 3 * length(Nbody6Dynamics.VALIDITY_TRACKED)
     @test header[1:3] == ["time_nb", "n_bound", "n_eff"] &&
-          header[11] == "core_radius__r_core_number_bias"
+          header[11] == "core_radius__r_core_number_bias" &&
+          header[end] == "regime"
+    @test [split(l, ',')[end] for l in lines[2:end]] == String.(remn.regime)
     @test length(lines) == 8 && all(l -> length(split(l, ',')) == length(header), lines[2:end])
 
     # Snapshots and integrals that do not correspond
@@ -309,7 +313,7 @@ end
     ints = snapshot_integrals(snaps)
     pp = PostprocessConfig(; msr_n_tracer = 20, msr_n_random = 20)
     remn = remnant_diagnostics(snaps, ranges; settings = pp, bound_sets = [s.bound for s in ints])
-    @test remn.coalescence_time == 3.0
+    @test remn.coalescence_time == 3.0 && remn.t_core == 3.0
     rec = validity_record(
         Dict{Symbol,Any}(:snapshots => snaps, :integrals => ints, :remnant => remn),
         pp;

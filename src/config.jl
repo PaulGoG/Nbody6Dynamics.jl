@@ -473,8 +473,8 @@ end
 The estimator checks of [`_validate`](@ref) for the `[postprocess]` keys
 that set the shrinking-sphere centre, the Lagrangian grid, the radial
 profiles, the local density, the mass segregation, the rotation analysis,
-the shape tensor, the snapshot pair finder, the relaxation times and the
-thresholds of the validity record. Raises
+the shape tensor, the snapshot pair finder, the relaxation times, the
+thresholds of the validity record and those of the merger epochs. Raises
 an `ArgumentError` naming the offending `postprocess.<key>`.
 """
 function _validate_estimators(pp::PostprocessConfig)
@@ -676,6 +676,26 @@ function _validate_estimators(pp::PostprocessConfig)
     pp.validity_bias_tolerance > 0 || _config_error(
         "postprocess.validity_bias_tolerance",
         "must be > 0; got $(pp.validity_bias_tolerance)",
+    )
+    pp.merger_min_members ≥ 2 ||
+        _config_error("postprocess.merger_min_members", "must be ≥ 2; got $(pp.merger_min_members)")
+    (0 < pp.merger_contact_lagrangian < 1) || _config_error(
+        "postprocess.merger_contact_lagrangian",
+        "must satisfy 0 < merger_contact_lagrangian < 1; got $(pp.merger_contact_lagrangian)",
+    )
+    pp.merger_core_delta > 0 ||
+        _config_error("postprocess.merger_core_delta", "must be > 0; got $(pp.merger_core_delta)")
+    pp.merger_core_n ≥ pp.merger_min_members || _config_error(
+        "postprocess.merger_core_n",
+        "must be ≥ merger_min_members = $(pp.merger_min_members); got $(pp.merger_core_n)",
+    )
+    (0 < pp.merger_dissolved_fraction < 1) || _config_error(
+        "postprocess.merger_dissolved_fraction",
+        "must satisfy 0 < merger_dissolved_fraction < 1; got $(pp.merger_dissolved_fraction)",
+    )
+    pp.merger_coalescing_tcr ≥ 0 || _config_error(
+        "postprocess.merger_coalescing_tcr",
+        "must be ≥ 0; got $(pp.merger_coalescing_tcr)",
     )
     return nothing
 end

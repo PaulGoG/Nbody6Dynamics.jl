@@ -168,6 +168,18 @@ stationarity tests, in crossing times; `validity_virial_tolerance` bounds
 per window of a stationary series, and `validity_bias_tolerance` the
 relative calibrated bias above which an estimator is masked.
 
+The merger keys set the epochs of `merger_epochs`:
+`merger_min_members` is the number of members a progenitor needs in the
+global bound set, and in its self-bound subset, to be present at a snapshot;
+`merger_contact_lagrangian` the mass fraction of the self-bound core whose
+Lagrangian radius is compared with the Roche-lobe radius (contact);
+`merger_core_n` and `merger_core_delta` the size of the most-bound core and
+the phase-space threshold `δs` of the core coalescence;
+`merger_dissolved_fraction` the self-bound mass fraction below which a
+progenitor counts as dissolved; `merger_coalescing_tcr` the length of the
+`coalescing` regime after the core coalescence, in crossing times of the
+bound set.
+
 # Fields
 - `angular_momentum`: write `angular_momentum.csv` (angular-momentum budget,
   rotation of the bound set and per initial-mass class, elapsed relaxation times)
@@ -180,6 +192,16 @@ relative calibrated bias above which an estimator is masked.
 - `equipartition_n_min`: stars a mass bin needs to enter the fit; ≥ 2
 - `merger_tree`: write `merger_tree.csv` and `progenitor_budget.csv` for runs with
   initial clusters
+- `merger_min_members`: members a progenitor needs in the global bound set, and in its
+  self-bound subset, to be present for the merger epochs; ≥ 2
+- `merger_contact_lagrangian`: mass fraction of the self-bound core whose Lagrangian
+  radius enters the Roche-lobe contact test; 0 < f < 1
+- `merger_core_delta`: phase-space threshold `δs` of the core coalescence; > 0
+- `merger_core_n`: most-bound members per progenitor core; ≥ `merger_min_members`
+- `merger_dissolved_fraction`: self-bound mass fraction of the initial mass below which a
+  progenitor counts as dissolved; 0 < f < 1
+- `merger_coalescing_tcr`: length of the `coalescing` regime after the core coalescence
+  [crossing times of the bound set]; ≥ 0
 - `binary_spans`: write `binary_spans.csv` from the KS, few-body and GW lines of the
   stdout capture; requires `parse_stdout`
 - `span_n_periods`: largest gap between two KS episodes of a pair that joins them
@@ -301,6 +323,12 @@ Base.@kwdef struct PostprocessConfig
     equipartition_bin_width::Float64 = 0.1
     equipartition_n_min::Int = 50
     merger_tree::Bool = true
+    merger_min_members::Int = 20
+    merger_contact_lagrangian::Float64 = 0.9
+    merger_core_delta::Float64 = 2.0
+    merger_core_n::Int = 200
+    merger_dissolved_fraction::Float64 = 0.1
+    merger_coalescing_tcr::Float64 = 5.0
     binary_spans::Bool = false
     span_n_periods::Float64 = 2.0
     bound_spans::Bool = false

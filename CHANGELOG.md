@@ -6,6 +6,43 @@ entries say so.
 
 ## [Unreleased]
 
+### Added
+
+- Merger epochs (`merger_epochs`, `MergerEpochs`): the contact of two progenitors (Roche-lobe overflow of a
+  self-bound core, Eggleton 1983, DOI 10.1086/160960), the coalescence of their most-bound cores in phase space
+  (`δs < 2`, Han et al. 2018, DOI 10.1093/mnras/stx2792) and the dissolution of a shredded progenitor, as separate
+  detectors (`contact_index`, `core_index`, `dissolution_index`), and the regime of every snapshot, progenitor and
+  pair (`regime_label`: `detached`, `interacting`, `coalescing`, `settled`, `dissolved`, `satellite`). The pipeline
+  writes `merger_epochs.csv` and `pair_separation.csv`; the thresholds are the `[postprocess]` keys
+  `merger_min_members`, `merger_contact_lagrangian`, `merger_core_delta`, `merger_core_n`,
+  `merger_dissolved_fraction` and `merger_coalescing_tcr`, validated on load.
+- `regime` columns in `remnant_diagnostics.csv`, `progenitor_budget.csv` and `validity_snapshots.csv`; `t_contact`
+  and `t_core` in the header of `remnant_diagnostics.csv` and in `[stages]` of `validity.toml`; contact, core
+  coalescence, main progenitor and mass ratio of every join in `merger_tree.csv`.
+
+### Changed
+
+- The remnant quantities of `remnant_diagnostics` (core radii, core density, half-mass radius, rotation, spin
+  alignment, segregation) are `NaN` while the system is `detached` or `interacting`: before the core coalescence they
+  measured the denser progenitor, the orbital motion and the gap between the bodies. `mask = false` restores the
+  evaluation at every snapshot. The spin alignment refers to the orbital angular momentum of the most-bound cores at
+  the core coalescence instead of the initial orbit.
+- `progenitor_budget` evaluates the mixing fields (`aplus2`, the D statistics) only from a progenitor's core
+  coalescence on and measures `r_h` about the remnant centre there; masses, counts and removals are unchanged.
+- The merger tree joins two clusters under the group rule of `coalescence_time` (they share a connected group of
+  the coalescence test from then on) instead of requiring each pair to stay within its own threshold; for a complete
+  merger the last join coincides with the centre coalescence.
+- The pipeline evaluates `coalescence_time` and the epochs once and hands them to the remnant diagnostics, the
+  progenitor budget, the merger tree and the validity record (`coalescence`, `epochs` keywords).
+- Validity record: the pericentres of a pair are searched up to its own core coalescence, each pair with a pericentre
+  gets its `coalescence_phase` window up to that epoch (to its last snapshot when it never coalesces), and the mixing
+  stage starts at the core coalescence.
+
+### Fixed
+
+- Casertano & Hut (1985) is cited with DOI 10.1086/163589; the documentation describes the members of a progenitor
+  in the global bound set and its density centre, and the showcase quotes the coalescence of `equal` at 5 Myr.
+
 ## [0.6.6] — 2026-11-02
 
 ### Changed

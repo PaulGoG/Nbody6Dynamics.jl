@@ -5,7 +5,7 @@
 # Both utilities query a k-d tree built on the stellar positions, so the
 # neighbour searches cost O(n log n) instead of the O(n²) of a direct scan.
 # The local density is the Casertano & Hut (1985) estimator
-# (DOI 10.1086/163485). The binary finder joins bound neighbours greedily in
+# (DOI 10.1086/163589). The binary finder joins bound neighbours greedily in
 # order of their specific orbital energy, one level of node joining after Bate
 # (2009a, DOI 10.1111/j.1365-2966.2008.14106.x) ordered by energy instead of
 # separation, and classifies the pairs by the hardness convention of Heggie
@@ -34,7 +34,7 @@ end
 """
     local_density(pos, mass; k = 6, weighting = :mass) -> Vector{Float64}
 
-Casertano & Hut (1985, DOI 10.1086/163485) density estimate at every
+Casertano & Hut (1985, DOI 10.1086/163589) density estimate at every
 particle of `pos` (3 × n) with masses `mass`, from its `k` nearest
 neighbours found on a k-d tree in O(n log n). With `r_k` the distance to the
 `k`-th neighbour,

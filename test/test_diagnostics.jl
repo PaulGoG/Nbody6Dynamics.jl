@@ -259,10 +259,12 @@ end
     L_orb = Nbody6Dynamics._orbital_angular_momentum(s0, ranges_o)
     @test abs(L_orb[3]) > 0.5 && abs(L_orb[1]) < 1e-6 && abs(L_orb[2]) < 1e-6   # orbit in the x–y plane
 
+    # The estimators on every snapshot (`mask = false`): two bodies at t = 0, one after
     diag = remnant_diagnostics(
         [s0, s1],
         ranges_o;
         settings = PostprocessConfig(; msr_n_tracer = 20, msr_n_random = 20),
+        mask = false,
     )
     @test diag.time == [0.0, 1.0] && diag.time_myr == [0.0, 3.0] && diag.rbar == [2.0, 2.0]
     @test diag.coalescence_time == 1.0 && diag.coalescence_time_myr == 3.0
@@ -275,8 +277,13 @@ end
     @test all(0.9 .< diag.bound_mass_fraction .≤ 1.0)
     @test diag.r_core[1] > diag.r_core[2] > 0           # two separated clusters → one compact remnant
     @test diag.r_half[1] > diag.r_half[2] > 0
-    @test diag.spin_alignment[1] ≈ 1.0 atol = 1e-3       # spin of the pair = orbital L at t = 0
+    # The reference is the orbital angular momentum of the most-bound cores at the core
+    # coalescence (here snapshot 2, cores 0.3 apart: its direction carries the centroid noise of
+    # 200 systems), or of the initial orbit when the cores never coalesce; both lie along z
+    @test diag.regime[2] in (:coalescing, :settled)
+    @test diag.spin_alignment[1] > 0.95                  # spin of the pair = orbital L
     @test diag.spin_alignment[2] > 0.9                   # remnant keeps the orbital sense
+    @test diag.regime[1] === :detached && length(diag.regime) == 2
     @test all(isfinite, diag.lambda_r) && all(isfinite, diag.lambda_peebles)
     @test all(isfinite, diag.lambda_msr) && all(isfinite, diag.segregation_ratio)
     @test isnan(diag.segregation_time)
@@ -284,6 +291,28 @@ end
     @test isfinite(diag.t_rc_min) && isfinite(diag.t_rho_max)
     @test !isempty(diag.profile.radius)
     @test_throws ArgumentError remnant_diagnostics(Snapshot[], ranges_o)
+    # Masked (the default): the remnant quantities only where the system forms one body
+    masked = remnant_diagnostics(
+        [s0, s1],
+        ranges_o;
+        settings = PostprocessConfig(; msr_n_tracer = 20, msr_n_random = 20),
+    )
+    @test masked.regime == diag.regime
+    for k in 1:2
+        one_body = masked.regime[k] in (:coalescing, :settled)
+        @test one_body == isfinite(masked.r_core[k]) == isfinite(masked.lambda_r[k])
+        @test one_body == isfinite(masked.lambda_msr[k])
+    end
+    @test isnan(masked.r_core[1]) && masked.n_bound == diag.n_bound
+    # Without coalescence the reference is the initial orbit: alignment 1 at t = 0
+    far_diag = remnant_diagnostics(
+        [s0, s0],
+        ranges_o;
+        settings = PostprocessConfig(; msr_n_tracer = 20, msr_n_random = 20),
+        mask = false,
+    )
+    @test far_diag.spin_alignment[1] ≈ 1.0 atol = 1e-3
+    @test isnan(far_diag.t_core) && all(==(:detached), far_diag.regime)
 
     # A seeded IMBH (name 601, 5 % of the mass, at rest at the centre) stays in the bound set
     # but leaves the stellar estimators; the densities are those of the stars among themselves
@@ -309,7 +338,9 @@ end
     @test length(lines) == 4
     @test startswith(lines[1], "# coalescence_time_nb=1.0 coalescence_time_myr=3.0")
     @test lines[2] ==
-          "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio,r_core_number,rho_core,lambda_r_floor,lambda_peebles_floor,lambda_median,gamma_msr,gamma_msr_err,v_peak,r_peak,n_pairs_snapshot,n_hard_pairs,hardness_max,kt,f_max"
+          "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio,r_core_number,rho_core,lambda_r_floor,lambda_peebles_floor,lambda_median,gamma_msr,gamma_msr_err,v_peak,r_peak,n_pairs_snapshot,n_hard_pairs,hardness_max,kt,f_max,regime"
+    @test occursin(" t_contact_nb=", lines[1]) && occursin(" t_core_nb=", lines[1])
+    @test split(lines[3], ",")[end] == "detached"
     @test startswith(lines[4], "1,3,2,")
 
     vis_r = VisualizationConfig(; format = "png", column = "single", output_dir = mktempdir())

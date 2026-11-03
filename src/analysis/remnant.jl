@@ -60,6 +60,15 @@ coalesce within the snapshots. `separation` and `threshold` are
 `n_pairs × n_t` in the pair order `(1, 2), (1, 3), …, (2, 3), …`, `NaN`
 where a cluster of the pair is absent. One bound-set evaluation per snapshot
 unless `bound_sets` is given.
+
+This is the centre coalescence. The merger epochs (`merger_epochs`:
+contact, core coalescence, dissolution) refine it, and the pipeline evaluates
+it once and passes the result to `merger_epochs`,
+[`merger_tree`](@ref) (whose joins follow the same group rule) and
+[`remnant_diagnostics`](@ref). Once the secondary is shredded its stars spread
+over the remnant and its density centre falls onto the remnant centre, so the
+test cannot separate a disrupted secondary from a core trapped at the centre;
+the core coalescence of `core_index` can.
 """
 function coalescence_time(
     snaps::Vector{Snapshot},
@@ -203,7 +212,7 @@ const _DENSITY_NEIGHBOURS = 6
 """
     _local_density(pos, mass; k = _DENSITY_NEIGHBOURS, weighting = :mass) -> Vector{Float64}
 
-Casertano & Hut (1985, doi:10.1086/163485) density estimate at every
+Casertano & Hut (1985, doi:10.1086/163589) density estimate at every
 particle: the mass of its `k − 1` nearest neighbours divided by the volume
 of the sphere reaching the `k`-th (`weighting = :mass`), or the number
 density `(k − 1) / (4π/3 r_k³)` (`weighting = :number`, the proxy behind
@@ -988,7 +997,9 @@ Diagnostics of the bound remnant of the whole system at every snapshot
 - `lambda_r`, `lambda_peebles`: rotation parameters ([`rotation_analysis`](@ref))
 - `spin_axis`: unit spin vectors, `3 × n_t`
 - `spin_alignment`: cosine of the angle between the spin axis and the
-  orbital angular momentum of the initial clusters at the first snapshot
+  orbital angular momentum of the most-bound cores at the core coalescence
+  (`l_orb` of `MergerEpochs`); of the initial clusters at the first
+  snapshot when the cores never coalesce
 - `lambda_msr`, `lambda_msr_err`, `segregation_ratio`: mass segregation of
   the tracer class, headline values ([`mass_segregation`](@ref))
 - `coalescence_time`, `coalescence_time_myr`: first snapshot from which all
@@ -1023,11 +1034,29 @@ Diagnostics of the bound remnant of the whole system at every snapshot
   the per-cluster density centres and the coalescence threshold of
   [`coalescence_time`](@ref) (`NaN` where a cluster is absent); empty with
   fewer than two clusters
+- `regime`: regime of the system at every snapshot (`MergerEpochs`)
+- `t_contact`, `t_contact_myr`: first contact of two progenitors; `NaN` if never
+- `t_core`, `t_core_myr`: core coalescence of the system, from which the
+  progenitors form one remnant; `NaN` if never
 
-The last four pairs of times are the core-collapse markers: the first hard
-binaries (Tanikawa, Hut & Makino 2012, doi:10.1016/j.newast.2011.09.001;
-Fujii & Portegies Zwart 2014) and the structural
-extrema of `core_collapse_markers` (running mean over five snapshots).
+The core-collapse markers are the first hard binaries (Tanikawa, Hut & Makino
+2012, doi:10.1016/j.newast.2011.09.001; Fujii & Portegies Zwart 2014) and the
+structural extrema of `core_collapse_markers` (running mean over five
+snapshots).
+
+The remnant quantities (`r_core`, `r_core_number`, `rho_core`, `r_half`, the
+rotation fields `lambda_r`, `lambda_peebles`, their floors, `v_peak`,
+`r_peak`, `spin_axis`, `spin_alignment`, and the segregation fields
+`lambda_msr`, `lambda_msr_err`, `segregation_ratio`, `lambda_median`,
+`gamma_msr`, `gamma_msr_err`) are `NaN` while the system is `detached` or
+`interacting`: before the core coalescence the bound set holds several
+bodies, its core radius measures the denser progenitor, its rotation the
+orbital motion and its segregation the gap between them (Guszejnov et al.
+2022, DOI 10.1093/mnras/stac2063). In the `coalescing` regime they describe
+a remnant out of equilibrium, from `settled` on an equilibrium remnant. The
+counts, bound fraction and hardness series cover every snapshot; the
+segregation time and the structural core-collapse markers follow from the
+masked series.
 """
 struct RemnantDiagnostics
     time::Vector{Float64}
@@ -1075,6 +1104,11 @@ struct RemnantDiagnostics
     coalescence_pairs::Vector{Tuple{Int,Int}}
     coalescence_separation::Matrix{Float64}
     coalescence_threshold::Matrix{Float64}
+    regime::Vector{Symbol}
+    t_contact::Float64
+    t_contact_myr::Float64
+    t_core::Float64
+    t_core_myr::Float64
 end
 
 """Λ_MSR level (minus its error) above which the remnant counts as mass-segregated."""
@@ -1083,7 +1117,9 @@ const _MSR_THRESHOLD = 2.0
 """
     remnant_diagnostics(snaps, cluster_ranges; settings = PostprocessConfig(),
                         bound_sets = nothing, max_passes = 100,
-                        min_members = 10, exclude_names = Int[]) -> RemnantDiagnostics
+                        min_members = 10, exclude_names = Int[],
+                        coalescence = nothing, epochs = nothing,
+                        mask = true) -> RemnantDiagnostics
 
 Bound remnant of the whole system at every snapshot (the bound set of all
 stars, regularised pairs at their centres of mass, [`bound_set`](@ref) with
@@ -1121,6 +1157,18 @@ than `10 kT` and than `10 f_max kT` (`f_max` the largest over the mean
 stellar mass) and the extrema of the core radius and core density
 (`core_collapse_markers`, `window = 5`) are the core-collapse markers of
 [`RemnantDiagnostics`](@ref). The pair finder costs O(N log N) per snapshot.
+
+The merger epochs decide where the remnant exists. `coalescence` passes the
+result of [`coalescence_time`](@ref) and `epochs` the `MergerEpochs`
+of the run when the caller has them; otherwise both are evaluated here on the
+bound sets (with `settings`, `max_passes` and `min_members`). With `mask` set
+the remnant quantities are `NaN` (and not evaluated) at every snapshot whose
+system regime is `detached` or `interacting`, the rotation profile is that of
+the last unmasked snapshot, and the spin alignment refers to the orbital
+angular momentum of the most-bound cores at the core coalescence; `mask =
+false` evaluates every snapshot, for tests of the estimators on a
+configuration of several bodies. A single progenitor is one body throughout
+and is never masked.
 """
 function remnant_diagnostics(
     snaps::Vector{Snapshot},
@@ -1130,6 +1178,9 @@ function remnant_diagnostics(
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
     exclude_names::AbstractVector{<:Integer} = Int[],
+    coalescence::Union{Nothing,NamedTuple} = nothing,
+    epochs::Union{Nothing,MergerEpochs} = nothing,
+    mask::Bool = true,
 )::RemnantDiagnostics
     isempty(snaps) && throw(ArgumentError("remnant_diagnostics needs at least one snapshot"))
     excluded = Set{Int32}(Int32.(exclude_names))
@@ -1180,18 +1231,53 @@ function remnant_diagnostics(
         Float64[],
     )
 
-    L_orb = _orbital_angular_momentum(snaps[1], cluster_ranges)
+    # Bound sets, centre coalescence and merger epochs, evaluated here unless given
+    bsets =
+        bound_sets === nothing ? BoundSet[bound_set(s; max_passes, min_members) for s in snaps] :
+        bound_sets
+    n_cl = length(cluster_ranges)
+    coal = if coalescence !== nothing
+        coalescence
+    elseif n_cl ≥ 2
+        coalescence_time(snaps, cluster_ranges; bound_sets = bsets, max_passes, min_members)
+    else
+        (;
+            index = nothing,
+            time_nb = NaN,
+            time_myr = NaN,
+            pairs = Tuple{Int,Int}[],
+            separation = zeros(Float64, 0, n_t),
+            threshold = zeros(Float64, 0, n_t),
+        )
+    end
+    ep =
+        epochs === nothing ?
+        merger_epochs(
+            snaps,
+            cluster_ranges,
+            bsets,
+            n_cl ≥ 2 ? coal : nothing;
+            settings,
+            max_passes,
+            min_members,
+        ) : epochs
+    length(ep.regime) == n_t || throw(
+        DimensionMismatch("remnant_diagnostics: epochs of $(length(ep.regime)) snapshots for $n_t"),
+    )
+    masked = falses(n_t)
+    mask && (masked .= in.(ep.regime, Ref((:detached, :interacting))))
+
+    # Reference of the spin alignment: the cores at the core coalescence, else the initial orbit
+    L_orb = all(isfinite, ep.l_orb) ? ep.l_orb : _orbital_angular_momentum(snaps[1], cluster_ranges)
     L_norm = sqrt(sum(abs2, L_orb))
     L_hat = L_norm > 0 ? L_orb ./ L_norm : fill(NaN, 3)
-    bsets = Vector{BoundSet}(undef, n_t)
 
     for (k, snap) in enumerate(snaps)
         pos_all = Float64.(snap.pos)
         vel_all = Float64.(snap.vel)
         mass_all = Float64.(snap.mass)
         length(mass_all) < _MIN_MEMBERS && continue
-        b = bound_sets === nothing ? bound_set(snap; max_passes, min_members) : bound_sets[k]
-        bsets[k] = b
+        b = bsets[k]
         sel = b.stars
         n_bound[k] = length(sel)
         fbound[k] = sum(mass_all[sel]) / sum(mass_all)
@@ -1229,6 +1315,8 @@ function remnant_diagnostics(
             end
         end
 
+        # Remnant estimators only where the progenitors form one body
+        masked[k] && continue
         k_nb = settings.density_neighbours
         if n_sel > k_nb
             ρ = _snapshot_density(snap, sel; k = k_nb, engine = isempty(excluded))
@@ -1291,17 +1379,6 @@ function remnant_diagnostics(
         end
     end
 
-    coal =
-        length(cluster_ranges) ≥ 2 ?
-        coalescence_time(snaps, cluster_ranges; bound_sets = bsets, max_passes, min_members) :
-        (;
-            index = nothing,
-            time_nb = NaN,
-            time_myr = NaN,
-            pairs = Tuple{Int,Int}[],
-            separation = zeros(Float64, 0, n_t),
-            threshold = zeros(Float64, 0, n_t),
-        )
     k_seg = findfirst(k -> isfinite(λmsr[k]) && λmsr[k] - λerr[k] > settings.msr_threshold, 1:n_t)
     t_seg = k_seg === nothing ? NaN : t[k_seg]
     t_seg_myr = k_seg === nothing ? NaN : t_myr[k_seg]
@@ -1358,6 +1435,11 @@ function remnant_diagnostics(
         coal.pairs,
         coal.separation,
         coal.threshold,
+        copy(ep.regime),
+        ep.t_contact,
+        ep.t_contact_myr,
+        ep.t_core,
+        ep.t_core_myr,
     )
 end
 
@@ -1365,8 +1447,10 @@ end
     write_remnant_diagnostics(path, diag::RemnantDiagnostics) -> String
 
 Write the time series of `diag` as CSV (one row per snapshot, NB units
-plus `time_myr`) with the coalescence, segregation and core-collapse times
-in a leading comment line. An existing file is backed up, never overwritten.
+plus `time_myr`, the system regime in the last column `regime`) with the
+coalescence, segregation, core-collapse and merger-epoch times (`t_contact`,
+`t_core`) in a leading comment line. An existing file is backed up, never
+overwritten.
 """
 function write_remnant_diagnostics(path::AbstractString, diag::RemnantDiagnostics)
     _backup_existing(path)
@@ -1375,11 +1459,12 @@ function write_remnant_diagnostics(path::AbstractString, diag::RemnantDiagnostic
             io,
             "# coalescence_time_nb=$(diag.coalescence_time) coalescence_time_myr=$(diag.coalescence_time_myr) segregation_time_nb=$(diag.segregation_time) segregation_time_myr=$(diag.segregation_time_myr)" *
             " t_first_10kt_nb=$(diag.t_first_10kt) t_first_10kt_myr=$(diag.t_first_10kt_myr) t_first_10fmax_kt_nb=$(diag.t_first_10fmax_kt) t_first_10fmax_kt_myr=$(diag.t_first_10fmax_kt_myr)" *
-            " t_rc_min_nb=$(diag.t_rc_min) t_rc_min_myr=$(diag.t_rc_min_myr) t_rho_max_nb=$(diag.t_rho_max) t_rho_max_myr=$(diag.t_rho_max_myr)",
+            " t_rc_min_nb=$(diag.t_rc_min) t_rc_min_myr=$(diag.t_rc_min_myr) t_rho_max_nb=$(diag.t_rho_max) t_rho_max_myr=$(diag.t_rho_max_myr)" *
+            " t_contact_nb=$(diag.t_contact) t_contact_myr=$(diag.t_contact_myr) t_core_nb=$(diag.t_core) t_core_myr=$(diag.t_core_myr)",
         )
         println(
             io,
-            "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio,r_core_number,rho_core,lambda_r_floor,lambda_peebles_floor,lambda_median,gamma_msr,gamma_msr_err,v_peak,r_peak,n_pairs_snapshot,n_hard_pairs,hardness_max,kt,f_max",
+            "time_nb,time_myr,rbar_pc,n_bound,bound_mass_fraction,r_core,r_half,lambda_r,lambda_peebles,spin_x,spin_y,spin_z,spin_alignment,lambda_msr,lambda_msr_err,segregation_ratio,r_core_number,rho_core,lambda_r_floor,lambda_peebles_floor,lambda_median,gamma_msr,gamma_msr_err,v_peak,r_peak,n_pairs_snapshot,n_hard_pairs,hardness_max,kt,f_max,regime",
         )
         for k in eachindex(diag.time)
             cells = [
@@ -1413,6 +1498,7 @@ function write_remnant_diagnostics(path::AbstractString, diag::RemnantDiagnostic
                 diag.hardness_max[k],
                 diag.kt[k],
                 diag.f_max[k],
+                String(diag.regime[k]),
             ]
             println(io, join(_csv_cell.(cells), ","))
         end

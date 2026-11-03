@@ -123,6 +123,7 @@ include("analysis/budgets.jl")
 include("analysis/cluster_structure.jl")
 include("analysis/binary_population.jl")
 include("analysis/stellar_population.jl")
+include("analysis/merger_epochs.jl")
 include("analysis/remnant.jl")
 include("analysis/shape_mixing.jl")
 include("analysis/pair_finder.jl")
@@ -186,8 +187,11 @@ census (`:stellar_census`), the integrals of motion of every snapshot
 (`:integrals`, [`SnapshotIntegrals`](@ref), with `postprocess.snapshot_integrals`,
 including the Jacobi integral when the stdout capture echoes a linearised tidal
 field) and, for a merger run — one whose output holds a `merger_summary.txt` and
-at least two snapshots — the remnant diagnostics (`:remnant`, a
-[`RemnantDiagnostics`](@ref)), which reuse the integrals' bound sets. Both
+at least two snapshots — the centre coalescence (`:coalescence`, the result of
+[`coalescence_time`](@ref), with two or more initial clusters), the merger epochs
+(`:merger_epochs`, `MergerEpochs`) and the remnant diagnostics (`:remnant`, a
+[`RemnantDiagnostics`](@ref)), which reuse the integrals' bound sets; each is
+evaluated once and handed to the stages that need it. Both
 need an O(N²) pair sum per snapshot and run only while no snapshot holds more
 than `postprocess.pair_sum_max_n` stars. From the stdout capture the stamped
 event lines (`:engine_events`, [`EngineEvent`](@ref)) and the energy-jump
@@ -381,25 +385,55 @@ function postprocess(
         ranges = parse_merger_summary(summary_path)
         if !isempty(ranges) &&
            _within_pair_sum_limit(results[:snapshots], pp, "Remnant diagnostics")
-            @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
+            snaps_r = results[:snapshots]
+            # One bound set per snapshot, one centre coalescence and one set of merger
+            # epochs, shared by the remnant, the progenitor budget, the tree and validity
             bound_sets =
-                haskey(results, :integrals) ? [s.bound for s in results[:integrals]] : nothing
+                haskey(results, :integrals) ? BoundSet[s.bound for s in results[:integrals]] :
+                BoundSet[bound_set(s; bound...) for s in snaps_r]
+            coal =
+                length(ranges) ≥ 2 ? coalescence_time(snaps_r, ranges; bound_sets, bound...) :
+                nothing
+            coal === nothing || (results[:coalescence] = coal)
+            @info "Merger epochs (contact, core coalescence, dissolution)..."
+            epochs = merger_epochs(snaps_r, ranges, bound_sets, coal; settings = pp, bound...)
+            results[:merger_epochs] = epochs
+            length(ranges) ≥ 2 &&
+                @info "Merger epochs: contact t = $(round(epochs.t_contact; sigdigits = 4)), " *
+                      "core coalescence t = $(round(epochs.t_core; sigdigits = 4)), centre " *
+                      "coalescence t = $(round(epochs.t_coal; sigdigits = 4)) [NB]"
+            @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
             results[:remnant] = remnant_diagnostics(
-                results[:snapshots],
+                snaps_r,
                 ranges;
                 settings = pp,
                 bound_sets,
                 bound...,
                 exclude_names = _imbh_names(joinpath(sim_dir, "merger_ic.toml")),
+                coalescence = coal,
+                epochs,
             )
             lap!("remnant")
-            if pp.merger_tree && bound_sets !== nothing
+            if pp.merger_tree && haskey(results, :integrals)
                 @info "Progenitor budget" * (length(ranges) ≥ 2 ? " and merger tree..." : "...")
-                results[:progenitor_budget] =
-                    progenitor_budget(results[:snapshots], ranges, bound_sets; settings = pp)
+                results[:progenitor_budget] = progenitor_budget(
+                    snaps_r,
+                    ranges,
+                    bound_sets;
+                    settings = pp,
+                    min_members = pp.merger_min_members,
+                    epochs,
+                )
                 length(ranges) ≥ 2 && (
-                    results[:merger_tree] =
-                        merger_tree(results[:snapshots], ranges; bound_sets, bound...)
+                    results[:merger_tree] = merger_tree(
+                        snaps_r,
+                        ranges;
+                        bound_sets,
+                        bound...,
+                        coalescence = coal,
+                        epochs,
+                        settings = pp,
+                    )
                 )
             end
         end
@@ -1081,6 +1115,13 @@ function _finish_pipeline(
     if haskey(results, :merger_tree) && !isempty(products_dir)
         write_merger_tree(joinpath(products_dir, "merger_tree.csv"), results[:merger_tree])
     end
+    if haskey(results, :merger_epochs) && !isempty(products_dir)
+        write_merger_epochs(joinpath(products_dir, "merger_epochs.csv"), results[:merger_epochs])
+        isempty(results[:merger_epochs].pairs) || write_pair_separation(
+            joinpath(products_dir, "pair_separation.csv"),
+            results[:merger_epochs],
+        )
+    end
     if haskey(results, :binary_spans) && !isempty(products_dir)
         write_binary_spans(joinpath(products_dir, "binary_spans.csv"), results[:binary_spans])
     end
@@ -1376,6 +1417,8 @@ export ClusterStructure, cluster_structure, bound_fraction, per_cluster_virial, 
 export RadialProfile, radial_profile, cluster_profiles, system_profile, model_density
 export RemnantDiagnostics, RotationProfile, remnant_diagnostics, write_remnant_diagnostics
 export coalescence_time, core_radius, rotation_analysis, mass_segregation
+export MergerEpochs, merger_epochs, contact_index, core_index, dissolution_index, regime_label
+export write_merger_epochs, write_pair_separation
 export shrinking_sphere_centre, lagrangian_grid, relaxation_times, local_relaxation_time
 export core_collapse_markers
 export ShapeShell, shape_tensor, projected_ellipticity, aplus, two_sample_d, mixing

@@ -9,11 +9,17 @@
 """
     MergerEvent
 
-One join of the merger tree: the snapshot `index` from which two groups of progenitors stay
-within the coalescence threshold, its `time_nb` and `time_myr`, the tags of the two groups
-`group_a` and `group_b` (sorted, `group_a` holds the smallest tag of the two), the
-density-centre `separation` and `threshold` of the pair whose join connects the two groups at
-that snapshot.
+One join of the merger tree: the snapshot `index` from which two groups of progenitors share
+one group of the coalescence test at every later snapshot, its `time_nb` and `time_myr`, the
+tags of the two groups `group_a` and `group_b` (sorted, `group_a` holds the smallest tag of
+the two), the density-centre `separation` and `threshold` of the pair whose join connects the
+two groups at that snapshot (the pair can be connected through a third cluster, so
+`separation ≥ threshold` is possible), and the merger epochs of the join
+(`MergerEpochs`): `t_contact`, `t_contact_myr` (first contact of a pair across the
+groups), `t_core`, `t_core_myr` (core coalescence of the main progenitors of the two groups),
+`NaN` when not reached; `main_progenitor`, the most massive tag of the more massive group; and
+`mass_ratio`, the bound mass of the lighter group over that of the heavier one at the last
+snapshot before the contact.
 """
 struct MergerEvent
     index::Int
@@ -23,6 +29,12 @@ struct MergerEvent
     group_b::Vector{Int}
     separation::Float64
     threshold::Float64
+    t_contact::Float64
+    t_contact_myr::Float64
+    t_core::Float64
+    t_core_myr::Float64
+    main_progenitor::Int
+    mass_ratio::Float64
 end
 
 """
@@ -47,17 +59,24 @@ struct MergerTree
 end
 
 """
-    merger_tree(snaps, cluster_ranges; bound_sets = nothing, max_passes = 100, min_members = 10)
+    merger_tree(snaps, cluster_ranges; bound_sets = nothing, max_passes = 100, min_members = 10,
+                coalescence = nothing, epochs = nothing, settings = PostprocessConfig())
         -> MergerTree
 
-Merger tree of the initial clusters, derived from one call of [`coalescence_time`](@ref)
-with the same arguments.
+Merger tree of the initial clusters, derived from the result of [`coalescence_time`](@ref):
+`coalescence` when the caller has it (the pipeline evaluates it once), otherwise one call
+with `bound_sets`, `max_passes` and `min_members`.
 
-The pair `q = (i, j)` is joined from snapshot `k_q`, the smallest `k` at which both clusters
-are present, followed by at least one later snapshot with both present (or `k` is the last
-snapshot), such that `separation[q, k′] < threshold[q, k′]` at every `k′ ≥ k` where both are
-present. A first pericentre passage that separates again therefore does not count. Pairs
-that never satisfy this get `joined[q] = 0`.
+The joins follow the group rule of `coalescence_time`. At every snapshot the clusters present
+fall into groups, the connected components of the graph of pairs whose density centres are
+closer than `min(r_h,i, r_h,j)`. The pair `q = (i, j)` is joined from snapshot `k_q`, the
+smallest `k` at which both clusters are present, followed by at least one later snapshot with
+both present (or `k` is the last snapshot), such that the two share a group at every
+`k′ ≥ k` where both are present. A first pericentre passage that separates again therefore
+does not count. Pairs that never satisfy this get `joined[q] = 0`. Up to version 0.6 a pair
+had to be within its own threshold; under the group rule a pair joined through a third
+cluster counts, so for a complete merger the last join coincides with the centre coalescence
+of `coalescence_time`.
 
 The joined pairs are processed in increasing `k_q`, ties in pair order, with union–find over
 the tags; every pair whose two tags still belong to different groups records a
@@ -65,17 +84,25 @@ the tags; every pair whose two tags still belong to different groups records a
 are then united. `dissolved[i]` is the snapshot after the last one at which cluster `i` is
 present, or 0 when it is present at the last snapshot or never present.
 
+The contact, core coalescence, main progenitor and mass ratio of every event come from
+`epochs`, the `MergerEpochs` of the run, evaluated here with `settings` when not
+given.
+
 # Arguments
 - `snaps`: snapshots in time order
 - `cluster_ranges`: names of every initial cluster (ranges or vectors of names)
-- `bound_sets`, `max_passes`, `min_members`: passed to `coalescence_time`
+- `bound_sets`, `max_passes`, `min_members`: global bound sets and their limits
+- `coalescence`: result of `coalescence_time` on the same snapshots
+- `epochs`: merger epochs of the same snapshots
+- `settings`: the `merger_*` keys for the epochs evaluated here
 
-Throws `ArgumentError` when `snaps` is empty or fewer than two clusters are given.
+Throws `ArgumentError` when `snaps` is empty, fewer than two clusters are given or `epochs`
+belongs to another tree, `DimensionMismatch` when `coalescence` does not match the snapshots.
 
 # Example
 ```julia
 tree = merger_tree(snaps, cluster_ranges; bound_sets)
-[(e.index, e.group_a, e.group_b) for e in tree.events]
+[(e.index, e.group_a, e.group_b, e.t_core) for e in tree.events]
 ```
 """
 function merger_tree(
@@ -84,53 +111,67 @@ function merger_tree(
     bound_sets::Union{Nothing,AbstractVector{BoundSet}} = nothing,
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
+    coalescence::Union{Nothing,NamedTuple} = nothing,
+    epochs::Union{Nothing,MergerEpochs} = nothing,
+    settings::PostprocessConfig = PostprocessConfig(),
 )::MergerTree
-    co = coalescence_time(snaps, cluster_ranges; bound_sets, max_passes, min_members)
+    isempty(snaps) && throw(ArgumentError("merger_tree needs at least one snapshot"))
+    n_cl = length(cluster_ranges)
+    n_cl ≥ 2 || throw(ArgumentError("merger_tree needs at least two clusters"))
+    n_t = length(snaps)
+    # Bound sets are needed only for what is evaluated here (empty otherwise, never read)
+    needs_bound = coalescence === nothing || epochs === nothing
+    bsets::AbstractVector{BoundSet} =
+        bound_sets !== nothing ? bound_sets :
+        needs_bound ? BoundSet[bound_set(s; max_passes, min_members) for s in snaps] : BoundSet[]
+    co =
+        coalescence === nothing ?
+        coalescence_time(snaps, cluster_ranges; bound_sets = bsets, max_passes, min_members) :
+        coalescence
+    size(co.present) == (n_cl, n_t) || throw(
+        DimensionMismatch(
+            "merger_tree: coalescence result of size $(size(co.present)) for $n_cl clusters and $n_t snapshots",
+        ),
+    )
+    ep =
+        epochs === nothing ?
+        merger_epochs(snaps, cluster_ranges, bsets, co; settings, max_passes, min_members) : epochs
     separation = co.separation
     threshold = co.threshold
     pairs = co.pairs
     present = co.present
-    n_cl, n_t = size(present)
-    n_pairs = length(pairs)
+    tr = _tree_events(co)
+    (
+        length(ep.event_join) == length(tr.events) && all(
+            e -> ep.group_a[e] == tr.events[e].group_a && ep.group_b[e] == tr.events[e].group_b,
+            eachindex(tr.events),
+        )
+    ) || throw(ArgumentError("merger_tree: the epochs belong to another merger tree"))
+    at(k, v) = k > 0 ? v[k] : NaN
 
-    # Persistence per pair: scan back from the last snapshot until the threshold is violated
-    joined = zeros(Int, n_pairs)
-    for (q, (i, j)) in enumerate(pairs)
-        later = false
-        @inbounds for k in n_t:-1:1
-            (present[i, k] && present[j, k]) || continue
-            separation[q, k] < threshold[q, k] || break
-            (later || k == n_t) && (joined[q] = k)
-            later = true
-        end
-    end
-
-    order = sort!(findall(>(0), joined); by = q -> (joined[q], q))
-    parent = collect(1:n_cl)
     events = MergerEvent[]
-    for q in order
-        i, j = pairs[q]
-        ri = _union_root!(parent, i)
-        rj = _union_root!(parent, j)
-        ri == rj && continue
-        group_a = [t for t in 1:n_cl if _union_root!(parent, t) == ri]
-        group_b = [t for t in 1:n_cl if _union_root!(parent, t) == rj]
-        first(group_a) < first(group_b) || ((group_a, group_b) = (group_b, group_a))
-        k = joined[q]
+    for (e, ev) in enumerate(tr.events)
+        k = ev.index
         h = snaps[k].header
+        q = ev.pair
         push!(
             events,
             MergerEvent(
                 k,
                 time_nb(h),
                 time_myr(h),
-                group_a,
-                group_b,
+                ev.group_a,
+                ev.group_b,
                 separation[q, k],
                 threshold[q, k],
+                at(ep.event_contact[e], ep.time),
+                at(ep.event_contact[e], ep.time_myr),
+                at(ep.event_core[e], ep.time),
+                at(ep.event_core[e], ep.time_myr),
+                ep.main_progenitor[e],
+                ep.mass_ratio[e],
             ),
         )
-        parent[rj] = ri
     end
 
     dissolved = zeros(Int, n_cl)
@@ -146,7 +187,7 @@ function merger_tree(
         separation,
         threshold,
         present,
-        joined,
+        tr.joined,
         dissolved,
     )
 end
@@ -169,7 +210,10 @@ over the absent names, their loss before departure, so that
 distance of that centre from the density centre of the whole bound set; and the mixing of the
 tag's bound members against the other bound members about the global centre within 2 r_h of
 the whole bound set: `aplus2`, `aplus2_err`, `d_radius`, `d_energy`, `d_angular_momentum`,
-`d_floor`.
+`d_floor`; and the `regime` of the tag at the snapshot (`MergerEpochs`). From the
+tag's core coalescence on (`regime` `:coalescing` or `:settled`) `r_h` is measured about the
+density centre of the whole bound set, the remnant centre; before it the mixing fields are
+`NaN`.
 """
 struct ProgenitorBudgetRow
     time_nb::Float64
@@ -191,11 +235,13 @@ struct ProgenitorBudgetRow
     d_energy::Float64
     d_angular_momentum::Float64
     d_floor::Float64
+    regime::Symbol
 end
 
 """
     progenitor_budget(snaps, cluster_ranges, bound_sets; settings = PostprocessConfig(),
-                      min_members = 20) -> Vector{ProgenitorBudgetRow}
+                      min_members = settings.merger_min_members,
+                      epochs = nothing) -> Vector{ProgenitorBudgetRow}
 
 Mass budget of every initial cluster (tag of `cluster_ranges`) at every snapshot, with the
 structure and radial mixing of its bound members in the product. One row per
@@ -215,15 +261,25 @@ other bound stars (population 2) about `c_g` within `2 r_h,g`; the specific ener
 `centre_offset` and the mixing fields are `NaN` otherwise, and the mixing fields are also
 `NaN` when the tag holds every bound star.
 
+The frame follows the tag's regime in `epochs`, the `MergerEpochs` of the run
+(evaluated here from `bound_sets` and `settings` when not given). Before the tag's core
+coalescence (`detached`, `interacting`, `dissolved`, `satellite`) `r_h` is taken about the
+tag's own centre and the mixing fields are `NaN`: between separated bodies A₂⁺ and the KS
+distances measure the separation, not the mixing. From the core coalescence on (`coalescing`,
+`settled`) `r_h` is taken about `c_g`, the remnant centre, and the mixing is evaluated. A
+satellite keeps its own centre. Masses, counts and removals are bookkeeping and cover every
+snapshot.
+
 # Arguments
 - `snaps`: snapshots in time order
 - `cluster_ranges`: names of every initial cluster
 - `bound_sets`: global bound set of every snapshot
-- `settings`: postprocessing settings (shrinking-sphere keys)
+- `settings`: postprocessing settings (shrinking-sphere and `merger_*` keys)
 - `min_members`: least bound members for centres and mixing, `≥ 2`
+- `epochs`: merger epochs of the same snapshots
 
-Throws `ArgumentError` when `snaps` is empty, the bound sets do not match the snapshots one
-to one, or `min_members < 2`.
+Throws `ArgumentError` when `snaps` is empty, the bound sets or the epochs do not match the
+snapshots one to one, or `min_members < 2`.
 
 # Example
 ```julia
@@ -236,7 +292,8 @@ function progenitor_budget(
     cluster_ranges::AbstractVector{<:AbstractVector{Int}},
     bound_sets::AbstractVector{BoundSet};
     settings::PostprocessConfig = PostprocessConfig(),
-    min_members::Integer = 20,
+    min_members::Integer = settings.merger_min_members,
+    epochs::Union{Nothing,MergerEpochs} = nothing,
 )::Vector{ProgenitorBudgetRow}
     isempty(snaps) && throw(ArgumentError("progenitor_budget needs at least one snapshot"))
     length(bound_sets) == length(snaps) || throw(
@@ -249,6 +306,12 @@ function progenitor_budget(
     n_cl = length(cluster_ranges)
     n_t = length(snaps)
     keywords = _centre_keywords(settings)
+    ep = epochs === nothing ? merger_epochs(snaps, cluster_ranges, bound_sets; settings) : epochs
+    size(ep.tag_regime) == (n_cl, n_t) || throw(
+        ArgumentError(
+            "progenitor_budget: epochs of $(size(ep.tag_regime)) for $n_cl clusters and $n_t snapshots",
+        ),
+    )
 
     # Initial names: slot = column of the first snapshot
     first_snap = snaps[1]
@@ -352,6 +415,8 @@ function progenitor_budget(
                 m_stellar_loss += m_1[s] - m_last[s]
             end
 
+            regime = ep.tag_regime[i, k]
+            remnant_frame = regime in _REMNANT_REGIMES
             r_h = NaN
             centre_offset = NaN
             aplus2 = NaN
@@ -364,10 +429,10 @@ function progenitor_budget(
                 pos_i = Float64.(snap.pos[:, bound_cols])
                 mass_i = Float64.(snap.mass[bound_cols])
                 c_i = shrinking_sphere_centre(pos_i, mass_i; keywords...).centre
-                r_h = _lagrangian_radii(pos_i, mass_i, c_i, (0.5,))[1]
+                r_h = _lagrangian_radii(pos_i, mass_i, remnant_frame ? c_g : c_i, (0.5,))[1]
                 centre_offset =
                     sqrt((c_i[1] - c_g[1])^2 + (c_i[2] - c_g[2])^2 + (c_i[3] - c_g[3])^2)
-                if n_bound < n_b
+                if remnant_frame && n_bound < n_b
                     fill!(tags01, 2)
                     @inbounds for c in bound_cols
                         tags01[col_in_bound[c]] = 1
@@ -402,6 +467,7 @@ function progenitor_budget(
                 d_energy,
                 d_angular_momentum,
                 d_floor,
+                regime,
             )
         end
     end
@@ -418,16 +484,20 @@ end
 Write the events of [`merger_tree`](@ref) as CSV. A leading comment line records the number
 of clusters, the number of snapshots and the dissolution index of every cluster
 (`# n_clusters=3 n_snapshots=40 dissolved=0;0;27`); the columns are
-`index,time_nb,time_myr,group_a,group_b,separation,threshold`, the groups as `;`-joined tags.
-Non-finite values become empty cells. An existing file is backed up, never overwritten.
-Returns the path.
+`index,time_nb,time_myr,group_a,group_b,separation,threshold,t_contact_nb,t_contact_myr,t_core_nb,t_core_myr,main_progenitor,mass_ratio`,
+the groups as `;`-joined tags. Non-finite values become empty cells. An existing file is
+backed up, never overwritten. Returns the path.
 """
 function write_merger_tree(path::AbstractString, tree::MergerTree)::String
     _backup_existing(path)
     n_cl, n_t = size(tree.present)
     open(path, "w") do io
         println(io, "# n_clusters=$(n_cl) n_snapshots=$(n_t) dissolved=", join(tree.dissolved, ";"))
-        println(io, "index,time_nb,time_myr,group_a,group_b,separation,threshold")
+        println(
+            io,
+            "index,time_nb,time_myr,group_a,group_b,separation,threshold," *
+            "t_contact_nb,t_contact_myr,t_core_nb,t_core_myr,main_progenitor,mass_ratio",
+        )
         for e in tree.events
             cells = (
                 _csv_precise(e.index),
@@ -437,6 +507,12 @@ function write_merger_tree(path::AbstractString, tree::MergerTree)::String
                 join(e.group_b, ";"),
                 _csv_precise(e.separation),
                 _csv_precise(e.threshold),
+                _csv_precise(e.t_contact),
+                _csv_precise(e.t_contact_myr),
+                _csv_precise(e.t_core),
+                _csv_precise(e.t_core_myr),
+                _csv_precise(e.main_progenitor),
+                _csv_precise(e.mass_ratio),
             )
             println(io, join(cells, ","))
         end
@@ -449,7 +525,8 @@ end
 
 Write the rows of [`progenitor_budget`](@ref) as CSV, one column per field of
 [`ProgenitorBudgetRow`](@ref) in declaration order (N-body units plus `time_myr`; non-finite
-values as empty cells). An existing file is backed up, never overwritten. Returns the path.
+values as empty cells; the last column `regime` as the regime's name). An existing file is
+backed up, never overwritten. Returns the path.
 """
 function write_progenitor_budget(
     path::AbstractString,

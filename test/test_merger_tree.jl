@@ -49,6 +49,11 @@ end
     @test e2.index == 5 && e2.group_a == [1, 2] && e2.group_b == [3] && e2.time_nb == 4.0
     @test e1.separation == tree.separation[1, 3] && e1.threshold == tree.threshold[1, 3]
     @test e2.separation == tree.separation[2, 5] && e2.threshold == tree.threshold[2, 5]
+    # Merger epochs of the joins: detached at separation 3, contact and core coalescence
+    # where the clusters are superposed
+    @test e1.t_contact == 2.0 && e1.t_core == 2.0 && e2.t_contact == 4.0 && e2.t_core == 4.0
+    @test e1.main_progenitor in (1, 2) && e1.mass_ratio ≈ 1.0
+    @test e2.main_progenitor in (1, 2) && e2.mass_ratio ≈ 0.5
     # Without bound sets the same tree follows from the snapshots alone
     same = merger_tree(snaps, ranges)
     @test same.joined == tree.joined && length(same.events) == 2
@@ -60,10 +65,13 @@ end
         @test write_merger_tree(path, tree) == path
         lines = readlines(path)
         @test lines[1] == "# n_clusters=3 n_snapshots=6 dissolved=0;0;0"
-        @test lines[2] == "index,time_nb,time_myr,group_a,group_b,separation,threshold"
+        @test lines[2] ==
+              "index,time_nb,time_myr,group_a,group_b,separation,threshold," *
+              "t_contact_nb,t_contact_myr,t_core_nb,t_core_myr,main_progenitor,mass_ratio"
         @test length(lines) == 4
         c = split(lines[4], ",")
-        @test c[1] == "5" && c[4] == "1;2" && c[5] == "3"
+        @test c[1] == "5" && c[4] == "1;2" && c[5] == "3" && length(c) == 13
+        @test parse(Float64, c[10]) == tree.events[2].t_core
     end
 end
 
@@ -107,10 +115,11 @@ end
     @test at(4, 1).m_stellar_loss == 0
     @test at(5, 1).m_stellar_loss ≈ 30 * 0.2 / 900 atol = 1e-9
     @test at(6, 2).m_stellar_loss == 0 && at(6, 2).m_removed == 0
-    # Separated clusters sit at different radii from the global centre; the overlapping
-    # product is mixed to the noise floor
-    @test all(isfinite, (at(1, 2).r_h, at(1, 2).centre_offset, at(1, 2).d_radius, at(1, 2).d_floor))
-    @test at(1, 2).d_radius > 3 * at(1, 2).d_floor
+    # Separated clusters: own centres and radii, no mixing before the core coalescence;
+    # the overlapping product is mixed to the noise floor
+    @test at(1, 2).regime === :detached && at(6, 3).regime in (:coalescing, :settled)
+    @test all(isfinite, (at(1, 2).r_h, at(1, 2).centre_offset))
+    @test all(isnan, (at(1, 2).aplus2, at(1, 2).d_radius, at(1, 2).d_floor))
     @test at(6, 3).d_radius < 3 * at(6, 3).d_floor && at(6, 3).centre_offset < 0.1
     @test abs(at(6, 3).aplus2) < 4 * at(6, 3).aplus2_err + 0.05
     @test isnan(at(1, 1).d_energy)   # no potential column in the synthetic snapshots
@@ -124,6 +133,7 @@ end
         lines = readlines(path)
         @test length(lines) == 19
         @test split(lines[1], ",")[1:4] == ["time_nb", "time_myr", "tag", "n_initial"]
-        @test all(l -> length(split(l, ",")) == 19, lines[2:end])
+        @test all(l -> length(split(l, ",")) == 20, lines[2:end])
+        @test split(lines[1], ",")[end] == "regime" && split(lines[2], ",")[end] == "detached"
     end
 end

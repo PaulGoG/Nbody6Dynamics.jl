@@ -114,6 +114,7 @@ end
     include("test_angular_momentum.jl")
     include("test_equipartition.jl")
     include("test_merger_tree.jl")
+    include("test_merger_epochs.jl")
     include("test_two_cluster_orbit.jl")
     include("test_cluster_complex.jl")
     include("test_complex_controls.jl")

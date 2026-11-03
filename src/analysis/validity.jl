@@ -151,6 +151,8 @@ from `validity_record`:
 - `equilibrium_ok = !in_window && bound_converged`
 - `calibration`: one `CalibratedEstimate` per entry of
   `VALIDITY_TRACKED`, in that order, at `n_bound`
+- `regime`: the system regime of the merger epochs (`MergerEpochs`), the
+  empty symbol when no epochs are available
 """
 struct ValiditySnapshot
     time_nb::Float64
@@ -164,6 +166,7 @@ struct ValiditySnapshot
     in_window::Bool           # inside a :violent_relaxation, :pericentre or :coalescence_phase epoch
     equilibrium_ok::Bool      # !in_window && bound_converged
     calibration::Vector{CalibratedEstimate}   # one per VALIDITY_TRACKED entry, in that order
+    regime::Symbol            # system regime of the merger epochs; Symbol("") without epochs
 end
 
 """
@@ -756,8 +759,20 @@ end
 Validity record of a post-processed run from the dictionary of `postprocess`
 (any subset of `:snapshots`, `:diagnostics`, `:integrals`, `:energy_events`,
 `:mass_budget`, `:energy_budget`, `:angular_momentum`, `:remnant`,
-`:progenitor_budget`, `:lagr`; a missing entry leaves its checks unavailable
-or NaN) and the thresholds `validity_*` of `settings`.
+`:merger_epochs`, `:progenitor_budget`, `:lagr`; a missing entry leaves its
+checks unavailable or NaN) and the thresholds `validity_*` of `settings`.
+
+The merger epochs (`:merger_epochs`, a `MergerEpochs`; without them the
+system epochs of `:remnant`) set the merger windows. The pericentres of a
+pair are the interior minima of its density-centre separation before the
+pair's own core coalescence (the event of the merger tree that joins its
+groups), over the whole run when it never coalesces. Every pair with a
+pericentre gets a `:coalescence_phase` window from its first pericentre
+(less the half-width) to its core coalescence, or to its last snapshot,
+labelled not coalesced; a pair that coalesces without a resolved pericentre
+gets one from the start. The mixing stage is evaluated from the system core
+coalescence on and is `not_reached` for a run whose progenitors never form
+one remnant.
 
 The crossing time of a snapshot is the standard crossing time of Heggie &
 Mathieu (1986), `t_cr = M^{5/2} / (−2E)^{3/2}` in `G = 1` units, of its bound
@@ -782,7 +797,9 @@ The sections:
 - `capacity`: the SIMD-library and merger-table headroom (`_validity_capacity`)
 - `cadence`: snapshot spacing against the crossing and the initial
   half-mass relaxation times
-- `stages`: end of violent relaxation, pericentres, coalescence, and the
+- `stages`: end of violent relaxation, pericentres, the centre coalescence
+  (`coalescence_time_nb`) with the contact and core-coalescence times of the
+  merger epochs (`t_contact_nb`, `t_core_nb`), and the
   times of virialisation (2T/|W| within `virial_tolerance` from then on; the
   drift of `ln r_10` per crossing time and its stationarity are reported
   beside it, since stellar mass loss and relaxation move the inner radii of a
@@ -832,6 +849,7 @@ function validity_record(
     eb = get(results, :energy_budget, EnergyBudgetRow[])::AbstractVector{EnergyBudgetRow}
     am = get(results, :angular_momentum, nothing)::Union{Nothing,AngularMomentumBudget}
     remn = get(results, :remnant, nothing)::Union{Nothing,RemnantDiagnostics}
+    mep = get(results, :merger_epochs, nothing)::Union{Nothing,MergerEpochs}
     pb =
         get(results, :progenitor_budget, ProgenitorBudgetRow[])::AbstractVector{ProgenitorBudgetRow}
     lagr = get(results, :lagr, nothing)::Union{Nothing,LagrangianData}
@@ -939,21 +957,29 @@ function validity_record(
         ),
     )
     t_coal = remn === nothing ? NaN : remn.coalescence_time
+    # System epochs: the merger epochs, else those carried by the remnant diagnostics
+    t_contact = mep !== nothing ? mep.t_contact : (remn === nothing ? NaN : remn.t_contact)
+    t_core = mep !== nothing ? mep.t_core : (remn === nothing ? NaN : remn.t_core)
     pericentres = Tuple{Float64,Float64}[]   # (time, half-width)
     if remn !== nothing
         S = remn.coalescence_separation
+        per_pair = mep !== nothing && mep.pairs == remn.coalescence_pairs
         for p in axes(S, 1)
             i, j = remn.coalescence_pairs[p]
+            # The pair's own core coalescence ends its pericentre search and its window
+            t_core_p = per_pair ? (mep.pair_core[p] > 0 ? mep.time[mep.pair_core[p]] : NaN) : t_core
+            first_peri = nothing
             for k in 2:(size(S, 2) - 1)
                 a, s, c = S[p, k - 1], S[p, k], S[p, k + 1]
                 (isfinite(a) && isfinite(s) && isfinite(c)) || continue
                 (s < a && s ≤ c) || continue
                 tk = remn.time[k]
-                (isnan(t_coal) || tk < t_coal) || continue
+                (isnan(t_core_p) || tk < t_core_p) || continue
                 w =
                     settings.validity_pericentre_tcr *
                     _validity_dense_crossing_time(pb, (i, j), tk, t_cr_initial)
                 push!(pericentres, (tk, w))
+                first_peri === nothing && (first_peri = (tk, w))
                 push!(
                     epochs,
                     ValidityEpoch(
@@ -964,29 +990,44 @@ function validity_record(
                     ),
                 )
             end
+            if first_peri !== nothing
+                tp, wp = first_peri
+                if isfinite(t_core_p)
+                    push!(
+                        epochs,
+                        ValidityEpoch(
+                            tp - wp,
+                            t_core_p,
+                            :coalescence_phase,
+                            "clusters $(i)–$(j) until core coalescence",
+                        ),
+                    )
+                else
+                    k_last = findlast(isfinite, view(S, p, :))
+                    t_last = k_last === nothing ? t_end : remn.time[k_last]
+                    push!(
+                        epochs,
+                        ValidityEpoch(
+                            tp - wp,
+                            t_last,
+                            :coalescence_phase,
+                            "clusters $(i)–$(j) not coalesced",
+                        ),
+                    )
+                end
+            elseif isfinite(t_core_p)
+                # Core coalescence without a resolved pericentre: the whole approach is out of equilibrium
+                push!(
+                    epochs,
+                    ValidityEpoch(
+                        t_start,
+                        t_core_p,
+                        :coalescence_phase,
+                        "clusters $(i)–$(j): approach without a pericentre resolved at this cadence",
+                    ),
+                )
+            end
         end
-    end
-    if !isempty(pericentres)
-        tp, wp = pericentres[argmin(first.(pericentres))]
-        if isfinite(t_coal)
-            push!(epochs, ValidityEpoch(tp - wp, t_coal, :coalescence_phase, "until coalescence"))
-        else
-            push!(
-                epochs,
-                ValidityEpoch(tp - wp, t_end, :coalescence_phase, "not coalesced by the end"),
-            )
-        end
-    elseif isfinite(t_coal)
-        # Coalescence without a resolved pericentre: the whole approach is out of equilibrium
-        push!(
-            epochs,
-            ValidityEpoch(
-                t_start,
-                t_coal,
-                :coalescence_phase,
-                "approach without a pericentre resolved at this cadence",
-            ),
-        )
     end
     cadence["pericentre_resolved"] =
         (remn === nothing || isempty(remn.coalescence_pairs)) ? "not_applicable" :
@@ -1097,12 +1138,17 @@ function validity_record(
     end
     t_mixed = NaN
     mixed = "not_applicable"
-    if length(unique(r.tag for r in pb)) ≥ 2
-        if any(r -> isfinite(r.aplus2), pb)
-            ts = sort!(unique(Float64[r.time_nb for r in pb]))
+    # Mixing is a property of one remnant: from the core coalescence on
+    epochs_known = mep !== nothing || remn !== nothing
+    t_mix_start = epochs_known ? t_core : -Inf
+    if length(unique(r.tag for r in pb)) ≥ 2 && epochs_known && isnan(t_core)
+        mixed = "not_reached"
+    elseif length(unique(r.tag for r in pb)) ≥ 2
+        if any(r -> isfinite(r.aplus2) && r.time_nb ≥ t_mix_start, pb)
+            ts = sort!(unique(Float64[r.time_nb for r in pb if r.time_nb ≥ t_mix_start]))
             mixed_at = trues(length(ts))
             for r in pb
-                isfinite(r.aplus2) || continue
+                (isfinite(r.aplus2) && r.time_nb ≥ t_mix_start) || continue
                 abs(r.aplus2) ≤ 2 * r.aplus2_err && continue
                 mixed_at[searchsortedfirst(ts, r.time_nb)] = false
             end
@@ -1126,6 +1172,8 @@ function validity_record(
         "t_violent_end" => t_violent_end,
         "pericentres" => peri_unique,
         "coalescence_time_nb" => t_coal,
+        "t_contact_nb" => t_contact,
+        "t_core_nb" => t_core,
         "t_virialised" => t_virialised,
         "virialised" => virialised,
         "r10_drift_per_tcr" => r10_drift,
@@ -1168,8 +1216,11 @@ function validity_record(
         cal_table
     end
 
-    # Per-snapshot rows
+    # Per-snapshot rows; the regime of the merger epochs where they match the rows
     lagr_n_min = settings.lagr_n_min
+    regimes =
+        (mep !== nothing && length(mep.regime) == nrow) ? mep.regime :
+        (remn !== nothing && length(remn.regime) == nrow) ? remn.regime : fill(Symbol(""), nrow)
     snapshots = Vector{ValiditySnapshot}(undef, nrow)
     for k in 1:nrow
         resolvable = n_eff[k] ≥ 2 * lagr_n_min
@@ -1186,6 +1237,7 @@ function validity_record(
             in_window,
             !in_window && converged[k],
             _validity_estimates(tracked, n_bound[k], btol),
+            regimes[k],
         )
     end
 
@@ -1250,7 +1302,8 @@ end
 Write the per-snapshot rows of the record as CSV: `time_nb, n_bound, n_eff,
 t_cr, q_virial, lagr_f_min, lagr_f_max, bound_converged, in_window,
 equilibrium_ok`, then for every entry `<estimator>__<quantity>` of
-`VALIDITY_TRACKED` the columns `_bias`, `_scatter` and `_ok`. Booleans as
+`VALIDITY_TRACKED` the columns `_bias`, `_scatter` and `_ok`, and last the
+system `regime` of the merger epochs (empty without epochs). Booleans as
 `true`/`false`, numbers with `string` (NaN as `NaN`). An existing file is
 backed up, never overwritten. Returns the path.
 """
@@ -1271,6 +1324,7 @@ function write_validity_snapshots(path::AbstractString, rec::ValidityRecord)::St
     for (e, q) in VALIDITY_TRACKED
         push!(header, "$(e)__$(q)_bias", "$(e)__$(q)_scatter", "$(e)__$(q)_ok")
     end
+    push!(header, "regime")
     open(path, "w") do io
         println(io, join(header, ","))
         for s in rec.snapshots
@@ -1289,6 +1343,7 @@ function write_validity_snapshots(path::AbstractString, rec::ValidityRecord)::St
             for c in s.calibration
                 push!(cells, string(c.bias), string(c.scatter), string(c.ok))
             end
+            push!(cells, String(s.regime))
             println(io, join(cells, ","))
         end
     end

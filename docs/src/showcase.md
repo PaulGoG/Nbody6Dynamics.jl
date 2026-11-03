@@ -30,13 +30,14 @@ TOMLs use the AVX engine built under `backend/Nbody6PPGPU-beijing`
 | `flagship` | 3 × 25 000, King `W0 = 6`, `r_h = 2` pc, Kroupa 0.08–100 M☉ | equilateral triangle of side 10 pc, each cluster on a sub-virial rotating orbit about the common centre (virial ratio 0.25 of the three point masses, 1.80 km/s tangential), explicit placement | 50 Myr | 0.01 | the triple merger of the README: a first close configuration at 6 Myr, a rebound to 7 pc, coalescence of all three at 14 Myr, the remnant to 50 Myr |
 
 The infall time from apocentre is half the Kepler period, so the eccentric
-cases coalesce early in the run (`equal` at about 3 Myr) and the sweep's two
+cases coalesce early in the run (`equal` at 5 Myr) and the sweep's two
 eccentricities separate in time (12 Myr at `e = 0.5` against 8 Myr at
 `e = 0.9`), which is what its eccentricity axis is for. The triple of the
 flagship is released at the same virial ratio as a pair at apocentre with
 `e = 0.5`; its three pairwise separations fall from 10 pc to 5 pc by 6 Myr,
-rebound to 7 pc at 8 Myr and drop below the half-mass radii together at
-14 Myr, the coalescence epoch the merger tree records.
+rebound to 7 pc at 8 Myr and drop below the half-mass radii: clusters 1 and 3
+join at 12 Myr and cluster 2 at 14 Myr, the centre coalescence of
+`coalescence_time` and the last join of the merger tree.
 
 ## Reference runs
 
@@ -72,8 +73,9 @@ figure routines and arguments.
 ![Separation of the two density centres of the equal pair against the smaller half-mass radius](assets/showcase_equal_separation.png)
 
 *`equal`: the separation of the two density centres falls below the smaller
-half-mass radius at 5 Myr, the coalescence time the merger tree records;
-after that the two centres of the single remnant stay within 0.3 pc.*
+half-mass radius at 5 Myr, the centre coalescence of `coalescence_time` and
+the join of the merger tree; after that the two centres of the single
+remnant stay within 0.3 pc.*
 
 ![Orbital elements of the regularised pairs of the binary case at 15 Myr](assets/showcase_binary_orbital_elements.png)
 
