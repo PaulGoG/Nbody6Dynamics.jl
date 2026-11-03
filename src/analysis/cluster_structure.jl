@@ -12,12 +12,14 @@
 Per-cluster structural quantities at every snapshot, all by original
 membership (`cluster_ranges` of `merger_ic.toml`) and in N-body units.
 Arrays are `n_clusters × n_times`; `NaN` marks clusters with fewer than
-`_MIN_MEMBERS` bound members.
+`merger_min_members` present or bound members and clusters retired by the
+merger epochs ([`cluster_structure`](@ref)).
 
 # Fields
 - `time`: snapshot times [NB]
 - `n_members`: members present in the snapshot
-- `n_bound`: members bound to the cluster (negative energy in its own frame)
+- `n_bound`: members bound to the cluster (negative energy in its own frame);
+  `0` where the cluster is retired
 - `bound_mass_fraction`: bound mass over present member mass
 - `centre`: `3 × n_clusters × n_times` shrinking-sphere centre of the bound members
 - `r_lagr`: `3 × n_clusters × n_times` radii enclosing 10 %, 50 %, 90 % of the bound mass
@@ -37,6 +39,55 @@ end
 
 const _LAGR_FRACTIONS_MEMBER = (0.1, 0.5, 0.9)
 const _MIN_MEMBERS = 10
+
+"""Tag regimes in which the self-referenced structure of a progenitor is retired."""
+const _RETIRED_REGIMES = (:coalescing, :settled, :dissolved)
+
+"""
+    _retired_tags(epochs, n_cl, n_t) -> BitMatrix
+
+`n_cl × n_t` mask of the progenitors whose self-referenced structure (own
+self-bound subset, own centre) is retired at a snapshot: those whose
+`tag_regime` in `epochs` (a `MergerEpochs`) is `:coalescing`, `:settled` or
+`:dissolved`. From its core coalescence on the stars of a progenitor are bound
+to the remnant, not to each other, so a per-tag unbinding strips them and the
+self-bound subset no longer describes a body; a dissolved progenitor has no
+self-bound core left. `:detached`, `:interacting` and `:satellite` progenitors
+keep their structure. Nothing is retired without epochs (`nothing`) or with a
+single progenitor, whose self-bound subset is the remnant itself.
+
+Throws `ArgumentError` when `epochs` is neither `nothing` nor a `MergerEpochs`,
+`DimensionMismatch` when its regime matrix is not `n_cl × n_t`.
+"""
+function _retired_tags(epochs, n_cl::Integer, n_t::Integer)::BitMatrix
+    epochs === nothing && return falses(n_cl, n_t)
+    epochs isa MergerEpochs ||
+        throw(ArgumentError("epochs must be a MergerEpochs or nothing; got $(typeof(epochs))"))
+    size(epochs.tag_regime) == (n_cl, n_t) || throw(
+        DimensionMismatch(
+            "epochs of $(size(epochs.tag_regime, 1)) clusters and $(size(epochs.tag_regime, 2)) " *
+            "snapshots for $n_cl clusters and $n_t snapshots",
+        ),
+    )
+    n_cl == 1 && return falses(1, n_t)
+    return BitMatrix([r in _RETIRED_REGIMES for r in epochs.tag_regime])
+end
+
+"""
+    _epoch_snapshot_index(epochs, snap) -> Int
+
+Index of `snap` among the snapshots of `epochs` (a `MergerEpochs`), found by its
+time in N-body units. Throws `ArgumentError` when no snapshot of the epochs has
+that time.
+"""
+function _epoch_snapshot_index(epochs, snap::Snapshot)::Int
+    t = time_nb(snap.header)
+    k = findfirst(==(t), epochs.time)
+    k === nothing && throw(
+        ArgumentError("the snapshot at t = $t NB is not among the snapshots of the merger epochs"),
+    )
+    return k
+end
 
 """
     _member_indices(snap, members) -> Vector{Int}
@@ -649,16 +700,33 @@ end
                      nbins = settings.profile_nbins, n_min_sigma = settings.profile_n_min_sigma,
                      n_min_beta = settings.profile_n_min_beta,
                      n_min_density = settings.profile_n_min_density,
-                     max_passes = 100, min_members = 10)
+                     max_passes = 100, min_members = 10, epochs = nothing, retired = :skip)
         -> Vector{Union{Nothing,RadialProfile}}
 
 Radial profile of every initial cluster about its own shrinking-sphere
 centre from its bound members ([`cluster_structure`](@ref) conventions;
 `max_passes` and `min_members` go to [`bound_set`](@ref), the shell
-thresholds to [`radial_profile`](@ref)); `nothing` for clusters with too
-few members. The centre takes its stop rule and step from the centre keys of
-`settings`, a [`PostprocessConfig`](@ref), whose profile keys are also the
-defaults of the shell thresholds; an explicit keyword overrides them.
+thresholds to [`radial_profile`](@ref)); `nothing` for clusters with fewer
+than `settings.merger_min_members` present or selected members (and at least
+the 40 particles `radial_profile` needs). The centre takes its stop rule and
+step from the centre keys of `settings`, a [`PostprocessConfig`](@ref), whose
+profile keys are also the defaults of the shell thresholds; an explicit
+keyword overrides them.
+
+`epochs`, the `MergerEpochs` of the run (`snap` located among its snapshots by
+time), retires the clusters whose regime at `snap` is `:coalescing`, `:settled`
+or `:dissolved`, keeping `:detached`, `:interacting` and `:satellite`: after the
+core coalescence the stars of a progenitor are bound to the remnant, not to
+each other, so the profile of its self-bound subset about its own centre is not
+physical. With `retired = :skip` a retired cluster gets `nothing`; with
+`retired = :remnant` it gets the profile of its members in the bound set of the
+whole snapshot ([`bound_set`](@ref) with `max_passes`, `min_members`) about the
+shrinking-sphere centre of that set, the remnant centre (centre keys of
+`settings`; velocities about the members' mean velocity). One O(N²) pair sum
+for the remnant frame, one O(N_i²) per cluster otherwise.
+
+Throws `ArgumentError` for another `retired` or when `snap` is not among the
+snapshots of `epochs`.
 """
 function cluster_profiles(
     snap::Snapshot,
@@ -671,18 +739,46 @@ function cluster_profiles(
     n_min_density::Int = settings.profile_n_min_density,
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
+    epochs = nothing,
+    retired::Symbol = :skip,
 )
+    retired in (:skip, :remnant) ||
+        throw(ArgumentError("cluster_profiles: retired must be :skip or :remnant; got :$retired"))
+    n_cl = length(cluster_ranges)
+    is_retired =
+        epochs === nothing ? falses(n_cl) :
+        _retired_tags(epochs, n_cl, length(epochs.time))[:, _epoch_snapshot_index(epochs, snap)]
+    # radial_profile needs twice its n_min_inner (20) particles
+    n_min = max(settings.merger_min_members, 40)
     pos_all = Float64.(snap.pos)
     vel_all = Float64.(snap.vel)
     mass_all = Float64.(snap.mass)
-    out = Vector{Union{Nothing,RadialProfile}}(nothing, length(cluster_ranges))
+    keywords = _centre_keywords(settings)
+    out = Vector{Union{Nothing,RadialProfile}}(nothing, n_cl)
+    # Remnant frame of the retired clusters: the bound set of the whole snapshot
+    in_bound = falses(0)
+    c_remnant = Float64[]
+    if retired === :remnant && any(is_retired)
+        b = bound_set(snap; max_passes, min_members).stars
+        in_bound = falses(nparticles(snap))
+        in_bound[b] .= true
+        if length(b) ≥ n_min
+            c_remnant = _shrinking_sphere_centre(pos_all[:, b], mass_all[b]; keywords...)
+        end
+    end
     for (i, rng) in enumerate(cluster_ranges)
+        is_retired[i] && retired === :skip && continue
         idx = _member_indices(snap, rng)
-        length(idx) < 2 * _MIN_MEMBERS && continue
-        sel = bound_only ? bound_set(snap, idx; max_passes, min_members).stars : idx
-        length(sel) < 2 * _MIN_MEMBERS && continue
+        length(idx) < n_min && continue
+        if is_retired[i]
+            isempty(c_remnant) && continue
+            sel = [s for s in idx if in_bound[s]]
+        else
+            sel = bound_only ? bound_set(snap, idx; max_passes, min_members).stars : idx
+        end
+        length(sel) < n_min && continue
         p = pos_all[:, sel]
-        c = _shrinking_sphere_centre(p, mass_all[sel]; _centre_keywords(settings)...)
+        c = is_retired[i] ? c_remnant : _shrinking_sphere_centre(p, mass_all[sel]; keywords...)
         out[i] = radial_profile(
             p,
             vel_all[:, sel],
@@ -878,7 +974,7 @@ end
 
 """
     cluster_structure(snaps, cluster_ranges; settings = PostprocessConfig(), bound_only = true,
-                      max_passes = 100, min_members = 10) -> ClusterStructure
+                      max_passes = 100, min_members = 10, epochs = nothing) -> ClusterStructure
 
 Structure of every initial cluster at every snapshot, measured about the
 cluster's own shrinking-sphere centre from the members it binds
@@ -890,8 +986,20 @@ dispersion and the virial ratio after the first supernovae.
 Regularised pairs enter the bound selection, `sigma_1d` and `q_virial` as
 their centres of mass; `max_passes` and `min_members` go to
 [`bound_set`](@ref). The centre takes its stop rule and step from the centre
-keys of `settings`, a [`PostprocessConfig`](@ref). One O(N_i²) pair sum per
-cluster and snapshot.
+keys of `settings`, a [`PostprocessConfig`](@ref); a cluster needs
+`settings.merger_min_members` present and selected members, otherwise its
+entries stay `NaN`. One O(N_i²) pair sum per cluster and snapshot.
+
+`epochs`, the `MergerEpochs` of the same snapshots, retires a cluster at every
+snapshot at which its `tag_regime` is `:coalescing`, `:settled` or `:dissolved`:
+its entries are `NaN` there (`n_bound` 0, `n_members` still counted) and are not
+evaluated. From its core coalescence on the stars of a progenitor are bound to
+the remnant, not to each other, so a per-tag unbinding strips them and the
+self-bound subset, its centre, radii, dispersion and virial ratio stop
+describing a body; a dissolved progenitor has no self-bound core left.
+`:detached`, `:interacting` and `:satellite` clusters keep their values, and a
+run with one cluster retires nothing. Throws `DimensionMismatch` when the epochs
+do not match the clusters and snapshots.
 """
 function cluster_structure(
     snaps::Vector{Snapshot},
@@ -900,9 +1008,12 @@ function cluster_structure(
     bound_only::Bool = true,
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
+    epochs = nothing,
 )::ClusterStructure
     n_cl = length(cluster_ranges)
     n_t = length(snaps)
+    retired = _retired_tags(epochs, n_cl, n_t)
+    n_min = settings.merger_min_members
     time = [time_nb(s.header) for s in snaps]
     n_members = zeros(Int, n_cl, n_t)
     n_bound = zeros(Int, n_cl, n_t)
@@ -917,7 +1028,7 @@ function cluster_structure(
         for (i, rng) in enumerate(cluster_ranges)
             idx = _member_indices(snap, rng)
             n_members[i, k] = length(idx)
-            length(idx) < _MIN_MEMBERS && continue
+            (retired[i, k] || length(idx) < n_min) && continue
             if bound_only
                 b = bound_set(snap, idx; max_passes, min_members)
                 sel = b.stars
@@ -928,7 +1039,7 @@ function cluster_structure(
             end
             n_bound[i, k] = length(sel)
             fbound[i, k] = sum(mass_all[sel]) / sum(mass_all[idx])
-            length(sel) < _MIN_MEMBERS && continue
+            length(sel) < n_min && continue
             p = pos_all[:, sel]
             m = mass_all[sel]
             M = sum(m)
@@ -1021,16 +1132,26 @@ function _cluster_virial_snapshot(
 end
 
 """
-    per_cluster_virial(snaps, cluster_ranges; bound_only = true)
+    per_cluster_virial(snaps, cluster_ranges; bound_only = true, max_passes = 100,
+                       min_members = 10, epochs = nothing)
         -> (Q::Matrix{Float64}, n_mem::Matrix{Int})
 
 Internal virial ratio of every initial cluster at every snapshot, `Q[i, k]`
-for cluster `i` at snapshot `k` (`NaN` with fewer than 3 selected members).
+for cluster `i` at snapshot `k` (`NaN` with fewer than 3 selected members),
+and the number of present members `n_mem[i, k]`.
 By default only the members bound to the cluster enter `T` and `W`
 ([`bound_set`](@ref), which takes `max_passes` and `min_members`);
 `bound_only = false` uses every present member and is dominated by kicked
 remnants after the first supernovae. One O(N_i²) pair sum per cluster and
 snapshot.
+
+`epochs`, the `MergerEpochs` of the same snapshots, retires a cluster where its
+`tag_regime` is `:coalescing`, `:settled` or `:dissolved` (`Q` is `NaN` there
+and not evaluated; `n_mem` still counted), the rule of
+[`cluster_structure`](@ref): from its core coalescence on a progenitor's stars
+are bound to the remnant, not to each other, and the virial ratio of its
+self-bound subset no longer describes a body. Throws `DimensionMismatch` when
+the epochs do not match the clusters and snapshots.
 """
 function per_cluster_virial(
     snaps::Vector{Snapshot},
@@ -1038,14 +1159,20 @@ function per_cluster_virial(
     bound_only::Bool = true,
     max_passes::Integer = _BOUND_MAX_PASSES,
     min_members::Integer = _BOUND_MIN_MEMBERS,
+    epochs = nothing,
 )
     n_cl = length(cluster_ranges)
     n_t = length(snaps)
+    retired = _retired_tags(epochs, n_cl, n_t)
     Q = fill(NaN, n_cl, n_t)
     n_mem = zeros(Int, n_cl, n_t)
 
     for (k, snap) in enumerate(snaps)
         for (i, rng) in enumerate(cluster_ranges)
+            if retired[i, k]
+                n_mem[i, k] = length(_member_indices(snap, rng))
+                continue
+            end
             q, nm = _cluster_virial_snapshot(snap, rng; bound_only, max_passes, min_members)
             Q[i, k] = q
             n_mem[i, k] = nm

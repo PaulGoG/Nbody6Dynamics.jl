@@ -20,13 +20,25 @@ entries say so.
   and `t_core` in the header of `remnant_diagnostics.csv` and in `[stages]` of `validity.toml`; contact, core
   coalescence, main progenitor and mass ratio of every join in `merger_tree.csv`.
 
+- The merger figures consume the epochs: the separation figure marks the contact, the core coalescence and every
+  join of the merger tree, ends each pair's line at its core coalescence and continues it as the offset of the two
+  centres against the centre-noise floor; the structure, virial, density-profile and velocity-dispersion figures end
+  a progenitor's series at its retirement and shade the interacting and coalescing regimes; the remnant figures start
+  at the core coalescence. The separation figure takes the pipeline's coalescence result and epochs instead of
+  evaluating them again with default settings.
+- `cluster_structure`, `per_cluster_virial` and `cluster_profiles` take the epochs and return `NaN` rows for a
+  progenitor from its core coalescence or dissolution on (`cluster_profiles` with `retired = :remnant` profiles its
+  stars about the remnant centre instead); their presence thresholds follow `merger_min_members`.
+- The documentation assets of the showcase page and the README are rendered again from the 2026-11-02 runs with the
+  figure code of this release (`docs/src/assets/PROVENANCE.md`).
+
 ### Changed
 
 - The remnant quantities of `remnant_diagnostics` (core radii, core density, half-mass radius, rotation, spin
   alignment, segregation) are `NaN` while the system is `detached` or `interacting`: before the core coalescence they
   measured the denser progenitor, the orbital motion and the gap between the bodies. `mask = false` restores the
   evaluation at every snapshot. The spin alignment refers to the orbital angular momentum of the most-bound cores at
-  the core coalescence instead of the initial orbit.
+  the last snapshot before the core coalescence instead of the initial orbit.
 - `progenitor_budget` evaluates the mixing fields (`aplus2`, the D statistics) only from a progenitor's core
   coalescence on and measures `r_h` about the remnant centre there; masses, counts and removals are unchanged.
 - The merger tree joins two clusters under the group rule of `coalescence_time` (they share a connected group of

@@ -2,57 +2,49 @@
 # Remnant figures: rotation, structure, mass segregation
 # =============================================================================
 
-"""Time axis of a `RemnantDiagnostics` in the configured units: values and label."""
+"""Time axis of a `RemnantDiagnostics` in the configured units: values, label and the epochs."""
 function _remnant_time(diag::RemnantDiagnostics, cfg::VisualizationConfig)
     physical = cfg.units == "physical" && all(isfinite, diag.time_myr) && any(!=(1.0), diag.rbar)
     t = physical ? diag.time_myr : diag.time
     label = physical ? L"t \; [\mathrm{Myr}]" : L"t \; [\mathrm{NB}]"
     t_coal = physical ? diag.coalescence_time_myr : diag.coalescence_time
     t_seg = physical ? diag.segregation_time_myr : diag.segregation_time
-    return (; physical, t, label, t_coal, t_seg)
+    t_contact = physical ? diag.t_contact_myr : diag.t_contact
+    t_core = physical ? diag.t_core_myr : diag.t_core
+    return (; physical, t, label, t_coal, t_seg, t_contact, t_core)
 end
 
-"""Occupancy points of a series extended by one point standing for an event
-marker's label (`x` the marker time, `y` the top of the data range), so
-[`_emptiest_corner`](@ref) keeps annotations away from it. Returns the
-series unchanged when the marker is absent."""
-_with_marker(v::AbstractVector{<:Real}, extra::Real) =
-    isfinite(extra) ? vcat(Float64.(v), Float64(extra)) : Float64.(v)
+"""Height of each panel of the two-panel remnant figures in layout units, for the placement of the epoch labels."""
+const _REMNANT_PANEL_HEIGHT = 400
 
-"""Fraction of the time range within which a marker label flips to the left of its line."""
-const _MARKER_EDGE_FRACTION = 0.2
+"""Markers of the merger epochs on a remnant figure: first contact, core coalescence, centre coalescence."""
+_remnant_epoch_markers(ax_t) = [
+    (ax_t.t_contact, L"t_\mathrm{contact}", _EPOCH_STYLE.contact...),
+    (ax_t.t_core, L"t_\mathrm{core}", _EPOCH_STYLE.core...),
+    (ax_t.t_coal, L"t_\mathrm{coalesce}", _EPOCH_STYLE.join...),
+]
 
-"""Clearance of an event label from its own line, as a fraction of the time range."""
-const _MARKER_LABEL_CLEARANCE = 0.01
+"""
+    _corner_clear_of(xs, ys, marker_xs, xlims, ylims; corners = (:tl, :tr), width = 0.35)
 
-"""Dashed vertical marker at `x` with `label` hanging from `y_top` (data
-coordinates, the caller's upper axis limit) clear of the line — one per cent
-of `t_range` to its right, or to its left when `x` lies in the last
-`_MARKER_EDGE_FRACTION` of `t_range`; no-op for `NaN`."""
-function _event_marker!(
-    ax,
-    x::Real,
-    label::AbstractString,
-    y_top::Real,
-    t_range::Tuple{<:Real,<:Real};
-    color = :black,
-)
-    isfinite(x) || return nothing
-    vlines!(ax, [x]; color = color, linestyle = :dash, linewidth = _STYLE.guide)
-    span = max(t_range[2] - t_range[1], eps(Float64))
-    right_side = (x - t_range[1]) / span < 1 - _MARKER_EDGE_FRACTION
-    dx = _MARKER_LABEL_CLEARANCE * span
-    text!(
-        ax,
-        right_side ? x + dx : x - dx,
-        y_top;
-        text = label,
-        align = (right_side ? :left : :right, :top),
-        offset = (0, -2),
-        fontsize = _ANNOTATION_FONTSIZE,
-        color = color,
+The emptiest corner ([`_emptiest_corner`](@ref) within the axis limits) among
+those of `corners` whose side holds none of the vertical markers at
+`marker_xs`, whose labels hang from the top of the panel; among all of
+`corners` when every side holds one.
+"""
+function _corner_clear_of(xs, ys, marker_xs, xlims, ylims; corners = (:tl, :tr), width = 0.35)
+    x0, x1 = Float64.(xlims)
+    span = max(x1 - x0, eps(Float64))
+    us = [(x - x0) / span for x in marker_xs if isfinite(x)]
+    clear =
+        Tuple(c for c in corners if !any(u -> (c in (:tr, :br) ? u ≥ 1 - width : u ≤ width), us))
+    return _emptiest_corner(
+        xs,
+        ys;
+        corners = isempty(clear) ? corners : clear,
+        xlims = (x0, x1),
+        ylims = Float64.(ylims),
     )
-    return nothing
 end
 
 """
@@ -61,8 +53,13 @@ end
 
 Two stacked panels sharing the time axis: the ordered-motion parameter
 ``λ_R`` with the Peebles spin ``λ_P`` on a twin axis, and the alignment
-``\\cos θ`` of the spin axis with the initial orbital angular momentum,
-with the coalescence time marked.
+``\\cos θ`` of the spin axis with the orbital angular momentum of the
+most-bound cores of the progenitors at the last snapshot before the core coalescence (`MergerEpochs`;
+the initial orbital angular momentum for a configuration that never
+coalesces). The first contact, the core coalescence and the centre
+coalescence are marked and the `interacting` and `coalescing` regimes
+shaded; the series start at the core coalescence, before which the bound set
+holds several bodies.
 """
 @publication function Nbody6Dynamics.plot_remnant_rotation(
     diag::RemnantDiagnostics,
@@ -120,53 +117,119 @@ with the coalescence time marked.
     # data down to cos θ = 0.8 at least, instead of the full [-1, 1] range
     # the alignment could in principle take.
     a_lo = any(valida) ? min(minimum(diag.spin_alignment[valida]), 0.8) : 0.8
-    # Headroom for the guide label, which clears its line by 3 % of the data range
-    a_top = max(1.05, 1.0 + 0.05 * (1.1 - a_lo))
+    # Headroom above cos θ = 1 for the two lines of the guide label
+    a_top = max(1.07, 1.0 + 0.16 * (1.1 - a_lo))
     ax2 = Axis(
         fig[2, 1];
         xlabel = ax_t.label,
         ylabel = L"\cos\theta_{\mathrm{spin,\,orb}}",
         xticks = ttk,
-        yticks = _nice_ticks(a_lo - 0.1, a_top),
+        # No tick above cos θ = 1: the headroom holds the guide label only
+        yticks = filter(≤(1.0 + 1e-9), _nice_ticks(a_lo - 0.1, a_top)),
     )
     lines!(ax2, t[valida], diag.spin_alignment[valida]; color = :black, linewidth = _STYLE.data)
     hlines!(ax2, [1.0]; color = (:grey, 0.6), linestyle = :dot, linewidth = _STYLE.guide)
-    any(valida) && _guide_label!(
-        ax2,
-        "Aligned with orbital L",
-        1.0;
-        xs = t[valida],
-        ys = diag.spin_alignment[valida],
-        color = :grey,
-    )
+    # The reference axis: the orbital angular momentum of the most-bound cores at
+    # the core coalescence (the initial orbit when the cores never coalesce)
+    orbit_lines =
+        isfinite(ax_t.t_core) ?
+        [
+            L"Aligned with $\mathbf{L}_\mathrm{orb}$ of the",
+            L"most-bound cores before $t_\mathrm{core}$",
+        ] : [L"Aligned with the initial $\mathbf{L}_\mathrm{orb}$"]
+    # Box of the guide label in data coordinates, which the epoch labels keep clear of
+    label_box = Tuple{Vector{Float64},Vector{Float64}}[]
+    if any(valida)
+        # Right-aligned at the end of the series, below the guide when the series
+        # leaves that stretch free, above it otherwise
+        xs_a = t[valida]
+        ys_a = diag.spin_alignment[valida]
+        x_end = maximum(xs_a)
+        width = maximum(_label_length, orbit_lines) / _MARKER_AXIS_WIDTH * (last(t) - first(t))
+        a_span = a_top - (a_lo - 0.1)
+        line_height = 1.25 * _ANNOTATION_FONTSIZE / _REMNANT_PANEL_HEIGHT * a_span
+        height = length(orbit_lines) * line_height
+        below =
+            !any(
+                i -> xs_a[i] ≥ x_end - width && 1.0 - 0.03 * a_span - height ≤ ys_a[i] ≤ 1.0,
+                eachindex(xs_a),
+            )
+        y_first = below ? 1.0 - 0.02 * a_span : 1.0 + 0.02 * a_span + height
+        for (j, line) in enumerate(orbit_lines)
+            text!(
+                ax2,
+                x_end,
+                y_first - (j - 1) * line_height;
+                text = line,
+                align = (:right, :top),
+                color = :grey,
+                fontsize = _ANNOTATION_FONTSIZE,
+            )
+        end
+        # Rows across the box, closer than the padding of the occupied intervals
+        x_box = [x_end - width, x_end]
+        for y in range(y_first - height, y_first; length = 6)
+            push!(label_box, (x_box, [y, y]))
+        end
+    end
     ylims!(ax2, a_lo - 0.1, a_top)
+    tr = (first(t), last(t))
+    bands = _regime_bands!((ax1, ax2), t, diag.regime; label = false)
+    for ax in (ax1, ax1b, ax2)
+        _time_limits!(ax, t)
+    end
     linkxaxes!(ax1, ax2)
     rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
-    tr = (first(t), last(t))
-    _event_marker!(ax1, ax_t.t_coal, L"t_\mathrm{coalesce}", l_top, tr)
-    _event_marker!(ax2, ax_t.t_coal, L"t_\mathrm{coalesce}", a_top, tr)
+    markers = _remnant_epoch_markers(ax_t)
+    # λ_P on the scale of the λ_R axis, for the placement of the epoch labels
+    p_scale = any(validp) ? l_top / (1.15 * maximum(diag.lambda_peebles[validp])) : 1.0
+    _epoch_markers!(
+        ax1,
+        markers,
+        (0.0, l_top),
+        tr;
+        series = [
+            (t[valid], diag.lambda_r[valid]),
+            (t[validp], diag.lambda_peebles[validp] .* p_scale),
+        ],
+        axis_height = _REMNANT_PANEL_HEIGHT,
+    )
+    _epoch_markers!(
+        ax2,
+        markers,
+        (a_lo - 0.1, a_top),
+        tr;
+        series = vcat(
+            [(t[valida], diag.spin_alignment[valida]), ([first(t), last(t)], [1.0, 1.0])],
+            label_box,
+        ),
+        axis_height = _REMNANT_PANEL_HEIGHT,
+    )
     if any(valid)
         _annotate!(
             ax1,
             latexstring(
                 "\\lambda_R = $(_fmt_latex_sig3(diag.lambda_r[findlast(valid)]))\\;(\\mathrm{final})",
             );
-            corner = _emptiest_corner(
-                _with_marker(t[valid], ax_t.t_coal),
-                _with_marker(diag.lambda_r[valid], maximum(diag.lambda_r[valid]));
-                corners = (:tl, :tr),
-                avoid_x = ax_t.t_coal,
+            corner = _corner_clear_of(
+                t[valid],
+                diag.lambda_r[valid],
+                (m[1] for m in markers),
+                tr,
+                (0.0, l_top),
             ),
             color = c_r,
         )
     end
+    band_elements, band_labels = _regime_legend(bands)
     _top_legend!(
         fig,
         _LegendElement[
             LineElement(; color = c_r, linewidth = _STYLE.data),
             LineElement(; color = c_p, linewidth = _STYLE.data, linestyle = :dash),
+            band_elements...,
         ],
-        AbstractString[L"\lambda_R", L"\lambda_P"],
+        AbstractString[L"\lambda_R", L"\lambda_P", band_labels...],
     )
     return _save_fig(cfg, filename, fig)
 end
@@ -235,7 +298,9 @@ end
                            filename = "remnant_structure") -> String
 
 Core and half-mass radii of the bound remnant against time above the ratio
-``r_h / r_c``, with the coalescence time marked.
+``r_h / r_c``, from the core coalescence on, with the first contact, the core
+coalescence and the centre coalescence marked and the `interacting` and
+`coalescing` regimes shaded.
 """
 @publication function Nbody6Dynamics.plot_remnant_structure(
     diag::RemnantDiagnostics,
@@ -279,11 +344,29 @@ Core and half-mass radii of the bound remnant against time above the ratio
     lines!(ax2, t[vr], ratio[vr]; color = :black, linewidth = _STYLE.data)
     q_top = 1.15 * maximum(ratio[vr]; init = 1.0)
     ylims!(ax2, 0.0, q_top)
+    _regime_bands!((ax1, ax2), t, diag.regime)
+    _time_limits!(ax1, t)
+    _time_limits!(ax2, t)
     linkxaxes!(ax1, ax2)
     rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
     tr = (first(t), last(t))
-    _event_marker!(ax1, ax_t.t_coal, L"t_\mathrm{coalesce}", r_top, tr)
-    _event_marker!(ax2, ax_t.t_coal, L"t_\mathrm{coalesce}", q_top, tr)
+    markers = _remnant_epoch_markers(ax_t)
+    _epoch_markers!(
+        ax1,
+        markers,
+        (0.0, r_top),
+        tr;
+        series = [(t[vc], r_c[vc]), (t[vh], r_h[vh])],
+        axis_height = _REMNANT_PANEL_HEIGHT,
+    )
+    _epoch_markers!(
+        ax2,
+        markers,
+        (0.0, q_top),
+        tr;
+        series = [(t[vr], ratio[vr])],
+        axis_height = _REMNANT_PANEL_HEIGHT,
+    )
     _top_legend!(fig, ax1)
     return _save_fig(cfg, filename, fig)
 end
@@ -294,8 +377,10 @@ end
                                     filename = "remnant_mass_segregation") -> String
 
 ``Λ_\\mathrm{MSR}`` with its error band against time above the half-mass
-radius ratio of the massive subset, with the threshold, coalescence and
-segregation times marked.
+radius ratio of the massive subset, from the core coalescence on, with the
+threshold, the first contact, the core and centre coalescences and the
+segregation time marked and the `interacting` and `coalescing` regimes
+shaded.
 """
 @publication function Nbody6Dynamics.plot_mass_segregation_evolution(
     diag::RemnantDiagnostics,
@@ -337,22 +422,32 @@ segregation times marked.
     )
     hlines!(ax1, [1.0]; color = (:grey, 0.5), linestyle = :dash, linewidth = _STYLE.guide)
     if any(v)
+        # The guide labels keep clear of the error band, not only of its centre line,
+        # and of each other: the unity label sees the threshold guide and the strip
+        # below it, where the threshold label may sit, as occupied
+        band_x = vcat(t[v], t[v], t[v])
+        band_y = vcat(diag.lambda_msr[v], lo_band, hi_band)
+        guide_x = collect(range(first(t), last(t); length = 50))
         _guide_label!(
             ax1,
             latexstring(
                 "\\Lambda_\\mathrm{MSR} = $(_fmt_latex_sig3(lambda_threshold))\\;\\mathrm{(segregated\\;above)}",
             ),
             lambda_threshold;
-            xs = t[v],
-            ys = diag.lambda_msr[v],
+            xs = band_x,
+            ys = band_y,
             color = :grey,
         )
         _guide_label!(
             ax1,
             L"\Lambda_\mathrm{MSR} = 1",
             1.0;
-            xs = t[v],
-            ys = diag.lambda_msr[v],
+            xs = vcat(band_x, guide_x, guide_x),
+            ys = vcat(
+                band_y,
+                fill(Float64(lambda_threshold), 50),
+                fill(0.5 * (1.0 + lambda_threshold), 50),
+            ),
             color = :grey,
         )
     end
@@ -373,13 +468,37 @@ segregation times marked.
     )
     s_top = any(vs) ? 1.15 * max(maximum(diag.segregation_ratio[vs]), 1.0) : 1.2
     ylims!(ax2, 0.0, s_top)
+    bands = _regime_bands!((ax1, ax2), t, diag.regime; label = false)
+    _time_limits!(ax1, t)
+    _time_limits!(ax2, t)
     linkxaxes!(ax1, ax2)
     rowgap!(fig.layout, _TWO_PANEL_ROWGAP)
     tr = (first(t), last(t))
-    for (ax, top) in ((ax1, l_top), (ax2, s_top))
-        _event_marker!(ax, ax_t.t_coal, L"t_\mathrm{coalesce}", top, tr)
-        _event_marker!(ax, ax_t.t_seg, L"t_\mathrm{seg}", 0.85 * top, tr; color = c_msr)
-    end
+    markers = vcat(_remnant_epoch_markers(ax_t), [(ax_t.t_seg, L"t_\mathrm{seg}", c_msr, :dash)])
+    msr_series =
+        any(v) ?
+        [
+            (t[v], diag.lambda_msr[v] .- diag.lambda_msr_err[v]),
+            (t[v], diag.lambda_msr[v] .+ diag.lambda_msr_err[v]),
+        ] : Tuple{Vector{Float64},Vector{Float64}}[]
+    _epoch_markers!(
+        ax1,
+        markers,
+        (0.0, l_top),
+        tr;
+        series = msr_series,
+        axis_height = _REMNANT_PANEL_HEIGHT,
+    )
+    _epoch_markers!(
+        ax2,
+        markers,
+        (0.0, s_top),
+        tr;
+        series = [(t[vs], diag.segregation_ratio[vs])],
+        axis_height = _REMNANT_PANEL_HEIGHT,
+    )
+    # The regimes are the only regions to name: one entry per regime shaded
+    isempty(bands) || _top_legend!(fig, _regime_legend(bands)...; title = "Regime:")
     return _save_fig(cfg, filename, fig)
 end
 

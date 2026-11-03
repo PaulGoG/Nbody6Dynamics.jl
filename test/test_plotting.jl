@@ -647,6 +647,163 @@ end
 
 # =====================================================================
 
+@testset "Merger figures over the merger epochs" begin
+    # Two Plummer clusters of 200 stars (mass ½ each) placed along x: one sequence
+    # that ends in a core coalescence, one fly-by that separates again
+    rng_ep = StableRNG(5151)
+    n = 200
+    p1, v1 = sample_plummer(n, 0.1; rng = rng_ep)
+    p2, v2 = sample_plummer(n, 0.1; rng = rng_ep)
+    v1 .*= sqrt(0.5)
+    v2 .*= sqrt(0.5)
+    mass = fill(1 / (2n), 2n)
+    function epoch_series(seps)
+        return map(enumerate(seps)) do (k, d)
+            params = zeros(Float32, 20)
+            params[1] = k - 1
+            params[3] = 2.0f0    # rbar [pc]
+            params[4] = 1.0f0
+            params[11] = 3.0f0   # tscale [Myr]
+            params[12] = 1.0f0
+            Snapshot(
+                SnapshotHeader(Int32(2n), Int32(1), Int32(1), Int32(20), params),
+                Int32.(1:(2n)),
+                Float32.(mass),
+                Float32.(hcat(p1 .- [d / 2, 0, 0], p2 .+ [d / 2, 0, 0])),
+                Float32.(hcat(v1, v2)),
+                Float32[],
+                Float32[],
+            )
+        end
+    end
+    ranges = [1:n, (n + 1):(2n)]
+    pp = PostprocessConfig(; msr_n_tracer = 20, msr_n_random = 20, rotation_n_min = 100)
+    dir = mktempdir()
+
+    # Helpers of the epoch annotations
+    fig = Figure()
+    ax = Axis(fig[1, 1])
+    regimes = [:detached, :interacting, :interacting, :coalescing, :settled]
+    @test first.(MakieExt._regime_bands!((ax,), [0.0, 1, 2, 3, 4], regimes)) ==
+          ["Interacting", "Coalescing"]
+    @test_throws DimensionMismatch MakieExt._regime_bands!((ax,), [0.0, 1.0], [:detached])
+    @test MakieExt._occupied_intervals([([0.0, 1.0, 2.0], [0.0, 1.0, 0.0])], 0.4, 0.6, 0.0) ==
+          [(0.4, 0.6)]
+    @test MakieExt._label_length(raw"$t_\mathrm{core}$") <
+          MakieExt._label_length(raw"$t_\mathrm{contact}$")
+
+    for (name, seps, coalesces) in (
+        ("coalescing", [4.0, 2.0, 0.6, 0.3, 0.02, 0.02, 0.02], true),
+        ("flyby", [4.0, 2.0, 0.6, 2.0, 4.0, 6.0], false),
+    )
+        snaps = epoch_series(seps)
+        bsets = [bound_set(s) for s in snaps]
+        co = coalescence_time(snaps, ranges; bound_sets = bsets)
+        ep = merger_epochs(snaps, ranges, bsets, co; settings = pp)
+        @test ep.contact_index > 0 && (ep.core_index > 0) == coalesces
+        vis = VisualizationConfig(; format = "png", output_dir = joinpath(dir, name))
+        @test isfile(
+            plot_cluster_separation(
+                snaps,
+                ranges,
+                vis;
+                coalescence = co,
+                epochs = ep,
+                settings = pp,
+                bound_sets = bsets,
+            ),
+        )
+        # Without the pipeline's results the figure evaluates them with the settings
+        @test isfile(
+            plot_cluster_separation(snaps, ranges, vis; settings = pp, filename = "evaluated"),
+        )
+        @test isfile(
+            plot_cluster_separation(snaps, ranges, vis; epochs = ep, filename = "epochs_only"),
+        )
+        @test isfile(plot_cluster_virial(snaps, ranges, vis; epochs = ep))
+        @test isfile(plot_cluster_structure(snaps, ranges, vis; epochs = ep, settings = pp))
+        for k in (1, length(snaps))
+            @test isfile(
+                plot_density_profiles(
+                    snaps[k],
+                    ranges,
+                    vis;
+                    epochs = ep,
+                    settings = pp,
+                    filename = "density_$k",
+                ),
+            )
+            @test isfile(
+                plot_velocity_dispersion(
+                    snaps[k],
+                    ranges,
+                    vis;
+                    epochs = ep,
+                    settings = pp,
+                    filename = "dispersion_$k",
+                ),
+            )
+        end
+        diag = remnant_diagnostics(
+            snaps,
+            ranges;
+            settings = pp,
+            bound_sets = bsets,
+            coalescence = co,
+            epochs = ep,
+        )
+        @test all(isfile, remnant_figures(diag, vis))
+
+        # The count of distinct clusters rebuilt from the epochs is that of the test
+        @test MakieExt._distinct_clusters(ep) == co.n_distinct
+        # The centre-noise floor exists from the pair's core coalescence on, far below r_h
+        noise = MakieExt._pair_noise_floor(snaps, ranges, ep, bsets)
+        k_core = ep.pair_core[1]
+        if coalesces
+            @test all(isnan, noise[1, 1:(k_core - 1)])
+            @test all(x -> 0 < x < 0.05, noise[1, k_core:end])
+            @test isequal(noise, MakieExt._pair_noise_floor(snaps, ranges, ep, nothing))
+        else
+            @test k_core == 0 && all(isnan, noise)
+        end
+
+        # The dispatcher hands the pipeline's epochs to every merger figure
+        sim = joinpath(dir, name * "_run", "output")
+        mkpath(sim)
+        write(
+            joinpath(sim, "merger_summary.txt"),
+            "  Cluster 1: plummer, imf=equal, N=$n (after trunc: $n), M=1 M☉\n" *
+            "  Cluster 2: plummer, imf=equal, N=$n (after trunc: $n), M=1 M☉\n",
+        )
+        out = joinpath(dir, name * "_dispatch")
+        results = Dict{Symbol,Any}(
+            :snapshots => snaps,
+            :coalescence => co,
+            :merger_epochs => ep,
+            :remnant => diag,
+        )
+        generate_plots(
+            results,
+            VisualizationConfig(; format = "png", output_dir = out);
+            sim_dir = sim,
+            animations = false,
+            settings = pp,
+        )
+        for f in (
+            "merger_cluster_separation",
+            "merger_cluster_virial",
+            "merger_cluster_structure",
+            "merger_density_profiles_final",
+            "merger_velocity_dispersion",
+            "remnant_rotation",
+        )
+            @test isfile(joinpath(out, f * ".png"))
+        end
+    end
+end
+
+# =====================================================================
+
 @testset "Canvases in layout units, export at the printed width" begin
     # The canvas is fixed by the figure type; the configuration only
     # sets the width it is printed at.

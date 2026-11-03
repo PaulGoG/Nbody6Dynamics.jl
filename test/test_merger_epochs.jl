@@ -512,6 +512,74 @@ end
     end
 end
 
+@testset "Merger epochs: retirement of the self-referenced structure" begin
+    # Two clusters: retired from their core coalescence (snapshot 5) on
+    snaps, ranges = _ep_pair_series([4.0, 2.0, 0.6, 0.3, 0.02, 0.02, 0.02])
+    bsets = [bound_set(s) for s in snaps]
+    ep = merger_epochs(snaps, ranges, bsets; settings = _EP_SETTINGS)
+    @test ep.tag_regime[1, :] == ep.regime && ep.core_index == 5
+    st0 = cluster_structure(snaps, ranges; settings = _EP_SETTINGS)
+    st = cluster_structure(snaps, ranges; settings = _EP_SETTINGS, epochs = ep)
+    @test all(isfinite, st0.r_lagr) && all(isfinite, st0.q_virial)
+    @test isequal(st.r_lagr[:, :, 1:4], st0.r_lagr[:, :, 1:4])
+    @test isequal(st.sigma_1d[:, 1:4], st0.sigma_1d[:, 1:4])
+    for f in (:bound_mass_fraction, :sigma_1d, :q_virial)
+        @test all(isnan, getfield(st, f)[:, 5:end])
+    end
+    @test all(isnan, st.centre[:, :, 5:end]) && all(isnan, st.r_lagr[:, :, 5:end])
+    @test all(iszero, st.n_bound[:, 5:end]) && all(==(400), st.n_members)
+    Q0, n0 = per_cluster_virial(snaps, ranges)
+    Q, nm = per_cluster_virial(snaps, ranges; epochs = ep)
+    @test isequal(Q[:, 1:4], Q0[:, 1:4]) && all(isnan, Q[:, 5:end]) && all(isfinite, Q0)
+    @test nm == n0 && all(==(400), nm)
+    # The last snapshot: skipped, or about the remnant centre from the global bound set
+    @test all(isnothing, cluster_profiles(snaps[end], ranges; settings = _EP_SETTINGS, epochs = ep))
+    profs = cluster_profiles(
+        snaps[end],
+        ranges;
+        settings = _EP_SETTINGS,
+        epochs = ep,
+        retired = :remnant,
+    )
+    @test all(!isnothing, profs) && all(p -> isapprox(p.M, 0.5; rtol = 1e-6), profs)
+    # Detached at the first snapshot: the profiles about the clusters' own centres
+    p_e = cluster_profiles(snaps[1], ranges; settings = _EP_SETTINGS, epochs = ep)
+    p_0 = cluster_profiles(snaps[1], ranges; settings = _EP_SETTINGS)
+    @test all(i -> isequal(p_e[i].r, p_0[i].r) && isequal(p_e[i].rho, p_0[i].rho), 1:2)
+    @test_throws ArgumentError cluster_profiles(snaps[end], ranges; epochs = ep, retired = :omit)
+    s0 = snaps[1]
+    stray = _ep_snap(Float64.(s0.pos), Float64.(s0.vel), Float64.(s0.mass), 99.0)
+    @test_throws ArgumentError cluster_profiles(stray, ranges; epochs = ep)
+    @test_throws DimensionMismatch cluster_structure(snaps[1:3], ranges; epochs = ep)
+    @test_throws ArgumentError per_cluster_virial(snaps, ranges; epochs = ep.regime)
+    # One progenitor: its self-bound subset is the remnant, nothing is retired
+    single = merger_epochs(snaps, [1:800], bsets)
+    st1 = cluster_structure(snaps, [1:800]; epochs = single)
+    @test all(isfinite, st1.r_lagr) &&
+          all(isfinite, per_cluster_virial(snaps, [1:800]; epochs = single)[1])
+
+    # A trapped satellite keeps its own frame; the merged pair is retired from snapshot 3
+    snaps_s, ranges_s = _ep_satellite_series()
+    ep_s =
+        merger_epochs(snaps_s, ranges_s, [bound_set(s) for s in snaps_s]; settings = _EP_SETTINGS)
+    st_s = cluster_structure(snaps_s, ranges_s; settings = _EP_SETTINGS, epochs = ep_s)
+    @test all(isfinite, st_s.r_lagr[2, 3, :]) && all(st_s.r_lagr[2, 3, :] .< 0.1)
+    @test all(isnan, st_s.r_lagr[2, 1:2, 3:end]) && all(isfinite, st_s.r_lagr[2, 1:2, 1:2])
+    p_s = cluster_profiles(
+        snaps_s[end],
+        ranges_s;
+        settings = _EP_SETTINGS,
+        epochs = ep_s,
+        retired = :remnant,
+    )
+    # The satellite about its own centre (compact, r_h ≈ 0.065), the pair about the remnant's
+    @test p_s[3].r_h < 0.1 && all(i -> 0.08 < p_s[i].r_h < 0.25, 1:2)
+    # The presence threshold is the configured one: the 100-star satellite needs ≤ 100
+    strict = PostprocessConfig(; merger_min_members = 150, merger_core_n = 150)
+    @test all(isnan, cluster_structure(snaps_s, ranges_s; settings = strict).r_lagr[:, 3, :])
+    @test cluster_profiles(snaps_s[1], ranges_s; settings = strict)[3] === nothing
+end
+
 @testset "Merger epochs: configuration keys" begin
     pp = PostprocessConfig()
     @test pp.merger_min_members == 20 && pp.merger_contact_lagrangian == 0.9

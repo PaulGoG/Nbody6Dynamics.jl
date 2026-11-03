@@ -4,9 +4,9 @@
 #
 # A merger is a sequence of epochs rather than one time: contact of the
 # self-bound cores (Roche-lobe overflow; Priyatikanto et al. 2016, DOI
-# 10.1093/mnras/stw1066), coalescence of the most-bound cores in phase space
+# 10.1093/mnras/stw060), coalescence of the most-bound cores in phase space
 # (Han et al. 2018, DOI 10.1093/mnras/stx2792; Karam & Sills 2022, DOI
-# 10.1093/mnras/stac1911), then spatial and kinematic mixing. The epochs set
+# 10.1093/mnras/stac1298), then spatial and kinematic mixing. The epochs set
 # the regime of every snapshot, progenitor and pair, and the regime decides in
 # which frame a tag-resolved quantity is physical.
 
@@ -38,7 +38,8 @@ System:
   [`coalescence_time`](@ref), kept for continuity
 - `t_cr_core`: crossing time of the bound set at `core_index`
 - `l_orb`: orbital angular momentum of the most-bound cores about their centre
-  of mass at `core_index` (NB units; `NaN` without a core coalescence)
+  of mass at the last snapshot before `core_index`, where the cores are still
+  distinct (NB units; `NaN` without a core coalescence)
 - `regime`: regime of every snapshot (`n_t`)
 
 Pairs, in the order of [`coalescence_time`](@ref):
@@ -162,7 +163,7 @@ with `i` and `j` exchanged, `R_L` the Roche-lobe radius of Eggleton (1983, DOI
 10.1086/160960). The radii are the Lagrangian radii of the self-bound cores
 at the mass fraction `merger_contact_lagrangian`, the masses their self-bound
 masses and `separation` the distance of their density centres; the contact
-epoch follows Priyatikanto et al. (2016, DOI 10.1093/mnras/stw1066). Snapshots
+epoch follows Priyatikanto et al. (2016, DOI 10.1093/mnras/stw060). Snapshots
 with a non-finite entry or a non-positive mass are skipped. No persistence is
 required: a fly-by that separates again stays past contact. Returns `0` when
 the cores never touch.
@@ -551,7 +552,7 @@ and joins are those of [`merger_tree`](@ref) (the group rule of
   `merger_contact_lagrangian`; a pair is in contact from the first snapshot at
   which either radius exceeds the Roche-lobe radius of Eggleton (1983, DOI
   10.1086/160960) at the separation of the centres and the ratio of the
-  self-bound masses (Priyatikanto et al. 2016, DOI 10.1093/mnras/stw1066).
+  self-bound masses (Priyatikanto et al. 2016, DOI 10.1093/mnras/stw060).
 - Core coalescence ([`core_index`](@ref)): the core of a tag is the
   `merger_core_n` systems of largest binding energy among its members in the
   global bound set, in the potential of those members alone; `δs = Δx / σ_x +
@@ -797,7 +798,9 @@ function merger_epochs(
         settled_index = k_s === nothing ? 0 : k_s
     end
     t_cr_core = sys_core > 0 ? _bound_crossing_time(snaps[sys_core], bound_sets[sys_core]) : NaN
-    l_orb = sys_core > 0 ? _core_orbital_angular_momentum(s, sys_core) : fill(NaN, 3)
+    # Orbital angular momentum of the cores at the last snapshot before they coalesce: at
+    # `core_index` itself the cores coincide and only a noise residual is left.
+    l_orb = sys_core > 0 ? _core_orbital_angular_momentum(s, max(sys_core - 1, 1)) : fill(NaN, 3)
     k_coal = co.index === nothing ? 0 : co.index
 
     return MergerEpochs(

@@ -37,7 +37,9 @@ flagship is released at the same virial ratio as a pair at apocentre with
 `e = 0.5`; its three pairwise separations fall from 10 pc to 5 pc by 6 Myr,
 rebound to 7 pc at 8 Myr and drop below the half-mass radii: clusters 1 and 3
 join at 12 Myr and cluster 2 at 14 Myr, the centre coalescence of
-`coalescence_time` and the last join of the merger tree.
+`coalescence_time` and the last join of the merger tree; the merger epochs
+(`merger_epochs`) put the contact of the three at 2 Myr and the core
+coalescence of the system at 14 Myr.
 
 ## Reference runs
 
@@ -74,8 +76,10 @@ figure routines and arguments.
 
 *`equal`: the separation of the two density centres falls below the smaller
 half-mass radius at 5 Myr, the centre coalescence of `coalescence_time` and
-the join of the merger tree; after that the two centres of the single
-remnant stay within 0.3 pc.*
+the join of the merger tree; the merger epochs mark the contact at 2 Myr
+and the core coalescence at 6 Myr, from which the pair quantity is retired
+and the two centres of the single remnant are followed as an offset against
+the centre-noise floor. The interacting and coalescing regimes are shaded.*
 
 ![Orbital elements of the regularised pairs of the binary case at 15 Myr](assets/showcase_binary_orbital_elements.png)
 

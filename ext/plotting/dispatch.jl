@@ -73,26 +73,36 @@ end
     generate_plots(results::Dict{Symbol,Any}, vis::VisualizationConfig;
                    sim_dir::AbstractString = "", animations::Bool = true,
                    pair_sum_max_n::Integer = PostprocessConfig().pair_sum_max_n,
-                   bound::NamedTuple = (;))
+                   bound::NamedTuple = (;), settings::PostprocessConfig = PostprocessConfig())
 
 Generate all available plots (and, when `animations = true`, GIF
 animations) from post-processing results, saving into `vis.output_dir`.
 `sim_dir` names the directory holding the raw simulation output; when given,
 it is searched for `merger_summary.txt` to produce the merger-specific
-figures (inter-cluster separation, per-cluster virial ratio).
+figures (inter-cluster separation, per-cluster virial ratio, structure and
+profiles, remnant figures).
+
+The merger figures take the merger epochs of `results` (`:merger_epochs`,
+with `:coalescence` and the bound sets of `:integrals`): a cluster's
+per-cluster series end where it is retired and the regimes are shaded. For
+results without them (`postprocess_external`) the epochs of a run with two or
+more clusters are evaluated once here, with the `merger_*` keys of
+`settings`, which also supplies the centre and profile keys of the figures
+and of the remnant diagnostics derived here.
 
 `pair_sum_max_n` bounds the merger figures built on O(N²) pair sums, the
 per-cluster virial ratio and structure, the bound-member density and
 velocity-dispersion profiles and the remnant figures: they are drawn only
 when no snapshot holds more particles than this, with a warning otherwise;
-the inter-cluster separation is drawn regardless. The bound-set selection
-behind the binary figures' hard/soft scale obeys the same limit, above
-which the scale is taken over every system. The default is that of
-`PostprocessConfig`, and the `Nbody6Config` method passes
-`cfg.postprocess.pair_sum_max_n`. `bound` holds the keywords `max_passes`
-and `min_members` of the bound-set selections ([`bound_set`](@ref)); the
-`Nbody6Config` method passes `postprocess.bound_max_passes` and
-`postprocess.bound_min_members`.
+the inter-cluster separation (and the merger epochs it needs) is drawn
+regardless. The bound-set selection behind the binary figures' hard/soft
+scale obeys the same limit, above which the scale is taken over every
+system. The default is that of `PostprocessConfig`, and the `Nbody6Config`
+method passes `cfg.postprocess.pair_sum_max_n`. `bound` holds the keywords
+`max_passes` and `min_members` of the bound-set selections
+([`bound_set`](@ref)); the `Nbody6Config` method passes
+`postprocess.bound_max_passes`, `postprocess.bound_min_members` and
+`settings = cfg.postprocess`.
 
 This is the single plot dispatcher — both the config-driven pipeline
 (via the `Nbody6Config` method) and [`postprocess_external`](@ref) route
@@ -105,6 +115,7 @@ function Nbody6Dynamics.generate_plots(
     animations::Bool = true,
     pair_sum_max_n::Integer = PostprocessConfig().pair_sum_max_n,
     bound::NamedTuple = (;),
+    settings::PostprocessConfig = PostprocessConfig(),
 )
     if haskey(results, :snapshots)
         snaps = results[:snapshots]::Vector{Snapshot}
@@ -123,14 +134,46 @@ function Nbody6Dynamics.generate_plots(
                 if isfile(summary_path) && length(snaps) ≥ 2
                     ranges = parse_merger_summary(summary_path)
                     if !isempty(ranges)
+                        # The pipeline's bound sets, centre coalescence and merger
+                        # epochs; evaluated once here, with the configured settings,
+                        # for results that did not pass through it
+                        bsets =
+                            haskey(results, :integrals) ?
+                            BoundSet[s.bound for s in results[:integrals]] : nothing
+                        coal = get(results, :coalescence, nothing)
+                        epochs = get(results, :merger_epochs, nothing)
                         if length(ranges) ≥ 2
+                            if epochs === nothing
+                                @info "Merger epochs (contact, core coalescence, dissolution)..."
+                                bsets === nothing &&
+                                    (bsets = BoundSet[bound_set(s; bound...) for s in snaps])
+                                coal === nothing && (
+                                    coal = coalescence_time(
+                                        snaps,
+                                        ranges;
+                                        bound_sets = bsets,
+                                        bound...,
+                                    )
+                                )
+                                epochs =
+                                    merger_epochs(snaps, ranges, bsets, coal; settings, bound...)
+                            end
                             @info "Plotting inter-cluster separation..."
-                            plot_cluster_separation(snaps, ranges, vis)
+                            plot_cluster_separation(
+                                snaps,
+                                ranges,
+                                vis;
+                                coalescence = coal,
+                                epochs,
+                                settings,
+                                bound,
+                                bound_sets = bsets,
+                            )
                         end
                         n_max = maximum(nparticles, snaps)
                         if n_max ≤ pair_sum_max_n
                             @info "Plotting per-cluster virial ratio..."
-                            plot_cluster_virial(snaps, ranges, vis; bound)
+                            plot_cluster_virial(snaps, ranges, vis; bound, epochs)
                             @info "Plotting per-cluster structure..."
                             plot_cluster_structure(
                                 snaps,
@@ -138,6 +181,8 @@ function Nbody6Dynamics.generate_plots(
                                 vis;
                                 lagr = get(results, :lagr, nothing),
                                 bound,
+                                epochs,
+                                settings,
                             )
                             # Radial profiles against the generating models (merger_ic.toml)
                             ic_meta = joinpath(sim_dir, "merger_ic.toml")
@@ -155,6 +200,8 @@ function Nbody6Dynamics.generate_plots(
                                 specs = specs,
                                 filename = "merger_density_profiles_initial",
                                 bound,
+                                epochs,
+                                settings,
                             )
                             plot_density_profiles(
                                 snaps[end],
@@ -163,16 +210,33 @@ function Nbody6Dynamics.generate_plots(
                                 specs = specs,
                                 filename = "merger_density_profiles_final",
                                 bound,
+                                epochs,
+                                settings,
                             )
                             @info "Plotting velocity dispersion profiles (final snapshot)..."
-                            plot_velocity_dispersion(snaps[end], ranges, vis; bound)
+                            plot_velocity_dispersion(
+                                snaps[end],
+                                ranges,
+                                vis;
+                                bound,
+                                epochs,
+                                settings,
+                            )
                             # Computed by `postprocess` for pipeline runs (and written
                             # there as remnant_diagnostics.csv); derived here only for
                             # results that did not pass through it.
                             diag = get(results, :remnant, nothing)
                             if diag === nothing
                                 @info "Remnant diagnostics (bound set, core radius, rotation, segregation)..."
-                                diag = remnant_diagnostics(snaps, ranges; bound...)
+                                diag = remnant_diagnostics(
+                                    snaps,
+                                    ranges;
+                                    settings,
+                                    bound_sets = bsets,
+                                    bound...,
+                                    coalescence = coal,
+                                    epochs,
+                                )
                             end
                             remnant_figures(diag::RemnantDiagnostics, vis)
                         else
@@ -410,5 +474,6 @@ function Nbody6Dynamics.generate_plots(
             max_passes = cfg.postprocess.bound_max_passes,
             min_members = cfg.postprocess.bound_min_members,
         ),
+        settings = cfg.postprocess,
     )
 end

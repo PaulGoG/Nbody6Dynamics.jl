@@ -997,7 +997,7 @@ Diagnostics of the bound remnant of the whole system at every snapshot
 - `lambda_r`, `lambda_peebles`: rotation parameters ([`rotation_analysis`](@ref))
 - `spin_axis`: unit spin vectors, `3 × n_t`
 - `spin_alignment`: cosine of the angle between the spin axis and the
-  orbital angular momentum of the most-bound cores at the core coalescence
+  orbital angular momentum of the most-bound cores at the last snapshot before the core coalescence
   (`l_orb` of `MergerEpochs`); of the initial clusters at the first
   snapshot when the cores never coalesce
 - `lambda_msr`, `lambda_msr_err`, `segregation_ratio`: mass segregation of
@@ -1165,7 +1165,7 @@ bound sets (with `settings`, `max_passes` and `min_members`). With `mask` set
 the remnant quantities are `NaN` (and not evaluated) at every snapshot whose
 system regime is `detached` or `interacting`, the rotation profile is that of
 the last unmasked snapshot, and the spin alignment refers to the orbital
-angular momentum of the most-bound cores at the core coalescence; `mask =
+angular momentum of the most-bound cores at the last snapshot before the core coalescence; `mask =
 false` evaluates every snapshot, for tests of the estimators on a
 configuration of several bodies. A single progenitor is one body throughout
 and is never masked.
@@ -1267,7 +1267,7 @@ function remnant_diagnostics(
     masked = falses(n_t)
     mask && (masked .= in.(ep.regime, Ref((:detached, :interacting))))
 
-    # Reference of the spin alignment: the cores at the core coalescence, else the initial orbit
+    # Reference of the spin alignment: the cores at the last snapshot before the core coalescence, else the initial orbit
     L_orb = all(isfinite, ep.l_orb) ? ep.l_orb : _orbital_angular_momentum(snaps[1], cluster_ranges)
     L_norm = sqrt(sum(abs2, L_orb))
     L_hat = L_norm > 0 ? L_orb ./ L_norm : fill(NaN, 3)

@@ -307,6 +307,19 @@ equipartition_series
 write_equipartition
 ```
 
+## Merger Epochs
+
+```@docs
+MergerEpochs
+merger_epochs
+contact_index
+core_index
+dissolution_index
+regime_label
+write_merger_epochs
+write_pair_separation
+```
+
 ## Merger Tree and Progenitor Budget
 
 ```@docs
