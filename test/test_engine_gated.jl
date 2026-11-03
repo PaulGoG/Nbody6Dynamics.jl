@@ -273,7 +273,7 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
 
         # 3b. Galactic field (KZ(14) = 5): the tidal work booked per regular step
         # must leave the energy check at the isolated level. Before fork
-        # v2026.07.23 the force of changed neighbours entered the tidal work and
+        # v2026.07.24 the force of changed neighbours entered the tidal work and
         # the running error reached 2.6e-5 over 2.8 time units (record
         # kz5-2026-11-02); the corrected engine gives 5e-6 with intervals ≤ 3e-6.
         kpath = joinpath(work, "merger_kz5.toml")

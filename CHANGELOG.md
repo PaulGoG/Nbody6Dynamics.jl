@@ -34,6 +34,13 @@ entries say so.
 
 ### Changed
 
+- Engine pin `v2026.07.24` (fork): a bound KS pair with a semi-major axis below 10⁻³ RMIN that lies below 0.01 of
+  the chain scale enters a chain as a dormant c.m. body under any option set (the engine's inert-binary path was
+  restricted to KZ(26) < 2 and KZ(27) > 0, so under the chain slow-down such a pair was resolved by the chain
+  integrator, whose consistency then grew geometrically until a lifetime cut); the chain is terminated and the pair
+  renewed when a member comes within 30 semi-major axes of it, and a chain-inert pair with a distant single intruder
+  goes to the merger check instead of a chain. Closes roadmap item 9.33.
+
 - The remnant quantities of `remnant_diagnostics` (core radii, core density, half-mass radius, rotation, spin
   alignment, segregation) are `NaN` while the system is `detached` or `interacting`: before the core coalescence they
   measured the denser progenitor, the orbital motion and the gap between the bodies. `mask = false` restores the

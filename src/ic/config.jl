@@ -1757,7 +1757,7 @@ end
 # potential energy of a linearised field (the XTRNLV call in energy.F is
 # commented out; the tidal-energy-total amendment restores it, and the fork
 # carries it), and its work-accumulated tidal energy of KZ(14) = 3, 5 carried
-# the force of changed neighbours before fork v2026.07.23. Engines built by
+# the force of changed neighbours before fork v2026.07.24. Engines built by
 # this package keep the energy check at the isolated level in every mode.
 const _QE_MIN_TIDAL = 0.01
 
@@ -1766,7 +1766,7 @@ const _QE_MIN_TIDAL = 0.01
 
 Warn once about an external field with an energy tolerance below
 `$(_QE_MIN_TIDAL)`: on an engine built outside this package (no
-`tidal-energy-total` amendment, or a fork older than v2026.07.23 for
+`tidal-energy-total` amendment, or a fork older than v2026.07.24 for
 `kz14 = 5`) the energy check measures the tidal work, 10⁻⁴ to 10⁻² per
 adjustment interval for realistic fields, and the run halts at its first
 adjustment. Engines built by this package book the tidal energy in every
@@ -1777,7 +1777,7 @@ function _validate_tidal_tolerance(t::TidalSpec, p::Nbody6ParameterSpec)
     if t.kz14 > 0 && p.qe < _QE_MIN_TIDAL
         @warn "merger.nbody6.qe = $(p.qe) with merger.tidal.kz14 = $(t.kz14): an engine " *
               "built outside this package (no tidal-energy-total amendment, or a fork older " *
-              "than v2026.07.23 for kz14 = 5) measures the tidal work in its energy check and " *
+              "than v2026.07.24 for kz14 = 5) measures the tidal work in its energy check and " *
               "halts at the first adjustment below qe = $(_QE_MIN_TIDAL); engines built by " *
               "this package keep the check at the isolated level" maxlog = 1
     end
