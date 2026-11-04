@@ -267,7 +267,7 @@ Integration parameters written to `merger.inp`, in N-body units of the combined 
 
 Runs with stellar evolution need the relaxed tolerance `qe ≈ 1e-2`: supernova kicks change the energy budget between adjustments, and the default tolerance halts the run.
 
-`binary_physics` selects the few-body and binary options. `"inherited"` keeps the block the generator has always written: no chain and no stable hierarchies (`KZ(15) = 0`), no gravitational-wave decay of compact pairs (`KZ(27) = 0`), no binary event files. `"full"` writes the complete set adopted for the binary programme, with the Level defaults of `&INSSE`, `&INBSE` and `&INCOLL` (zero recoil of GW mergers, `fctorcl = 0.5`); it needs an engine from the fork tag `v2026.07.6` on (the default pin is `v2026.07.24`): the decay of compact KS pairs follows the Peters equations from `v2026.07-campaign.5` on, and earlier builds end the run at the first binary–binary chain (a run-time FORMAT error) and can end a run with an unrestartable dump inside a chain.
+`binary_physics` selects the few-body and binary options. `"inherited"` keeps the block the generator has always written: no chain and no stable hierarchies (`KZ(15) = 0`), no gravitational-wave decay of compact pairs (`KZ(27) = 0`), no binary event files. `"full"` writes the complete set adopted for the binary programme, with the Level defaults of `&INSSE`, `&INBSE` and `&INCOLL` (zero recoil of GW mergers, `fctorcl = 0.5`); it needs an engine from the fork tag `v2026.07.6` on (the default pin is `v2026.07.25`): the decay of compact KS pairs follows the Peters equations from `v2026.07-campaign.5` on, and earlier builds end the run at the first binary–binary chain (a run-time FORMAT error) and can end a run with an unrestartable dump inside a chain.
 
 | `KZ` | `"inherited"` | `"full"` | Effect |
 |---|---|---|---|
@@ -508,7 +508,7 @@ Hermite scheme integrates its three-body encounters at those separations: of the
 stalled at a hardening event and the other leaked 7 % of the binary's binding energy per adjustment interval. The
 generator warns on `KZ(15) = 0` with an IMBH; the validated set is `kz = {15 = 2, 18 = 1, 26 = 2}` (triple, quad and
 chain regularisation, hierarchical mergers, slow-down), as in `input_files/verification/imbh/*_chain_*.toml`. The
-engine pin v2026.07.24 carries the chain changes this needs (a lifetime limit per chain membership, a consistency
+engine pin (since v2026.07.24) carries the chain changes this needs (a lifetime limit per chain membership, a consistency
 guard that terminates a degenerating chain from its last consistent state, the Mardling–Aarseth stability criterion
 where Mardling's 2008 algorithm is outside its mass-ratio validity, and a six-body termination fix).
 

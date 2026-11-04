@@ -23,6 +23,14 @@ entries say so.
   (paired t test), with Holm's correction over the table; the margin defaults to twice the chaos floor of a twin
   arm. `write_paired_comparison`, `paired_shift`, `holm_adjust`.
 
+### Changed
+
+- Engine pin `v2026.07.25` (fork): coalescences in models where every star is in a pair no longer halt with an
+  energy change of NaN (`ROCHE COAL` stand-in), and the block-step list searches no longer match an index on the
+  wrong level (a SIGSEGV after cascades of common-envelope coalescences in one block); the first Lagrangian radius
+  of an empty single or binary set and the zero-kick diagnostic are corrected. Results of other runs are unchanged
+  (bit-identical on the N1k test input).
+
 ### Fixed
 
 - Generated initial conditions no longer depend on the Julia thread count: the virial pair sum runs over a fixed
