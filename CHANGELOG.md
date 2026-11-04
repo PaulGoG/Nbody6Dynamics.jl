@@ -6,6 +6,8 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-11-04
+
 ### Added
 
 - Stellar-evolution option set in `[merger.stellar]`: `option_set` (`"level"` or `"baseline"`, Level C with the
