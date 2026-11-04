@@ -208,6 +208,10 @@ plot_control_comparison
 EnsembleStatistics
 ensemble_statistics
 sweep_ensembles
+paired_comparison
+write_paired_comparison
+paired_shift
+holm_adjust
 plot_sweep_ensemble
 ```
 

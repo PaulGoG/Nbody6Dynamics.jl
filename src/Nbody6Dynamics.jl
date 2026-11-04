@@ -146,6 +146,7 @@ include("analysis/imbh.jl")
 # ---------------------------------------------------------------------------
 include("pipeline/sweep.jl")
 include("analysis/ensemble.jl")
+include("analysis/paired.jl")
 
 # ---------------------------------------------------------------------------
 # Figure interface (implemented by the Makie extension, see ext/)
@@ -1527,6 +1528,7 @@ export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, 
 export resume_sweep
 export sweep_summary, write_sweep_summary, sweep_visualization
 export EnsembleStatistics, ensemble_statistics, sweep_ensembles
+export paired_comparison, write_paired_comparison
 export control_merger_dict, write_control_merger_config
 export ClusterSpec,
     SegregationSpec,
@@ -1570,6 +1572,7 @@ public resolve_cuda_arch, nvcc_release, nvcc_supported_archs
 public binary_hardness, hardness_scale, binary_scales, semi_major_axis_pc, binding_energy
 public stellar_class_index, class_counts, classes_present
 public run_sweep_point, continue_sweep_point, read_sweep_index, write_sweep_index
+public paired_shift, holm_adjust
 public profile_name, imf_name, expected_mass, sample_masses, kroupa_mean_mass
 public sample_plummer, sample_king, sample_kroupa, sample_binaries, expand_binaries
 public virialise!,

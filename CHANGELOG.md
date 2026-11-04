@@ -16,6 +16,12 @@ entries say so.
 - Perturbed twin: `[merger.output] twin_amplitude` (relative displacement δ ≤ 10⁻⁶ of one body, after every other
   step of the generation) and `twin_body` (default the first single star); `merger_ic.toml` records `[twin]` and the
   SHA-256 of `dat.10` (`meta.dat10_sha256`).
+- Paired comparison of the arms of a sweep: `paired_comparison(sweep_dir; reference, observables, t_settle_myr,
+  margins, α)` pairs every point with the reference arm's point of the same seed (identical initial conditions
+  verified by the `dat.10` hashes, twins excepted), averages the difference of each observable over a window per
+  seed, and tests the arm's shift for equivalence within a margin (two one-sided tests) and for a difference
+  (paired t test), with Holm's correction over the table; the margin defaults to twice the chaos floor of a twin
+  arm. `write_paired_comparison`, `paired_shift`, `holm_adjust`.
 
 ## [0.8.0] — 2026-11-04
 
