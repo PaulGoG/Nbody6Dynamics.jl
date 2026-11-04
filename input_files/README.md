@@ -12,7 +12,8 @@ input_files/
 ├── verification/    # the two merger targets of scripts/run_verif_suite.jl
 ├── sweeps/          # sweep TOMLs (scripts/run_sweep.jl)
 ├── showcase/        # five end-to-end cases, each a merger TOML with its pipeline TOML
-└── gpu/             # CUDA-host validation: GPU and CPU builds, the 2 × 25k merger, the 6 × 10⁵ probes
+├── gpu/             # CUDA-host validation: GPU and CPU builds, the 2 × 25k merger, the 6 × 10⁵ probes
+└── campaign/        # validation campaign on a Slurm GPU node, one folder per block (validation/p0, p1, …)
 ```
 
 | Folder | Files | Documented in |
@@ -24,7 +25,9 @@ input_files/
 | `sweeps/` | `sweep_demo` (base: the root `config.toml` and `mergers/merger_demo_small.toml`) | Manual, "Parameter sweeps" |
 | `showcase/` | `{equal,binary,tidal,flagship}_{merger,pipeline}.toml`, `sweep.toml` with `sweep_{merger,pipeline}.toml` | Showcase Cases |
 | `gpu/` | `gpu_pipeline`, `cpu_pipeline`, `merger_50k`, `merger_600k`, `single_600k`, `{gpu,cpu}_{merger,single}_600k` | Input Files, "Showcase and GPU-host cases" and "The GPU-host and verification cases"; Manual, "Recipe for a CUDA host" |
+| `campaign/validation/` | `p0/p0_setup` (node bring-up: clone, CUDA build, smoke run on both devices); `p1/p1_king50k`, `p1/p1_pipeline`, `p1/p1_continuous` (5×10⁴ King cluster, continuous and restart-chained arms) | Manual, "Batch jobs under Slurm" and "Parameter sweeps" |
 
 Relative paths inside a TOML resolve against the file's own directory; the
 pipeline TOMLs of `showcase/` and `gpu/` point at the checkout's `backend/`
-and `runs/` two levels up. The root `config.toml` runs `mergers/merger_demo_small.toml`.
+and `runs/` two levels up, those of `campaign/validation/<block>/` four levels
+up (`backend/Nbody6PPGPU-beijing-gpu`, `runs/campaign/<block>/`). The root `config.toml` runs `mergers/merger_demo_small.toml`.

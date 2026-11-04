@@ -33,7 +33,7 @@ Nbody6Dynamics/
 ├── src/              # Library: core types and config; pipeline/, analysis/, io/, ic/
 ├── ext/              # Makie extension: figures and animations
 ├── scripts/          # CLI entry points
-├── input_files/      # Shipped inputs by purpose: engine/, clusters/, mergers/, verification/, sweeps/, showcase/, gpu/
+├── input_files/      # Shipped inputs by purpose: engine/, clusters/, mergers/, verification/, sweeps/, showcase/, gpu/, campaign/
 ├── test/             # Unit and physics-validation suite
 ├── bench/            # Benchmarks and scaling scripts
 ├── docs/             # Documenter.jl site sources
@@ -103,8 +103,9 @@ One invocation each; details in the sections below.
 | Run the main pipeline | `julia scripts/run_setup.jl [config.toml]` |
 | Continue a stopped or interrupted run | `julia scripts/run_resume.jl <run_dir>` (one segment per call; post-processing and figures once the run is complete) |
 | Submit a run as a chain of Slurm jobs | `julia scripts/run_cluster.jl config.toml [--dry-run] [--run-id=<id>]` (`[cluster] enabled = true`; one job per engine segment, the job script generated into the run directory) |
+| Restart an ended run as a Slurm job chain | `julia scripts/run_cluster.jl <run_dir> --restart [--t-end=<NB> \| --t-end-myr=<Myr>] [--dump=<file>] [--kz=<i>:<v>,…] [--dry-run]` (extensions beyond the end time; halted runs from an earlier dump) |
 | Generate a single cluster or a merger and run it | `julia scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (the showcase cases; a single-cluster case: `[merger] config_file = "input_files/clusters/imbh_runaway.toml"`) |
-| Run a parameter sweep | `julia scripts/run_sweep.jl input_files/sweeps/sweep_demo.toml [--dry-run]` |
+| Run a parameter sweep | `julia scripts/run_sweep.jl input_files/sweeps/sweep_demo.toml [--dry-run] [--sweep-dir=<dir> --resume]` (`--resume` enters or re-enters the sweep in `<dir>`) |
 | Run the verification suite | `julia scripts/run_verif_suite.jl` |
 | Regenerate the estimator calibration table | `julia -t 6 scripts/calibrate_estimators.jl` (`--quick` for a schema check; writes `assets/calibration/`) |
 | Execute the test suite | `julia -e 'include("activate.jl"); Pkg.test()'` |
@@ -174,8 +175,8 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 | Validity record | Working | Energy, mass and angular-momentum checks with a verdict, snapshot cadence, the windows excluded from equilibrium estimators and the calibrated bias of the tracked estimators (`validity.toml`, `validity_snapshots.csv`) |
 | Shape, segregation and mixing | Working | Axis ratios from the iterative shape tensor (Zemp et al. 2011), projected ellipticities, the A⁺ index, the two-sample Kolmogorov–Smirnov distance with its null floor, and the mixing of two tagged populations |
 | Stellar population | Working | Engine grouping of the stellar types (`STELLAR_CLASSES`), the HR-plane population and a class census per epoch (`stellar_census.csv`) |
-| Parameter sweeps | Working | Cartesian grids over merger-TOML keys × seeds run as concurrent worker processes, with an index, a summary table, comparison figures, seeded ensembles with 68/95 % bands and isolated single-cluster controls. A point counts as done only when its run completed |
-| Simulation runner | Working | Launch script with thread and device control, live monitoring, start-up and stall watchdogs (`startup_timeout`, `stall_timeout`), telemetry and a wall budget per segment that stops the engine with a restart dump. `resume_run` and the Slurm job chain of `submit_run` continue a run; every segment is closed in `RUN_INFO.toml` with a status (`completed`, `stopped`, `halted`, `watchdog`, `stalled`, `killed`, `failed`) |
+| Parameter sweeps | Working | Cartesian grids over merger-TOML keys × seeds run as concurrent worker processes, with an index, a summary table, comparison figures, seeded ensembles with 68/95 % bands and isolated single-cluster controls. A point counts as done only when its run completed; a sweep whose driver was ended is re-entered (`resume_sweep`), the driver passing a scheduler's signal on to its workers |
+| Simulation runner | Working | Launch script with thread and device control, live monitoring, start-up and stall watchdogs (`startup_timeout`, `stall_timeout`), telemetry and a wall budget per segment that stops the engine with a restart dump. `resume_run` and the Slurm job chain of `submit_run` continue a run, `submit_restart` extends or restarts an ended one; every segment is closed in `RUN_INFO.toml` with a status (`completed`, `stopped`, `halted`, `watchdog`, `stalled`, `killed`, `failed`), and the engine's echo of the stellar-evolution options is checked at start-up |
 | I/O readers | Working | `conf.3`, `out1000` (ADJUST records, scaling, event lines), `event.35`, `lagr.7`, `esc.11`, `sev.83_*` and `bev.82_*`; `read_binary_events` for the KS, few-body and GW lines (`GR CAPTURE` and `GR FLYBY` included); readers of `bdat.9`, `bwdat.19`, `merger.84`, `hiarch.12`, `coll.13`, `coal.24`, `cmbody.26`, `binev.17`, `degen.4`, `escbin.31` and `hbin.39`. `.h5part` files are reported as unsupported |
 | Plotting / animation | Working | Publication theme with Computer Modern fonts, configured in `[visualization.style]`; escaper, stellar-evolution, binary, merger and remnant figures and GIF animations, never overwriting an existing figure |
 | Load latency | Working | PrecompileTools workload over the configuration, diagnostics-reader and merger-IC paths |
@@ -323,6 +324,7 @@ Nbody6Dynamics/
 │   └── ic/
 │       ├── ic.jl                    # run_merger_pipeline / generate_merger_ic entry points
 │       ├── config.jl                # IC TOML parser: ClusterSpec, OrbitSpec, Nbody6ParameterSpec (presets), stellar and tidal specs
+│       ├── stellar_options.jl       # SSE/BSE/collision option set: Level tables, &INSSE/&INBSE/&INCOLL groups, the engine's echo checked at start-up
 │       ├── control.jl               # Isolated single-cluster control derived from a merger TOML
 │       ├── complex.jl               # Cluster complexes: member masses and radii, centre distributions, bulk velocity scaling
 │       ├── segregation.jl           # Primordial mass segregation: McLuster slot order, energy-ranked BDK08 slices
@@ -411,10 +413,12 @@ Nbody6Dynamics/
 │   ├── test_run_safety.jl           # Run-directory guard, chain stops, completed-run checks
 │   ├── test_validity.jl             # Validity record and the calibration lookup
 │   ├── test_sweep_ensemble.jl       # Sweeps, seeded ensembles, control configurations
+│   ├── test_sweep_resume.jl         # Sweep re-entry: point states from run records, relaunch, continuation, signal hand-over
 │   ├── test_plotting.jl             # Figure extension, smoke tests, canvases, formatting
 │   ├── test_external.jl             # External post-processing
 │   ├── test_external_adversarial_inner.jl  # Malformed external inputs, included by test_external.jl
 │   ├── test_ic.jl                   # Merger initial-condition generator and its physics checks
+│   ├── test_stellar_options.jl      # Stellar-evolution option keys, written groups, the engine's echo and the start-up check
 │   ├── test_telemetry.jl            # Hardware telemetry sampler, readers and figure
 │   ├── test_engine_gated.jl         # Shipped GPU-host configurations; engine- and GPU-gated runs
 │   ├── test_qa.jl                   # Static QA: Aqua, ExplicitImports, JET
@@ -443,7 +447,8 @@ Nbody6Dynamics/
 │   ├── verification/                # verif_triorbit (Lagrange triangle), verif_3d5cluster (five clusters in 3D), replicas/ (published two-cluster mergers), imbh/ (IMBH validation runs), mbh/ (static black hole and TDEs)
 │   ├── sweeps/                      # sweep_demo (eccentricity × secondary size × seeds over the demo merger)
 │   ├── showcase/                    # Five end-to-end cases with Myr intervals: equal, binary, tidal, flagship, sweep with controls
-│   └── gpu/                         # CUDA-host recipe: GPU and CPU builds, the 2 × 25k merger, the 6 × 10⁵-body probes
+│   ├── gpu/                         # CUDA-host recipe: GPU and CPU builds, the 2 × 25k merger, the 6 × 10⁵-body probes
+│   └── campaign/validation/         # Validation campaign on a Slurm GPU node: p0 (node bring-up), p1 (continuous and restart-chained arms)
 ├── backend/                         # (gitignored) cloned Nbody6PPGPU-beijing source + build
 └── runs/                            # (gitignored) per-run output/, plots/, frozen config.toml
 ```

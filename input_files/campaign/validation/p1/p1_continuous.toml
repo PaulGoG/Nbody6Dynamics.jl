@@ -1,0 +1,15 @@
+# Validation campaign V1, block P1, continuous arm: eight seeds of p1_king50k.toml as one sweep job on both devices,
+# four engines per device. Re-entered with --resume when the job is cut.
+#   julia scripts/run_sweep.jl input_files/campaign/validation/p1/p1_continuous.toml --sweep-dir=<dir> --resume
+
+[sweep]
+name = "p1_continuous"
+pipeline_config = "p1_pipeline.toml"
+merger_config = "p1_king50k.toml"
+seeds = [1101, 1102, 1103, 1104, 1105, 1106, 1107, 1108]
+concurrency = 8           # ≥ 1
+omp_threads = 8           # ≥ 1
+runs_dir = "../../../../runs/campaign/p1"
+poll_interval = 10.0      # s; > 0
+devices = [0, 1]          # CUDA device indices; requires build.enable_gpu
+engines_per_device = 4    # ≥ 1

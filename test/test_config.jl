@@ -477,7 +477,8 @@ end
         filter(isfile, readdir(root; join = true)) ∩
         filter(p -> endswith(p, ".toml") || endswith(p, ".inp"), readdir(root; join = true)),
     )
-    for sub in ("engine", "clusters", "mergers", "verification", "sweeps", "showcase", "gpu")
+    for sub in
+        ("engine", "clusters", "mergers", "verification", "sweeps", "showcase", "gpu", "campaign")
         @test isdir(joinpath(root, sub))
     end
     # Every TOML parses with the loader its top-level table selects, and the
@@ -526,6 +527,17 @@ end
         @test m.stellar.option_set == "baseline"
         @test m.output.tcrit_myr > 0 && m.output.dtadj_myr > 0 && m.output.deltat_myr > 0
     end
+    # The validation campaign: every pipeline pins the package's engine tag, so a
+    # block runs on the release that ships its configuration.
+    n_campaign = 0
+    for (dir, _, files) in walkdir(joinpath(root, "campaign")), f in files
+        endswith(f, ".toml") || continue
+        raw = Nbody6Dynamics.TOML.parsefile(joinpath(dir, f))
+        haskey(raw, "install") || continue
+        @test raw["install"]["ref"] == InstallConfig().ref
+        n_campaign += 1
+    end
+    @test n_campaign ≥ 2
 end
 
 # =====================================================================

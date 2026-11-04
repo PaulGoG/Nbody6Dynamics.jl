@@ -1,0 +1,41 @@
+# Validation campaign V1, block P1: King W0 = 6 cluster of 5×10⁴ stars with 5 % primordial binaries on the production
+# option set, 50 N-body time units. The seed is replaced per member by the sweep (p1_continuous.toml); identical seeds
+# give identical initial conditions in the continuous and the restart-chained arm.
+
+[merger]
+seed = 1
+n_clusters = 1
+orbit_mode = "single"
+
+[merger.cluster1]
+model = "king"
+N = 50000            # number of stars (pairs included)
+W0 = 6.0
+rbar = 1.0          # half-mass radius [pc]
+imf = "kroupa"
+body1 = 100.0       # upper IMF bound [M☉]
+bodyn = 0.08        # lower IMF bound [M☉]
+
+[merger.cluster1.binaries]
+fraction = 0.05     # binary fraction by systems; 0 ≤ fraction < 1
+pairing = "random"  # one of: "random" | "uniform_q"
+period = "kroupa1995"   # one of: "kroupa1995" | "loguniform"
+eccentricity = "thermal"   # one of: "thermal" | "circular"
+
+[merger.output]
+format = "nbody"
+tcrit = 50.0        # end time [NB]
+dtadj = 0.5         # adjustment interval [NB]
+deltat = 0.5        # snapshot interval [NB]
+
+[merger.stellar]
+level = "C"         # one of: "A" | "B" | "C" | "0"
+option_set = "baseline"  # one of: "level" | "baseline" (Level C with psflag 2, eddfac 1, kmech 1)
+zmet = 0.001        # metal abundance; 0.0001 ≤ zmet ≤ 0.03
+dtplot = 2.5        # stellar-evolution diagnostic interval [NB]; ≥ deltat
+
+[merger.nbody6]
+preset = "baseline"        # one of: "engine" | "baseline"
+binary_physics = "full"    # one of: "inherited" | "full"
+qe = 0.01           # energy-error tolerance per adjustment interval; > 0
+checkpoint = true   # restart dump at every adjustment; bound the disk with simulation.checkpoint_keep

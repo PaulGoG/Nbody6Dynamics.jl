@@ -31,6 +31,9 @@ entries say so.
   `run_cluster.jl <run_dir> --restart …` submit a chain whose first segment restarts an ended run from a dump
   (extensions beyond the end time, halted or stalled runs from an earlier dump); `restart_pipeline` is the
   pipeline form of `restart_simulation`.
+- Validation-campaign configurations under `input_files/campaign/validation/`: `p0` (bring-up of a Slurm GPU node:
+  clone, CUDA build for `sm_90`, smoke run on both devices) and `p1` (5×10⁴ King cluster with 5 % binaries on the
+  production option set; continuous arm as a sweep job, restart-chained arm as chains).
 
 ### Changed
 
