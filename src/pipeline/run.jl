@@ -549,6 +549,24 @@ function _execute_simulation(
                 interrupt_to = waiting,
                 offset = stdout_offset,
             ) : nothing
+        # Stellar-evolution options: the engine's echo against the input's
+        # groups; READSE falls back to the Level values on a malformed group
+        # and reports it only by a stdout line.
+        echo_check = _start_echo_check(
+            input_copy,
+            stdout_path,
+            process;
+            offset = stdout_offset,
+            interrupt_to = waiting,
+            on_result = r -> _annotate_segment(
+                run_dir,
+                segment,
+                Dict{String,Any}(
+                    "stellar_echo" => r.status,
+                    "stellar_echo_mismatches" => collect(String, r.mismatches),
+                ),
+            ),
+        )
         # Completion monitor: an engine that printed END RUN but never exits
         # is terminated after the grace period and recorded as completed.
         completion =
@@ -659,6 +677,21 @@ function _execute_simulation(
         stopper === nothing || (stopper.stop[] = true)
         pruner === nothing || (pruner.stop[] = true)
         pruner === nothing || wait(pruner.task)
+        # The echo is written before the first adjustment; a check still pending
+        # here (an engine that exited at once) is settled from the final capture.
+        echo = try
+            wait(echo_check.task)
+            echo_check.result[]
+        catch err
+            # A defect of the check must not cost the record of the run.
+            @warn "Stellar-option echo check failed: $(sprint(showerror, err))"
+            (; status = "error", mismatches = String[])
+        end
+        if echo.status == "pending"
+            final = check_stellar_echo(input_copy, stdout_path; offset = stdout_offset)
+            echo = final.status == "pending" ? (; status = "absent", mismatches = String[]) : final
+        end
+        echo_fired = echo_check.fired[]
 
         elapsed = time() - t_start
         telemetry =
@@ -725,12 +758,24 @@ function _execute_simulation(
                         stalled ? "stall" :
                         (stopper !== nothing && stopper.requested[]) ? "wall_budget" : "",
                     "dumps_pruned" => pruner === nothing ? 0 : pruner.removed[],
+                    "stellar_echo" => echo.status,
+                    "stellar_echo_mismatches" => collect(String, echo.mismatches),
                 ),
             ),
         )
         if pruner !== nothing && pruner.removed[] > 0
             @info "Checkpoint retention: $(pruner.removed[]) periodic dump(s) removed " *
                   "($(Base.format_bytes(pruner.bytes[]))); the newest $(sim.checkpoint_keep) kept"
+        end
+        if echo_fired
+            error(
+                "Simulation terminated at start-up: the engine's echo of the SSE/BSE/collision " *
+                "parameters does not match the input ($(echo.status)): " *
+                join(echo.mismatches, "; ") *
+                ". READSE falls back to the Level values on a " *
+                "group it cannot read; correct the &INSSE/&INBSE/&INCOLL groups of " *
+                "$(basename(input_copy)) (recorded in RUN_INFO.toml)",
+            )
         end
         if hung
             error(
@@ -1518,6 +1563,28 @@ function _stop_dump(stdout_path::AbstractString; offset::Integer = 0)::String
         end
         return name
     end
+end
+
+"""
+    _annotate_segment(run_dir, index, fields) -> Bool
+
+Merge `fields` into the record of segment `index` of `run_dir/RUN_INFO.toml`
+while the segment runs, leaving its status alone, so a fact established at
+start-up (the echo check of the stellar-evolution options) is on record
+whichever path closes the segment. Returns whether the record was found.
+"""
+function _annotate_segment(run_dir::AbstractString, index::Integer, fields::AbstractDict)::Bool
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(info_path) || return false
+    d = TOML.parsefile(info_path)
+    segments = get(d, "segments", Any[])
+    k = findfirst(s -> s isa AbstractDict && get(s, "index", nothing) == index, segments)
+    k === nothing && return false
+    for (key, value) in fields
+        segments[k][String(key)] = value
+    end
+    _atomic_write_toml(info_path, d)
+    return true
 end
 
 """

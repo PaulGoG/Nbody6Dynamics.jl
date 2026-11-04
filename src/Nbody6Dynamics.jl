@@ -1491,6 +1491,7 @@ export ClusterSpec,
 export DensityProfile,
     KingProfile, PlummerProfile, IMFSpec, KroupaIMF, RescaledKroupaIMF, EqualMassIMF, PowerLawIMF
 export load_merger_config, generate_merger_ic, run_merger_pipeline, load_merger_ic_result
+export read_stellar_echo, check_stellar_echo
 export engine_interval
 export publication_theme, plotting_available, PlottingUnavailable
 export plot_snapshot, plot_snapshot_evolution
@@ -1522,6 +1523,7 @@ public sample_plummer, sample_king, sample_kroupa, sample_binaries, expand_binar
 public virialise!,
     kepler_velocity, jacobi_radius, roche_truncation_radius, crossing_time, to_nbody_units!
 public write_dat10, generate_merger_inp, resolve_nbody6_parameters
+public stellar_namelist_values, stellar_parameters, requested_stellar_parameters
 public set_publication_theme!
 
 # ---------------------------------------------------------------------------

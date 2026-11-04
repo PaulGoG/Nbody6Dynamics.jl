@@ -624,17 +624,13 @@ function generate_merger_inp(
         println(io, "Level='$(stellar.level)' /")
         println(io)
 
-        # --- 3-5. SSE/BSE/Coll: empty → use Level defaults ---
-        println(io, "&INSSE /")
-        println(io)
-        inbse = String[]
-        nbody6.gw_recoil == "off" ||
-            push!(inbse, "kicktype=$(_GW_RECOIL_KICKTYPE[nbody6.gw_recoil])")
-        nbody6.bh_spin == "zero" || push!(inbse, "bhspinfl=$(_BH_SPIN_FLAG[nbody6.bh_spin])")
-        println(io, isempty(inbse) ? "&INBSE /" : "&INBSE " * join(inbse, ",") * " /")
-        println(io)
-        println(io, "&INCOLL /")
-        println(io)
+        # --- 3-5. SSE/BSE/Coll: the values the configuration sets; the
+        # engine keeps the Level's value of every parameter not written ---
+        se_groups = stellar_namelist_values(stellar, nbody6)
+        for name in ("INSSE", "INBSE", "INCOLL")
+            println(io, _namelist_group_line(name, se_groups[name]))
+            println(io)
+        end
 
         # --- 6. &INDATA: stellar population ---
         # ALPHAS/BODY1/BODYN are inert under KZ(22)=2 (masses come from
@@ -1685,13 +1681,14 @@ function generate_merger_ic(
         "merger.stellar.dtplot ($(round(dtplot_nb; sigdigits = 4)) NB) must be ≥ merger.output.deltat " *
         "($(round(deltat_nb; sigdigits = 4)) NB) after conversion with T* = $(round(t_star_myr; sigdigits = 4)) Myr",
     )
+    # Every field carried over (a field-by-field copy once dropped the option keys).
     stellar = StellarSpec(;
-        kz19 = cfg.stellar.kz19,
-        level = cfg.stellar.level,
-        zmet = cfg.stellar.zmet,
-        epoch0 = cfg.stellar.epoch0,
-        dtplot = dtplot_nb,
-        dtplot_myr = cfg.stellar.dtplot_myr,
+        merge(
+            NamedTuple{fieldnames(StellarSpec)}(
+                ntuple(i -> getfield(cfg.stellar, i), fieldcount(StellarSpec)),
+            ),
+            (; dtplot = dtplot_nb),
+        )...,
     )
     _check_multicluster_regime(
         q_virial,
@@ -2018,6 +2015,17 @@ function _write_merger_ic_metadata(
         ),
         "nbody6" => _nbody6_table(regime.nbody6),
         "stellar" => _struct_to_dict(cfg.stellar),
+        # The option groups as written and the full set the engine holds after
+        # reading them (Level table + written values); the run stage checks the
+        # engine's echo against the input file itself (`check_stellar_echo`).
+        "stellar_options" => let written = stellar_namelist_values(cfg.stellar, cfg.nbody6)
+            Dict{String,Any}(
+                "level" => cfg.stellar.level,
+                "option_set" => cfg.stellar.option_set,
+                "written" => written,
+                "parameters" => stellar_parameters(cfg.stellar.level, written),
+            )
+        end,
         "tidal" => merge(
             _struct_to_dict(cfg.tidal),
             Dict{String,Any}("omega_kms_pc" => tidal_frame_rotation(cfg.tidal)),
@@ -2483,6 +2491,19 @@ function _write_merger_summary(
             st.zmet,
             st.epoch0,
             regime.dtplot_nb
+        )
+        se_written = stellar_namelist_values(st, p)
+        se_items = String[]
+        for g in ("INSSE", "INBSE", "INCOLL"), k in getfield(_SE_GROUPS, Symbol(g))
+            haskey(se_written[g], k) || continue
+            v = se_written[g][k]
+            push!(se_items, "$k=" * (v isa Integer ? string(v) : _namelist_real(v)))
+        end
+        println(
+            io,
+            "Stellar options: option_set=$(st.option_set); written: " *
+            (isempty(se_items) ? "none" : join(se_items, " ")) *
+            (st.level == "0" ? "" : " (Level $(st.level) values otherwise)"),
         )
         td = cfg.tidal
         if td.kz14 == 0

@@ -523,6 +523,7 @@ end
         m = load_merger_config(joinpath(root, "clusters", f))
         @test m.orbit_mode == "single" && length(m.clusters) == 1
         @test m.nbody6.preset == "baseline" && m.nbody6.checkpoint
+        @test m.stellar.option_set == "baseline"
         @test m.output.tcrit_myr > 0 && m.output.dtadj_myr > 0 && m.output.deltat_myr > 0
     end
 end

@@ -128,6 +128,7 @@ end
     include("test_plotting.jl")
     include("test_external.jl")
     include("test_ic.jl")
+    include("test_stellar_options.jl")
     include("test_telemetry.jl")
     include("test_engine_gated.jl")
     include("test_qa.jl")

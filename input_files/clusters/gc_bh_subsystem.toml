@@ -30,6 +30,7 @@ deltat_myr = 1.0    # snapshot interval [Myr]
 
 [merger.stellar]
 level = "C"         # one of: "A" | "B" | "C" | "0"
+option_set = "baseline"  # one of: "level" | "baseline" (Level C with psflag 2, eddfac 1, kmech 1)
 zmet = 0.0002       # metal abundance; 0.0001 ≤ zmet ≤ 0.03
 dtplot_myr = 1.0    # stellar-evolution diagnostic interval [Myr]; ≥ deltat
 

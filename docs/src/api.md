@@ -706,6 +706,16 @@ resolve_nbody6_parameters
 to_nbody_units!
 ```
 
+### Stellar-Evolution Option Set
+
+```@docs
+stellar_namelist_values
+stellar_parameters
+requested_stellar_parameters
+read_stellar_echo
+check_stellar_echo
+```
+
 ### Merger Run Diagnostics
 
 ```@docs

@@ -6,6 +6,26 @@ entries say so.
 
 ## [Unreleased]
 
+### Added
+
+- Stellar-evolution option set in `[merger.stellar]`: `option_set` (`"level"` or `"baseline"`, Level C with the
+  moderate pulsational pair-instability fit `psflag = 2` of Leung et al. 2019, DOI 10.3847/1538-4357/ab4fe5,
+  Eddington-limited accretion `eddfac = 1` and the momentum-conserving kick `kmech = 1`) and the keys
+  `pair_instability`, `remnant_mass`, `winds`, `electron_capture`, `bh_kicks`, `kick_mechanism`, `ns_kick_sigma`,
+  `ecsn_kick_sigma`, `eddington_factor`, `bh_accreted_fraction`, written into `&INSSE`, `&INBSE` and `&INCOLL`
+  and validated on load (refused under `kz19 < 3` or Level `"0"`). Unset keys write nothing, so existing
+  configurations generate byte-identical inputs. `merger_ic.toml` records the written groups and the full set the
+  engine holds (`[stellar_options]`), `merger_summary.txt` the written values. `stellar_namelist_values`,
+  `stellar_parameters`, `requested_stellar_parameters` (public), `read_stellar_echo`, `check_stellar_echo`.
+- Every simulation segment compares the engine's echo of the SSE/BSE/collision parameters with its input file and
+  kills the engine at start-up on a mismatch or an `invalid Namelist format` report, after which the stage raises;
+  the engine's `READSE` otherwise continues with the Level values silently. The segment records `stellar_echo`
+  and `stellar_echo_mismatches`.
+
+### Changed
+
+- The science templates under `input_files/clusters/` use `option_set = "baseline"`.
+
 ## [0.7.0] — 2026-11-03
 
 ### Added

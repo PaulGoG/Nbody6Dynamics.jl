@@ -12,6 +12,7 @@ include("binaries.jl")
 include("complex.jl")   # ComplexSpec is a field type of MergerConfig (config.jl)
 include("segregation.jl")   # SegregationSpec is a field type of ClusterSpec (config.jl)
 include("config.jl")
+include("stellar_options.jl")   # option set of &INSSE/&INBSE/&INCOLL; StellarSpec is defined in config.jl
 include("control.jl")
 include("models.jl")
 include("rotating_king.jl")

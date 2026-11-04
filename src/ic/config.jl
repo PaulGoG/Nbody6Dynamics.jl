@@ -814,14 +814,18 @@ const _ESCAPERS_KZ23 = Dict("remove" => 2, "keep" => 0)
 
 """
     StellarSpec(; kz19 = 3, level = "C", zmet = 0.001, epoch0 = 0.0, dtplot = 1.0,
-                  dtplot_myr = 0.0)
+                  dtplot_myr = 0.0, option_set = "level", pair_instability = "level",
+                  remnant_mass = "level", winds = "level", electron_capture = "level",
+                  bh_kicks = "level", kick_mechanism = "level", ns_kick_sigma = NaN,
+                  ecsn_kick_sigma = NaN, eddington_factor = NaN,
+                  bh_accreted_fraction = NaN)
 
 Stellar-evolution settings of `merger.inp` (`[merger.stellar]`):
 
 - `kz19`: `KZ(19)`, evolution and mass-loss scheme; `0` = off, `1`–`2`
   supernova schemes, `≥ 3` Eggleton–Tout–Hurley (SSE); ≥ 0
 - `level`: SSE/BSE parameter level (Kamlah et al. 2022): `"A"`, `"B"`,
-  `"C"`, or `"0"` (no level; the engine's independent defaults)
+  `"C"`, or `"0"` (no level: the engine reads no option group)
 - `zmet`: metal abundance; `0.0001 ≤ zmet ≤ 0.03` (the engine's own bounds)
 - `epoch0`: formation time of the population [Myr]; ≤ 0 (age at start is
   `−epoch0`)
@@ -829,6 +833,47 @@ Stellar-evolution settings of `merger.inp` (`[merger.stellar]`):
   per the manual, ≥ `deltat`
 - `dtplot_myr`: the same in Myr; a positive value replaces `dtplot` at
   generation, converted with the realised time unit
+
+The option set of the `&INSSE`, `&INBSE` and `&INCOLL` groups. The engine
+starts from the Level's values and overwrites those a group assigns; the keys
+below write their parameter only when set, so a configuration that sets none
+writes empty groups, as earlier versions did. They take effect under
+`kz19 ≥ 3` and a Level other than `"0"`, and are refused otherwise.
+
+- `option_set`: `"level"` (the Level's values) or `"baseline"` (Level C with
+  the moderate pulsational pair-instability fit `psflag = 2`, Eddington-limited
+  accretion `eddfac = 1`, the momentum-conserving kick `kmech = 1`, and the
+  Level C values of `ecflag`, `nsflag`, `mdflag`, `bhflag`, `disp`, `ecsig`,
+  `lambd1`, `alphac`, `fctorcl` written explicitly; requires `level = "C"`).
+  The keys below override the set
+- `pair_instability`: `psflag`: `"none"` (0), `"strong"` (1, Belczynski et al.
+  2016), `"moderate"` (2) or `"weak"` (3) (the fits of Leung et al. 2019; the
+  engine's numbering, which the manual reverses)
+- `remnant_mass`: `nsflag`: `"hurley2000"` (0), `"belczynski2002"` (1),
+  `"belczynski2008"` (2), `"fryer2012_rapid"` (3), `"fryer2012_delayed"` (4)
+  or `"eldridge2004"` (5)
+- `winds`: `mdflag`: `"hurley2000"` (1), `"hurley2000_lbv"` (2),
+  `"belczynski2010"` (3) or `"belczynski2010_no_bistability"` (4)
+- `electron_capture`: `ecflag`: `"on"` (1) or `"off"` (0) for
+  electron-capture supernovae
+- `bh_kicks`: `bhflag`: `"none"` (0), `"full"` (1, the neutron-star kick) or
+  `"fallback"` (2, the neutron-star kick reduced by the fallback fraction)
+- `kick_mechanism`: `kmech`: `"momentum"` (1), `"convection"` (2) or
+  `"collapse"` (3) (Banerjee et al. 2020; the engine applies it under
+  `bhflag = 2` only)
+- `ns_kick_sigma`: `disp`, dispersion of the Maxwellian natal kick of
+  core-collapse neutron stars [km s⁻¹]; ≥ 0 (0: no kick)
+- `ecsn_kick_sigma`: `ecsig`, the same for electron-capture and
+  accretion-induced-collapse neutron stars [km s⁻¹]; ≥ 0
+- `eddington_factor`: `eddfac`, the accretion rate onto a compact accretor in
+  units of the engine's Eddington limit; > 0 (values ≥ 10 warn: they also lift
+  the limit of dynamical transfer from a white dwarf)
+- `bh_accreted_fraction`: `fctorcl`, fraction of a star's mass a black hole
+  gains in a collision; 0 ≤ value ≤ 1
+
+`"level"` and `NaN` (the defaults) keep the Level's value.
+[`stellar_namelist_values`](@ref) gives the values written,
+[`stellar_parameters`](@ref) the full set the engine holds.
 """
 Base.@kwdef struct StellarSpec
     kz19::Int = 3
@@ -837,6 +882,17 @@ Base.@kwdef struct StellarSpec
     epoch0::Float64 = 0.0
     dtplot::Float64 = 1.0
     dtplot_myr::Float64 = 0.0
+    option_set::String = "level"
+    pair_instability::String = "level"
+    remnant_mass::String = "level"
+    winds::String = "level"
+    electron_capture::String = "level"
+    bh_kicks::String = "level"
+    kick_mechanism::String = "level"
+    ns_kick_sigma::Float64 = NaN
+    ecsn_kick_sigma::Float64 = NaN
+    eddington_factor::Float64 = NaN
+    bh_accreted_fraction::Float64 = NaN
 end
 
 """
@@ -1970,6 +2026,52 @@ function _validate_stellar(s::StellarSpec, output::MergerOutputSpec)
             "must be ≥ merger.output.deltat_myr; got $(s.dtplot_myr), $(output.deltat_myr)",
         )
     end
+    _validate_stellar_options(s)
+    return nothing
+end
+
+"""Fail-fast checks of the option-set keys of `[merger.stellar]` (`stellar_options.jl`): enumerated values, bounds, `option_set = "baseline"` only on Level C, and no option without stellar evolution (`kz19 ≥ 3`, a Level other than `"0"`), where the engine would not apply it."""
+function _validate_stellar_options(s::StellarSpec)
+    s.option_set in _SE_OPTION_SETS || _config_error(
+        "merger.stellar.option_set",
+        "must be one of \"level\", \"baseline\"; got \"$(s.option_set)\"",
+    )
+    for (field, _, map) in _SE_ENUM_KEYS
+        v = getfield(s, field)::String
+        (v == "level" || haskey(map, v)) || _config_error(
+            "merger.stellar.$field",
+            "must be one of " *
+            join(repr.(vcat("level", sort!(collect(keys(map))))), ", ") *
+            "; got \"$v\"",
+        )
+    end
+    for field in (:ns_kick_sigma, :ecsn_kick_sigma)
+        v = getfield(s, field)::Float64
+        (isnan(v) || v ≥ 0) ||
+            _config_error("merger.stellar.$field", "must be ≥ 0 [km s⁻¹]; got $v")
+    end
+    (isnan(s.eddington_factor) || s.eddington_factor > 0) ||
+        _config_error("merger.stellar.eddington_factor", "must be > 0; got $(s.eddington_factor)")
+    (isnan(s.bh_accreted_fraction) || 0 ≤ s.bh_accreted_fraction ≤ 1) || _config_error(
+        "merger.stellar.bh_accreted_fraction",
+        "must satisfy 0 ≤ value ≤ 1; got $(s.bh_accreted_fraction)",
+    )
+    _sets_se_options(s) || return nothing
+    (s.option_set == "baseline" && s.level != "C") && _config_error(
+        "merger.stellar.option_set",
+        "\"baseline\" is defined on Level C; got level = \"$(s.level)\"",
+    )
+    (s.kz19 < 3 || s.level == "0") && _config_error(
+        "merger.stellar",
+        "the option-set keys (option_set, pair_instability, …) act on the SSE/BSE " *
+        "parameters, which the engine applies only under kz19 ≥ 3 with a Level other than " *
+        "\"0\"; got kz19 = $(s.kz19), level = \"$(s.level)\"",
+    )
+    !isnan(s.eddington_factor) &&
+        s.eddington_factor ≥ 10 &&
+        @warn "merger.stellar.eddington_factor = $(s.eddington_factor): accretion onto " *
+              "compact objects at ≥ 10 times the engine's Eddington limit; the factor also " *
+              "lifts the limit of dynamical transfer from a white dwarf (roche.f)"
     return nothing
 end
 

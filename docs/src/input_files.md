@@ -298,6 +298,19 @@ The resolved values appear in `merger_summary.txt` and in `merger_ic.toml` (`[nb
 | `epoch0` | Float | `0.0` | Formation time of the population [Myr]; must be ≤ 0 (the age at start is `−epoch0`) |
 | `dtplot` | Float | `1.0` | Interval of the stellar-evolution diagnostics (`sev.83_*`) [NB]; must be > 0 and ≥ `deltat` |
 | `dtplot_myr` | Float | `0.0` | The same in Myr (positive replaces `dtplot`); the ordering against `deltat` is checked at generation when either side is physical |
+| `option_set` | String | `"level"` | `"level"`: the Level's SSE/BSE/collision parameters. `"baseline"`: Level C with the moderate pulsational pair-instability fit (`psflag = 2`) [Leung2019](@cite), Eddington-limited accretion onto compact objects (`eddfac = 1`) and the momentum-conserving kick (`kmech = 1`), and the Level C values of `ecflag`, `nsflag`, `mdflag`, `bhflag`, `disp`, `ecsig`, `lambd1`, `alphac`, `fctorcl` written explicitly; requires `level = "C"`. The keys below override the set |
+| `pair_instability` | String | `"level"` | `&INSSE psflag`: `"none"` (0), `"strong"` (1) [Belczynski2016](@cite), `"moderate"` (2), `"weak"` (3) [Leung2019](@cite) (the engine's numbering; the manual reverses 2 and 3) |
+| `remnant_mass` | String | `"level"` | `&INSSE nsflag`: `"hurley2000"` (0), `"belczynski2002"` (1), `"belczynski2008"` (2), `"fryer2012_rapid"` (3), `"fryer2012_delayed"` (4) [Fryer2012](@cite), `"eldridge2004"` (5) |
+| `winds` | String | `"level"` | `&INSSE mdflag`: `"hurley2000"` (1), `"hurley2000_lbv"` (2), `"belczynski2010"` (3), `"belczynski2010_no_bistability"` (4) |
+| `electron_capture` | String | `"level"` | `&INSSE ecflag`: `"on"` (1) or `"off"` (0), electron-capture supernovae |
+| `bh_kicks` | String | `"level"` | `&INSSE bhflag`: `"none"` (0), `"full"` (1, the neutron-star kick), `"fallback"` (2, reduced by the fallback fraction) |
+| `kick_mechanism` | String | `"level"` | `&INSSE kmech`: `"momentum"` (1), `"convection"` (2), `"collapse"` (3) [Banerjee2020](@cite); applied under `bhflag = 2` only. Level C's 4 is a disabled branch that acts as 1 and is not offered |
+| `ns_kick_sigma` | Float | `NaN` | `&INSSE disp`, dispersion of the Maxwellian natal kick of core-collapse neutron stars [km s⁻¹] [Hobbs2005](@cite); ≥ 0 (0: no kick) |
+| `ecsn_kick_sigma` | Float | `NaN` | `&INSSE ecsig`, the same for electron-capture and accretion-induced-collapse neutron stars [km s⁻¹]; ≥ 0 |
+| `eddington_factor` | Float | `NaN` | `&INBSE eddfac`, accretion rate onto a compact accretor in units of the engine's Eddington limit (Levels A–C: 100); > 0; values ≥ 10 warn, since they also lift the limit of dynamical transfer from a white dwarf |
+| `bh_accreted_fraction` | Float | `NaN` | `&INCOLL fctorcl`, fraction of a star's mass a black hole gains in a collision; 0 ≤ value ≤ 1 |
+
+The option keys write their parameter only when set (`"level"` and `NaN` keep the Level's value), so a configuration that sets none writes the empty groups of earlier versions. They are refused under `kz19 < 3` or `level = "0"`, where the engine does not apply them. `merger_ic.toml` records the written values and the full set the engine holds after reading them (`[stellar_options]`: `written`, `parameters`), and `merger_summary.txt` the written values. The run stage compares the engine's echo of the set with the input ([Stellar-evolution options at start-up](@ref)).
 
 ### `[merger.tidal]`
 
