@@ -785,7 +785,7 @@ end
 Re-enter the sweep in `sweep_dir`, prepared earlier from the same sweep
 configuration `cfg`, after its driver was ended (a job cut at its time
 limit, a cancelled job, a crash): every point is classified from its own run
-record ([`_sweep_resume_state`](@ref)), not from the index. Complete,
+record, not from the index. Complete,
 post-processed points are skipped; `halted`, `watchdog` and `stalled` points
 keep their status (a restart continues them explicitly); all others are
 launched again ([`continue_sweep_point`](@ref): stopped and killed runs
