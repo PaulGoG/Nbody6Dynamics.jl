@@ -12,6 +12,7 @@ Names listed here without a `Nbody6Dynamics.` prefix are either exported or `pub
 example_input
 run_pipeline
 resume_pipeline
+restart_pipeline
 run_gpu_validation
 postprocess
 generate_plots
@@ -34,6 +35,7 @@ export_for_paper
 
 ```@docs
 submit_run
+submit_restart
 cluster_segment
 job_script
 read_job_ledger
@@ -190,6 +192,8 @@ sweep_points
 prepare_sweep
 run_sweep
 run_sweep_point
+continue_sweep_point
+resume_sweep
 read_sweep_index
 write_sweep_index
 sweep_summary

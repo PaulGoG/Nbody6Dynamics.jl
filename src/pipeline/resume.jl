@@ -382,6 +382,46 @@ function _tcrit_of(inp_path::AbstractString)::Float64
 end
 
 """
+    _run_end_time(info, original_inp) -> Float64
+
+End time of a run in N-body units: `TCRIT` of its original input, or the later end
+`t_start + tcrit_extra` of any restart segment in the record `info` (the parsed
+`RUN_INFO.toml`). A resume continues to this time, so an extension given to a restart
+persists through the later segments of its chain, and a restart for a shorter span does
+not shorten the run.
+"""
+function _run_end_time(info::AbstractDict, original_inp::AbstractString)::Float64
+    t_end = _tcrit_of(original_inp)
+    for s in get(info, "segments", Any[])
+        s isa AbstractDict && get(s, "kind", "") == "restart" || continue
+        t0 = get(s, "t_start", nothing)
+        dt = get(s, "tcrit_extra", nothing)
+        (t0 isa Real && dt isa Real && dt > 0) && (t_end = max(t_end, Float64(t0) + Float64(dt)))
+    end
+    return t_end
+end
+
+"""
+    _reopen_pipeline(run_dir) -> Bool
+
+Clear the `[pipeline] completed` marker of `run_dir/RUN_INFO.toml` before a further engine
+segment: the products it certifies belong to the engine output that segment changes.
+The table keeps its other entries and records `reopened`. Returns whether a marker was
+cleared.
+"""
+function _reopen_pipeline(run_dir::AbstractString)::Bool
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(info_path) || return false
+    d = TOML.parsefile(info_path)
+    p = get(d, "pipeline", nothing)
+    (p isa AbstractDict && get(p, "completed", false) === true) || return false
+    p["completed"] = false
+    p["reopened"] = Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")
+    _atomic_write_toml(info_path, d)
+    return true
+end
+
+"""
     _segment_alive(segment, out_dir) -> Bool
 
 Whether the engine of the segment record `segment` is still running on this
@@ -438,7 +478,8 @@ The restart input `restart.inp` is written from `original_inp`
 ([`_write_restart_inp`](@ref)), an earlier one kept as a `#k` sibling. The
 segment record carries `t_start` and, when given, the record `discarded`
 of [`_discard_after`](@ref); `kz` and `engine` are those of
-[`restart_simulation`](@ref). Returns `run_dir`.
+[`restart_simulation`](@ref). The pipeline's completion stamp is cleared
+first ([`_reopen_pipeline`](@ref)). Returns `run_dir`.
 """
 function _launch_restart(
     cfg::Nbody6Config,
@@ -454,6 +495,8 @@ function _launch_restart(
     kz = nothing,
     engine::Symbol = :run,
 )::String
+    # A further segment changes the engine output the completion stamp certified.
+    _reopen_pipeline(run_dir)
     target = joinpath(out_dir, "comm.1")
     # No backup: the dump stays under its own name.
     cp(joinpath(out_dir, dump), target; force = true)
@@ -497,8 +540,10 @@ end
 """
     resume_run(run_dir; base_dir = nothing) -> String
 
-Continue an interrupted run to the end time of its original input. The call
-is idempotent: a completed run is left as it is, and a run that was
+Continue an interrupted run to its end time: `TCRIT` of its original input,
+or the later end a restart segment was given ([`restart_simulation`](@ref),
+[`restart_pipeline`](@ref)), so an extension persists through the resumes of
+its chain. The call is idempotent: a completed run is left as it is, and a run that was
 stopped at its wall budget, killed, or ended by an engine error gets one
 more segment, started from the last complete restart dump.
 
@@ -608,7 +653,7 @@ function resume_run(
             "missing in $out_dir",
         ),
     )
-    tcrit = _tcrit_of(original_inp)
+    tcrit = _run_end_time(info, original_inp)
 
     marker = _resume_dump(out_dir, stdout_path)
     marker === nothing && throw(
@@ -620,7 +665,9 @@ function resume_run(
     t_d = marker.time_nb
     remaining = tcrit - t_d
     remaining > 0 || throw(
-        ArgumentError("resume: the dump $(marker.file) is at t = $t_d, not before TCRIT = $tcrit"),
+        ArgumentError(
+            "resume: the dump $(marker.file) is at t = $t_d, not before the run's end time $tcrit",
+        ),
     )
 
     discarded = _discard_after(out_dir, stdout_path, marker; segment = index, last_status = status)

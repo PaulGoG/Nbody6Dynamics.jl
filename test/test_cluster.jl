@@ -382,6 +382,85 @@
         @test submissions(sb) == "1\n"
     end
 
+    @testset "Restart job" begin
+        # End time of a run: the input's TCRIT or the later end of a restart segment
+        inp = joinpath(base, "in.inp")
+        seg(kind, t0, dt) = Dict{String,Any}("kind" => kind, "t_start" => t0, "tcrit_extra" => dt)
+        end_time(segments...) =
+            Nbody6Dynamics._run_end_time(Dict{String,Any}("segments" => Any[segments...]), inp)
+        @test end_time() == 40.0
+        @test end_time(seg("initial", 0.0, 0.0), seg("restart", 40.0, 40.0)) == 80.0
+        @test end_time(seg("restart", 40.0, 40.0), seg("restart", 10.0, 5.0)) == 80.0
+        @test end_time(seg("restart", 12.0, 28.0)) == 40.0         # a resume to the input's end
+
+        # The completed run of the previous test set, extended from 40 to 80
+        # by a restart job whose segments are cut by a 3 s wall budget.
+        run_dir = joinpath(base, "runs", "segs")
+        @test Nbody6Dynamics._pipeline_completed(run_dir)
+        run_config = joinpath(run_dir, "config.toml")
+        write(
+            run_config,
+            replace(read(run_config, String), r"wall_budget = [0-9.]+" => "wall_budget = 3.0"),
+        )
+        sb = stand_in_sbatch()
+
+        # Dry run: request and restart input rendered, nothing submitted
+        dry = submit_restart(run_dir; t_end = 80.0, dry_run = true)
+        @test dry.job_id == "" && occursin("sbatch", dry.command)
+        @test dry.request["dump"] == "comm.1_40.0" && dry.request["t_start"] == 40.0
+        @test dry.request["tcrit_extra"] == 40.0 && dry.request["t_end"] == 80.0
+        preview = read(joinpath(run_dir, "cluster", "restart_preview.inp"), String)
+        @test occursin("KSTART=2", preview) && occursin("TCRIT=40.0", preview)
+        @test !isfile(joinpath(run_dir, "cluster", "restart.toml")) && submissions(sb) == ""
+        # Refusals
+        @test_throws ArgumentError submit_restart(run_dir; t_end = 30.0, dry_run = true)
+        @test_throws ArgumentError submit_restart(run_dir; t_end = 80.0, tcrit_extra = 5.0)
+        @test_throws ArgumentError submit_restart(run_dir; dump = "comm.1_99.0", t_end = 120.0)
+
+        sub = withenv(on_path(sb)) do
+            submit_restart(run_dir; t_end = 80.0)
+        end
+        @test sub.job_id == "1"
+        request_path = joinpath(run_dir, "cluster", "restart.toml")
+        @test Nbody6Dynamics.TOML.parsefile(request_path)["status"] == "pending"
+        @test_throws ArgumentError submit_restart(run_dir; t_end = 90.0)   # one pending at a time
+        @test ledger(joinpath(run_dir, "cluster", "jobs.csv"), "segs")[end].note |>
+              startswith("restart from comm.1_40.0 to t = 80.0")
+
+        # The first job consumes the request and restarts; the chain resumes
+        # the stopped extension to its new end time.
+        n_before = length(run_info(run_dir)["segments"])
+        withenv(on_path(sb), "SLURM_JOB_ID" => "91") do
+            cluster_segment(run_dir)
+        end
+        consumed = Nbody6Dynamics.TOML.parsefile(request_path)
+        @test consumed["status"] == "consumed" && consumed["job_id"] == "91"
+        info = run_info(run_dir)
+        restart_seg = info["segments"][n_before + 1]
+        @test restart_seg["kind"] == "restart" && restart_seg["dump"] == "comm.1_40.0"
+        @test restart_seg["t_start"] == 40.0 && restart_seg["tcrit_extra"] == 40.0
+        @test info["run"]["status"] == "stopped"
+        @test !Nbody6Dynamics._pipeline_completed(run_dir)      # reopened by the restart
+        @test submissions(sb) == "2\n"                         # the chain continues
+        k = 0
+        while Nbody6Dynamics._run_status(run_dir) != "completed" && k < 6
+            withenv(on_path(sb), "SLURM_JOB_ID" => "$(92 + k)") do
+                cluster_segment(run_dir)
+            end
+            k += 1
+        end
+        @test Nbody6Dynamics._run_status(run_dir) == "completed"
+        @test Nbody6Dynamics._pipeline_completed(run_dir)
+        @test run_info(run_dir)["segments"][end]["t_end"] == 80.0
+        adjust_times = [
+            parse(Float64, m.captures[1]) for m in eachmatch(
+                r"ADJUST:\s+TIME\s+([0-9.]+)E\+00",
+                read(joinpath(run_dir, "output", "out1000"), String),
+            )
+        ]
+        @test adjust_times[end] == 80.0 && issorted(adjust_times)
+    end
+
     @testset "read_job_ledger" begin
         dir = mktempdir()
         @test isempty(Nbody6Dynamics.read_job_ledger(joinpath(dir, "absent.csv")))

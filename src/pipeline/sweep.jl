@@ -372,25 +372,31 @@ function prepare_sweep(cfg::SweepConfig; sweep_dir::AbstractString = "")
 end
 
 """
-    write_sweep_index(sweep_dir, cfg, points; status = Dict())
+    write_sweep_index(sweep_dir, cfg, points; status = Dict(), entry = 1, created = "")
 
 Write `sweep_index.toml`: the sweep header (name, base configs, axes,
-seeds, job settings) and one `[[points]]` entry per point with its id,
+seeds, job settings, the number of driver entries `entries` and the time of
+the first, `created`) and one `[[points]]` entry per point with its id,
 index, seed, axis values, directory and status (`pending`, `running`,
-`done`, `failed`; finished points carry `exit_status` and
-`elapsed_seconds`, points pinned to a CUDA device carry `device`).
-`status` maps point indices to the fields that override the pending
-defaults.
+`done`, `failed`, or the run's own status such as `stopped` or `halted`;
+finished points carry `exit_status` and `elapsed_seconds`, points pinned to
+a CUDA device carry `device`, points launched by a driver entry carry
+`entry`). `status` maps point indices to the fields that override the
+pending defaults; `created` empty means now.
 """
 function write_sweep_index(
     sweep_dir::AbstractString,
     cfg::SweepConfig,
     points::Vector{SweepPoint};
     status::Dict{Int,Dict{String,Any}} = Dict{Int,Dict{String,Any}}(),
+    entry::Integer = 1,
+    created::AbstractString = "",
 )
     header = Dict{String,Any}(
         "name" => cfg.name,
-        "created" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
+        "created" =>
+            isempty(created) ? Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS") : String(created),
+        "entries" => Int(entry),
         "pipeline_config" => cfg.pipeline_config,
         "merger_config" => cfg.merger_config,
         "axes" => first.(cfg.grid),
@@ -448,9 +454,52 @@ function run_sweep_point(point_dir::AbstractString)
     return nothing
 end
 
+"""
+    continue_sweep_point(point_dir::AbstractString)
+
+Worker entry of every sweep point: continue the point's run with
+[`resume_pipeline`](@ref) when its run directory holds a segment record,
+otherwise start it with [`run_sweep_point`](@ref). A complete,
+post-processed point is left as it is; a stopped, killed or failed run gets
+one more segment from its last complete dump; a completed run without the
+pipeline's completion marker is post-processed. A record without any segment
+(a pipeline interrupted before the engine started) is kept as a `#k` backup
+and the point is started afresh.
+"""
+function continue_sweep_point(point_dir::AbstractString)
+    run_dir = joinpath(point_dir, _SWEEP_RUN_ID)
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    if isfile(info_path) && _segment_count(info_path) > 0
+        resume_pipeline(run_dir; base_dir = point_dir)
+    else
+        isfile(info_path) && _backup_existing(info_path)
+        run_sweep_point(point_dir)
+    end
+    return nothing
+end
+
+"""
+    _sweep_resume_state(run_dir) -> Tuple{String,String}
+
+State of a sweep point's run at a re-entry, read from the run's own record
+(the index of a driver that was cut is not trusted): `("done", "completed")`
+for a completed run whose pipeline finished; `("final", status)` for a
+`halted`, `watchdog` or `stalled` run, which a resume refuses (an explicit
+restart continues it); `("continue", status)` otherwise: no record,
+`stopped`, `killed`, `failed`, a record left `running`, or a completed run
+that was not post-processed.
+"""
+function _sweep_resume_state(run_dir::AbstractString)::Tuple{String,String}
+    status = _run_status(run_dir)
+    status == "completed" && _pipeline_completed(run_dir) && return ("done", status)
+    status in ("halted", "watchdog", "stalled") && return ("final", status)
+    return ("continue", status)
+end
+
 """Command of a worker process for `point_dir`: the current Julia in the
 driver's own environment, with the driver's thread count (`Base.julia_cmd`
-does not carry `--threads`), calling [`run_sweep_point`](@ref).
+does not carry `--threads`), calling [`continue_sweep_point`](@ref), which
+starts a new point and continues an interrupted one.
 
 The worker reproduces the driver's session rather than the package
 environment, because each point runs a full pipeline and therefore needs the
@@ -462,7 +511,7 @@ function _sweep_worker_command(point_dir::AbstractString)
     julia = Base.julia_cmd()
     project = dirname(something(Base.active_project()))
     preamble = plotting_available() ? "using CairoMakie; " : ""
-    return `$julia --threads=$(Threads.nthreads()) --project=$project --startup-file=no -e "$(preamble)using Nbody6Dynamics; Nbody6Dynamics.run_sweep_point(ARGS[1])" $point_dir`
+    return `$julia --threads=$(Threads.nthreads()) --project=$project --startup-file=no -e "$(preamble)using Nbody6Dynamics; Nbody6Dynamics.continue_sweep_point(ARGS[1])" $point_dir`
 end
 
 """Fail before launching anything when the backend binary of the base
@@ -505,12 +554,106 @@ function _assign_device(
 end
 
 """
-    _launch_sweep(sweep_dir, cfg, points; worker_command = _sweep_worker_command)
+A sweep worker process of this driver and the time its engine may need to
+stop with a dump (the base configuration's `simulation.stop_margin`).
+"""
+struct _ActiveWorker
+    pid::Int32
+    stop_margin::Float64
+end
+
+"""
+Sweep workers started by this process and not yet reaped; replaced, never
+mutated, as [`_ACTIVE_ENGINES`](@ref).
+"""
+const _ACTIVE_WORKERS = Ref{Vector{_ActiveWorker}}(_ActiveWorker[])
+
+_register_worker(w::_ActiveWorker) = (_ACTIVE_WORKERS[] = vcat(_ACTIVE_WORKERS[], [w]); nothing)
+_deregister_worker(pid::Integer) =
+    (_ACTIVE_WORKERS[] = filter(w -> w.pid != pid, _ACTIVE_WORKERS[]); nothing)
+
+"""
+    _terminate_workers() -> Bool
+
+Send SIGTERM to every worker of [`_ACTIVE_WORKERS`](@ref) still running and
+wait for them up to the largest `stop_margin` plus twice
+`_KILL_GRACE_SECONDS`. A worker is a pipeline process, whose own exit hook
+([`_stop_engines_at_exit`](@ref)) asks its engine to stop with a dump and
+closes the segment record. Workers still running at the deadline are left to
+the scheduler, since killing one would orphan its engine. Synchronous
+operations only, as in [`_stop_engines_at_exit`](@ref). Returns whether any
+worker was registered.
+"""
+function _terminate_workers()::Bool
+    workers = _ACTIVE_WORKERS[]
+    isempty(workers) && return false
+    alive = Dict{Int32,Bool}()
+    for w in workers
+        running, _ = _child_state(w.pid)
+        alive[w.pid] = running
+        running && ccall(:kill, Cint, (Cint, Cint), w.pid, 15)
+    end
+    deadline = time() + maximum(w.stop_margin for w in workers) + 2 * _KILL_GRACE_SECONDS
+    while any(values(alive)) && time() ≤ deadline
+        Libc.systemsleep(0.2)
+        for w in workers
+            alive[w.pid] || continue
+            running, _ = _child_state(w.pid)
+            running || (alive[w.pid] = false)
+        end
+    end
+    _ACTIVE_WORKERS[] = _ActiveWorker[]
+    return true
+end
+
+"""
+    _stop_workers_at_exit()
+
+Process-exit hook of a sweep driver: hand a termination on to the workers
+([`_terminate_workers`](@ref)). A batch scheduler sends its early warning
+signal (`--signal=B:TERM@…`) to the batch shell only, which in a sweep job is
+the driver; without the hand-over the workers would see a signal only at the
+time limit itself, too late for a dump.
+
+When it has handed a termination on, the hook ends the process itself with
+`_exit(143)`, the status of a termination by SIGTERM, after stopping any
+engine of the driver's own ([`_stop_engines_at_exit`](@ref)). Julia runs the
+exit of a SIGTERM on the main thread at its next safepoint, which in the
+driver's poll loop can lie inside a libuv timer callback that holds the I/O
+lock; the handle finalizers that follow the hooks then wait on that lock
+forever (observed 2026-11-04: workers stopped cleanly, the driver spinning at
+50 % CPU until killed).
+"""
+function _stop_workers_at_exit()
+    _terminate_workers() || return nothing
+    _stop_engines_at_exit()
+    ccall(:_exit, Cvoid, (Cint,), 143)
+    return nothing
+end
+
+"""Stop margin of the base pipeline configuration of `cfg`, the time a worker's engine may take to stop with a dump; the default of [`SimulationConfig`](@ref) when the configuration cannot be read."""
+function _sweep_stop_margin(cfg::SweepConfig)::Float64
+    return try
+        load_config(cfg.pipeline_config).simulation.stop_margin
+    catch e
+        e isa Union{ArgumentError,SystemError,TOML.ParserError} || rethrow()
+        SimulationConfig().stop_margin
+    end
+end
+
+"""
+    _launch_sweep(sweep_dir, cfg, points; queued = points, status = Dict(), entry = 1,
+                  created = "", worker_command = _sweep_worker_command)
         -> Dict{Int,Dict{String,Any}}
 
-Run the points as worker processes, at most `cfg.concurrency` at a time,
-logging each to `<point>/sweep_point.log` and rewriting the index on every
-state change. Returns the per-point status table.
+Run the points of `queued` (all of `points` by default) as worker processes,
+at most `cfg.concurrency` at a time, logging each to
+`<point>/sweep_point.log` (appended) and rewriting the index of all `points`
+on every state change, starting from the per-point fields of `status`.
+Returns the per-point status table. `entry` and `created` go to the index
+header ([`write_sweep_index`](@ref)); every launched point records `entry`.
+Each worker is known to the driver's exit hook until it is reaped
+([`_stop_workers_at_exit`](@ref)).
 
 With `cfg.devices` nonempty a queued point is admitted only when
 [`_assign_device`](@ref) finds a device holding fewer than
@@ -523,11 +666,21 @@ function _launch_sweep(
     sweep_dir::AbstractString,
     cfg::SweepConfig,
     points::Vector{SweepPoint};
+    queued::Vector{SweepPoint} = points,
+    status::Dict{Int,Dict{String,Any}} = Dict{Int,Dict{String,Any}}(),
+    entry::Integer = 1,
+    created::AbstractString = "",
     worker_command::Function = _sweep_worker_command,
 )
-    status = Dict{Int,Dict{String,Any}}()
-    queue = copy(points)
-    running = Dict{Int,Tuple{Base.Process,IOStream,Float64,SweepPoint,Int}}()
+    status = deepcopy(status)
+    created = isempty(created) ? Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS") : String(created)
+    write_index() =
+        write_sweep_index(sweep_dir, cfg, points; status = status, entry = entry, created = created)
+    stop_margin = _sweep_stop_margin(cfg)
+    # The entry is on record even when it has nothing to run.
+    write_index()
+    queue = copy(queued)
+    running = Dict{Int,Tuple{Base.Process,IOStream,Float64,SweepPoint,Int,Int32}}()
     load = Dict{Int,Int}()
     n_done = 0
     n_failed = 0
@@ -547,26 +700,37 @@ function _launch_sweep(
                 _set_nested!(c, "simulation.gpu_list", [device])
                 _atomic_write_toml(config_path, c)
             end
-            log = open(joinpath(pdir, "sweep_point.log"), "w")
+            # Appended: a re-entry keeps the log of the earlier entries.
+            log = open(joinpath(pdir, "sweep_point.log"), "a")
             proc = run(pipeline(worker_command(pdir); stdout = log, stderr = log); wait = false)
-            running[p.index] = (proc, log, time(), p, device)
+            # Taken once: `getpid` throws for a process that has already exited.
+            wpid = try
+                Int32(getpid(proc))
+            catch e
+                e isa Base.IOError || rethrow()
+                Int32(0)
+            end
+            wpid > 0 && _register_worker(_ActiveWorker(wpid, stop_margin))
+            running[p.index] = (proc, log, time(), p, device, wpid)
             status[p.index] = Dict{String,Any}(
                 "status" => "running",
                 "started" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
+                "entry" => Int(entry),
             )
             if device ≥ 0
                 status[p.index]["device"] = device
                 load[device] = get(load, device, 0) + 1
             end
-            write_sweep_index(sweep_dir, cfg, points; status = status)
+            write_index()
             on_device = device ≥ 0 ? " on device $device" : ""
             @info "sweep: started $(p.id)$(on_device) " *
                   "($(length(running)) running, $(length(queue)) queued)"
         end
         sleep(cfg.poll_interval)
-        for (i, (proc, log, t0, p, device)) in collect(running)
+        for (i, (proc, log, t0, p, device, wpid)) in collect(running)
             process_running(proc) && continue
             close(log)
+            _deregister_worker(wpid)
             code = _exit_status(proc)
             point_status = _sweep_point_status(code, joinpath(sweep_dir, p.id, _SWEEP_RUN_ID))
             ok = point_status == "done"
@@ -574,6 +738,7 @@ function _launch_sweep(
             status[i] = Dict{String,Any}(
                 "status" => point_status,
                 "started" => status[i]["started"],
+                "entry" => Int(entry),
                 "exit_status" => code,
                 "elapsed_seconds" => round(time() - t0; digits = 1),
             )
@@ -582,7 +747,7 @@ function _launch_sweep(
                 load[device] -= 1
             end
             delete!(running, i)
-            write_sweep_index(sweep_dir, cfg, points; status = status)
+            write_index()
             if ok
                 @info "sweep: finished $(p.id) in $(_format_elapsed(time() - t0))"
             else
@@ -610,6 +775,93 @@ function run_sweep(cfg::SweepConfig; dry_run::Bool = false, sweep_dir::AbstractS
           (dry_run ? " (dry run, nothing launched)" : "")
     dry_run && return sweep_dir
     _launch_sweep(sweep_dir, cfg, points)
+    write_sweep_summary(sweep_dir)
+    return sweep_dir
+end
+
+"""
+    resume_sweep(cfg::SweepConfig, sweep_dir; worker_command = _sweep_worker_command) -> String
+
+Re-enter the sweep in `sweep_dir`, prepared earlier from the same sweep
+configuration `cfg`, after its driver was ended (a job cut at its time
+limit, a cancelled job, a crash): every point is classified from its own run
+record ([`_sweep_resume_state`](@ref)), not from the index. Complete,
+post-processed points are skipped; `halted`, `watchdog` and `stalled` points
+keep their status (a restart continues them explicitly); all others are
+launched again ([`continue_sweep_point`](@ref): stopped and killed runs
+resume from their last dump, unstarted points start). The launch follows the
+`concurrency`, `devices` and `engines_per_device` of `cfg`, so a re-entry may
+run with other resources than the first entry; the index records the entry
+count. `sweep_summary.csv` is rewritten at the end.
+
+The configuration must describe the indexed points: same number, ids, seeds
+and kinds, else an `ArgumentError` names the first difference (a sweep is
+not extended or changed by a re-entry). Returns `sweep_dir`.
+
+# Example
+```julia
+cfg = load_sweep_config("sweep.toml")
+resume_sweep(cfg, "runs/sweep_pilot_20261104_120000")
+```
+"""
+function resume_sweep(
+    cfg::SweepConfig,
+    sweep_dir::AbstractString;
+    worker_command::Function = _sweep_worker_command,
+)::String
+    sweep_dir = abspath(sweep_dir)
+    idx = read_sweep_index(sweep_dir)
+    points = sweep_points(cfg)
+    indexed = idx["points"]
+    length(indexed) == length(points) || throw(
+        ArgumentError(
+            "resume_sweep: $(sweep_dir) indexes $(length(indexed)) points, the configuration " *
+            "describes $(length(points)); a re-entry runs the sweep that was prepared",
+        ),
+    )
+    for (e, p) in zip(indexed, points)
+        (e["id"] == p.id && Int(e["seed"]) == p.seed && get(e, "kind", "merger") == p.kind) ||
+            throw(
+                ArgumentError(
+                    "resume_sweep: point $(p.index) of the configuration ($(p.id), seed " *
+                    "$(p.seed), $(p.kind)) differs from the index ($(e["id"]), seed " *
+                    "$(e["seed"]), $(get(e, "kind", "merger")))",
+                ),
+            )
+    end
+    _check_sweep_binary(cfg)
+    previous = Dict{Int,Dict{String,Any}}(Int(e["index"]) => e for e in indexed)
+    status = Dict{Int,Dict{String,Any}}()
+    queued = SweepPoint[]
+    counts = Dict("done" => 0, "final" => 0, "continue" => 0)
+    for p in points
+        state, run_status = _sweep_resume_state(joinpath(sweep_dir, p.id, _SWEEP_RUN_ID))
+        counts[state] += 1
+        if state == "continue"
+            push!(queued, p)
+            continue
+        end
+        e = Dict{String,Any}("status" => state == "done" ? "done" : run_status)
+        for k in ("started", "entry", "exit_status", "elapsed_seconds", "device")
+            haskey(previous[p.index], k) && (e[k] = previous[p.index][k])
+        end
+        status[p.index] = e
+    end
+    entry = Int(get(idx["sweep"], "entries", 1)) + 1
+    created = String(get(idx["sweep"], "created", ""))
+    @info "sweep \"$(cfg.name)\": entry $(entry) of $(sweep_dir): $(counts["done"]) done, " *
+          "$(counts["final"]) ended for good (halted, watchdog, stalled), " *
+          "$(counts["continue"]) to run"
+    _launch_sweep(
+        sweep_dir,
+        cfg,
+        points;
+        queued = queued,
+        status = status,
+        entry = entry,
+        created = created,
+        worker_command = worker_command,
+    )
     write_sweep_summary(sweep_dir)
     return sweep_dir
 end

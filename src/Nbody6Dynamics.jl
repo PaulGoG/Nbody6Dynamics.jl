@@ -1297,6 +1297,54 @@ function resume_pipeline(
 end
 
 """
+    restart_pipeline(run_dir; tcrit_extra, dump = nothing, kz = nothing, engine = :run,
+                     base_dir = nothing) -> Dict{Symbol,Any}
+
+Pipeline form of [`restart_simulation`](@ref): restart the run in `run_dir` from `dump`
+(default: the dump a resume would take) for `tcrit_extra` N-body time units, then finish
+the pipeline (post-processing, products, figures and the completion stamp) when the run
+has reached its end time; otherwise return an empty result and leave the remaining
+segments to [`resume_pipeline`](@ref). The end `t_start + tcrit_extra` of the restart
+becomes the run's end time when it is later than the input's `TCRIT`, so the resumes of a
+stopped restart continue to it. The entry of the restart job ([`submit_restart`](@ref),
+[`cluster_segment`](@ref)).
+
+# Example
+```julia
+restart_pipeline("runs/merger_demo_20261104_120000_ab12"; tcrit_extra = 50.0)
+```
+"""
+function restart_pipeline(
+    run_dir::AbstractString;
+    tcrit_extra::Real,
+    dump::Union{Nothing,AbstractString} = nothing,
+    kz::Union{Nothing,AbstractDict{<:Integer,<:Integer}} = nothing,
+    engine::Symbol = :run,
+    base_dir::Union{Nothing,AbstractString} = nothing,
+)::Dict{Symbol,Any}
+    run_dir = abspath(run_dir)
+    cfg = load_config(joinpath(run_dir, "config.toml"))
+    base = base_dir === nothing ? cfg.config_dir : String(base_dir)
+    cfg.visualization.enabled && _require_plotting(
+        :restart_pipeline,
+        "Set `[visualization] enabled = false` in the run's config.toml to finish without figures.",
+    )
+    t_pipeline = time()
+    restart_simulation(run_dir; tcrit_extra, dump, kz, engine, base_dir = base)
+    status = _run_status(run_dir)
+    if status != "completed"
+        @info "Run $(basename(run_dir)) is not at its end time yet (status $(status)); the " *
+              "remaining segments are left to resume_pipeline"
+        return Dict{Symbol,Any}()
+    end
+    out_dir = joinpath(run_dir, "output")
+    merger_result =
+        isfile(joinpath(out_dir, "merger_ic.toml")) && isfile(joinpath(out_dir, "dat.10")) ?
+        load_merger_ic_result(out_dir) : nothing
+    return _finish_pipeline(cfg, run_dir, base, merger_result, String["simulation"], t_pipeline)
+end
+
+"""
 Run Nbody6++ inside the merger IC output directory so `dat.10` is found in
 the working directory: thin wrapper around [`_execute_simulation`](@ref)
 pointing at `merger.inp` instead of the config's input file.
@@ -1352,6 +1400,8 @@ end
 function __init__()
     Base.Experimental.register_error_hint(_plotting_error_hint, MethodError)
     atexit(_stop_engines_at_exit)
+    # A sweep driver hands a termination signal on to its workers.
+    atexit(_stop_workers_at_exit)
     return nothing
 end
 
@@ -1378,9 +1428,10 @@ export Nbody6Config,
 export load_config, save_config, example_input
 export setup_nbody6,
     run_simulation, restart_simulation, resume_run, postprocess, run_pipeline, resume_pipeline
+export restart_pipeline
 export generate_plots, generate_run_id, export_for_paper, run_gpu_validation
 export CostEstimate, estimate_cost, cost_rate
-export submit_run, cluster_segment, job_script, read_job_ledger
+export submit_run, submit_restart, cluster_segment, job_script, read_job_ledger
 export scan_output, postprocess_external, OutputScan
 export Snapshot, SnapshotHeader, DiagnosticsData, AdjustRecord, LagrangianData, UnitScaling
 export EscaperRecord, StellarRecord, StellarEvolutionSnapshot, STELLAR_TYPE_LABELS
@@ -1473,6 +1524,7 @@ export imbh_pair_hardening, hardening_rate_dimensionless, write_imbh_pair_harden
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
+export resume_sweep
 export sweep_summary, write_sweep_summary, sweep_visualization
 export EnsembleStatistics, ensemble_statistics, sweep_ensembles
 export control_merger_dict, write_control_merger_config
@@ -1517,7 +1569,7 @@ public detect_compute_capabilities, cuda_arch_from_compute_cap, cuda_gencode_fla
 public resolve_cuda_arch, nvcc_release, nvcc_supported_archs
 public binary_hardness, hardness_scale, binary_scales, semi_major_axis_pc, binding_energy
 public stellar_class_index, class_counts, classes_present
-public run_sweep_point, read_sweep_index, write_sweep_index
+public run_sweep_point, continue_sweep_point, read_sweep_index, write_sweep_index
 public profile_name, imf_name, expected_mass, sample_masses, kroupa_mean_mass
 public sample_plummer, sample_king, sample_kroupa, sample_binaries, expand_binaries
 public virialise!,

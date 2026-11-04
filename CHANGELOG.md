@@ -21,10 +21,27 @@ entries say so.
   kills the engine at start-up on a mismatch or an `invalid Namelist format` report, after which the stage raises;
   the engine's `READSE` otherwise continues with the Level values silently. The segment records `stellar_echo`
   and `stellar_echo_mismatches`.
+- Sweep re-entry: `resume_sweep(cfg, sweep_dir)` and `run_sweep.jl --sweep-dir=<dir> --resume` (enter or re-enter)
+  continue a sweep whose driver was ended. Every point's state is read from its own run record: complete points are
+  skipped, `halted`/`watchdog`/`stalled` ones kept, all others relaunched through `continue_sweep_point`, which
+  resumes an interrupted run from its last dump. The index counts the driver entries.
+- A sweep driver passes a SIGTERM on to its workers and waits for them to stop their engines with a dump, so a
+  sweep job's early Slurm signal reaches the engines; before, the workers were signalled only at the time limit.
+- Restart jobs: `submit_restart(run_dir; t_end | t_end_myr | tcrit_extra, dump, kz, engine, dry_run)` and
+  `run_cluster.jl <run_dir> --restart …` submit a chain whose first segment restarts an ended run from a dump
+  (extensions beyond the end time, halted or stalled runs from an earlier dump); `restart_pipeline` is the
+  pipeline form of `restart_simulation`.
 
 ### Changed
 
 - The science templates under `input_files/clusters/` use `option_set = "baseline"`.
+- A resume continues to the run's end time: the input's `TCRIT` or the later end a restart segment was given, so an
+  extension persists through its chain.
+
+### Fixed
+
+- Every new engine segment clears the pipeline's completion stamp. A run post-processed after a `killed` or `failed`
+  segment kept the stamp through its later segments, and a Slurm chain then stopped after the first stopped one.
 
 ## [0.7.0] — 2026-11-03
 

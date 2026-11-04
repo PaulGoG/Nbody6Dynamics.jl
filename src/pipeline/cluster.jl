@@ -358,6 +358,208 @@ function submit_run(
     return (run_dir = String(run_dir), script = script, commands = commands, job_ids = job_ids)
 end
 
+"""Request file of a restart job (`<run_dir>/cluster/restart.toml`)."""
+const _RESTART_REQUEST = joinpath("cluster", "restart.toml")
+
+"""
+    _read_restart_request(run_dir) -> Union{Nothing,Dict{String,Any}}
+
+The restart request of `run_dir` ([`submit_restart`](@ref)) when one is pending, else
+`nothing`.
+"""
+function _read_restart_request(run_dir::AbstractString)::Union{Nothing,Dict{String,Any}}
+    path = joinpath(run_dir, _RESTART_REQUEST)
+    isfile(path) || return nothing
+    req = TOML.parsefile(path)
+    return get(req, "status", "") == "pending" ? req : nothing
+end
+
+"""
+    _consume_restart_request(run_dir, request, job_id)
+
+Mark the restart request of `run_dir` consumed by the job `job_id` before its restart
+starts: a job ended during the restart segment is continued by a resume of that segment,
+not by the same restart again.
+"""
+function _consume_restart_request(
+    run_dir::AbstractString,
+    request::AbstractDict,
+    job_id::AbstractString,
+)
+    consumed = merge(
+        Dict{String,Any}(request),
+        Dict{String,Any}(
+            "status" => "consumed",
+            "consumed" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
+            "job_id" => String(job_id),
+        ),
+    )
+    _atomic_write_toml(joinpath(run_dir, _RESTART_REQUEST), consumed)
+    return nothing
+end
+
+"""
+    submit_restart(run_dir; t_end = nothing, t_end_myr = nothing, tcrit_extra = nothing,
+                   dump = nothing, kz = nothing, engine = :run, dry_run = false)
+        -> @NamedTuple{run_dir::String, script::String, command::String, job_id::String,
+                       request::Dict{String,Any}}
+
+Submit a job chain whose first segment restarts the run in `run_dir` from a dump
+([`restart_pipeline`](@ref)): the continuation of a completed run beyond its end time
+(an extension), or of a run halted by the energy check or stopped by the stall watchdog
+from an earlier dump, possibly with changed options (`kz`). The run's frozen
+`config.toml` must have `[cluster] enabled = true`; its `[cluster]` settings govern the
+chain, which continues with [`cluster_segment`](@ref) as for a run from
+[`submit_run`](@ref).
+
+The end of the restart is `t_end` [NB], `t_end_myr` [Myr] (converted with the run's time
+unit from `global.30`), or `tcrit_extra` [NB] after the dump; with none of them, the
+run's end time (its input's `TCRIT`, or a later end given to an earlier restart). The
+dump is `dump` (a file name in `output/`) or the one a resume would take (the newest
+complete restart dump before any halt). Both are resolved and checked here — the dump
+complete and outside a chain subsystem (`NSUB = 0`), the span positive, no engine of the
+run alive, no other request pending — and written to `<run_dir>/cluster/restart.toml`
+with status `pending`; the first job of the chain consumes the request before it starts
+the engine, so a job ended mid-segment is continued by a resume, not by a second restart.
+
+With `dry_run` the request is written to `cluster/restart_preview.toml` and the restart
+input to `cluster/restart_preview.inp` instead, and nothing is submitted.
+
+# Example
+```julia
+# continue a completed run to 680 Myr on the cluster
+submit_restart("runs/merger_i8a_seed1"; t_end_myr = 680.0)
+```
+"""
+function submit_restart(
+    run_dir::AbstractString;
+    t_end::Union{Nothing,Real} = nothing,
+    t_end_myr::Union{Nothing,Real} = nothing,
+    tcrit_extra::Union{Nothing,Real} = nothing,
+    dump::Union{Nothing,AbstractString} = nothing,
+    kz::Union{Nothing,AbstractDict{<:Integer,<:Integer}} = nothing,
+    engine::Symbol = :run,
+    dry_run::Bool = false,
+)
+    run_dir = _run_path(run_dir, pwd())
+    count(!isnothing, (t_end, t_end_myr, tcrit_extra)) ≤ 1 ||
+        throw(ArgumentError("submit_restart: give at most one of t_end, t_end_myr, tcrit_extra"))
+    engine in (:run, :backend) ||
+        throw(ArgumentError("submit_restart: engine must be :run or :backend; got :$engine"))
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(info_path) || throw(
+        ArgumentError("submit_restart: $info_path not found; only pipeline runs can be restarted"),
+    )
+    cfg = load_config(joinpath(run_dir, "config.toml"))
+    cfg.cluster.enabled || throw(
+        ArgumentError(
+            "submit_restart: cluster.enabled is false in $(joinpath(run_dir, "config.toml")); " *
+            "set the run's [cluster] section first, or restart in this process with " *
+            "restart_pipeline",
+        ),
+    )
+    _validate_cluster(cfg)
+    _read_restart_request(run_dir) === nothing || throw(
+        ArgumentError(
+            "submit_restart: $(joinpath(run_dir, _RESTART_REQUEST)) holds a pending request; " *
+            "a job of the run has not consumed it yet",
+        ),
+    )
+    info = TOML.parsefile(info_path)
+    segments = get(info, "segments", Any[])
+    out_dir = joinpath(run_dir, "output")
+    if !isempty(segments) &&
+       get(segments[end], "status", "") == "running" &&
+       _segment_alive(segments[end], out_dir)
+        throw(ArgumentError("submit_restart: the engine of $(basename(run_dir)) is running"))
+    end
+    stdout_path = joinpath(out_dir, cfg.postprocess.stdout_file)
+    chosen = if dump === nothing
+        marker = _resume_dump(out_dir, stdout_path)
+        marker === nothing &&
+            throw(ArgumentError("submit_restart: no complete restart dump in $out_dir"))
+        marker.file
+    else
+        String(dump)
+    end
+    dump_path = joinpath(out_dir, chosen)
+    isfile(dump_path) || throw(ArgumentError("submit_restart: dump not found: $dump_path"))
+    _dump_complete(dump_path) ||
+        throw(ArgumentError("submit_restart: $chosen is incomplete (truncated write)"))
+    _restartable(dump_path) || throw(
+        ArgumentError(
+            "submit_restart: $chosen was written inside a chain subsystem (NSUB > 0); " *
+            "choose an earlier dump",
+        ),
+    )
+    markers = _dump_markers(stdout_path)
+    k = findlast(m -> m.file == chosen, markers)
+    t_dump = k === nothing ? _dump_time(chosen) : markers[k].time_nb
+    original_inp = joinpath(out_dir, get(get(info, "run", Dict{String,Any}()), "input_file", ""))
+    isfile(original_inp) || throw(
+        ArgumentError("submit_restart: the original input (run.input_file) is missing in $out_dir"),
+    )
+    target = if t_end !== nothing
+        Float64(t_end)
+    elseif t_end_myr !== nothing
+        unit = _time_unit_myr(out_dir)
+        isfinite(unit) && unit > 0 || throw(
+            ArgumentError("submit_restart: no time unit in $(joinpath(out_dir, "global.30"))"),
+        )
+        Float64(t_end_myr) / unit
+    elseif tcrit_extra !== nothing
+        t_dump + Float64(tcrit_extra)
+    else
+        _run_end_time(info, original_inp)
+    end
+    span = target - t_dump
+    span > 0 || throw(
+        ArgumentError(
+            "submit_restart: the end time $(target) NB is not after the dump $(chosen) " *
+            "(t = $(t_dump) NB)",
+        ),
+    )
+    request = Dict{String,Any}(
+        "status" => "pending",
+        "requested" => Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS"),
+        "dump" => chosen,
+        "t_start" => t_dump,
+        "tcrit_extra" => span,
+        "t_end" => target,
+        "engine" => String(engine),
+        "kz" =>
+            kz === nothing ? Dict{String,Any}() :
+            Dict{String,Any}(string(i) => Int(v) for (i, v) in kz),
+    )
+    cluster_dir = joinpath(run_dir, "cluster")
+    mkpath(cluster_dir)
+    script = _write_job_script(cfg, run_dir)
+    cmd = _sbatch_cmd(cfg.cluster, script)
+    line = Base.shell_escape(cmd)
+    if dry_run
+        _atomic_write_toml(joinpath(cluster_dir, "restart_preview.toml"), request)
+        _write_restart_inp(
+            joinpath(cluster_dir, "restart_preview.inp"),
+            original_inp,
+            span;
+            kz = kz,
+        )
+        return (run_dir = run_dir, script = script, command = line, job_id = "", request = request)
+    end
+    _atomic_write_toml(joinpath(run_dir, _RESTART_REQUEST), request)
+    runs_dir = _resolve_path(cfg.config_dir, cfg.simulation.runs_dir)
+    id = _submit(cmd)
+    _record_job(
+        run_dir,
+        runs_dir;
+        event = "submitted",
+        job_id = id,
+        note = "restart from $(chosen) to t = $(target): " * line,
+    )
+    @info "Submitted job $id: restart of $(basename(run_dir)) from $chosen (t = $t_dump) to t = $target"
+    return (run_dir = run_dir, script = script, command = line, job_id = id, request = request)
+end
+
 # ---------------------------------------------------------------------------
 # The job's entry
 # ---------------------------------------------------------------------------
@@ -399,8 +601,11 @@ and is the single source of truth for both the engine segment and the chain
 such as a different `simulation.wall_budget`, are therefore made in
 `<run_dir>/config.toml`.
 
-Without a `RUN_INFO.toml` the pipeline is started ([`run_pipeline`](@ref)
-with the run id `basename(run_dir)`), otherwise it is continued
+A pending restart request ([`submit_restart`](@ref)) is taken first: it is
+marked consumed with the job id, then the restart segment runs
+([`restart_pipeline`](@ref)). Otherwise, without a `RUN_INFO.toml` the
+pipeline is started ([`run_pipeline`](@ref) with the run id
+`basename(run_dir)`), and with one it is continued
 ([`resume_pipeline`](@ref)). The job id is taken from `SLURM_JOB_ID` (empty
 outside a job); the ledgers receive a `started` row before the segment and an
 `ended` row with the run status and the segment count after it, or with
@@ -456,8 +661,20 @@ function cluster_segment(run_dir::AbstractString)::Dict{Symbol,Any}
     )
     _save_job_record(run_dir, job_id)
 
+    request = _read_restart_request(run_dir)
     result = try
-        if isfile(info_path)
+        if request !== nothing
+            _consume_restart_request(run_dir, request, job_id)
+            kz = Dict{Int,Int}(parse(Int, k) => Int(v) for (k, v) in get(request, "kz", Dict()))
+            restart_pipeline(
+                run_dir;
+                tcrit_extra = Float64(request["tcrit_extra"]),
+                dump = String(request["dump"]),
+                kz = isempty(kz) ? nothing : kz,
+                engine = Symbol(get(request, "engine", "run")),
+                base_dir = cfg.config_dir,
+            )
+        elseif isfile(info_path)
             resume_pipeline(run_dir; base_dir = cfg.config_dir)
         else
             run_pipeline(cfg; base_dir = cfg.config_dir, run_id = basename(run_dir))
