@@ -406,14 +406,18 @@ end
 # Largest N for which the exact O(N²) pair sum is evaluated by default.
 const _VIRIAL_NMAX = 200_000
 
+# Number of strided row chunks of the pair sum: fixed, so the summation order does not depend on the thread count.
+const _PAIR_SUM_CHUNKS = 64
+
 """
     _kinetic_and_potential(mass, pos, vel) -> (T, W)
 
 Kinetic energy `T = Σ ½ m v²` and exact pairwise potential energy
-`W = −Σ_{i<j} m_i m_j / r_ij` with `G = 1`. The O(N²) pair sum is threaded
-over strided rows so each task sees a balanced mix of long (small `i`) and
-short (large `i`) rows; the summation order, and hence the last bits of
-`W`, depend on `Threads.nthreads()`.
+`W = −Σ_{i<j} m_i m_j / r_ij` with `G = 1`. The O(N²) pair sum runs over a
+fixed number of strided row chunks (`_PAIR_SUM_CHUNKS`), each a task, so
+every task sees a balanced mix of long (small `i`) and short (large `i`)
+rows; the chunk partials are added in chunk order. The result is therefore
+bit-identical for any `Threads.nthreads()`.
 """
 function _kinetic_and_potential(mass::Vector{Float64}, pos::Matrix{Float64}, vel::Matrix{Float64})
     N = length(mass)
@@ -422,12 +426,12 @@ function _kinetic_and_potential(mass::Vector{Float64}, pos::Matrix{Float64}, vel
         v2 = vel[1, i]^2 + vel[2, i]^2 + vel[3, i]^2
         T += 0.5 * mass[i] * v2
     end
-    n_threads = Threads.nthreads()
-    partials = zeros(Float64, n_threads)
-    @sync for t in 1:n_threads
+    n_chunks = _PAIR_SUM_CHUNKS
+    partials = zeros(Float64, n_chunks)
+    @sync for c in 1:n_chunks
         Threads.@spawn begin
             acc = 0.0
-            for i in t:n_threads:N
+            for i in c:n_chunks:N
                 @inbounds for j in (i + 1):N
                     dx = pos[1, i] - pos[1, j]
                     dy = pos[2, i] - pos[2, j]
@@ -436,10 +440,14 @@ function _kinetic_and_potential(mass::Vector{Float64}, pos::Matrix{Float64}, vel
                     acc -= mass[i] * mass[j] / r
                 end
             end
-            partials[t] = acc
+            partials[c] = acc
         end
     end
-    return T, sum(partials)
+    W = 0.0
+    for c in 1:n_chunks
+        W += partials[c]
+    end
+    return T, W
 end
 
 """
@@ -453,11 +461,10 @@ Assumes `G = 1`. Uses the exact N-body potential energy — O(N²), threaded
 over strided rows. Refuses (with a clear error) above `nmax` particles
 rather than silently burning hours; raise `nmax` deliberately for large ICs.
 
-Determinism note: the threaded pair sum accumulates per-task partials, so
-the floating-point summation order — and therefore the bit-exact velocity
-scale — depends on `Threads.nthreads()`. Seeded IC generation is bit-
-reproducible for a fixed thread count; across thread counts results agree
-to floating-point roundoff only.
+Determinism note: the pair sum runs over a fixed set of row chunks added in
+a fixed order, so seeded IC generation is bit-reproducible for any thread
+count (the arms of a paired comparison may be generated in processes with
+different `JULIA_NUM_THREADS`).
 """
 function virialise!(
     mass::Vector{Float64},

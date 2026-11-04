@@ -104,6 +104,27 @@
         @test Q ≈ 0.5 atol = 0.01
     end
 
+    # --- Pair sum independent of the thread count ---
+    @testset "Virial energies bit-identical across thread counts" begin
+        # The arms of a paired comparison generate their ICs in processes with
+        # different JULIA_NUM_THREADS; the dat.10 hashes must agree.
+        script = """
+        using Nbody6Dynamics, StableRNGs
+        r = StableRNG(2026)
+        N = 1500
+        mass = rand(r, N) .+ 0.1
+        pos = randn(r, 3, N)
+        vel = randn(r, 3, N)
+        T, W = Nbody6Dynamics._kinetic_and_potential(mass, pos, vel)
+        print(reinterpret(UInt64, W))
+        """
+        bits = map((1, 3)) do t
+            cmd = `$(Base.julia_cmd()) --startup-file=no --threads=$t --project=$(Base.active_project()) -e $script`
+            parse(UInt64, read(cmd, String))
+        end
+        @test bits[1] == bits[2]
+    end
+
     # --- Kepler velocity ---
     @testset "Kepler velocity" begin
         # Equal mass, circular orbit
