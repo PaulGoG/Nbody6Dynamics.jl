@@ -549,6 +549,14 @@ Output and integration parameters for merger ICs.
   Lagrange point at every mass ratio) or `"hill"` (the Hill radius
   [`jacobi_radius`](@ref), valid for a cluster much lighter than its
   neighbour; the rule of earlier versions).
+- `twin_amplitude::Float64`: relative displacement δ of one body, the
+  perturbed twin of an initial condition (the chaos floor of the calibration
+  programme): its position vector is scaled by `1 + δ` after every other step
+  of the generation, in N-body units; `0` (the default) leaves the initial
+  condition unchanged; `0 ≤ δ ≤ 10⁻⁶`
+- `twin_body::Int`: 1-based `dat.10` index of the displaced body; `0` (the
+  default) = the first single star, after the primordial pairs, so no
+  regularised pair is touched; ≥ 0
 - `output_dir::String`: directory for generated files; empty (the default)
   leaves the choice to the caller — `run_merger_pipeline` then creates a
   `runs/merger_<timestamp>/` under the working directory, and the main
@@ -579,6 +587,8 @@ Base.@kwdef struct MergerOutputSpec
     deltat_myr::Float64 = 0.0
     truncate_radius_rh::Float64 = 0.0
     truncate_rule::String = "roche"
+    twin_amplitude::Float64 = 0.0
+    twin_body::Int = 0
 end
 
 """Integration-parameter presets of `[merger.nbody6]` (the `preset` key)."""
@@ -1551,6 +1561,14 @@ function load_merger_config(path::AbstractString)::MergerConfig
     (isfinite(output.truncate_radius_rh) && output.truncate_radius_rh ≥ 0) || _config_error(
         "merger.output.truncate_radius_rh",
         "must be finite and ≥ 0 (0 = Jacobi radius); got $(output.truncate_radius_rh)",
+    )
+    (isfinite(output.twin_amplitude) && 0 ≤ output.twin_amplitude ≤ 1.0e-6) || _config_error(
+        "merger.output.twin_amplitude",
+        "must satisfy 0 ≤ value ≤ 1e-6 (a relative displacement); got $(output.twin_amplitude)",
+    )
+    output.twin_body ≥ 0 || _config_error(
+        "merger.output.twin_body",
+        "must be ≥ 0 (0 = the first single star); got $(output.twin_body)",
     )
     _validate_nbody6(nbody6)
     _validate_stellar(stellar, output)

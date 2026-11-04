@@ -1129,6 +1129,35 @@ function _control_scales(
 end
 
 """
+    _apply_twin!(pos, output, nbin0) -> Union{Nothing,Dict{String,Any}}
+
+Displace one body of the combined configuration `pos` (3 × N, N-body units) for the
+perturbed twin of [`MergerOutputSpec`](@ref): the position vector of body
+`output.twin_body` (`0` = the first single star, `2 nbin0 + 1`) is scaled by
+`1 + output.twin_amplitude`. Returns the record for `merger_ic.toml` (`body`,
+`amplitude`, `displacement` [NB]), or `nothing` when the amplitude is zero. A body
+index beyond the configuration raises an `ArgumentError`.
+"""
+function _apply_twin!(
+    pos::AbstractMatrix{<:Real},
+    output::MergerOutputSpec,
+    nbin0::Integer,
+)::Union{Nothing,Dict{String,Any}}
+    δ = output.twin_amplitude
+    δ == 0 && return nothing
+    b = output.twin_body == 0 ? 2nbin0 + 1 : output.twin_body
+    1 ≤ b ≤ size(pos, 2) || throw(
+        ArgumentError(
+            "merger.output.twin_body = $(b) is not a body of the configuration " *
+            "(1 … $(size(pos, 2)))",
+        ),
+    )
+    r = sqrt(sum(abs2, @view pos[:, b]))
+    pos[:, b] .*= 1 + δ
+    return Dict{String,Any}("body" => b, "amplitude" => δ, "displacement" => δ * r)
+end
+
+"""
     generate_merger_ic(cfg::MergerConfig; rng=Random.default_rng(),
                        output_dir="") -> MergerICResult
 
@@ -1800,6 +1829,9 @@ function generate_merger_ic(
         )
     end
 
+    # Perturbed twin: one body displaced by the relative amplitude, last of all
+    twin_record = _apply_twin!(pos_combined, cfg.output, nbin0)
+
     # Write files
     write_dat10(joinpath(out_dir, "dat.10"), mass_combined, pos_combined, vel_combined)
     generate_merger_inp(
@@ -1873,6 +1905,8 @@ function generate_merger_ic(
         complex_info = complex_info,
         control_info = control_info,
         imbh_record = imbh_record,
+        twin_record = twin_record,
+        dat10_sha256 = bytes2hex(open(sha256, joinpath(out_dir, "dat.10"))),
         mbh_record = cfg.mbh === nothing ? nothing :
                      Dict{String,Any}(
             "mass_msun" => cfg.mbh.mass_msun,
@@ -1980,6 +2014,8 @@ function _write_merger_ic_metadata(
     control_info::Union{NamedTuple,Nothing} = nothing,
     imbh_record::Union{Nothing,Dict{String,Any}} = nothing,
     mbh_record::Union{Nothing,Dict{String,Any}} = nothing,
+    twin_record::Union{Nothing,Dict{String,Any}} = nothing,
+    dat10_sha256::AbstractString = "",
 )
     orbit_table =
         Dict{String,Any}(String(k) => getfield(cfg.orbit, k) for k in fieldnames(OrbitSpec))
@@ -1997,6 +2033,8 @@ function _write_merger_ic_metadata(
             "schema_version" => 4,
             "commit" => _source_stamp(_PACKAGE_ROOT),
             "seed" => seed,
+            # Identical initial conditions across the arms of a sweep: equal hashes
+            "dat10_sha256" => String(dat10_sha256),
             "seed_streams" => cfg.seed_streams,
             "external_rng" => external_rng,
             "N_total" => N_total,
@@ -2082,6 +2120,7 @@ function _write_merger_ic_metadata(
         )
     end
     imbh_record === nothing || (d["imbh"] = imbh_record)
+    twin_record === nothing || (d["twin"] = twin_record)
     mbh_record === nothing || (d["mbh"] = mbh_record)
 
     # One table per cluster so spec + post-truncation count are co-located

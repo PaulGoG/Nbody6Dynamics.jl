@@ -6,6 +6,17 @@ entries say so.
 
 ## [Unreleased]
 
+### Added
+
+- Arms of a sweep: `[sweep.arms.<name>]` tables of quoted dotted keys addressing the merger TOML (`"merger.…"`) or
+  the point's pipeline TOML (`"pipeline.…"`) form the outermost axis; every arm runs every grid point and seed from
+  the same seed, so the arms are paired (build, thread count, numerical keys, perturbed twin, restart-chained).
+  Points of a CPU arm take no device slot. `[sweep] max_segments` launches a point stopped by its wall budget again
+  within the entry, up to that many segments. The index and, for sweeps with arms, the summary carry the arm.
+- Perturbed twin: `[merger.output] twin_amplitude` (relative displacement δ ≤ 10⁻⁶ of one body, after every other
+  step of the generation) and `twin_body` (default the first single star); `merger_ic.toml` records `[twin]` and the
+  SHA-256 of `dat.10` (`meta.dat10_sha256`).
+
 ## [0.8.0] — 2026-11-04
 
 ### Added

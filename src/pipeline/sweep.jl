@@ -41,6 +41,15 @@ Specification of a parameter sweep, parsed by [`load_sweep_config`](@ref).
   are distributed over, one device per point; empty for no device
   assignment (the base config's `simulation.gpu_list` is then untouched)
 - `engines_per_device`: engines admitted on one device at a time (≥ 1)
+- `arms`: named bundles of overrides, `name => [dotted key => value, …]`, in
+  name order; keys address the merger TOML (`merger.…`) or the point's
+  pipeline TOML (`pipeline.…`). Every arm runs every grid point and seed with
+  the same initial conditions (the same seed), so the arms are paired. Empty
+  for a sweep without arms
+- `max_segments`: engine segments a point may take within one driver entry:
+  a point stopped by its wall budget with progress is launched again
+  ([`continue_sweep_point`](@ref)) until it completes or has taken this many
+  (≥ 1; 1 leaves a stopped point to the next entry, as without the key)
 """
 struct SweepConfig
     name::String
@@ -55,14 +64,48 @@ struct SweepConfig
     controls::Bool
     devices::Vector{Int}
     engines_per_device::Int
+    arms::Vector{Pair{String,Vector{Pair{String,Any}}}}
+    max_segments::Int
 end
+
+# The twelve-field form of earlier versions (before arms and max_segments).
+SweepConfig(
+    name,
+    pipeline_config,
+    merger_config,
+    grid,
+    seeds,
+    concurrency,
+    omp_threads,
+    runs_dir,
+    poll_interval,
+    controls,
+    devices,
+    engines_per_device,
+) = SweepConfig(
+    name,
+    pipeline_config,
+    merger_config,
+    grid,
+    seeds,
+    concurrency,
+    omp_threads,
+    runs_dir,
+    poll_interval,
+    controls,
+    devices,
+    engines_per_device,
+    Pair{String,Vector{Pair{String,Any}}}[],
+    1,
+)
 
 """
     SweepPoint
 
 One point of a sweep: its 1-based `index`, directory `id`, the axis values
-in grid order, the seed, its `kind` (`"merger"` or `"control"`) and, for a
-control, the id of the merger point it belongs to (`control_of`).
+in grid order, the seed, its `kind` (`"merger"` or `"control"`), for a
+control the id of the merger point it belongs to (`control_of`), and the
+name of its arm (`""` without arms).
 """
 struct SweepPoint
     index::Int
@@ -71,9 +114,11 @@ struct SweepPoint
     seed::Int
     kind::String
     control_of::String
+    arm::String
 end
-
-SweepPoint(index, id, values, seed) = SweepPoint(index, id, values, seed, "merger", "")
+SweepPoint(index, id, values, seed) = SweepPoint(index, id, values, seed, "merger", "", "")
+SweepPoint(index, id, values, seed, kind, control_of) =
+    SweepPoint(index, id, values, seed, kind, control_of, "")
 
 const _SWEEP_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_-]*$"
 const _SWEEP_INDEX_FILE = "sweep_index.toml"
@@ -128,6 +173,8 @@ function load_sweep_config(path::AbstractString)::SweepConfig
             "controls",
             "devices",
             "engines_per_device",
+            "arms",
+            "max_segments",
         ),
         "sweep",
     )
@@ -194,6 +241,10 @@ function load_sweep_config(path::AbstractString)::SweepConfig
             )
     end
 
+    arms = _parse_sweep_arms(get(s, "arms", Dict{String,Any}()), Set(first.(grid)))
+    max_segments = _typed(get(s, "max_segments", 1), Int, "sweep.max_segments")
+    max_segments ≥ 1 || _config_error("sweep.max_segments", "must be ≥ 1, got $max_segments")
+
     return SweepConfig(
         name,
         pipeline_config,
@@ -207,7 +258,81 @@ function load_sweep_config(path::AbstractString)::SweepConfig
         controls,
         devices,
         engines_per_device,
+        arms,
+        max_segments,
     )
+end
+
+"""
+    _parse_sweep_arms(raw, grid_keys) -> Vector{Pair{String,Vector{Pair{String,Any}}}}
+
+The `[sweep.arms.<name>]` tables in name order. Every key is a quoted dotted key that
+addresses the merger TOML (`"merger.…"`) or the pipeline TOML (`"pipeline.…"`); the seed
+and the grid axes are refused (an arm changes the configuration at every grid point and
+seed alike), and so is an unquoted dotted key, which TOML turns into nested tables.
+"""
+function _parse_sweep_arms(raw, grid_keys::AbstractSet{<:AbstractString})
+    raw isa AbstractDict ||
+        _config_error("sweep.arms", "must be a table of [sweep.arms.<name>] tables")
+    arms = Pair{String,Vector{Pair{String,Any}}}[]
+    for name in sort!(collect(String, keys(raw)))
+        occursin(_SWEEP_NAME_PATTERN, name) || _config_error(
+            "sweep.arms.$name",
+            "the arm name must match $(_SWEEP_NAME_PATTERN.pattern)",
+        )
+        table = raw[name]
+        table isa AbstractDict ||
+            _config_error("sweep.arms.$name", "must be a table of \"<dotted key>\" = value")
+        items = Pair{String,Any}[]
+        for key in sort!(collect(String, keys(table)))
+            value = table[key]
+            value isa AbstractDict && _config_error(
+                "sweep.arms.$name.$key",
+                "is a table: quote the dotted key (\"merger.….…\" = value)",
+            )
+            (startswith(key, "merger.") || startswith(key, "pipeline.")) || _config_error(
+                "sweep.arms.$name.$key",
+                "must address the merger TOML (\"merger.…\") or the pipeline TOML (\"pipeline.…\")",
+            )
+            key == "merger.seed" && _config_error(
+                "sweep.arms.$name.$key",
+                "is not an arm key: seeds are given by [sweep] seeds",
+            )
+            key in grid_keys &&
+                _config_error("sweep.arms.$name.$key", "is also a grid axis; an arm may not set it")
+            push!(items, key => value)
+        end
+        push!(arms, name => items)
+    end
+    return arms
+end
+
+"""Overrides of the arm `name` of `cfg` (empty for `""`, a sweep without arms)."""
+function _arm_items(cfg::SweepConfig, name::AbstractString)::Vector{Pair{String,Any}}
+    isempty(name) && return Pair{String,Any}[]
+    k = findfirst(a -> first(a) == name, cfg.arms)
+    k === nothing && throw(ArgumentError("sweep: no arm named \"$name\""))
+    return last(cfg.arms[k])
+end
+
+"""
+    _set_nested_create!(d, path, value)
+
+Assign `value` at the dotted `path` of `d`, creating the tables on the way (an arm may
+introduce a table the base file lacks, such as `[merger.output]` keys; the regular
+parsers that load the derived file refuse a mistyped key).
+"""
+function _set_nested_create!(d::AbstractDict, path::AbstractString, value)
+    parts = split(path, '.')
+    node = d
+    for p in parts[1:(end - 1)]
+        child = get!(node, String(p), Dict{String,Any}())
+        child isa AbstractDict ||
+            throw(ArgumentError("sweep arm key \"$path\": \"$p\" is a value, not a table"))
+        node = child
+    end
+    node[String(parts[end])] = value
+    return d
 end
 
 """Axis label used in point ids and legends: the dotted key without its
@@ -241,25 +366,21 @@ function sweep_points(cfg::SweepConfig)::Vector{SweepPoint}
     value_lists = last.(cfg.grid)
     points = SweepPoint[]
     index = 0
-    for combo in Iterators.product(value_lists...)
+    arm_names = isempty(cfg.arms) ? [""] : first.(cfg.arms)
+    point_id(index, arm, label, seed) =
+        @sprintf("%03d_", index) *
+        join(filter(!isempty, ["$(isempty(arm) ? "" : "arm=" * arm)", label, "seed=$seed"]), "_")
+    for arm in arm_names, combo in Iterators.product(value_lists...)
         values = Pair{String,Any}[k => v for (k, v) in zip(axis_keys, combo)]
         label = join(["$(_axis_short(k))=$(_format_axis_value(v))" for (k, v) in values], "_")
         for seed in cfg.seeds
             index += 1
-            id = if isempty(label)
-                @sprintf("%03d_seed=%d", index, seed)
-            else
-                @sprintf("%03d_%s_seed=%d", index, label, seed)
-            end
-            push!(points, SweepPoint(index, id, values, seed))
+            id = point_id(index, arm, label, seed)
+            push!(points, SweepPoint(index, id, values, seed, "merger", "", arm))
             if cfg.controls
                 index += 1
-                cid = if isempty(label)
-                    @sprintf("%03d_seed=%d_control", index, seed)
-                else
-                    @sprintf("%03d_%s_seed=%d_control", index, label, seed)
-                end
-                push!(points, SweepPoint(index, cid, values, seed, "control", id))
+                cid = point_id(index, arm, label, seed) * "_control"
+                push!(points, SweepPoint(index, cid, values, seed, "control", id, arm))
             end
         end
     end
@@ -353,6 +474,10 @@ function prepare_sweep(cfg::SweepConfig; sweep_dir::AbstractString = "")
             _set_nested!(m, k, v)
         end
         _set_nested!(m, "merger.seed", p.seed)
+        arm_items = _arm_items(cfg, p.arm)
+        for (k, v) in arm_items
+            startswith(k, "merger.") && _set_nested_create!(m, k, v)
+        end
         p.kind == "control" && (m = control_merger_dict(m))
         merger_path = joinpath(pdir, "merger.toml")
         _atomic_write_toml(merger_path, m)
@@ -360,6 +485,15 @@ function prepare_sweep(cfg::SweepConfig; sweep_dir::AbstractString = "")
 
         c = deepcopy(pipeline_base)
         _sweep_pipeline_overrides!(c, cfg, pipeline_dir, pdir, merger_path)
+        for (k, v) in arm_items
+            startswith(k, "pipeline.") || continue
+            key = k[(length("pipeline.") + 1):end]
+            # Paths of an arm resolve like those of the base pipeline config.
+            key in ("install.install_dir", "simulation.input_file") &&
+                v isa AbstractString &&
+                (v = _resolve_path(pipeline_dir, v))
+            _set_nested_create!(c, key, v)
+        end
         config_path = joinpath(pdir, "config.toml")
         _atomic_write_toml(config_path, c)
         load_config(config_path)
@@ -406,6 +540,8 @@ function write_sweep_index(
         "controls" => cfg.controls,
         "devices" => cfg.devices,
         "engines_per_device" => cfg.engines_per_device,
+        "arms" => first.(cfg.arms),
+        "max_segments" => cfg.max_segments,
         "n_points" => length(points),
     )
     entries = map(points) do p
@@ -417,6 +553,7 @@ function write_sweep_index(
             "values" => Dict{String,Any}(k => v for (k, v) in p.values),
             "kind" => p.kind,
             "control_of" => p.control_of,
+            "arm" => p.arm,
             "status" => "pending",
         )
         merge!(e, get(status, p.index, Dict{String,Any}()))
@@ -641,6 +778,30 @@ function _sweep_stop_margin(cfg::SweepConfig)::Float64
     end
 end
 
+"""Whether the point in `point_dir` runs the CUDA build (`build.enable_gpu` of its config), and so takes a device slot."""
+function _point_uses_gpu(point_dir::AbstractString)::Bool
+    c = TOML.parsefile(joinpath(point_dir, "config.toml"))
+    return get(get(c, "build", Dict{String,Any}()), "enable_gpu", false) === true
+end
+
+"""
+    _continue_in_entry(run_dir, max_segments) -> Bool
+
+Whether a point stopped by its wall budget runs its next segment within the same
+driver entry: fewer than `max_segments` segments on record and progress in the last
+one (`t_end` beyond `t_start`).
+"""
+function _continue_in_entry(run_dir::AbstractString, max_segments::Integer)::Bool
+    info_path = joinpath(run_dir, "RUN_INFO.toml")
+    isfile(info_path) || return false
+    segments = get(TOML.parsefile(info_path), "segments", Any[])
+    (isempty(segments) || length(segments) ≥ max_segments) && return false
+    last_segment = segments[end]
+    t0 = get(last_segment, "t_start", 0.0)
+    t1 = get(last_segment, "t_end", nothing)
+    return t1 isa Real && t0 isa Real && t1 > t0
+end
+
 """
     _launch_sweep(sweep_dir, cfg, points; queued = points, status = Dict(), entry = 1,
                   created = "", worker_command = _sweep_worker_command)
@@ -687,13 +848,14 @@ function _launch_sweep(
     while !isempty(queue) || !isempty(running)
         while length(running) < cfg.concurrency && !isempty(queue)
             device = -1
-            if !isempty(cfg.devices)
+            p = first(queue)
+            pdir = joinpath(sweep_dir, p.id)
+            if !isempty(cfg.devices) && _point_uses_gpu(pdir)
                 d = _assign_device(load, cfg.devices, cfg.engines_per_device)
                 d === nothing && break
                 device = d
             end
-            p = popfirst!(queue)
-            pdir = joinpath(sweep_dir, p.id)
+            popfirst!(queue)
             if device ≥ 0
                 config_path = joinpath(pdir, "config.toml")
                 c = TOML.parsefile(config_path)
@@ -734,7 +896,11 @@ function _launch_sweep(
             code = _exit_status(proc)
             point_status = _sweep_point_status(code, joinpath(sweep_dir, p.id, _SWEEP_RUN_ID))
             ok = point_status == "done"
-            ok ? (n_done += 1) : (n_failed += 1)
+            again =
+                point_status == "stopped" &&
+                _continue_in_entry(joinpath(sweep_dir, p.id, _SWEEP_RUN_ID), cfg.max_segments)
+            again && push!(queue, p)
+            ok ? (n_done += 1) : again || (n_failed += 1)
             status[i] = Dict{String,Any}(
                 "status" => point_status,
                 "started" => status[i]["started"],
@@ -750,6 +916,8 @@ function _launch_sweep(
             write_index()
             if ok
                 @info "sweep: finished $(p.id) in $(_format_elapsed(time() - t0))"
+            elseif again
+                @info "sweep: $(p.id) stopped at its wall budget; queued for its next segment"
             else
                 @warn "sweep: $(p.id) ended as $(point_status) (exit status $code); see $(joinpath(sweep_dir, p.id, "sweep_point.log"))"
             end
@@ -820,14 +988,18 @@ function resume_sweep(
         ),
     )
     for (e, p) in zip(indexed, points)
-        (e["id"] == p.id && Int(e["seed"]) == p.seed && get(e, "kind", "merger") == p.kind) ||
-            throw(
-                ArgumentError(
-                    "resume_sweep: point $(p.index) of the configuration ($(p.id), seed " *
-                    "$(p.seed), $(p.kind)) differs from the index ($(e["id"]), seed " *
-                    "$(e["seed"]), $(get(e, "kind", "merger")))",
-                ),
-            )
+        (
+            e["id"] == p.id &&
+            Int(e["seed"]) == p.seed &&
+            get(e, "kind", "merger") == p.kind &&
+            get(e, "arm", "") == p.arm
+        ) || throw(
+            ArgumentError(
+                "resume_sweep: point $(p.index) of the configuration ($(p.id), seed " *
+                "$(p.seed), $(p.kind)) differs from the index ($(e["id"]), seed " *
+                "$(e["seed"]), $(get(e, "kind", "merger")))",
+            ),
+        )
     end
     _check_sweep_binary(cfg)
     previous = Dict{Int,Dict{String,Any}}(Int(e["index"]) => e for e in indexed)
@@ -931,7 +1103,8 @@ end
 """
     sweep_summary(sweep_dir) -> (columns, rows)
 
-One row per point: index, id, kind, control id, seed, the axis values, status, the
+One row per point: index, id, kind, control id, arm (only when the sweep has arms), seed,
+the axis values, status, the
 assigned CUDA device (`-1` when none), and the outcome fields of
 [`_sweep_point_outcome`](@ref) for finished points.
 `columns` gives the column order used by [`write_sweep_summary`](@ref).
@@ -940,7 +1113,9 @@ function sweep_summary(sweep_dir::AbstractString)
     idx = read_sweep_index(sweep_dir)
     axes = String[idx["sweep"]["axes"]...]
     columns = vcat(
-        ["index", "id", "kind", "control_of", "seed"],
+        ["index", "id", "kind", "control_of"],
+        isempty(get(idx["sweep"], "arms", String[])) ? String[] : ["arm"],
+        ["seed"],
         axes,
         [
             "status",
@@ -962,6 +1137,7 @@ function sweep_summary(sweep_dir::AbstractString)
             "id" => p["id"],
             "kind" => get(p, "kind", "merger"),
             "control_of" => get(p, "control_of", ""),
+            "arm" => get(p, "arm", ""),
             "seed" => p["seed"],
             "status" => p["status"],
             "device" => get(p, "device", -1),

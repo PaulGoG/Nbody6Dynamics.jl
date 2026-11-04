@@ -126,6 +126,7 @@ end
     include("test_validity.jl")
     include("test_sweep_ensemble.jl")
     include("test_sweep_resume.jl")
+    include("test_sweep_arms.jl")
     include("test_plotting.jl")
     include("test_external.jl")
     include("test_ic.jl")

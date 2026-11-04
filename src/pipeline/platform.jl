@@ -2,7 +2,7 @@
 # Platform detection, dependency checking, and CUDA/HDF5 tooling
 # =============================================================================
 
-using SHA: sha1
+using SHA: sha1, sha256
 
 """
     detect_platform() -> Symbol
