@@ -161,7 +161,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Install / build | Working | Clones my engine fork at its release tag `v2026.07.25` (any upstream ref also builds, with the source amendments of `deps/engine/amendments.toml`), runs `configure` and a parallel make, and writes `BUILD_INFO.toml` next to the binary. GPU builds target the visible devices' compute capabilities or an explicit `cuda_arch` list; validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3, see the manual, Validated hardware) |
+| Install / build | Working | Clones my engine fork at its release tag `v2026.07.26` (any upstream ref also builds, with the source amendments of `deps/engine/amendments.toml`), runs `configure` and a parallel make, and writes `BUILD_INFO.toml` next to the binary. GPU builds target the visible devices' compute capabilities or an explicit `cuda_arch` list; validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3, see the manual, Validated hardware) |
 | Initial-condition generator | Working | Plummer and King clusters with a Kroupa (2001) IMF, alone, as a Kepler pair, on explicit orbits or as a cluster complex with its energy-matched controls, each cluster truncated at its Roche lobe (Eggleton 1983) with respect to its neighbour. Primordial mass segregation (Baumgardt, De Marchi & Kroupa 2008), primordial binaries with the Sana et al. (2012) branch for massive primaries and a periastron Roche guard, IMBH seeding (`kz24` and `flag` routes), seeded throughout; output intervals are dyadic rationals, which upstream builds need (my fork bounds the digit counter since `v2026.07-campaign.3`) |
 | Snapshot integrals and bound sets | Working | Exact Newtonian potential in Float64 with regularised pairs as centres of mass, and the bound set by iterative energetic unbinding with an explicit convergence status. Per snapshot the momenta, energies, the pairs' internal energy and the Jacobi integral of a linearised tide (`snapshot_integrals.csv`) |
 | Energy-jump localisation and mass budget | Working | The engine's `DE` per adjustment interval with its correction channels and event counts, flagged by a floor and a robust scale (`energy_intervals.csv`, `engine_events.csv`). Mass and energy closed per snapshot against escapers, stellar-evolution and collision losses and the engine's corrections (`mass_budget.csv`, `energy_budget.csv`) |
@@ -234,7 +234,7 @@ If this package contributes to published work, please cite it through the metada
 @software{Nbody6Dynamics_jl,
   author  = {Gogîță, Paul-Adrian},
   title   = {Nbody6Dynamics.jl},
-  version = {0.9.1},
+  version = {0.9.2},
   year    = {2026},
   url     = {https://github.com/PaulGoG/Nbody6Dynamics.jl},
   license = {MIT}
