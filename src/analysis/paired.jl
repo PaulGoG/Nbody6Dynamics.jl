@@ -144,103 +144,144 @@ function _window_mean(s, t_settle::Real; nodes::Integer = 200)::Float64
     return (sum(y) - (first(y) + last(y)) / 2) / (nodes - 1)
 end
 
-"""
-    paired_comparison(sweep_dir; reference = "base", observables = ["r10", "r50", "r90",
-                      "energy", "n_stars", "n_pairs"], t_settle_myr = 0.0,
-                      margins = Dict(), α = 0.05) -> Vector{NamedTuple}
+"""Default observables of the paired analysis, in table order."""
+const _PAIRED_DEFAULT_OBSERVABLES = ["r10", "r50", "r90", "energy", "n_stars", "n_pairs"]
 
-Calibration table of the arms of a sweep (`[sweep.arms]`) against the arm `reference`:
-one row per grid point, observable and arm, from the completed points only. Every point is
-paired with the reference point of the same grid point and seed; the pairing is verified
-by equal `meta.dat10_sha256` of the two initial conditions, except for points carrying a
-perturbed twin (`[twin]` in `merger_ic.toml`), and refused otherwise. Per pair the
-difference of the observable's series is averaged over the window from `t_settle_myr` to
-the end of the common interval; the seeds are the samples of [`paired_shift`](@ref).
-
-Columns: `grid` (the grid values as text), `observable`, `arm`, `n`, `shift` (mean
-difference), `se`, `ci_low`, `ci_high` (the (1 − 2α) interval), `margin`, `margin_kind`,
-`chaos_floor` (standard deviation over seeds of the window-mean difference of the twin
-arm, NaN without one), `seed_scatter` (standard deviation over seeds of the reference
-window mean), `p_equivalence`, `p_equivalence_holm`, `p_difference`,
-`p_difference_holm`, `verdict` (`"equivalent"`, `"different"`, `"inconclusive"`).
-
-`margins` maps an observable to `("chaos", κ)` (κ times the chaos floor; the default
-with κ = 2 when the sweep has a twin arm), `("relative", f)` (f times the absolute
-reference window mean; the default with f = 0.01 otherwise) or `("absolute", ε)`. Holm's
-correction runs over all rows of the table at family level `α`.
-"""
-function paired_comparison(
-    sweep_dir::AbstractString;
-    reference::AbstractString = "base",
-    observables::AbstractVector{<:AbstractString} = [
-        "r10",
-        "r50",
-        "r90",
-        "energy",
-        "n_stars",
-        "n_pairs",
-    ],
-    t_settle_myr::Real = 0.0,
-    margins::AbstractDict = Dict{String,Tuple{String,Float64}}(),
-    α::Real = 0.05,
-)::Vector{NamedTuple}
+"""Refuse an observable that [`paired_comparison`](@ref) does not know, naming `caller`."""
+function _check_paired_observables(observables::AbstractVector{<:AbstractString}, caller::String)
     for o in observables
         haskey(_PAIRED_OBSERVABLES, o) || throw(
             ArgumentError(
-                "paired_comparison: unknown observable \"$o\"; one of " *
+                "$(caller): unknown observable \"$o\"; one of " *
                 join(sort!(collect(keys(_PAIRED_OBSERVABLES))), ", "),
             ),
         )
     end
+    return nothing
+end
+
+"""Grid values of a sweep point as text: `"key=value"` pairs sorted and joined by commas; `""` without a grid."""
+_grid_text(values::AbstractDict)::String =
+    join(sort!(String["$(k)=$(v)" for (k, v) in values]), ", ")::String
+
+"""
+    _PairingGroups
+
+The runs of a paired analysis grouped by grid point and seed:
+`(grid, seed) => (arm => run_dir)`, the grid point as text ([`_grid_text`](@ref)).
+"""
+const _PairingGroups = Dict{Tuple{String,Int},Dict{String,String}}
+
+"""Pairing groups of the completed points of a sweep (the arm `""` for a sweep without arms)."""
+function _sweep_pairing_groups(sweep_dir::AbstractString)::_PairingGroups
     _, pts = _sweep_done_points(sweep_dir)
-    groups = Dict{Tuple{String,Int},Dict{String,String}}()   # (grid, seed) => arm => run dir
-    grid_of = Dict{String,String}()
+    groups = _PairingGroups()
     for (p, run_dir) in pts
-        grid = join(sort!(["$(k)=$(v)" for (k, v) in p["values"]]), ", ")
-        get!(groups, (grid, Int(p["seed"])), Dict{String,String}())[String(get(p, "arm", ""))] =
-            run_dir
+        get!(groups, (_grid_text(p["values"]), Int(p["seed"])), Dict{String,String}())[string(
+            get(p, "arm", ""),
+        )::String] = run_dir
     end
-    arms = sort!(unique(a for g in values(groups) for a in keys(g)))
-    reference in arms ||
-        throw(ArgumentError("paired_comparison: no completed point of the arm \"$reference\""))
-    meta(run_dir) = (
-        path = joinpath(run_dir, "output", "merger_ic.toml");
-        isfile(path) ? TOML.parsefile(path) : Dict{String,Any}()
-    )
-    # Pairing: identical initial conditions unless the point is a twin.
+    return groups
+end
+
+"""`merger_ic.toml` of a run's output as a dictionary; empty when absent."""
+function _paired_run_meta(run_dir::AbstractString)::Dict{String,Any}
+    path = joinpath(run_dir, "output", "merger_ic.toml")
+    return isfile(path) ? TOML.parsefile(path) : Dict{String,Any}()
+end
+
+"""
+    _verify_pairing(groups, reference, caller, unit)
+
+Refuse a run of a non-reference arm whose `meta.dat10_sha256` differs from that of
+the reference run of the same grid point and seed, unless it carries a perturbed
+twin (`[twin]`); runs without a recorded hash pass. `unit` names a member in the
+message (`"point"` of a sweep, `"run"` of a run list).
+"""
+function _verify_pairing(groups::_PairingGroups, reference::String, caller::String, unit::String)
+    hash_of(m) = string(get(get(m, "meta", Dict{String,Any}()), "dat10_sha256", ""))::String
     for ((grid, seed), byarm) in groups
         haskey(byarm, reference) || continue
-        h_ref = get(get(meta(byarm[reference]), "meta", Dict{String,Any}()), "dat10_sha256", "")
+        h_ref = hash_of(_paired_run_meta(byarm[reference]))
         for (arm, run_dir) in byarm
             arm == reference && continue
-            m = meta(run_dir)
+            m = _paired_run_meta(run_dir)
             haskey(m, "twin") && continue
-            h = get(get(m, "meta", Dict{String,Any}()), "dat10_sha256", "")
+            h = hash_of(m)
             (isempty(h) || isempty(h_ref) || h == h_ref) || throw(
                 ArgumentError(
-                    "paired_comparison: the $(arm) point of seed $(seed) at $(grid) does not share " *
-                    "the initial conditions of the $(reference) point (dat.10 hashes differ)",
+                    "$(caller): the $(arm) $(unit) of seed $(seed)" *
+                    (isempty(grid) ? "" : " at $(grid)") *
+                    " does not share the initial conditions of the $(reference) $(unit) " *
+                    "(dat.10 hashes differ)",
                 ),
             )
         end
     end
-    twin_arms = Set(a for g in values(groups) for (a, d) in g if haskey(meta(d), "twin"))
+    return nothing
+end
+
+"""Arms of the groups in name order; refuses a table without a run of `reference`."""
+function _paired_arms(groups::_PairingGroups, reference::String, caller::String, unit::String)
+    arms = sort!(unique(a for g in values(groups) for a in keys(g)))
+    reference in arms ||
+        throw(ArgumentError("$(caller): no completed $(unit) of the arm \"$reference\""))
+    return arms
+end
+
+"""
+    _arm_series(groups, grid, quantity, fraction) -> (seeds, series)
+
+Seeds of the grid point `grid` in ascending order and the series of `quantity`
+([`_run_series`](@ref)) of every run there, keyed by `(arm, seed)` (`nothing` for a
+run without the source file).
+"""
+function _arm_series(groups::_PairingGroups, grid::String, quantity::Symbol, fraction::Real)
+    seeds = sort!([s for (g, s) in keys(groups) if g == grid])
+    series = Dict{Tuple{String,Int},Any}()
+    for s in seeds, (arm, run_dir) in groups[(grid, s)]
+        series[(arm, s)] = _run_series(run_dir, quantity; fraction = fraction)
+    end
+    return seeds, series
+end
+
+"""Both series of the pair `(arm, s)`–`(reference, s)` exist."""
+_has_pair(series, arm, reference, s) =
+    haskey(series, (arm, s)) &&
+    haskey(series, (reference, s)) &&
+    series[(arm, s)] !== nothing &&
+    series[(reference, s)] !== nothing
+
+"""
+    _paired_rows(groups; reference, observables, t_settle_myr, margins, α, caller, unit)
+
+The statistical core of [`paired_comparison`](@ref) and [`block_comparison`](@ref) on
+explicit pairing groups: pairing check, per-seed window means of the differences,
+chaos floor, seed scatter, margins, the paired tests and Holm's correction over all
+rows. `caller` and `unit` name the entry point and a member in the messages.
+"""
+function _paired_rows(
+    groups::_PairingGroups;
+    reference::String,
+    observables::AbstractVector{<:AbstractString},
+    t_settle_myr::Real,
+    margins::AbstractDict,
+    α::Real,
+    caller::String,
+    unit::String,
+)::Vector{NamedTuple}
+    arms = _paired_arms(groups, reference, caller, unit)
+    # Pairing: identical initial conditions unless the member is a twin.
+    _verify_pairing(groups, reference, caller, unit)
+    twin_arms =
+        Set(a for g in values(groups) for (a, d) in g if haskey(_paired_run_meta(d), "twin"))
     rows = NamedTuple[]
     grids = sort!(unique(first.(collect(keys(groups)))))
     for grid in grids, o in observables
         quantity, fraction = _PAIRED_OBSERVABLES[o]
-        series = Dict{Tuple{String,Int},Any}()
-        seeds = sort!([s for (g, s) in keys(groups) if g == grid])
-        for s in seeds, (arm, run_dir) in groups[(grid, s)]
-            series[(arm, s)] = _run_series(run_dir, quantity; fraction = fraction)
-        end
+        seeds, series = _arm_series(groups, grid, quantity, fraction)
         diffs(arm) = Float64[
-            (
-                haskey(series, (arm, s)) &&
-                haskey(series, (reference, s)) &&
-                series[(arm, s)] !== nothing &&
-                series[(reference, s)] !== nothing
-            ) ?
+            _has_pair(series, arm, reference, s) ?
             _window_mean_difference(series[(arm, s)], series[(reference, s)], t_settle_myr) :
             NaN for s in seeds
         ]
@@ -264,7 +305,7 @@ function paired_comparison(
             kind == "absolute" ? Float64(value) :
             throw(
                 ArgumentError(
-                    "paired_comparison: margin kind of $o must be \"chaos\", \"relative\" or \"absolute\"; got \"$kind\"",
+                    "$(caller): margin kind of $o must be \"chaos\", \"relative\" or \"absolute\"; got \"$kind\"",
                 ),
             )
         for arm in arms
@@ -309,6 +350,53 @@ function paired_comparison(
 end
 
 """
+    paired_comparison(sweep_dir; reference = "base", observables = ["r10", "r50", "r90",
+                      "energy", "n_stars", "n_pairs"], t_settle_myr = 0.0,
+                      margins = Dict(), α = 0.05) -> Vector{NamedTuple}
+
+Calibration table of the arms of a sweep (`[sweep.arms]`) against the arm `reference`:
+one row per grid point, observable and arm, from the completed points only. Every point is
+paired with the reference point of the same grid point and seed; the pairing is verified
+by equal `meta.dat10_sha256` of the two initial conditions, except for points carrying a
+perturbed twin (`[twin]` in `merger_ic.toml`), and refused otherwise. Per pair the
+difference of the observable's series is averaged over the window from `t_settle_myr` to
+the end of the common interval; the seeds are the samples of [`paired_shift`](@ref).
+
+Columns: `grid` (the grid values as text), `observable`, `arm`, `n`, `shift` (mean
+difference), `se`, `ci_low`, `ci_high` (the (1 − 2α) interval), `margin`, `margin_kind`,
+`chaos_floor` (standard deviation over seeds of the window-mean difference of the twin
+arm, NaN without one), `seed_scatter` (standard deviation over seeds of the reference
+window mean), `p_equivalence`, `p_equivalence_holm`, `p_difference`,
+`p_difference_holm`, `verdict` (`"equivalent"`, `"different"`, `"inconclusive"`).
+
+`margins` maps an observable to `("chaos", κ)` (κ times the chaos floor; the default
+with κ = 2 when the sweep has a twin arm), `("relative", f)` (f times the absolute
+reference window mean; the default with f = 0.01 otherwise) or `("absolute", ε)`. Holm's
+correction runs over all rows of the table at family level `α`. The same table over an
+explicit list of run directories is [`block_comparison`](@ref).
+"""
+function paired_comparison(
+    sweep_dir::AbstractString;
+    reference::AbstractString = "base",
+    observables::AbstractVector{<:AbstractString} = _PAIRED_DEFAULT_OBSERVABLES,
+    t_settle_myr::Real = 0.0,
+    margins::AbstractDict = Dict{String,Tuple{String,Float64}}(),
+    α::Real = 0.05,
+)::Vector{NamedTuple}
+    _check_paired_observables(observables, "paired_comparison")
+    return _paired_rows(
+        _sweep_pairing_groups(sweep_dir);
+        reference = String(reference),
+        observables,
+        t_settle_myr,
+        margins,
+        α,
+        caller = "paired_comparison",
+        unit = "point",
+    )
+end
+
+"""
     write_paired_comparison(path, rows) -> String
 
 Write the rows of [`paired_comparison`](@ref) as CSV (non-finite numbers as empty cells);
@@ -323,6 +411,275 @@ function write_paired_comparison(path::AbstractString, rows::AbstractVector)::St
         for r in rows
             println(io, join([_csv_cell(r[c]) for c in cols], ","))
         end
+    end
+    return path
+end
+
+# -----------------------------------------------------------------------------
+# Time-resolved paired differences and the LaTeX calibration table (4.6)
+# -----------------------------------------------------------------------------
+
+"""
+    _difference_series(groups; reference, observables, n_grid, caller, unit) -> Vector{NamedTuple}
+
+The core of [`paired_difference_series`](@ref) on explicit pairing groups: per grid
+point, observable and arm the differences arm − reference of every seed with both
+series, interpolated onto `n_grid` nodes of the interval all those pairs cover, and
+their mean and standard error per node.
+"""
+function _difference_series(
+    groups::_PairingGroups;
+    reference::String,
+    observables::AbstractVector{<:AbstractString},
+    n_grid::Int,
+    caller::String,
+    unit::String,
+)::Vector{NamedTuple}
+    n_grid ≥ 2 || throw(ArgumentError("$(caller): n_grid must be ≥ 2; got $(n_grid)"))
+    arms = _paired_arms(groups, reference, caller, unit)
+    _verify_pairing(groups, reference, caller, unit)
+    out = NamedTuple[]
+    for grid in sort!(unique(first.(collect(keys(groups))))), o in observables
+        quantity, fraction = _PAIRED_OBSERVABLES[o]
+        seeds, series = _arm_series(groups, grid, quantity, fraction)
+        for arm in arms
+            arm == reference && continue
+            pairs = [
+                (series[(arm, s)], series[(reference, s)]) for
+                s in seeds if _has_pair(series, arm, reference, s)
+            ]
+            n = length(pairs)
+            t0 = n == 0 ? NaN : maximum(max(first(a[1]), first(r[1])) for (a, r) in pairs)
+            t1 = n == 0 ? NaN : minimum(min(last(a[1]), last(r[1])) for (a, r) in pairs)
+            if !(t1 > t0)
+                push!(
+                    out,
+                    (;
+                        grid,
+                        observable = o,
+                        arm,
+                        n,
+                        time = Float64[],
+                        mean = Float64[],
+                        se = Float64[],
+                    ),
+                )
+                continue
+            end
+            t = collect(range(t0, t1; length = n_grid))
+            d = Matrix{Float64}(undef, n, n_grid)
+            for (i, (a, r)) in enumerate(pairs)
+                d[i, :] = _interpolate_linear(a[1], a[2], t) .- _interpolate_linear(r[1], r[2], t)
+            end
+            m = vec(sum(d; dims = 1)) ./ n
+            se =
+                n ≥ 2 ? sqrt.(vec(sum(abs2, d .- m'; dims = 1)) ./ (n - 1)) ./ sqrt(n) :
+                fill(NaN, n_grid)
+            push!(out, (; grid, observable = o, arm, n, time = t, mean = m, se))
+        end
+    end
+    return out
+end
+
+"""
+    paired_difference_series(sweep_dir; reference = "base", observables = [...], n_grid = 200)
+    paired_difference_series(runs; reference = "base", observables = [...], n_grid = 200)
+        -> Vector{NamedTuple}
+
+Time-resolved mean paired difference of every arm against the arm `reference`, the
+companion of [`paired_comparison`](@ref) (a sweep directory) and
+[`block_comparison`](@ref) (a run list `(; arm, seed, run_dir[, grid])`), with the same
+pairing rules. Per grid point, observable and arm, the series of every seed with both
+runs are differenced, arm minus reference, on `n_grid` equally spaced nodes of the
+interval that all those pairs cover (from its start, the settling interval included),
+and averaged over the seeds. Returns one
+`(; grid, observable, arm, n, time, mean, se)` per grid point, observable and arm:
+`time` [Myr], `mean` the mean difference and `se` its standard error (standard
+deviation over the `n` seeds over √n; `NaN` for n < 2) per node. A row without
+pairs or without a common interval has empty vectors.
+"""
+function paired_difference_series(
+    sweep_dir::AbstractString;
+    reference::AbstractString = "base",
+    observables::AbstractVector{<:AbstractString} = _PAIRED_DEFAULT_OBSERVABLES,
+    n_grid::Int = _ENSEMBLE_GRID_NODES,
+)::Vector{NamedTuple}
+    _check_paired_observables(observables, "paired_difference_series")
+    return _difference_series(
+        _sweep_pairing_groups(sweep_dir);
+        reference = String(reference),
+        observables,
+        n_grid,
+        caller = "paired_difference_series",
+        unit = "point",
+    )
+end
+
+function paired_difference_series(
+    runs::AbstractVector{<:NamedTuple};
+    reference::AbstractString = "base",
+    observables::AbstractVector{<:AbstractString} = _PAIRED_DEFAULT_OBSERVABLES,
+    n_grid::Int = _ENSEMBLE_GRID_NODES,
+)::Vector{NamedTuple}
+    _check_paired_observables(observables, "paired_difference_series")
+    return _difference_series(
+        _run_list_groups(runs, "paired_difference_series");
+        reference = String(reference),
+        observables,
+        n_grid,
+        caller = "paired_difference_series",
+        unit = "run",
+    )
+end
+
+"""Observables of the paired analysis as table entries: the symbol in math mode and the unit."""
+const _OBSERVABLE_TEX = Dict(
+    "r10" => raw"$r_{10\,\%}$ [pc]",
+    "r50" => raw"$r_{50\,\%}$ [pc]",
+    "r90" => raw"$r_{90\,\%}$ [pc]",
+    "energy" => raw"$|\Delta E / E|$",
+    "n_stars" => raw"$N$",
+    "n_pairs" => raw"$N_\mathrm{pairs}$",
+)
+
+"""`s` with the LaTeX special characters escaped for text mode."""
+function _latex_escape(s::AbstractString)::String
+    io = IOBuffer()
+    for c in s
+        if c in ('&', '%', '$', '#', '_', '{', '}')
+            print(io, '\\', c)
+        elseif c == '\\'
+            print(io, "\\textbackslash{}")
+        elseif c == '~'
+            print(io, "\\textasciitilde{}")
+        elseif c == '^'
+            print(io, "\\textasciicircum{}")
+        else
+            print(io, c)
+        end
+    end
+    return String(take!(io))
+end
+
+"""
+    _tex_fixed(x, digits) -> String
+
+`x` with `digits` decimals as math-mode text (`"-0.10"`), without a negative zero.
+"""
+function _tex_fixed(x::Real, digits::Int)::String
+    s = @sprintf("%.*f", max(digits, 0), Float64(x))
+    return all(c -> c in ('-', '0', '.'), s) ? lstrip(s, '-') : s
+end
+
+"""
+    _tex_sig(x, n = 3) -> String
+
+`x` to `n` significant digits as math-mode text: a plain decimal for
+10⁻² ≤ |x| < 10⁴ (and 0), `m \\times 10^{e}` otherwise (`10^{e}` for m = 1).
+"""
+function _tex_sig(x::Real, n::Int = 3)::String
+    isfinite(x) || return "--"
+    x == 0 && return "0"
+    v = round(Float64(x); sigdigits = n)
+    e = floor(Int, log10(abs(v)))
+    if -2 ≤ e ≤ 3
+        return _tex_fixed(v, max(0, n - 1 - e))
+    end
+    m = round(v / 10.0^e; sigdigits = n)
+    abs(m) ≥ 10 && ((m, e) = (m / 10, e + 1))         # log10 rounding at a decade
+    abs(m) == 1 && return (m < 0 ? "-" : "") * "10^{$(e)}"
+    return _tex_fixed(m, n - 1) * " \\times 10^{$(e)}"
+end
+
+"""
+    _tex_shift_cells(shift, se, lo, hi) -> (shift_cell, interval_cell)
+
+The shift with its standard error and the interval as math-mode table cells: the
+standard error to two significant digits and the shift and the interval bounds to the same
+decimal place, but the shift to three significant digits at most (a standard error below
+that resolution shows as zero), and a common power of ten factored out when the larger
+of |shift| and the standard error lies outside 10⁻²–10⁴. `--` for a non-finite shift.
+"""
+function _tex_shift_cells(shift::Real, se::Real, lo::Real, hi::Real)
+    isfinite(shift) || return ("--", "--")
+    scale_of = max(abs(shift), isfinite(se) ? se : 0.0)
+    e = scale_of == 0 ? 0 : floor(Int, log10(scale_of))
+    e = -2 ≤ e ≤ 3 ? 0 : e
+    f = 10.0^(-e)
+    s, u, a, b = shift * f, se * f, lo * f, hi * f
+    # Two significant digits of the standard error, at most three of the shift: a
+    # standard error far below the shift (round-off of a constant difference) shows as 0.
+    shift_digits = s == 0 ? 0 : max(0, 2 - floor(Int, log10(abs(s))))
+    digits = if isfinite(u) && u > 0
+        se_digits = max(0, 1 - floor(Int, log10(round(u; sigdigits = 2))))
+        s == 0 ? se_digits : min(se_digits, shift_digits)
+    else
+        shift_digits
+    end
+    pm = isfinite(u) ? " \\pm " * _tex_fixed(u, digits) : ""
+    interval =
+        (isfinite(a) && isfinite(b)) ?
+        "[" * _tex_fixed(a, digits) * ", " * _tex_fixed(b, digits) * "]" : "--"
+    factor = e == 0 ? "" : " \\times 10^{$(e)}"
+    shift_cell =
+        e == 0 ? "\$" * _tex_fixed(s, digits) * pm * "\$" :
+        "\$(" * _tex_fixed(s, digits) * pm * ")" * factor * "\$"
+    interval_cell = interval == "--" ? "--" : "\$" * interval * factor * "\$"
+    return (shift_cell, interval_cell)
+end
+
+"""
+    write_calibration_table(path, rows; α = 0.05) -> String
+
+Write the rows of [`paired_comparison`](@ref) or [`block_comparison`](@ref) as a LaTeX
+`tabular` in booktabs style (`\\toprule`, `\\midrule`, `\\bottomrule`,
+`\\addlinespace` between observables; the document needs `\\usepackage{booktabs}`):
+observable (symbol and unit, named once per group), arm, number of seeds n, shift ±
+standard error, the (1 − 2α) interval, the margin ε and the verdict; a grid-point column
+is added when the rows span several. Numbers carry two (standard error, and the shift
+and interval to the same decimal place) or three (margin) significant digits, powers of
+ten as `\\times 10^{e}`; arm names and grid values are escaped. `α` must be the level
+the rows were computed at. An existing file is kept as a `#k` backup. Returns `path`.
+"""
+function write_calibration_table(path::AbstractString, rows::AbstractVector; α::Real = 0.05)::String
+    isempty(rows) && throw(ArgumentError("write_calibration_table: no rows"))
+    0 < α < 0.5 || throw(ArgumentError("write_calibration_table: α must lie in (0, 0.5); got $α"))
+    for r in rows
+        haskey(_OBSERVABLE_TEX, r.observable) ||
+            throw(ArgumentError("write_calibration_table: unknown observable \"$(r.observable)\""))
+    end
+    grids = unique(String(r.grid) for r in rows)
+    with_grid = length(grids) > 1
+    level = 100 * (1 - 2α)
+    level_text = isinteger(round(level; digits = 6)) ? string(round(Int, level)) : string(level)
+    _backup_existing(path)
+    open(path, "w") do io
+        println(io, "\\begin{tabular}{", with_grid ? "l" : "", "llrllll}")
+        println(io, "\\toprule")
+        println(
+            io,
+            with_grid ? "Grid point & " : "",
+            "Observable & Arm & \$n\$ & Shift \$\\pm\$ SE & \$$(level_text)\\,\\%\$ interval & ",
+            "Margin \$\\varepsilon\$ & Verdict \\\\",
+        )
+        println(io, "\\midrule")
+        previous = nothing
+        for r in rows
+            group = (String(r.grid), String(r.observable))
+            previous !== nothing && group != previous && println(io, "\\addlinespace")
+            first_of_group = group != previous
+            previous = group
+            shift_cell, interval_cell = _tex_shift_cells(r.shift, r.se, r.ci_low, r.ci_high)
+            cells = String[]
+            with_grid && push!(cells, first_of_group ? _latex_escape(r.grid) : "")
+            push!(cells, first_of_group ? _OBSERVABLE_TEX[r.observable] : "")
+            push!(cells, _latex_escape(r.arm), string(r.n), shift_cell, interval_cell)
+            push!(cells, isfinite(r.margin) ? "\$" * _tex_sig(r.margin) * "\$" : "--")
+            push!(cells, _latex_escape(r.verdict))
+            println(io, join(cells, " & "), " \\\\")
+        end
+        println(io, "\\bottomrule")
+        println(io, "\\end{tabular}")
     end
     return path
 end

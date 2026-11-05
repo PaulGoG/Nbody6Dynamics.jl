@@ -119,6 +119,9 @@ const _PLOTTING_ENTRY_POINTS = (
     :plot_sweep_energy,
     :plot_sweep_ensemble,
     :plot_control_comparison,
+    :plot_paired_differences,
+    :plot_paired_shifts,
+    :calibration_figures,
     :sweep_figures,
     # telemetry
     :plot_telemetry,

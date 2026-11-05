@@ -29,6 +29,18 @@ entries say so.
   IMBH or the complex mode are refused. Validation block V3-B under `input_files/campaign/validation/v3_b/`: King
   W0 = 6, 10⁵ M☉, 1 pc, rungs 2.5×10⁴ … 8×10⁵ with 8, 4, 4, 2, 1, 1 seeds in a base and a twin arm, 50 N-body units.
 
+- Block collector: `block_comparison(runs; …)` computes the paired comparison over an explicit run list (named
+  tuples `(; arm, seed, run_dir)`, optionally `grid`) with the rules and columns of `paired_comparison`;
+  `block_runs(ledger_csv, runs_root; block, statuses)` resolves the members of a campaign block from the run ledger,
+  `sweep_runs(sweep_dir)` the completed points of a sweep; `block_ensembles(runs)` gives the percentile ensembles
+  per arm, and `write_block_tables(out_dir, runs)` writes the comparison, the ensembles (`write_block_ensembles`) and
+  a member sidecar as CSV.
+- Calibration report: `paired_difference_series` (sweep or run list) gives the time-resolved mean paired difference
+  of every arm with its standard error over the seeds; `plot_paired_differences` draws it against the equivalence
+  margin, `plot_paired_shifts` is the forest plot of the window-mean shifts with their intervals and verdicts
+  (marker shape and colour), `calibration_figures` draws both per observable, and `write_calibration_table` writes
+  the table as a booktabs LaTeX `tabular`.
+
 ### Changed
 
 - Engine pin `v2026.07.25` (fork): coalescences in models where every star is in a pair no longer halt with an

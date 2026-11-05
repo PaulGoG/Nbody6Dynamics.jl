@@ -213,7 +213,18 @@ paired_comparison
 write_paired_comparison
 paired_shift
 holm_adjust
+sweep_runs
+block_runs
+block_comparison
+block_ensembles
+write_block_ensembles
+write_block_tables
+paired_difference_series
+write_calibration_table
 plot_sweep_ensemble
+plot_paired_differences
+plot_paired_shifts
+calibration_figures
 ```
 
 ## Potential, Bound Sets and Snapshot Integrals
