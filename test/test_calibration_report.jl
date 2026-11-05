@@ -169,6 +169,11 @@ end
             block_comparison(both; observables = ["r50"], margins = Dict("r50" => ("chaos", 2.0)))
         @test only(rows0).shift == 0 && isnan(only(rows0).margin)   # no twin: no chaos floor
         @test only(rows0).verdict == "inconclusive"
+        @test isnan(only(rows0).p_equivalence)                      # an undefined margin tests nothing
+        # A single seed per arm: no statistics; the Holm axis of the shift figure shows no value
+        rows1 = block_comparison(filter(r -> r.seed == 1, runs); observables = ["r50"])
+        @test all(r -> r.n == 1 && isnan(r.p_equivalence_holm), rows1)
+        @test isfile(plot_paired_shifts(rows1, vis; filename = "single_seed_shift"))
         @test isfile(
             plot_paired_differences(
                 paired_difference_series(both; observables = ["r50"]),

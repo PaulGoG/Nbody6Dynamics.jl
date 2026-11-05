@@ -266,24 +266,37 @@ several. Colours per arm as in [`plot_paired_shifts`](@ref).
         push!(labels, AbstractString[a for a in arms_drawn])
         push!(titles, "Arm − $(reference):")
     end
-    push!(
-        entries,
-        _LegendElement[
+    # Only the bands actually drawn get a legend entry.
+    band_entries = _LegendElement[]
+    band_labels = AbstractString[]
+    if any(s -> all(isfinite, s.se), drawn)
+        push!(
+            band_entries,
             PolyElement(;
                 color = (grey, _STYLE.band_alpha),
                 strokecolor = _band_edge(grey),
                 strokewidth = _STYLE.envelope,
             ),
+        )
+        push!(band_labels, "±SE")
+    end
+    if isfinite(margin) && margin > 0
+        push!(
+            band_entries,
             PolyElement(;
                 color = (grey, 0.10),
                 strokecolor = (grey, 0.55),
                 strokewidth = _STYLE.guide,
                 linestyle = :dash,
             ),
-        ],
-    )
-    push!(labels, AbstractString["±SE", "±ε"])
-    push!(titles, "Bands:")
+        )
+        push!(band_labels, "±ε")
+    end
+    if !isempty(band_entries)
+        push!(entries, band_entries)
+        push!(labels, band_labels)
+        push!(titles, "Bands:")
+    end
     Legend(
         fig[0, :],
         entries,
@@ -427,7 +440,12 @@ test stand on the right-hand axis. `α` must be the level of the table.
             fig[1, 1];
             yaxisposition = :right,
             backgroundcolor = :transparent,
-            yticks = (y, [_fmt_plain_sig(r.p_equivalence_holm, 2) for r in trows]),
+            yticks = (
+                y,
+                [
+                    isfinite(r.p_equivalence_holm) ? _fmt_plain_sig(r.p_equivalence_holm, 2) : "–" for r in trows
+                ],
+            ),
             ylabel = rich(rich("p"; font = :italic), subscript("TOST"), " (Holm)"),
             yticksvisible = false,
             ygridvisible = false,

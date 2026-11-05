@@ -60,5 +60,11 @@ using StableRNGs: StableRNG
         @test isapprox(nd._window_mean_difference(a, b, 4.0), 1.0; atol = 1e-12)
         @test isnan(nd._window_mean_difference(a, b, 20.0))
         @test isapprox(nd._window_mean(a, 5.0), 15.0; atol = 1e-12)
+        # Times must be strictly increasing (the interpolation assumes it)
+        unsorted = ([0.0, 2.0, 1.0, 3.0], [1.0, 1.0, 1.0, 1.0])
+        repeated = ([0.0, 1.0, 1.0, 3.0], [1.0, 1.0, 1.0, 1.0])
+        @test_throws ArgumentError nd._window_mean_difference(unsorted, b, 0.0)
+        @test_throws ArgumentError nd._window_mean_difference(a, repeated, 0.0)
+        @test_throws ArgumentError nd._window_mean(unsorted, 0.0)
     end
 end

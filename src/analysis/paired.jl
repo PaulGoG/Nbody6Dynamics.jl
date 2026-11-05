@@ -118,6 +118,17 @@ const _PAIRED_OBSERVABLES = Dict(
     "n_pairs" => (:n_pairs, 0.5),
 )
 
+"""Refuse a series whose times are not strictly increasing (the linear interpolation assumes it)."""
+function _check_series_times(t::AbstractVector{<:Real})
+    (issorted(t; lt = <) && allunique(t)) || throw(
+        ArgumentError(
+            "paired comparison: series times must be strictly increasing (a restart joined " *
+            "outside the package, or an unsorted series)",
+        ),
+    )
+    return nothing
+end
+
 """
     _window_mean_difference(a, ref, t_settle; nodes = 200) -> Float64
 
@@ -127,6 +138,8 @@ equally spaced points and the difference is averaged by the trapezoidal rule. `N
 the window is empty.
 """
 function _window_mean_difference(a, ref, t_settle::Real; nodes::Integer = 200)::Float64
+    _check_series_times(a[1])
+    _check_series_times(ref[1])
     t0 = max(first(a[1]), first(ref[1]), t_settle)
     t1 = min(last(a[1]), last(ref[1]))
     t1 > t0 || return NaN
@@ -137,6 +150,7 @@ end
 
 """Mean of a `(t, y)` series over the window from `t_settle` to its end (trapezoidal rule on `nodes` points); `NaN` when the window is empty."""
 function _window_mean(s, t_settle::Real; nodes::Integer = 200)::Float64
+    _check_series_times(s[1])
     t0 = max(first(s[1]), t_settle)
     t1 = last(s[1])
     t1 > t0 || return NaN
@@ -298,6 +312,10 @@ function _paired_rows(
         ]
         seed_scatter = sd(ref_means)
         kind, value = get(margins, o, isfinite(chaos_floor) ? ("chaos", 2.0) : ("relative", 0.01))
+        if !haskey(margins, o) && !isempty(twin_arms) && !isfinite(chaos_floor)
+            @warn "$(caller): chaos floor of $o undefined (fewer than two finite twin " *
+                  "differences); the margin falls back to 1 % of the reference window mean"
+        end
         margin =
             kind == "chaos" ? value * chaos_floor :
             kind == "relative" ?
@@ -308,9 +326,15 @@ function _paired_rows(
                     "$(caller): margin kind of $o must be \"chaos\", \"relative\" or \"absolute\"; got \"$kind\"",
                 ),
             )
+        if !isfinite(margin)
+            @warn "$(caller): margin of $o is undefined ($(kind) margin from a non-finite " *
+                  "value); p_equivalence is NaN for its rows"
+        end
         for arm in arms
             arm == reference && continue
             r = paired_shift(diffs(arm); margin = isfinite(margin) ? margin : 0.0, α = α)
+            # An undefined margin tests nothing: no equivalence p-value.
+            isfinite(margin) || (r = merge(r, (; p_equivalence = NaN)))
             push!(
                 rows,
                 (;
