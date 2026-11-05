@@ -692,14 +692,51 @@ function _sweep_worker_command(point_dir::AbstractString)
     return `$julia --threads=$(Threads.nthreads()) --project=$project --startup-file=no -e "$(preamble)using Nbody6Dynamics; Nbody6Dynamics.continue_sweep_point(ARGS[1])" $point_dir`
 end
 
+"""
+    _arm_pipeline_sections(cfg, name) -> (; install, build, simulation)
+
+The install, build and simulation sections of the base pipeline configuration of `cfg`
+with the `pipeline.…` overrides of the arm `name` applied (`""`: the base alone);
+`install.install_dir` and `simulation.input_file` of the arm resolve against the base
+file's directory, as in [`prepare_sweep`](@ref). The sections the driver's own checks
+read, without writing a point configuration.
+"""
+function _arm_pipeline_sections(cfg::SweepConfig, name::AbstractString)
+    c = TOML.parsefile(cfg.pipeline_config)
+    pipeline_dir = dirname(cfg.pipeline_config)
+    for (k, v) in _arm_items(cfg, name)
+        startswith(k, "pipeline.") || continue
+        key = k[(length("pipeline.") + 1):end]
+        key in ("install.install_dir", "simulation.input_file") &&
+            v isa AbstractString &&
+            (v = _resolve_path(pipeline_dir, v))
+        _set_nested_create!(c, key, v)
+    end
+    return (
+        install = _parse_install(get(c, "install", Dict{String,Any}())),
+        build = _parse_build(get(c, "build", Dict{String,Any}())),
+        simulation = _parse_simulation(get(c, "simulation", Dict{String,Any}())),
+    )
+end
+
+"""The configurations the driver checks: the base (`""`) of a sweep without arms, else every arm."""
+_sweep_variants(cfg::SweepConfig) = isempty(cfg.arms) ? [""] : [first(a) for a in cfg.arms]
+
 """Fail before launching anything when the backend binary of the base
-pipeline config cannot be found."""
+pipeline config, or of any arm (an arm may change the build or the binary
+name), cannot be found. Returns the binary of the first variant."""
 function _check_sweep_binary(cfg::SweepConfig)
-    base = load_config(cfg.pipeline_config)
-    install_dir = base.install.install_dir
-    src_dir =
-        isabspath(install_dir) ? install_dir : joinpath(dirname(cfg.pipeline_config), install_dir)
-    return _find_binary(src_dir, base.simulation.binary_name, base.build)
+    found = ""
+    for name in _sweep_variants(cfg)
+        s = _arm_pipeline_sections(cfg, name)
+        install_dir = s.install.install_dir
+        src_dir =
+            isabspath(install_dir) ? install_dir :
+            joinpath(dirname(cfg.pipeline_config), install_dir)
+        path = _find_binary(src_dir, s.simulation.binary_name, s.build)
+        isempty(found) && (found = path)
+    end
+    return found
 end
 
 """
@@ -815,10 +852,13 @@ function _stop_workers_at_exit()
     return nothing
 end
 
-"""Stop margin of the base pipeline configuration of `cfg`, the time a worker's engine may take to stop with a dump; the default of [`SimulationConfig`](@ref) when the configuration cannot be read."""
+"""Stop margin of the sweep, the time a worker's engine may take to stop with a dump: the largest over the base pipeline configuration of `cfg` and its arms (an arm may raise it); the default of [`SimulationConfig`](@ref) when the configuration cannot be read."""
 function _sweep_stop_margin(cfg::SweepConfig)::Float64
     return try
-        load_config(cfg.pipeline_config).simulation.stop_margin
+        maximum(
+            _arm_pipeline_sections(cfg, name).simulation.stop_margin for
+            name in _sweep_variants(cfg)
+        )
     catch e
         e isa Union{ArgumentError,SystemError,TOML.ParserError} || rethrow()
         SimulationConfig().stop_margin

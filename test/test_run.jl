@@ -202,6 +202,25 @@ end
         "[install]\ninstall_dir = \"backend\"\n[build]\nenable_gpu = true\n[simulation]\ninput_file = \"x.inp\"\n",
     )
     @test_throws ErrorException Nbody6Dynamics._check_sweep_binary(load_sweep_config(st))
+    # Arms are checked too: a build or binary an arm selects must exist, and the stop
+    # margin is the largest over the base and the arms.
+    write(
+        joinpath(sw, "pipeline.toml"),
+        "[install]\ninstall_dir = \"backend\"\n[simulation]\ninput_file = \"x.inp\"\nstop_margin = 300.0\n",
+    )
+    write(
+        st,
+        "[sweep]\nname = \"t\"\npipeline_config = \"pipeline.toml\"\nmerger_config = \"m.toml\"\nseeds = [1]\n" *
+        "[sweep.arms.base]\n[sweep.arms.slow]\n\"pipeline.simulation.stop_margin\" = 900.0\n",
+    )
+    @test Nbody6Dynamics._check_sweep_binary(load_sweep_config(st)) == joinpath(bk, "nbody6++.avx")
+    @test Nbody6Dynamics._sweep_stop_margin(load_sweep_config(st)) == 900.0
+    write(
+        st,
+        "[sweep]\nname = \"t\"\npipeline_config = \"pipeline.toml\"\nmerger_config = \"m.toml\"\nseeds = [1]\n" *
+        "[sweep.arms.base]\n[sweep.arms.gpu]\n\"pipeline.build.enable_gpu\" = true\n",
+    )
+    @test_throws ErrorException Nbody6Dynamics._check_sweep_binary(load_sweep_config(st))
 end
 
 # =====================================================================

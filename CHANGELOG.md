@@ -16,6 +16,11 @@ entries say so.
   instead of being overwritten.
 - Sweep driver: when the driver loop dies from an exception with workers registered, the exit hook ends the
   process with status 1 after stopping the workers, not 143 (the status of a termination by SIGTERM).
+- Sweep driver: the pre-launch binary check covers every arm (an arm may select another build or binary name)
+  and the stop margin is the largest over the base and the arms; before, both read the base configuration only.
+- Perturbed twin: `twin_amplitude` is `0` or within `[1e-14, 1e-6]`, and the generator refuses a displacement
+  that leaves the body unchanged in the `%.15e` columns of `dat.10` (an amplitude at the resolution, a body at
+  the origin); before, the twin record could claim a displacement the file did not carry.
 
 ## [0.9.2] — 2026-11-05
 
