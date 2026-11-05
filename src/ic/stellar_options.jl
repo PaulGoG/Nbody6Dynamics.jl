@@ -2,10 +2,6 @@
 # READSE (input.F) sets per Level and then reads from the &INSSE, &INBSE and &INCOLL groups,
 # their resolution from `[merger.stellar]`, and the comparison with the engine's echo of them.
 
-"""Integer parameters of `READSE`; every other parameter is `real*8`."""
-const _SE_INTEGER_PARAMETERS =
-    ("ecflag", "wdflag", "nsflag", "psflag", "mdflag", "bhflag", "kmech", "bhspinfl", "kicktype")
-
 """Members of the three namelist groups of `READSE`, in the order the generator writes them: the engine's declaration order, except `kicktype` before `bhspinfl`, as earlier versions wrote them (generated inputs stay byte-identical)."""
 const _SE_GROUPS = (
     INSSE = (
