@@ -44,7 +44,10 @@ Specification of a parameter sweep, parsed by [`load_sweep_config`](@ref).
 - `arms`: named bundles of overrides, `name => [dotted key => value, …]`, in
   name order; keys address the merger TOML (`merger.…`) or the point's
   pipeline TOML (`pipeline.…`). Every arm runs every grid point and seed with
-  the same initial conditions (the same seed), so the arms are paired. Empty
+  the same initial conditions (the same seed), so the arms are paired: of the
+  merger keys only `merger.nbody6.*`, `merger.stellar.*`, `merger.mbh.*`, the
+  output intervals and the twin keys may be set, and no structural pipeline
+  key (`simulation.runs_dir`, `merger.config_file`, `merger.enabled`). Empty
   for a sweep without arms
 - `max_segments`: engine segments a point may hold on record before it is
   left to the next entry: a point stopped by its wall budget, with progress
@@ -269,10 +272,30 @@ end
     _parse_sweep_arms(raw, grid_keys) -> Vector{Pair{String,Vector{Pair{String,Any}}}}
 
 The `[sweep.arms.<name>]` tables in name order. Every key is a quoted dotted key that
-addresses the merger TOML (`"merger.…"`) or the pipeline TOML (`"pipeline.…"`); the seed
-and the grid axes are refused (an arm changes the configuration at every grid point and
-seed alike), and so is an unquoted dotted key, which TOML turns into nested tables.
+addresses the merger TOML (`"merger.…"`) or the pipeline TOML (`"pipeline.…"`). Refused: the seed
+and the grid axes (an arm changes the configuration at every grid point and seed alike),
+every merger key the generator reads (`_ARM_MERGER_PREFIXES`, `_ARM_MERGER_KEYS`: the arms
+share their initial conditions), the structural pipeline keys (`_ARM_PIPELINE_REFUSED`) and
+an unquoted dotted key, which TOML turns into nested tables.
 """
+# An arm shares the initial conditions with the other arms, so it may set only merger keys
+# the generator does not read: the engine parameters, the stellar-evolution options, the
+# static massive black hole, the output intervals and the twin keys.
+const _ARM_MERGER_PREFIXES = ("merger.nbody6.", "merger.stellar.", "merger.mbh.")
+const _ARM_MERGER_KEYS = (
+    "merger.output.tcrit",
+    "merger.output.dtadj",
+    "merger.output.deltat",
+    "merger.output.tcrit_myr",
+    "merger.output.dtadj_myr",
+    "merger.output.deltat_myr",
+    "merger.output.twin_amplitude",
+    "merger.output.twin_body",
+)
+# Structural keys of the sweep: the runs directory, the merger file and the merger switch.
+const _ARM_PIPELINE_REFUSED =
+    ("pipeline.simulation.runs_dir", "pipeline.merger.config_file", "pipeline.merger.enabled")
+
 function _parse_sweep_arms(raw, grid_keys::AbstractSet{<:AbstractString})
     raw isa AbstractDict ||
         _config_error("sweep.arms", "must be a table of [sweep.arms.<name>] tables")
@@ -302,6 +325,22 @@ function _parse_sweep_arms(raw, grid_keys::AbstractSet{<:AbstractString})
             )
             key in grid_keys &&
                 _config_error("sweep.arms.$name.$key", "is also a grid axis; an arm may not set it")
+            if startswith(key, "merger.")
+                any(p -> startswith(key, p), _ARM_MERGER_PREFIXES) ||
+                    key in _ARM_MERGER_KEYS ||
+                    _config_error(
+                        "sweep.arms.$name.$key",
+                        "changes the initial conditions, which every arm shares; an arm may set " *
+                        "merger.nbody6.*, merger.stellar.*, merger.mbh.*, the output intervals " *
+                        "(merger.output.tcrit, dtadj, deltat and their _myr forms) and the twin keys",
+                    )
+            elseif key in _ARM_PIPELINE_REFUSED
+                _config_error(
+                    "sweep.arms.$name.$key",
+                    "is a structural key of the sweep (the runs directory, the merger file, the " *
+                    "merger switch); an arm may not set it",
+                )
+            end
             push!(items, key => value)
         end
         push!(arms, name => items)
@@ -706,6 +745,11 @@ Sweep workers started by this process and not yet reaped; replaced, never
 mutated, as [`_ACTIVE_ENGINES`](@ref).
 """
 const _ACTIVE_WORKERS = Ref{Vector{_ActiveWorker}}(_ActiveWorker[])
+"""Set when the driver loop dies from an exception, so that the exit hook ends the process with status 1 rather than 143 (a termination by SIGTERM)."""
+const _DRIVER_FAILED = Ref(false)
+
+"""Status the exit hook ends the driver with: 1 after an exception of the driver loop, else 143 (SIGTERM)."""
+_driver_exit_status()::Cint = _DRIVER_FAILED[] ? Cint(1) : Cint(143)
 
 _register_worker(w::_ActiveWorker) = (_ACTIVE_WORKERS[] = vcat(_ACTIVE_WORKERS[], [w]); nothing)
 _deregister_worker(pid::Integer) =
@@ -755,7 +799,8 @@ the driver; without the hand-over the workers would see a signal only at the
 time limit itself, too late for a dump.
 
 When it has handed a termination on, the hook ends the process itself with
-`_exit(143)`, the status of a termination by SIGTERM, after stopping any
+`_exit(143)`, the status of a termination by SIGTERM (1 when the driver loop
+died from an exception, [`_driver_exit_status`](@ref)), after stopping any
 engine of the driver's own ([`_stop_engines_at_exit`](@ref)). Julia runs the
 exit of a SIGTERM on the main thread at its next safepoint, which in the
 driver's poll loop can lie inside a libuv timer callback that holds the I/O
@@ -766,7 +811,7 @@ forever (observed 2026-11-04: workers stopped cleanly, the driver spinning at
 function _stop_workers_at_exit()
     _terminate_workers() || return nothing
     _stop_engines_at_exit()
-    ccall(:_exit, Cvoid, (Cint,), 143)
+    ccall(:_exit, Cvoid, (Cint,), _driver_exit_status())
     return nothing
 end
 
@@ -825,7 +870,16 @@ With `cfg.devices` nonempty a queued point is admitted only when
 records the device that ran it, and its status carries `device`.
 `worker_command` maps a point directory to the worker `Cmd`.
 """
-function _launch_sweep(
+function _launch_sweep(args...; kwargs...)
+    try
+        return _launch_sweep_loop(args...; kwargs...)
+    catch
+        _DRIVER_FAILED[] = true
+        rethrow()
+    end
+end
+
+function _launch_sweep_loop(
     sweep_dir::AbstractString,
     cfg::SweepConfig,
     points::Vector{SweepPoint};

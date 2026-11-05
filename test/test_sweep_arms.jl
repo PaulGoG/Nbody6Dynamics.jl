@@ -164,6 +164,26 @@
             "sweep.arms.a.merger.cluster1.rbar",
         )
         @test refused("[sweep.arms.a]\n\"merger.seed\" = 3\n", "sweep.arms.a.merger.seed")
+        # keys the generator reads change the initial conditions; structural pipeline keys
+        for key in (
+            "merger.cluster1.W0",
+            "merger.output.truncate_jacobi",
+            "merger.tidal.kz14",
+            "merger.orbit.eccentricity",
+            "merger.output.format",
+        )
+            @test refused("[sweep.arms.a]\n\"$key\" = 1\n", "initial conditions")
+        end
+        @test refused(
+            "[sweep.arms.a]\n\"pipeline.simulation.runs_dir\" = \"x\"\n",
+            "structural key",
+        )
+        @test refused("[sweep.arms.a]\n\"pipeline.merger.config_file\" = \"x\"\n", "structural key")
+        accepted =
+            "[sweep.arms.a]\n\"merger.nbody6.etai\" = 0.01\n\"merger.stellar.level\" = \"B\"\n" *
+            "\"merger.output.dtadj\" = 0.25\n\"pipeline.simulation.omp_threads\" = 3\n"
+        write(path, sweep_toml(accepted))
+        @test length(last(only(load_sweep_config(path).arms))) == 4
         @test refused("[sweep.arms.a]\n\"simulation.omp_threads\" = 3\n", "sweep.arms.a.simulation")
         @test refused(
             "[sweep.arms.a]\nmerger.output.twin_amplitude = 1e-10\n",
@@ -181,6 +201,13 @@
             ),
         )
         @test_throws ArgumentError load_merger_config(bad)                # beyond 1e-6
+    end
+
+    @testset "exit status of the driver hook" begin
+        @test Nbody6Dynamics._driver_exit_status() == 143
+        Nbody6Dynamics._DRIVER_FAILED[] = true
+        @test Nbody6Dynamics._driver_exit_status() == 1
+        Nbody6Dynamics._DRIVER_FAILED[] = false
     end
 
     @testset "the next segment within an entry" begin
