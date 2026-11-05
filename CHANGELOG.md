@@ -6,6 +6,23 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-11-05
+
+### Fixed
+
+- Sweep driver: a point stopped by its wall budget is launched again within the entry only when its worker exited
+  cleanly; a worker that failed before it opened a segment was launched again until the job's time limit.
+  `max_segments` bounds the segments on record, across entries, and is documented so.
+- Engine regression suite: the engine's `#3` counters are summed over the output intervals (the engine resets them
+  after every output; the last interval alone was read), every run must end with `END RUN` and without an
+  energy-check halt (the engine exits with status 0 after `CALCULATIONS HALTED`), and a backend without a CPU
+  build skips the suite instead of erroring.
+- Paired comparison: an undefined margin (a chaos floor without two finite twin differences, or an explicit
+  chaos margin without a twin) leaves `p_equivalence` as `NaN` and warns, instead of testing against a margin of
+  zero; a series whose times are not strictly increasing is refused; `plot_paired_shifts` no longer fails on a
+  single-seed row (its Holm p-value is `NaN`), and the band legend of `plot_paired_differences` lists only the
+  bands drawn.
+
 ## [0.9.0] — 2026-11-05
 
 ### Added
