@@ -28,7 +28,6 @@ entries say so.
   orbit. Bases with another IMF, a body mass given as `particle_mass`, stellar evolution, primordial binaries, an
   IMBH or the complex mode are refused. Validation block V3-B under `input_files/campaign/validation/v3_b/`: King
   W0 = 6, 10⁵ M☉, 1 pc, rungs 2.5×10⁴ … 8×10⁵ with 8, 4, 4, 2, 1, 1 seeds in a base and a twin arm, 50 N-body units.
-
 - Block collector: `block_comparison(runs; …)` computes the paired comparison over an explicit run list (named
   tuples `(; arm, seed, run_dir)`, optionally `grid`) with the rules and columns of `paired_comparison`;
   `block_runs(ledger_csv, runs_root; block, statuses)` resolves the members of a campaign block from the run ledger,
