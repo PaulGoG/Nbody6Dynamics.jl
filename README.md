@@ -303,7 +303,9 @@ Nbody6Dynamics/
 │   │   ├── collision_catalogue.jl   # Collisions and coalescences tagged with the progenitor cluster of each star
 │   │   ├── survival.jl              # Kaplan–Meier, Nelson–Aalen, Aalen–Johansen, Turnbull, log-rank, Cox–Snell for binary lifetimes
 │   │   ├── imbh.jl                  # IMBH trajectory about the density centre, Brownian wandering, bound companions, event list
-│   │   └── ensemble.jl              # Seeded ensembles: series extractors, common-grid percentiles (median, 68/95 %)
+│   │   ├── ensemble.jl              # Seeded ensembles: series extractors, common-grid percentiles (median, 68/95 %)
+│   │   ├── paired.jl                # Paired comparison of arms: chaos floor, paired shifts, equivalence tests, Holm correction
+│   │   └── block.jl                 # Block collector: paired comparison, per-arm ensembles and block tables over a run list
 │   ├── io/
 │   │   ├── io.jl                    # I/O submodule includes
 │   │   ├── fortran_binary.jl        # Fortran unformatted record reader
@@ -414,6 +416,9 @@ Nbody6Dynamics/
 │   ├── test_validity.jl             # Validity record and the calibration lookup
 │   ├── test_sweep_ensemble.jl       # Sweeps, seeded ensembles, control configurations
 │   ├── test_sweep_resume.jl         # Sweep re-entry: point states from run records, relaunch, continuation, signal hand-over
+│   ├── test_sweep_arms.jl           # Sweep arms, identical initial conditions across arms, the perturbed twin
+│   ├── test_paired_comparison.jl    # Student t, Holm correction, paired shifts on synthetic arms
+│   ├── test_block_collector.jl      # Block collector: run lists, ledger front-end, block tables
 │   ├── test_plotting.jl             # Figure extension, smoke tests, canvases, formatting
 │   ├── test_external.jl             # External post-processing
 │   ├── test_external_adversarial_inner.jl  # Malformed external inputs, included by test_external.jl

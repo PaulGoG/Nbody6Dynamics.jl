@@ -212,6 +212,12 @@ paired_comparison
 write_paired_comparison
 paired_shift
 holm_adjust
+sweep_runs
+block_runs
+block_comparison
+block_ensembles
+write_block_ensembles
+write_block_tables
 plot_sweep_ensemble
 ```
 

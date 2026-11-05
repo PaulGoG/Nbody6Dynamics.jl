@@ -22,6 +22,12 @@ entries say so.
   seed, and tests the arm's shift for equivalence within a margin (two one-sided tests) and for a difference
   (paired t test), with Holm's correction over the table; the margin defaults to twice the chaos floor of a twin
   arm. `write_paired_comparison`, `paired_shift`, `holm_adjust`.
+- Block collector: `block_comparison(runs; …)` computes the paired comparison over an explicit run list (named
+  tuples `(; arm, seed, run_dir)`, optionally `grid`) with the rules and columns of `paired_comparison`;
+  `block_runs(ledger_csv, runs_root; block, statuses)` resolves the members of a campaign block from the run ledger,
+  `sweep_runs(sweep_dir)` the completed points of a sweep; `block_ensembles(runs)` gives the percentile ensembles
+  per arm, and `write_block_tables(out_dir, runs)` writes the comparison, the ensembles (`write_block_ensembles`) and
+  a member sidecar as CSV.
 
 ## [0.8.0] — 2026-11-04
 

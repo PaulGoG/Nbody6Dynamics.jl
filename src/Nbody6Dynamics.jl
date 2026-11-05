@@ -147,6 +147,7 @@ include("analysis/imbh.jl")
 include("pipeline/sweep.jl")
 include("analysis/ensemble.jl")
 include("analysis/paired.jl")
+include("analysis/block.jl")
 
 # ---------------------------------------------------------------------------
 # Figure interface (implemented by the Makie extension, see ext/)
@@ -1529,6 +1530,8 @@ export resume_sweep
 export sweep_summary, write_sweep_summary, sweep_visualization
 export EnsembleStatistics, ensemble_statistics, sweep_ensembles
 export paired_comparison, write_paired_comparison
+export sweep_runs, block_runs, block_comparison, block_ensembles
+export write_block_ensembles, write_block_tables
 export control_merger_dict, write_control_merger_config
 export ClusterSpec,
     SegregationSpec,
