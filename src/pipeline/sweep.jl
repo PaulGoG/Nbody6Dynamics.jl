@@ -46,10 +46,12 @@ Specification of a parameter sweep, parsed by [`load_sweep_config`](@ref).
   pipeline TOML (`pipeline.…`). Every arm runs every grid point and seed with
   the same initial conditions (the same seed), so the arms are paired. Empty
   for a sweep without arms
-- `max_segments`: engine segments a point may take within one driver entry:
-  a point stopped by its wall budget with progress is launched again
-  ([`continue_sweep_point`](@ref)) until it completes or has taken this many
-  (≥ 1; 1 leaves a stopped point to the next entry, as without the key)
+- `max_segments`: engine segments a point may hold on record before it is
+  left to the next entry: a point stopped by its wall budget, with progress
+  and a worker that exited cleanly, is launched again within the entry
+  ([`continue_sweep_point`](@ref)) until it completes or its record holds this
+  many segments (≥ 1; 1 leaves a stopped point to the next entry, as without
+  the key)
 """
 struct SweepConfig
     name::String
@@ -896,8 +898,11 @@ function _launch_sweep(
             code = _exit_status(proc)
             point_status = _sweep_point_status(code, joinpath(sweep_dir, p.id, _SWEEP_RUN_ID))
             ok = point_status == "done"
+            # A clean exit only: a worker that failed before it opened a segment leaves the
+            # record as it was, and the point would be launched again without end.
             again =
                 point_status == "stopped" &&
+                code == 0 &&
                 _continue_in_entry(joinpath(sweep_dir, p.id, _SWEEP_RUN_ID), cfg.max_segments)
             again && push!(queue, p)
             ok ? (n_done += 1) : again || (n_failed += 1)

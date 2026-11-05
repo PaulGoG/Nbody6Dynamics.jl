@@ -186,6 +186,32 @@
         @test_throws ArgumentError resume_sweep(other, sdir; worker_command = stub)
     end
 
+    @testset "a stopped point whose worker fails is not launched again" begin
+        write(joinpath(base, "sweep_fail.toml"), sweep_toml("[1]") * "max_segments = 3\n")
+        cfgf = load_sweep_config(joinpath(base, "sweep_fail.toml"))
+        sdir, pts = prepare_sweep(cfgf; sweep_dir = joinpath(base, "sweep_fail"))
+        rdir = joinpath(sdir, pts[1].id, "run")
+        mkpath(rdir)
+        write(
+            joinpath(rdir, "RUN_INFO.toml"),
+            "[run]\nstatus = \"stopped\"\n\n[[segments]]\nindex = 1\nstatus = \"stopped\"\n" *
+            "t_start = 0.0\nt_end = 4.0\n",
+        )
+        cut =
+            Dict(p.index => Dict{String,Any}("status" => "running", "started" => "x") for p in pts)
+        write_sweep_index(sdir, cfgf, pts; status = cut)
+        fail_log = joinpath(base, "fail.log")
+        fail_script = """
+            echo "\$(basename "\$(pwd -P)")" >> "\$1"
+            exit 1
+            """
+        failing = pdir -> Cmd(`bash -c $fail_script stub $fail_log`; dir = pdir)
+        @test resume_sweep(cfgf, sdir; worker_command = failing) == sdir
+        @test readlines(fail_log) == [pts[1].id]    # once: the record still allows two segments
+        idx = read_sweep_index(sdir)
+        @test idx["points"][1]["status"] == "stopped" && idx["points"][1]["exit_status"] == 1
+    end
+
     @testset "an interrupted point continues from its dump" begin
         write(joinpath(base, "sweep_one.toml"), sweep_toml("[1]"))
         one = load_sweep_config(joinpath(base, "sweep_one.toml"))
