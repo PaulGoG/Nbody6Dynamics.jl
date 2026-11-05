@@ -39,6 +39,11 @@ entries say so.
   margin, `plot_paired_shifts` is the forest plot of the window-mean shifts with their intervals and verdicts
   (marker shape and colour), `calibration_figures` draws both per observable, and `write_calibration_table` writes
   the table as a booktabs LaTeX `tabular`.
+- Engine regression suite (`test/test_engine_regression.jl`, run with `NBODY6_BINARY_TESTS=1`): the convergence
+  order of the Hermite scheme over an η ladder and the drift of linear and angular momentum, an isolated e = 0.9
+  binary over 10³ orbits on the perturbed and unperturbed KS paths, a Kozai–Lidov triple on the KS and merger paths,
+  the start-up step of a cold triple, and the Pythagorean three-body problem through the chain, each against its
+  closed form or a converged reference integration. Known engine defects are recorded as broken tests.
 
 ### Changed
 
