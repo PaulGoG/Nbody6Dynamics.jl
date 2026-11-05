@@ -128,6 +128,7 @@ end
     include("test_sweep_resume.jl")
     include("test_sweep_arms.jl")
     include("test_paired_comparison.jl")
+    include("test_n_ladder.jl")
     include("test_plotting.jl")
     include("test_external.jl")
     include("test_ic.jl")

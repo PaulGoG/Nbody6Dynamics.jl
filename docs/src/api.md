@@ -194,6 +194,7 @@ run_sweep
 run_sweep_point
 continue_sweep_point
 resume_sweep
+n_ladder
 read_sweep_index
 write_sweep_index
 sweep_summary

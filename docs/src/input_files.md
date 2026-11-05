@@ -378,7 +378,7 @@ deltat          = 0.5
 - `imf = "kroupa"` **without** `mass_total` → natural Kroupa sampling in `[bodyn, body1]`; the total mass is an *output* (the sum of the samples)
 - `imf = "kroupa"` **with** `mass_total` → rescaled Kroupa: samples are uniformly rescaled so the sum equals `mass_total`. The rescale factor `mass_total / (N ⟨m⟩)` is checked when the file is loaded: outside ×[0.7, 1.4] the loader warns, outside ×[0.5, 2] it refuses the configuration, because the bodies would no longer be stars while stellar evolution is always active in merger runs. Choose `N` and `mass_total` consistent with the IMF mean (about 0.58 M☉ over 0.08–100 M☉), drop `mass_total`, or use `imf = "equal"` for a collisionless super-particle model
 - `imf = "kroupa_rescaled"` → same as above but explicit (documents intent; the same bounds apply); requires `mass_total`
-- `imf = "equal"` → all bodies get mass `mass_total / N`; requires `mass_total`
+- `imf = "equal"` → all bodies get mass `mass_total / N`; requires `mass_total`. The cluster mass stays fixed when `N` changes: a sweep axis over `N`, or the rungs of [`n_ladder`](@ref)
 
 A cluster table from `[merger.cluster2]` on may set its size by density instead of `rbar`:
 

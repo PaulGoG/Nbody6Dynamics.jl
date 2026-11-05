@@ -123,6 +123,12 @@ end
     EqualMassIMF(; particle_mass)
 
 Every body has identical mass `particle_mass` [M☉].
+
+The loader takes either the body mass (structured `particle_mass`) or the
+cluster mass M (flat `mass_total`, structured `target_mass`; exactly one) and
+sets `particle_mass = M / N` in the latter case, so a configuration loaded
+with another `N` (a sweep axis over `N`, the rungs of [`n_ladder`](@ref))
+keeps its cluster mass.
 """
 Base.@kwdef struct EqualMassIMF <: IMFSpec
     particle_mass::Float64     # required
