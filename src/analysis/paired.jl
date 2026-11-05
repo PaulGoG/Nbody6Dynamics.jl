@@ -144,103 +144,144 @@ function _window_mean(s, t_settle::Real; nodes::Integer = 200)::Float64
     return (sum(y) - (first(y) + last(y)) / 2) / (nodes - 1)
 end
 
-"""
-    paired_comparison(sweep_dir; reference = "base", observables = ["r10", "r50", "r90",
-                      "energy", "n_stars", "n_pairs"], t_settle_myr = 0.0,
-                      margins = Dict(), α = 0.05) -> Vector{NamedTuple}
+"""Default observables of the paired analysis, in table order."""
+const _PAIRED_DEFAULT_OBSERVABLES = ["r10", "r50", "r90", "energy", "n_stars", "n_pairs"]
 
-Calibration table of the arms of a sweep (`[sweep.arms]`) against the arm `reference`:
-one row per grid point, observable and arm, from the completed points only. Every point is
-paired with the reference point of the same grid point and seed; the pairing is verified
-by equal `meta.dat10_sha256` of the two initial conditions, except for points carrying a
-perturbed twin (`[twin]` in `merger_ic.toml`), and refused otherwise. Per pair the
-difference of the observable's series is averaged over the window from `t_settle_myr` to
-the end of the common interval; the seeds are the samples of [`paired_shift`](@ref).
-
-Columns: `grid` (the grid values as text), `observable`, `arm`, `n`, `shift` (mean
-difference), `se`, `ci_low`, `ci_high` (the (1 − 2α) interval), `margin`, `margin_kind`,
-`chaos_floor` (standard deviation over seeds of the window-mean difference of the twin
-arm, NaN without one), `seed_scatter` (standard deviation over seeds of the reference
-window mean), `p_equivalence`, `p_equivalence_holm`, `p_difference`,
-`p_difference_holm`, `verdict` (`"equivalent"`, `"different"`, `"inconclusive"`).
-
-`margins` maps an observable to `("chaos", κ)` (κ times the chaos floor; the default
-with κ = 2 when the sweep has a twin arm), `("relative", f)` (f times the absolute
-reference window mean; the default with f = 0.01 otherwise) or `("absolute", ε)`. Holm's
-correction runs over all rows of the table at family level `α`.
-"""
-function paired_comparison(
-    sweep_dir::AbstractString;
-    reference::AbstractString = "base",
-    observables::AbstractVector{<:AbstractString} = [
-        "r10",
-        "r50",
-        "r90",
-        "energy",
-        "n_stars",
-        "n_pairs",
-    ],
-    t_settle_myr::Real = 0.0,
-    margins::AbstractDict = Dict{String,Tuple{String,Float64}}(),
-    α::Real = 0.05,
-)::Vector{NamedTuple}
+"""Refuse an observable that [`paired_comparison`](@ref) does not know, naming `caller`."""
+function _check_paired_observables(observables::AbstractVector{<:AbstractString}, caller::String)
     for o in observables
         haskey(_PAIRED_OBSERVABLES, o) || throw(
             ArgumentError(
-                "paired_comparison: unknown observable \"$o\"; one of " *
+                "$(caller): unknown observable \"$o\"; one of " *
                 join(sort!(collect(keys(_PAIRED_OBSERVABLES))), ", "),
             ),
         )
     end
+    return nothing
+end
+
+"""Grid values of a sweep point as text: `"key=value"` pairs sorted and joined by commas; `""` without a grid."""
+_grid_text(values::AbstractDict)::String =
+    join(sort!(String["$(k)=$(v)" for (k, v) in values]), ", ")::String
+
+"""
+    _PairingGroups
+
+The runs of a paired analysis grouped by grid point and seed:
+`(grid, seed) => (arm => run_dir)`, the grid point as text ([`_grid_text`](@ref)).
+"""
+const _PairingGroups = Dict{Tuple{String,Int},Dict{String,String}}
+
+"""Pairing groups of the completed points of a sweep (the arm `""` for a sweep without arms)."""
+function _sweep_pairing_groups(sweep_dir::AbstractString)::_PairingGroups
     _, pts = _sweep_done_points(sweep_dir)
-    groups = Dict{Tuple{String,Int},Dict{String,String}}()   # (grid, seed) => arm => run dir
-    grid_of = Dict{String,String}()
+    groups = _PairingGroups()
     for (p, run_dir) in pts
-        grid = join(sort!(["$(k)=$(v)" for (k, v) in p["values"]]), ", ")
-        get!(groups, (grid, Int(p["seed"])), Dict{String,String}())[String(get(p, "arm", ""))] =
-            run_dir
+        get!(groups, (_grid_text(p["values"]), Int(p["seed"])), Dict{String,String}())[string(
+            get(p, "arm", ""),
+        )::String] = run_dir
     end
-    arms = sort!(unique(a for g in values(groups) for a in keys(g)))
-    reference in arms ||
-        throw(ArgumentError("paired_comparison: no completed point of the arm \"$reference\""))
-    meta(run_dir) = (
-        path = joinpath(run_dir, "output", "merger_ic.toml");
-        isfile(path) ? TOML.parsefile(path) : Dict{String,Any}()
-    )
-    # Pairing: identical initial conditions unless the point is a twin.
+    return groups
+end
+
+"""`merger_ic.toml` of a run's output as a dictionary; empty when absent."""
+function _paired_run_meta(run_dir::AbstractString)::Dict{String,Any}
+    path = joinpath(run_dir, "output", "merger_ic.toml")
+    return isfile(path) ? TOML.parsefile(path) : Dict{String,Any}()
+end
+
+"""
+    _verify_pairing(groups, reference, caller, unit)
+
+Refuse a run of a non-reference arm whose `meta.dat10_sha256` differs from that of
+the reference run of the same grid point and seed, unless it carries a perturbed
+twin (`[twin]`); runs without a recorded hash pass. `unit` names a member in the
+message (`"point"` of a sweep, `"run"` of a run list).
+"""
+function _verify_pairing(groups::_PairingGroups, reference::String, caller::String, unit::String)
+    hash_of(m) = string(get(get(m, "meta", Dict{String,Any}()), "dat10_sha256", ""))::String
     for ((grid, seed), byarm) in groups
         haskey(byarm, reference) || continue
-        h_ref = get(get(meta(byarm[reference]), "meta", Dict{String,Any}()), "dat10_sha256", "")
+        h_ref = hash_of(_paired_run_meta(byarm[reference]))
         for (arm, run_dir) in byarm
             arm == reference && continue
-            m = meta(run_dir)
+            m = _paired_run_meta(run_dir)
             haskey(m, "twin") && continue
-            h = get(get(m, "meta", Dict{String,Any}()), "dat10_sha256", "")
+            h = hash_of(m)
             (isempty(h) || isempty(h_ref) || h == h_ref) || throw(
                 ArgumentError(
-                    "paired_comparison: the $(arm) point of seed $(seed) at $(grid) does not share " *
-                    "the initial conditions of the $(reference) point (dat.10 hashes differ)",
+                    "$(caller): the $(arm) $(unit) of seed $(seed)" *
+                    (isempty(grid) ? "" : " at $(grid)") *
+                    " does not share the initial conditions of the $(reference) $(unit) " *
+                    "(dat.10 hashes differ)",
                 ),
             )
         end
     end
-    twin_arms = Set(a for g in values(groups) for (a, d) in g if haskey(meta(d), "twin"))
+    return nothing
+end
+
+"""Arms of the groups in name order; refuses a table without a run of `reference`."""
+function _paired_arms(groups::_PairingGroups, reference::String, caller::String, unit::String)
+    arms = sort!(unique(a for g in values(groups) for a in keys(g)))
+    reference in arms ||
+        throw(ArgumentError("$(caller): no completed $(unit) of the arm \"$reference\""))
+    return arms
+end
+
+"""
+    _arm_series(groups, grid, quantity, fraction) -> (seeds, series)
+
+Seeds of the grid point `grid` in ascending order and the series of `quantity`
+([`_run_series`](@ref)) of every run there, keyed by `(arm, seed)` (`nothing` for a
+run without the source file).
+"""
+function _arm_series(groups::_PairingGroups, grid::String, quantity::Symbol, fraction::Real)
+    seeds = sort!([s for (g, s) in keys(groups) if g == grid])
+    series = Dict{Tuple{String,Int},Any}()
+    for s in seeds, (arm, run_dir) in groups[(grid, s)]
+        series[(arm, s)] = _run_series(run_dir, quantity; fraction = fraction)
+    end
+    return seeds, series
+end
+
+"""Both series of the pair `(arm, s)`–`(reference, s)` exist."""
+_has_pair(series, arm, reference, s) =
+    haskey(series, (arm, s)) &&
+    haskey(series, (reference, s)) &&
+    series[(arm, s)] !== nothing &&
+    series[(reference, s)] !== nothing
+
+"""
+    _paired_rows(groups; reference, observables, t_settle_myr, margins, α, caller, unit)
+
+The statistical core of [`paired_comparison`](@ref) and [`block_comparison`](@ref) on
+explicit pairing groups: pairing check, per-seed window means of the differences,
+chaos floor, seed scatter, margins, the paired tests and Holm's correction over all
+rows. `caller` and `unit` name the entry point and a member in the messages.
+"""
+function _paired_rows(
+    groups::_PairingGroups;
+    reference::String,
+    observables::AbstractVector{<:AbstractString},
+    t_settle_myr::Real,
+    margins::AbstractDict,
+    α::Real,
+    caller::String,
+    unit::String,
+)::Vector{NamedTuple}
+    arms = _paired_arms(groups, reference, caller, unit)
+    # Pairing: identical initial conditions unless the member is a twin.
+    _verify_pairing(groups, reference, caller, unit)
+    twin_arms =
+        Set(a for g in values(groups) for (a, d) in g if haskey(_paired_run_meta(d), "twin"))
     rows = NamedTuple[]
     grids = sort!(unique(first.(collect(keys(groups)))))
     for grid in grids, o in observables
         quantity, fraction = _PAIRED_OBSERVABLES[o]
-        series = Dict{Tuple{String,Int},Any}()
-        seeds = sort!([s for (g, s) in keys(groups) if g == grid])
-        for s in seeds, (arm, run_dir) in groups[(grid, s)]
-            series[(arm, s)] = _run_series(run_dir, quantity; fraction = fraction)
-        end
+        seeds, series = _arm_series(groups, grid, quantity, fraction)
         diffs(arm) = Float64[
-            (
-                haskey(series, (arm, s)) &&
-                haskey(series, (reference, s)) &&
-                series[(arm, s)] !== nothing &&
-                series[(reference, s)] !== nothing
-            ) ?
+            _has_pair(series, arm, reference, s) ?
             _window_mean_difference(series[(arm, s)], series[(reference, s)], t_settle_myr) :
             NaN for s in seeds
         ]
@@ -264,7 +305,7 @@ function paired_comparison(
             kind == "absolute" ? Float64(value) :
             throw(
                 ArgumentError(
-                    "paired_comparison: margin kind of $o must be \"chaos\", \"relative\" or \"absolute\"; got \"$kind\"",
+                    "$(caller): margin kind of $o must be \"chaos\", \"relative\" or \"absolute\"; got \"$kind\"",
                 ),
             )
         for arm in arms
@@ -306,6 +347,53 @@ function paired_comparison(
             ),
         ) for (k, r) in enumerate(rows)
     ]
+end
+
+"""
+    paired_comparison(sweep_dir; reference = "base", observables = ["r10", "r50", "r90",
+                      "energy", "n_stars", "n_pairs"], t_settle_myr = 0.0,
+                      margins = Dict(), α = 0.05) -> Vector{NamedTuple}
+
+Calibration table of the arms of a sweep (`[sweep.arms]`) against the arm `reference`:
+one row per grid point, observable and arm, from the completed points only. Every point is
+paired with the reference point of the same grid point and seed; the pairing is verified
+by equal `meta.dat10_sha256` of the two initial conditions, except for points carrying a
+perturbed twin (`[twin]` in `merger_ic.toml`), and refused otherwise. Per pair the
+difference of the observable's series is averaged over the window from `t_settle_myr` to
+the end of the common interval; the seeds are the samples of [`paired_shift`](@ref).
+
+Columns: `grid` (the grid values as text), `observable`, `arm`, `n`, `shift` (mean
+difference), `se`, `ci_low`, `ci_high` (the (1 − 2α) interval), `margin`, `margin_kind`,
+`chaos_floor` (standard deviation over seeds of the window-mean difference of the twin
+arm, NaN without one), `seed_scatter` (standard deviation over seeds of the reference
+window mean), `p_equivalence`, `p_equivalence_holm`, `p_difference`,
+`p_difference_holm`, `verdict` (`"equivalent"`, `"different"`, `"inconclusive"`).
+
+`margins` maps an observable to `("chaos", κ)` (κ times the chaos floor; the default
+with κ = 2 when the sweep has a twin arm), `("relative", f)` (f times the absolute
+reference window mean; the default with f = 0.01 otherwise) or `("absolute", ε)`. Holm's
+correction runs over all rows of the table at family level `α`. The same table over an
+explicit list of run directories is [`block_comparison`](@ref).
+"""
+function paired_comparison(
+    sweep_dir::AbstractString;
+    reference::AbstractString = "base",
+    observables::AbstractVector{<:AbstractString} = _PAIRED_DEFAULT_OBSERVABLES,
+    t_settle_myr::Real = 0.0,
+    margins::AbstractDict = Dict{String,Tuple{String,Float64}}(),
+    α::Real = 0.05,
+)::Vector{NamedTuple}
+    _check_paired_observables(observables, "paired_comparison")
+    return _paired_rows(
+        _sweep_pairing_groups(sweep_dir);
+        reference = String(reference),
+        observables,
+        t_settle_myr,
+        margins,
+        α,
+        caller = "paired_comparison",
+        unit = "point",
+    )
 end
 
 """
