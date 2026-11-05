@@ -1532,6 +1532,7 @@ export EnsembleStatistics, ensemble_statistics, sweep_ensembles
 export paired_comparison, write_paired_comparison
 export sweep_runs, block_runs, block_comparison, block_ensembles
 export write_block_ensembles, write_block_tables
+export paired_difference_series, write_calibration_table
 export control_merger_dict, write_control_merger_config
 export ClusterSpec,
     SegregationSpec,
@@ -1565,6 +1566,7 @@ export plot_remnant_rotation, plot_rotation_profile, plot_remnant_structure
 export plot_mass_segregation_evolution, remnant_figures
 export plot_sweep_lagrangian, plot_sweep_energy, plot_sweep_ensemble, plot_control_comparison
 export sweep_figures, plot_merger_ic, plot_telemetry
+export plot_paired_differences, plot_paired_shifts, calibration_figures
 export animate_cluster, animate_hr, animate_lagrangian
 
 public nparticles, pair_indices, time_nb, time_myr, rbar, zmbar, tscale, vstar, rscale, rc

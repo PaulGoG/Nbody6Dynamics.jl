@@ -28,6 +28,11 @@ entries say so.
   `sweep_runs(sweep_dir)` the completed points of a sweep; `block_ensembles(runs)` gives the percentile ensembles
   per arm, and `write_block_tables(out_dir, runs)` writes the comparison, the ensembles (`write_block_ensembles`) and
   a member sidecar as CSV.
+- Calibration report: `paired_difference_series` (sweep or run list) gives the time-resolved mean paired difference
+  of every arm with its standard error over the seeds; `plot_paired_differences` draws it against the equivalence
+  margin, `plot_paired_shifts` is the forest plot of the window-mean shifts with their intervals and verdicts
+  (marker shape and colour), `calibration_figures` draws both per observable, and `write_calibration_table` writes
+  the table as a booktabs LaTeX `tabular`.
 
 ## [0.8.0] — 2026-11-04
 

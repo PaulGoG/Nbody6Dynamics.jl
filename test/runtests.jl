@@ -129,6 +129,7 @@ end
     include("test_sweep_arms.jl")
     include("test_paired_comparison.jl")
     include("test_block_collector.jl")
+    include("test_calibration_report.jl")
     include("test_plotting.jl")
     include("test_external.jl")
     include("test_ic.jl")

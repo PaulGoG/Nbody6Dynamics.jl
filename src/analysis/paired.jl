@@ -414,3 +414,272 @@ function write_paired_comparison(path::AbstractString, rows::AbstractVector)::St
     end
     return path
 end
+
+# -----------------------------------------------------------------------------
+# Time-resolved paired differences and the LaTeX calibration table (4.6)
+# -----------------------------------------------------------------------------
+
+"""
+    _difference_series(groups; reference, observables, n_grid, caller, unit) -> Vector{NamedTuple}
+
+The core of [`paired_difference_series`](@ref) on explicit pairing groups: per grid
+point, observable and arm the differences arm − reference of every seed with both
+series, interpolated onto `n_grid` nodes of the interval all those pairs cover, and
+their mean and standard error per node.
+"""
+function _difference_series(
+    groups::_PairingGroups;
+    reference::String,
+    observables::AbstractVector{<:AbstractString},
+    n_grid::Int,
+    caller::String,
+    unit::String,
+)::Vector{NamedTuple}
+    n_grid ≥ 2 || throw(ArgumentError("$(caller): n_grid must be ≥ 2; got $(n_grid)"))
+    arms = _paired_arms(groups, reference, caller, unit)
+    _verify_pairing(groups, reference, caller, unit)
+    out = NamedTuple[]
+    for grid in sort!(unique(first.(collect(keys(groups))))), o in observables
+        quantity, fraction = _PAIRED_OBSERVABLES[o]
+        seeds, series = _arm_series(groups, grid, quantity, fraction)
+        for arm in arms
+            arm == reference && continue
+            pairs = [
+                (series[(arm, s)], series[(reference, s)]) for
+                s in seeds if _has_pair(series, arm, reference, s)
+            ]
+            n = length(pairs)
+            t0 = n == 0 ? NaN : maximum(max(first(a[1]), first(r[1])) for (a, r) in pairs)
+            t1 = n == 0 ? NaN : minimum(min(last(a[1]), last(r[1])) for (a, r) in pairs)
+            if !(t1 > t0)
+                push!(
+                    out,
+                    (;
+                        grid,
+                        observable = o,
+                        arm,
+                        n,
+                        time = Float64[],
+                        mean = Float64[],
+                        se = Float64[],
+                    ),
+                )
+                continue
+            end
+            t = collect(range(t0, t1; length = n_grid))
+            d = Matrix{Float64}(undef, n, n_grid)
+            for (i, (a, r)) in enumerate(pairs)
+                d[i, :] = _interpolate_linear(a[1], a[2], t) .- _interpolate_linear(r[1], r[2], t)
+            end
+            m = vec(sum(d; dims = 1)) ./ n
+            se =
+                n ≥ 2 ? sqrt.(vec(sum(abs2, d .- m'; dims = 1)) ./ (n - 1)) ./ sqrt(n) :
+                fill(NaN, n_grid)
+            push!(out, (; grid, observable = o, arm, n, time = t, mean = m, se))
+        end
+    end
+    return out
+end
+
+"""
+    paired_difference_series(sweep_dir; reference = "base", observables = [...], n_grid = 200)
+    paired_difference_series(runs; reference = "base", observables = [...], n_grid = 200)
+        -> Vector{NamedTuple}
+
+Time-resolved mean paired difference of every arm against the arm `reference`, the
+companion of [`paired_comparison`](@ref) (a sweep directory) and
+[`block_comparison`](@ref) (a run list `(; arm, seed, run_dir[, grid])`), with the same
+pairing rules. Per grid point, observable and arm, the series of every seed with both
+runs are differenced, arm minus reference, on `n_grid` equally spaced nodes of the
+interval that all those pairs cover (from its start, the settling interval included),
+and averaged over the seeds. Returns one
+`(; grid, observable, arm, n, time, mean, se)` per grid point, observable and arm:
+`time` [Myr], `mean` the mean difference and `se` its standard error (standard
+deviation over the `n` seeds over √n; `NaN` for n < 2) per node. A row without
+pairs or without a common interval has empty vectors.
+"""
+function paired_difference_series(
+    sweep_dir::AbstractString;
+    reference::AbstractString = "base",
+    observables::AbstractVector{<:AbstractString} = _PAIRED_DEFAULT_OBSERVABLES,
+    n_grid::Int = _ENSEMBLE_GRID_NODES,
+)::Vector{NamedTuple}
+    _check_paired_observables(observables, "paired_difference_series")
+    return _difference_series(
+        _sweep_pairing_groups(sweep_dir);
+        reference = String(reference),
+        observables,
+        n_grid,
+        caller = "paired_difference_series",
+        unit = "point",
+    )
+end
+
+function paired_difference_series(
+    runs::AbstractVector{<:NamedTuple};
+    reference::AbstractString = "base",
+    observables::AbstractVector{<:AbstractString} = _PAIRED_DEFAULT_OBSERVABLES,
+    n_grid::Int = _ENSEMBLE_GRID_NODES,
+)::Vector{NamedTuple}
+    _check_paired_observables(observables, "paired_difference_series")
+    return _difference_series(
+        _run_list_groups(runs, "paired_difference_series");
+        reference = String(reference),
+        observables,
+        n_grid,
+        caller = "paired_difference_series",
+        unit = "run",
+    )
+end
+
+"""Observables of the paired analysis as table entries: the symbol in math mode and the unit."""
+const _OBSERVABLE_TEX = Dict(
+    "r10" => raw"$r_{10\,\%}$ [pc]",
+    "r50" => raw"$r_{50\,\%}$ [pc]",
+    "r90" => raw"$r_{90\,\%}$ [pc]",
+    "energy" => raw"$|\Delta E / E|$",
+    "n_stars" => raw"$N$",
+    "n_pairs" => raw"$N_\mathrm{pairs}$",
+)
+
+"""`s` with the LaTeX special characters escaped for text mode."""
+function _latex_escape(s::AbstractString)::String
+    io = IOBuffer()
+    for c in s
+        if c in ('&', '%', '$', '#', '_', '{', '}')
+            print(io, '\\', c)
+        elseif c == '\\'
+            print(io, "\\textbackslash{}")
+        elseif c == '~'
+            print(io, "\\textasciitilde{}")
+        elseif c == '^'
+            print(io, "\\textasciicircum{}")
+        else
+            print(io, c)
+        end
+    end
+    return String(take!(io))
+end
+
+"""
+    _tex_fixed(x, digits) -> String
+
+`x` with `digits` decimals as math-mode text (`"-0.10"`), without a negative zero.
+"""
+function _tex_fixed(x::Real, digits::Int)::String
+    s = @sprintf("%.*f", max(digits, 0), Float64(x))
+    return all(c -> c in ('-', '0', '.'), s) ? lstrip(s, '-') : s
+end
+
+"""
+    _tex_sig(x, n = 3) -> String
+
+`x` to `n` significant digits as math-mode text: a plain decimal for
+10⁻² ≤ |x| < 10⁴ (and 0), `m \\times 10^{e}` otherwise (`10^{e}` for m = 1).
+"""
+function _tex_sig(x::Real, n::Int = 3)::String
+    isfinite(x) || return "--"
+    x == 0 && return "0"
+    v = round(Float64(x); sigdigits = n)
+    e = floor(Int, log10(abs(v)))
+    if -2 ≤ e ≤ 3
+        return _tex_fixed(v, max(0, n - 1 - e))
+    end
+    m = round(v / 10.0^e; sigdigits = n)
+    abs(m) ≥ 10 && ((m, e) = (m / 10, e + 1))         # log10 rounding at a decade
+    abs(m) == 1 && return (m < 0 ? "-" : "") * "10^{$(e)}"
+    return _tex_fixed(m, n - 1) * " \\times 10^{$(e)}"
+end
+
+"""
+    _tex_shift_cells(shift, se, lo, hi) -> (shift_cell, interval_cell)
+
+The shift with its standard error and the interval as math-mode table cells: the
+standard error to two significant digits and the shift and the interval bounds to the same
+decimal place, but the shift to three significant digits at most (a standard error below
+that resolution shows as zero), and a common power of ten factored out when the larger
+of |shift| and the standard error lies outside 10⁻²–10⁴. `--` for a non-finite shift.
+"""
+function _tex_shift_cells(shift::Real, se::Real, lo::Real, hi::Real)
+    isfinite(shift) || return ("--", "--")
+    scale_of = max(abs(shift), isfinite(se) ? se : 0.0)
+    e = scale_of == 0 ? 0 : floor(Int, log10(scale_of))
+    e = -2 ≤ e ≤ 3 ? 0 : e
+    f = 10.0^(-e)
+    s, u, a, b = shift * f, se * f, lo * f, hi * f
+    # Two significant digits of the standard error, at most three of the shift: a
+    # standard error far below the shift (round-off of a constant difference) shows as 0.
+    shift_digits = s == 0 ? 0 : max(0, 2 - floor(Int, log10(abs(s))))
+    digits = if isfinite(u) && u > 0
+        se_digits = max(0, 1 - floor(Int, log10(round(u; sigdigits = 2))))
+        s == 0 ? se_digits : min(se_digits, shift_digits)
+    else
+        shift_digits
+    end
+    pm = isfinite(u) ? " \\pm " * _tex_fixed(u, digits) : ""
+    interval =
+        (isfinite(a) && isfinite(b)) ?
+        "[" * _tex_fixed(a, digits) * ", " * _tex_fixed(b, digits) * "]" : "--"
+    factor = e == 0 ? "" : " \\times 10^{$(e)}"
+    shift_cell =
+        e == 0 ? "\$" * _tex_fixed(s, digits) * pm * "\$" :
+        "\$(" * _tex_fixed(s, digits) * pm * ")" * factor * "\$"
+    interval_cell = interval == "--" ? "--" : "\$" * interval * factor * "\$"
+    return (shift_cell, interval_cell)
+end
+
+"""
+    write_calibration_table(path, rows; α = 0.05) -> String
+
+Write the rows of [`paired_comparison`](@ref) or [`block_comparison`](@ref) as a LaTeX
+`tabular` in booktabs style (`\\toprule`, `\\midrule`, `\\bottomrule`,
+`\\addlinespace` between observables; the document needs `\\usepackage{booktabs}`):
+observable (symbol and unit, named once per group), arm, number of seeds n, shift ±
+standard error, the (1 − 2α) interval, the margin ε and the verdict; a grid-point column
+is added when the rows span several. Numbers carry two (standard error, and the shift
+and interval to the same decimal place) or three (margin) significant digits, powers of
+ten as `\\times 10^{e}`; arm names and grid values are escaped. `α` must be the level
+the rows were computed at. An existing file is kept as a `#k` backup. Returns `path`.
+"""
+function write_calibration_table(path::AbstractString, rows::AbstractVector; α::Real = 0.05)::String
+    isempty(rows) && throw(ArgumentError("write_calibration_table: no rows"))
+    0 < α < 0.5 || throw(ArgumentError("write_calibration_table: α must lie in (0, 0.5); got $α"))
+    for r in rows
+        haskey(_OBSERVABLE_TEX, r.observable) ||
+            throw(ArgumentError("write_calibration_table: unknown observable \"$(r.observable)\""))
+    end
+    grids = unique(String(r.grid) for r in rows)
+    with_grid = length(grids) > 1
+    level = 100 * (1 - 2α)
+    level_text = isinteger(round(level; digits = 6)) ? string(round(Int, level)) : string(level)
+    _backup_existing(path)
+    open(path, "w") do io
+        println(io, "\\begin{tabular}{", with_grid ? "l" : "", "llrllll}")
+        println(io, "\\toprule")
+        println(
+            io,
+            with_grid ? "Grid point & " : "",
+            "Observable & Arm & \$n\$ & Shift \$\\pm\$ SE & \$$(level_text)\\,\\%\$ interval & ",
+            "Margin \$\\varepsilon\$ & Verdict \\\\",
+        )
+        println(io, "\\midrule")
+        previous = nothing
+        for r in rows
+            group = (String(r.grid), String(r.observable))
+            previous !== nothing && group != previous && println(io, "\\addlinespace")
+            first_of_group = group != previous
+            previous = group
+            shift_cell, interval_cell = _tex_shift_cells(r.shift, r.se, r.ci_low, r.ci_high)
+            cells = String[]
+            with_grid && push!(cells, first_of_group ? _latex_escape(r.grid) : "")
+            push!(cells, first_of_group ? _OBSERVABLE_TEX[r.observable] : "")
+            push!(cells, _latex_escape(r.arm), string(r.n), shift_cell, interval_cell)
+            push!(cells, isfinite(r.margin) ? "\$" * _tex_sig(r.margin) * "\$" : "--")
+            push!(cells, _latex_escape(r.verdict))
+            println(io, join(cells, " & "), " \\\\")
+        end
+        println(io, "\\bottomrule")
+        println(io, "\\end{tabular}")
+    end
+    return path
+end
