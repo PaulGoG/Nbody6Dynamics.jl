@@ -6,6 +6,8 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-11-05
+
 ### Added
 
 - Arms of a sweep: `[sweep.arms.<name>]` tables of quoted dotted keys addressing the merger TOML (`"merger.…"`) or
