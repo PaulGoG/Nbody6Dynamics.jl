@@ -459,6 +459,13 @@
             )
         ]
         @test adjust_times[end] == 80.0 && issorted(adjust_times)
+        # A later restart keeps the consumed request as a backup beside the new one.
+        withenv(on_path(sb)) do
+            submit_restart(run_dir; t_end = 100.0)
+        end
+        backup = Nbody6Dynamics.TOML.parsefile(joinpath(run_dir, "cluster", "restart#1.toml"))
+        @test backup["status"] == "consumed" && backup["job_id"] == "91"
+        @test Nbody6Dynamics.TOML.parsefile(request_path)["status"] == "pending"
     end
 
     @testset "read_job_ledger" begin

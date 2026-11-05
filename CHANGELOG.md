@@ -6,6 +6,17 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- Sweep arms: an arm may set only merger keys the generator does not read (`merger.nbody6.*`, `merger.stellar.*`,
+  `merger.mbh.*`, the output intervals and the twin keys) and no structural pipeline key (`simulation.runs_dir`,
+  `merger.config_file`, `merger.enabled`); every other key is refused at load, where before an arm could change the
+  initial conditions and the pairing check caught it only after the runs.
+- Restart jobs: a consumed `cluster/restart.toml` is kept as `restart#k.toml` when a later restart is submitted,
+  instead of being overwritten.
+- Sweep driver: when the driver loop dies from an exception with workers registered, the exit hook ends the
+  process with status 1 after stopping the workers, not 143 (the status of a termination by SIGTERM).
+
 ## [0.9.2] — 2026-11-05
 
 ### Changed

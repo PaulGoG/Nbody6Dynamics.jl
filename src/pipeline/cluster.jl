@@ -421,6 +421,7 @@ complete and outside a chain subsystem (`NSUB = 0`), the span positive, no engin
 run alive, no other request pending — and written to `<run_dir>/cluster/restart.toml`
 with status `pending`; the first job of the chain consumes the request before it starts
 the engine, so a job ended mid-segment is continued by a resume, not by a second restart.
+A consumed request of an earlier restart is kept as `cluster/restart#k.toml`.
 
 With `dry_run` the request is written to `cluster/restart_preview.toml` and the restart
 input to `cluster/restart_preview.inp` instead, and nothing is submitted.
@@ -546,6 +547,8 @@ function submit_restart(
         )
         return (run_dir = run_dir, script = script, command = line, job_id = "", request = request)
     end
+    # The consumed request of an earlier restart is kept as cluster/restart#k.toml.
+    _backup_existing(joinpath(run_dir, _RESTART_REQUEST))
     _atomic_write_toml(joinpath(run_dir, _RESTART_REQUEST), request)
     runs_dir = _resolve_path(cfg.config_dir, cfg.simulation.runs_dir)
     id = _submit(cmd)
