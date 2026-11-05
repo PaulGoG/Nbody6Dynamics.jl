@@ -274,9 +274,9 @@ end
     momentum_integrals(s::Snapshot) -> NamedTuple
 
 Total mass `M`, linear momentum `P`, angular momentum `L` about the origin, the mass-weighted
-velocity dispersion `σ` (about the centre-of-mass velocity) and the half-mass radius proxy
-`r_v`-free scale `r_h` (median distance from the centre of mass), in double precision from the
-single-precision snapshot.
+velocity dispersion `σ` (about the centre-of-mass velocity) and the median distance `r_h` of
+the bodies from the centre of mass (the half-mass radius of an equal-mass model), in double
+precision from the single-precision snapshot.
 """
 function momentum_integrals(s)
     m = Float64.(s.mass)
