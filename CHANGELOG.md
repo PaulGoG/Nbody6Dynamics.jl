@@ -22,6 +22,11 @@ entries say so.
   seed, and tests the arm's shift for equivalence within a margin (two one-sided tests) and for a difference
   (paired t test), with Holm's correction over the table; the margin defaults to twice the chaos floor of a twin
   arm. `write_paired_comparison`, `paired_shift`, `holm_adjust`.
+- Engine regression suite (`test/test_engine_regression.jl`, run with `NBODY6_BINARY_TESTS=1`): the convergence
+  order of the Hermite scheme over an η ladder and the drift of linear and angular momentum, an isolated e = 0.9
+  binary over 10³ orbits on the perturbed and unperturbed KS paths, a Kozai–Lidov triple on the KS and merger paths,
+  the start-up step of a cold triple, and the Pythagorean three-body problem through the chain, each against its
+  closed form or a converged reference integration. Known engine defects are recorded as broken tests.
 
 ### Changed
 

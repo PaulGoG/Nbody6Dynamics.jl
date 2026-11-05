@@ -103,6 +103,8 @@ if get(ENV, "NBODY6_BINARY_TESTS", "0") == "1"
         if isempty(root)
             cp(joinpath(@__DIR__, "..", "input_files"), joinpath(work, "input_files"))
         end
+        # the engine regression suite (test_engine_regression.jl) runs on this backend
+        global ENGINE_BUILD_BASE = base
         runs_dir = joinpath(work, "runs")
 
         # 1. Build (temporary tree only) and a single-cluster run

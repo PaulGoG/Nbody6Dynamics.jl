@@ -134,5 +134,6 @@ end
     include("test_stellar_options.jl")
     include("test_telemetry.jl")
     include("test_engine_gated.jl")
+    get(ENV, "NBODY6_BINARY_TESTS", "0") == "1" && include("test_engine_regression.jl")
     include("test_qa.jl")
 end  # top-level testset

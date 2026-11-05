@@ -188,7 +188,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 julia -e 'include("activate.jl"); Pkg.test()'
 ```
 
-The default suite needs no Fortran binary. The engine-dependent tests (build, launch, restart, tidal field, live telemetry) run when `NBODY6_BINARY_TESTS=1` is set; without `NBODY6_BACKEND_ROOT` they clone and build the backend in a temporary directory, with it they use the build under `<root>/backend/Nbody6PPGPU-beijing`:
+The default suite needs no Fortran binary. The engine-dependent tests (build, launch, restart, tidal field, live telemetry, and the engine regression suite: the integrator's convergence order and momentum drift, an e = 0.9 binary on both KS paths, a Kozai–Lidov triple, the start-up step of a cold system and the Pythagorean problem through the chain, each against its closed form or reference trajectory) run when `NBODY6_BINARY_TESTS=1` is set; without `NBODY6_BACKEND_ROOT` they clone and build the backend in a temporary directory, with it they use the build under `<root>/backend/Nbody6PPGPU-beijing`:
 
 ```bash
 NBODY6_BINARY_TESTS=1 NBODY6_BACKEND_ROOT=$PWD julia -e 'include("activate.jl"); Pkg.test()'
@@ -421,6 +421,8 @@ Nbody6Dynamics/
 │   ├── test_stellar_options.jl      # Stellar-evolution option keys, written groups, the engine's echo and the start-up check
 │   ├── test_telemetry.jl            # Hardware telemetry sampler, readers and figure
 │   ├── test_engine_gated.jl         # Shipped GPU-host configurations; engine- and GPU-gated runs
+│   ├── test_engine_regression.jl    # Engine regression suite (engine-gated): order, momentum, few-body paths
+│   ├── engine_regression_setup.jl   # Its input builders, launcher and readers (module EngineRegression)
 │   ├── test_qa.jl                   # Static QA: Aqua, ExplicitImports, JET
 │   └── fixtures/                    # Upstream engine output excerpts, commit 618d7a4 (esc.11, lagr.7, out1000, sev.83_0, bev.82_0), with their PROVENANCE.md
 ├── bench/
