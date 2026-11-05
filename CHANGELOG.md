@@ -6,6 +6,23 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-11-05
+
+### Changed
+
+- Engine pin `v2026.07.26` (fork): the coalescence test at the onset of a Roche episode is the BSE contact
+  condition at periastron (the inherited test coalesced every pair whose stars did not touch, 87–94 % of the Roche
+  episodes of the massive-binary ladders, and no accretion phase was ever reached); the largest body mass
+  survives the first adjustment, so the KS pairs of the first adjustment interval keep their perturbers (every
+  pair was advanced unperturbed until the second adjustment; a Kozai–Lidov cycle lagged by one DTADJ); a body at
+  rest under a constant force gets a finite start-up step under `KZ(40) = 0` (a cold system moved under its
+  initial forces); an output between adjustments carries the output time in the `conf.3` header; the SSE, BSE
+  and collision parameters are broadcast on MPI builds. The N1k test input is bit-identical in its Lagrangian
+  radii and adjustments; runs with KS pairs in their first adjustment interval change from that interval on,
+  and runs with stellar evolution and binaries from their first Roche episode on.
+- Engine regression suite: the cold-start and first-interval perturber tests are plain tests (the engine defects
+  are corrected); the Pythagorean assertions stay marked broken.
+
 ## [0.9.1] — 2026-11-05
 
 ### Fixed
