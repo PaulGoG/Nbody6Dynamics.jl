@@ -1153,7 +1153,16 @@ function _apply_twin!(
         ),
     )
     r = sqrt(sum(abs2, @view pos[:, b]))
+    before = [@sprintf("%.15e", x) for x in @view pos[:, b]]
     pos[:, b] .*= 1 + δ
+    # The displacement must survive the %.15e columns of dat.10 (a body at the origin, or
+    # an amplitude at the resolution, would leave the twin identical to its base).
+    any(@sprintf("%.15e", x) != s for (x, s) in zip(@view(pos[:, b]), before)) || throw(
+        ArgumentError(
+            "merger.output.twin_amplitude = $(δ) leaves body $(b) unchanged in the %.15e " *
+            "columns of dat.10 (|r| = $(r))",
+        ),
+    )
     return Dict{String,Any}("body" => b, "amplitude" => δ, "displacement" => δ * r)
 end
 

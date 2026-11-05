@@ -559,7 +559,8 @@ Output and integration parameters for merger ICs.
   perturbed twin of an initial condition (the chaos floor of the calibration
   programme): its position vector is scaled by `1 + δ` after every other step
   of the generation, in N-body units; `0` (the default) leaves the initial
-  condition unchanged; `0 ≤ δ ≤ 10⁻⁶`
+  condition unchanged; `10⁻¹⁴ ≤ δ ≤ 10⁻⁶` otherwise (below `10⁻¹⁴` the
+  `%.15e` columns of `dat.10` may not change)
 - `twin_body::Int`: 1-based `dat.10` index of the displaced body; `0` (the
   default) = the first single star, after the primordial pairs, so no
   regularised pair is touched; ≥ 0
@@ -1568,9 +1569,13 @@ function load_merger_config(path::AbstractString)::MergerConfig
         "merger.output.truncate_radius_rh",
         "must be finite and ≥ 0 (0 = Jacobi radius); got $(output.truncate_radius_rh)",
     )
-    (isfinite(output.twin_amplitude) && 0 ≤ output.twin_amplitude ≤ 1.0e-6) || _config_error(
+    (
+        isfinite(output.twin_amplitude) &&
+        (output.twin_amplitude == 0 || 1.0e-14 ≤ output.twin_amplitude ≤ 1.0e-6)
+    ) || _config_error(
         "merger.output.twin_amplitude",
-        "must satisfy 0 ≤ value ≤ 1e-6 (a relative displacement); got $(output.twin_amplitude)",
+        "must be 0 or satisfy 1e-14 ≤ value ≤ 1e-6 (a relative displacement; below 1e-14 the " *
+        "%.15e columns of dat.10 may not change); got $(output.twin_amplitude)",
     )
     output.twin_body ≥ 0 || _config_error(
         "merger.output.twin_body",

@@ -201,6 +201,26 @@
             ),
         )
         @test_throws ArgumentError load_merger_config(bad)                # beyond 1e-6
+        write(
+            bad,
+            replace(
+                read(joinpath(base, "merger.toml"), String),
+                "deltat = 1.0\n" => "deltat = 1.0\ntwin_amplitude = 1e-16\n",
+            ),
+        )
+        @test_throws ArgumentError load_merger_config(bad)                # below the resolution
+        # a body at the origin cannot be displaced by a scaling
+        @test_throws ArgumentError Nbody6Dynamics._apply_twin!(
+            zeros(3, 2),
+            Nbody6Dynamics.MergerOutputSpec(; twin_amplitude = 1e-10, twin_body = 1),
+            0,
+        )
+        twin = Nbody6Dynamics._apply_twin!(
+            ones(3, 2),
+            Nbody6Dynamics.MergerOutputSpec(; twin_amplitude = 1e-10, twin_body = 2),
+            0,
+        )
+        @test twin["body"] == 2 && twin["displacement"] ≈ 1e-10 * sqrt(3)
     end
 
     @testset "exit status of the driver hook" begin
