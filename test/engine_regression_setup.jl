@@ -197,7 +197,9 @@ end
 
 Run `engine < merger.inp > out.log` in `dir` with an unlimited stack, `OMP_NUM_THREADS =
 threads` and unbuffered Fortran output, ending it after `wall` seconds. Returns the exit code
-(−1 on time-out), the terminating signal, the wall time and whether it timed out.
+(−1 on time-out), the terminating signal, the wall time, whether it timed out, whether the
+log holds `END RUN` (`ended`) and whether the energy check halted the run (`halted`: the
+engine exits with status 0 after `CALCULATIONS HALTED`).
 """
 function run_engine(
     engine::AbstractString,
@@ -223,11 +225,14 @@ function run_engine(
         kill(p)
         wait(p)
     end
+    log = read(joinpath(dir, "out.log"), String)
     return (;
         exit_code = timed_out ? -1 : p.exitcode,
         signal = p.termsignal,
         wall_s = time() - t0,
         timed_out,
+        ended = occursin("END RUN", log),
+        halted = occursin("CALCULATIONS HALTED", log),
     )
 end
 
@@ -325,14 +330,18 @@ end
 """
     ks_counters(dir) -> NamedTuple
 
-The cumulative KS and few-body counters of the last `#3` line of `out.log`: KS attempts
-`nkstry`, regularisations `nksreg`, hyperbolic pairs `nkshyp`, unperturbed two-body orbits
-`nksper`, slow-down changes `nksmod`, and the triple, quadruple, chain and merger counts.
+The KS and few-body counters of the `#3` lines of `out.log`, summed over the output
+intervals (the engine resets them after every output): KS attempts `nkstry`,
+regularisations `nksreg`, hyperbolic pairs `nkshyp`, unperturbed two-body orbits `nksper`,
+slow-down changes `nksmod`, and the triple, quadruple, chain and merger counts.
 """
 function ks_counters(dir::AbstractString)
     v = Int[]
     for l in eachline(joinpath(dir, "out.log"))
-        startswith(l, " #3 ") && (v = parse.(Int, split(l)[2:end]))
+        startswith(l, " #3 ") || continue
+        w = parse.(Int, split(l)[2:end])
+        n = isempty(v) ? length(w) : min(length(v), length(w))
+        v = isempty(v) ? w : v[1:n] .+ w[1:n]
     end
     length(v) ≥ 10 || error("ks_counters: no #3 line in $(joinpath(dir, "out.log"))")
     return (;

@@ -2,7 +2,7 @@
 # order and momentum drift, an isolated binary on both KS paths, a Kozai–Lidov triple on the KS
 # and merger paths, the start-up step of a cold system and the Pythagorean problem through the
 # chain, each against its closed form or reference trajectory. The reference values and their
-# tolerances come from the full measurements (longer spans, three seeds) of the B6 record.
+# tolerances come from the full measurements (longer spans, three seeds) behind this suite.
 #
 # Included by runtests.jl when NBODY6_BINARY_TESTS = 1. The engine is the AVX build under
 # <NBODY6_BACKEND_ROOT>/backend/Nbody6PPGPU-beijing, or the one test_engine_gated.jl built
@@ -13,7 +13,7 @@ using LinearAlgebra: norm
 
 include(joinpath(@__DIR__, "engine_regression_setup.jl"))
 
-# Reference values (B6 record, notes 2026-11-04-b6-engine-regression). η ladder, Hermite scheme
+# Reference values from the full measurements. η ladder, Hermite scheme
 # alone, N = 1024 to t = 2, ETAI/ETAR = (0.01, 0.02) f for f = 1/4, 1/2, 1. The order of the
 # median interval error is 2 in theory; the full ladder (t = 4, three seeds) gives 2.03 ± 0.40
 # over these rungs and 1.96–2.32 seed by seed, this configuration 2.15 ± 0.64: the band is the
@@ -37,11 +37,17 @@ function _b6_engine()
     isempty(base) && return nothing
     src = joinpath(base, "backend", "Nbody6PPGPU-beijing")
     isdir(joinpath(src, "build")) || return nothing
-    return Nbody6Dynamics._find_binary(
-        src,
-        "nbody6++",
-        BuildConfig(; enable_gpu = false, enable_mpi = false),
-    )
+    try
+        return Nbody6Dynamics._find_binary(
+            src,
+            "nbody6++",
+            BuildConfig(; enable_gpu = false, enable_mpi = false),
+        )
+    catch err
+        err isa ErrorException || rethrow()
+        @info "engine regression suite skipped: no CPU build of nbody6++ under $src"
+        return nothing
+    end
 end
 
 @testset "Engine regression suite (binary-gated)" begin
@@ -64,7 +70,7 @@ end
                 dir = joinpath(work, "eta_f$(f)")
                 ER.eta_ladder_input(dir, mass, pos, vel, f; span = 2.0, mode = :hermite)
                 r = ER.run_engine(engine, dir; wall = 300)
-                @test r.exit_code == 0
+                @test r.exit_code == 0 && r.ended && !r.halted
                 ER.ladder_metrics(dir)
             end
             ε = [x.median_de for x in m]
@@ -86,7 +92,8 @@ end
             mass, pos, vel, sys = ER.planted_binary(StableRNG(23))
             dir = joinpath(work, "binary_$(leg)")
             ER.binary_input(dir, mass, pos, vel, sys; leg)
-            @test ER.run_engine(engine, dir; wall = 300).exit_code == 0
+            r = ER.run_engine(engine, dir; wall = 300)
+            @test r.exit_code == 0 && r.ended && !r.halted
             ps = ER.pair_series(dir, 1, 2)
             keep = ps.t .≤ sys.span + 1e-12
             @test ps.missing_listings == 0 && count(keep) ≥ 64
@@ -108,7 +115,7 @@ end
                 @test 40 < ks / sys.orbits < 100
                 # Phase: mean anomaly from the position angle against n t, t on the output grid. A
                 # snapshot taken while a background KS pair exists holds this pair's components at
-                # an earlier time (7 of 65 in the B6 record), hence the median.
+                # an earlier time (7 of 65 in the full measurement), hence the median.
                 dt = sys.span / 64
                 δM = map(snaps) do s
                     t = floor(Nbody6Dynamics.time_nb(s.header) / dt) * dt
@@ -134,7 +141,8 @@ end
             dir = joinpath(work, "kozai_ks")
             interval = 2.0^-8
             ER.kozai_input(dir, mass, pos, vel, sys; path = :ks, interval)
-            @test ER.run_engine(engine, dir; wall = 300).exit_code == 0
+            r = ER.run_engine(engine, dir; wall = 300)
+            @test r.exit_code == 0 && r.ended && !r.halted
             ps = ER.pair_series(dir, 1, 2)
             t = ps.t ./ sys.τ
             keep = t .≤ sys.t_units + 1
@@ -148,7 +156,7 @@ end
             @test abs(t[k1] - B6_KOZAI.t_max) < 2Δt
             # A primordial pair is advanced without its perturbers until the first adjustment: the
             # first interval holds ~34 KS steps (to the first apocentre) against ~2300 thereafter,
-            # and e(t) lags the reference by one interval (engine defect, B6 record).
+            # and e(t) lags the reference by one interval (engine defect).
             sc = Int[]
             for l in eachline(joinpath(dir, "out.log"))
                 k = findfirst("NSTEP(I,B,R,U)", l)
@@ -159,7 +167,8 @@ end
             mdir = joinpath(work, "kozai_merger")
             msys = merge(sys, (; span = 2.0^-5))
             ER.kozai_input(mdir, mass, pos, vel, msys; path = :merger, interval)
-            @test ER.run_engine(engine, mdir; wall = 300).exit_code == 0
+            r = ER.run_engine(engine, mdir; wall = 300)
+            @test r.exit_code == 0 && r.ended && !r.halted
             log = read(joinpath(mdir, "out.log"), String)
             @test count("NEW MERGER", log) == 1 && count("NEW CHAIN", log) == 0
             ein = Float64[]
@@ -195,7 +204,8 @@ end
                 rmin = 1.0e-8,
                 kz = Dict(15 => 0, 40 => kz40),
             )
-            @test ER.run_engine(engine, dir; wall = 120).exit_code == 0
+            r = ER.run_engine(engine, dir; wall = 120)
+            @test r.exit_code == 0 && r.ended && !r.halted
             E0 = -769 / 60
             dE = [
                 abs(ER.triple_energy(s, sys) / E0 - 1) for
@@ -216,7 +226,7 @@ end
         # consistent state; the triple's centre of mass then moves at ~10³ N-body velocity units
         # (2.4×10⁻³ at the start) and the energy check, relative to the kinetic energy this creates,
         # does not halt. The internal motion still ends in the published class of outcome, with
-        # other elements (a = 0.68, e = 0.67; engine defect, B6 record).
+        # other elements (a = 0.68, e = 0.67; engine defect).
         @testset "Pythagorean problem through the chain" begin
             mass, pos, vel, sys = ER.pythagorean_triple(StableRNG(17))
             dir = joinpath(work, "pythagorean")
