@@ -1,0 +1,59 @@
+# Validation campaign V3, block B: pipeline of one rung member on the GPU node (engine built by P0), used by the sweeps
+# v3_b_king_n<N>_sweep.toml.
+
+[install]
+enabled = false
+install_dir = "../../../../backend/Nbody6PPGPU-beijing-gpu"
+ref = "v2026.07.25"
+
+[build]
+configure_flags = ["--enable-mcmodel=large", "--with-par=b1m"]
+enable_mpi = false
+enable_hdf5 = false
+enable_gpu = true
+cuda_path = ""            # pinned to the toolkit P0 recorded
+cuda_arch = ["sm_90"]
+
+[simulation]
+run_test = true
+input_file = "../../../engine/N1k_quick.inp"   # unused: merger.inp is generated
+runs_dir = "../../../../runs/campaign/v3_b"
+binary_name = "nbody6++"
+omp_threads = 8           # ≥ 1
+gpu_list = []             # set per member by the sweep's device assignment
+run_id_prefix = "v3b"
+monitor = false
+telemetry_interval = 5.0  # s; ≥ 0
+startup_timeout = 3600.0  # s; ≥ 0
+stall_timeout = 3600.0    # s; ≥ 0; several adjustment intervals of wall time
+exit_grace = 600.0        # s; ≥ 0
+stop_margin = 600.0       # s; time the engine has to act on a stop request
+checkpoint_keep = 2       # 0 or ≥ 2; periodic dumps kept
+
+[postprocess]
+enabled = true
+
+[visualization]
+enabled = false
+
+[merger]
+enabled = true
+config_file = "v3_b_king.toml"
+
+[cluster]
+enabled = false
+partition = "GPU"
+time_limit = "36:00:00"
+cpus_per_task = 8
+mem = "64G"
+gres = "gpu:1"
+sbatch_options = ["--hint=nomultithread"]
+prologue = ["export JULIA_DEPOT_PATH=\"$HOME/data/julia-depot:\" JULIAUP_DEPOT_PATH=\"$HOME/data/juliaup\"",
+            "export PATH=\"$HOME/.juliaup/bin:$PATH\""]
+chain = "resubmit"        # one of: "resubmit" | "dependency"
+max_segments = 0          # ≥ 0; 0 = until the end time
+overhead = 1800.0         # s
+
+[cost]
+budget_hours = 30.0       # ≥ 0; planning value × 3 of the 8×10⁵ rung
+on_exceed = "refuse"      # one of: "warn" | "refuse"

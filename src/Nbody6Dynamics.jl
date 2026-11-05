@@ -163,6 +163,7 @@ include("pipeline/external.jl")
 # ---------------------------------------------------------------------------
 include("ic/ic.jl")
 include("ic/imbh.jl")
+include("pipeline/ladder.jl")   # N ladders of merger and sweep TOMLs; needs the IC types
 
 # ---------------------------------------------------------------------------
 # High-level orchestration
@@ -1525,7 +1526,7 @@ export imbh_pair_hardening, hardening_rate_dimensionless, write_imbh_pair_harden
 export CalibrationRow, CalibrationTable, CalibratedEstimate, load_calibration, calibrated
 export sample_plummer_om, lynden_bell_flip!, stretch_positions!, rank_masses_by_energy!
 export SweepConfig, SweepPoint, load_sweep_config, sweep_points, prepare_sweep, run_sweep
-export resume_sweep
+export resume_sweep, n_ladder
 export sweep_summary, write_sweep_summary, sweep_visualization
 export EnsembleStatistics, ensemble_statistics, sweep_ensembles
 export paired_comparison, write_paired_comparison

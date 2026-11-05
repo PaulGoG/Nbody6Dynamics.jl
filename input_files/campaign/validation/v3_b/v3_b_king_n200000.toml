@@ -1,0 +1,36 @@
+# N ladder v3_b_king, rung 4 of 6: N = 200000 (cluster1 = 200000).
+# The sweep v3_b_king_n200000_sweep.toml replaces the seed per point.
+# Written by Nbody6Dynamics.n_ladder from v3_b_king.toml; regenerate instead of editing.
+
+[merger]
+n_clusters = 1
+orbit_mode = "single"
+seed = 3241
+virial_max_n = 1000000
+
+    [merger.cluster1]
+    N = 200000
+    W0 = 6.0
+    imf = "equal"
+    mass_total = 100000.0
+    model = "king"
+    rbar = 1.0
+
+    [merger.nbody6]
+    checkpoint = true
+    escapers = "keep"
+    preset = "baseline"
+    qe = 0.01
+
+    [merger.output]
+    deltat = 0.5
+    dtadj = 0.5
+    format = "nbody"
+    tcrit = 50.0
+
+    [merger.stellar]
+    kz19 = 0
+    level = "0"
+
+    [merger.tidal]
+    kz14 = 0

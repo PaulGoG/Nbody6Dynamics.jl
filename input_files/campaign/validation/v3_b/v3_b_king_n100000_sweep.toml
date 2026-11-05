@@ -1,0 +1,19 @@
+# N ladder v3_b_king, rung 3 of 6: 4 seeds of v3_b_king_n100000.toml.
+# Written by Nbody6Dynamics.n_ladder from v3_b_king.toml; regenerate instead of editing.
+
+[sweep]
+concurrency = 8
+devices = [0, 1]
+engines_per_device = 4
+merger_config = "v3_b_king_n100000.toml"
+name = "v3_b_king_n100000"
+omp_threads = 8
+pipeline_config = "v3_b_pipeline.toml"
+poll_interval = 10.0
+runs_dir = "../../../../runs/campaign/v3_b"
+seeds = [3231, 3232, 3233, 3234]
+
+    [sweep.arms.base]
+
+    [sweep.arms.twin]
+    "merger.output.twin_amplitude" = 1.0e-10

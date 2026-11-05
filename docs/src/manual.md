@@ -682,6 +682,32 @@ A sweep without `[sweep.grid]` is a seed ensemble of the base merger configurati
 
 With `controls = true` every point gets a companion `<index>_…_control` whose merger TOML is the isolated equivalent of the point's configuration (`control_merger_dict`): one cluster at rest with the summed `N`, the `N`-weighted mean half-mass radius, and cluster 1's model, IMF and binary population, with the `nbody6`, `stellar` and `tidal` sections kept verbatim; intervals given in Myr (`tcrit_myr`, `dtadj_myr`, `deltat_myr`, `dtplot_myr`) carry over unchanged, and intervals given in N-body units (`tcrit`, `dtadj`, `deltat`, `dtplot`) are multiplied by `(RBAR_est / r_h,control)^{3/2}` so the control spans about the merger's physical time. The index and summary carry `kind` and `control_of`; the comparison and ensemble figures use the merger points only, and `plot_control_comparison` draws every merger (solid) against its control (dashed). `write_control_merger_config` derives a control file from any merger TOML outside a sweep; the control is a single-mode configuration (`orbit_mode = "single"`).
 
+**N ladder.** `n_ladder(base_merger, output_dir; n_total, seeds, sweep)` writes the rungs of a ladder in `N` at fixed mass, size and orbit: per rung a merger TOML `<name>_n<N>.toml`, the base with the cluster sizes replaced (several clusters split `n_total` exactly in the base's ratio), and a sweep TOML `<name>_n<N>_sweep.toml`, the seed ensemble of that rung with the `[sweep]` keys of `sweep` (relative paths resolve against `output_dir`; arms are allowed), so the ensembles may differ in size along the ladder. The base gives its equal-mass bodies by the cluster mass (`imf = "equal"` with `mass_total`, or `target_mass` in the structured table), so the body mass is `M/N` on every rung while the cluster masses, half-mass radii, profiles and the orbit stay those of the base in physical units. Refused, each because the rungs would differ in more than `N`: a body mass given as `particle_mass`, any other IMF, stellar evolution (`kz19 ≠ 0`), primordial binaries, a seeded IMBH and the complex mode; explicit `rs0`, `rmin` and `dtmin` are kept on every rung with a warning. The N-body units then agree between rungs up to sampling: `RBAR` is the realised half-mass radius of the configuration, which scatters about the input `r_h` by about `0.35 N^{−1/2}` (relative) for a single King cluster, and `T* ∝ RBAR^{3/2}` with it, so an interval in N-body units spans the same physical time to that accuracy. Observables that coincide between rungs in `t/t_cr` are collisionless, those that coincide in `t/t_rh` collisional.
+
+Block B of the validation campaign's V3 (`input_files/campaign/validation/v3_b/`) is such a ladder: an isolated King `W0 = 6` cluster, `M = 10⁵` M☉, `r_h = 1` pc, no stellar evolution, escapers kept, 50 N-body units, rungs from 2.5×10⁴ to 8×10⁵ with 8, 4, 4, 2, 1 and 1 seeds, each seed in a base and a twin arm (`twin_amplitude = 1e-10`). Its rung files are the output of the following call in that folder, which `test/test_n_ladder.jl` repeats and compares:
+
+```julia
+n_ladder(
+    "v3_b_king.toml",
+    ".";
+    n_total = [25_000, 50_000, 100_000, 200_000, 400_000, 800_000],
+    seeds = [3211:3218, 3221:3224, 3231:3234, 3241:3242, [3251], [3261]],
+    sweep = Dict{String,Any}(
+        "pipeline_config" => "v3_b_pipeline.toml",
+        "runs_dir" => "../../../../runs/campaign/v3_b",
+        "concurrency" => 8,
+        "omp_threads" => 8,
+        "poll_interval" => 10.0,
+        "devices" => [0, 1],
+        "engines_per_device" => 4,
+        "arms" => Dict(
+            "base" => Dict{String,Any}(),
+            "twin" => Dict{String,Any}("merger.output.twin_amplitude" => 1.0e-10),
+        ),
+    ),
+)
+```
+
 ## 9. Post-processing
 
 ### Snapshots (conf.3, Fortran binary)
