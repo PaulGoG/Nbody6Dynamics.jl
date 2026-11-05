@@ -331,4 +331,40 @@
             sweep = merge(sweep, Dict("arms" => Dict("alt" => Dict("merger.cluster1.N" => 100)))),
         )
     end
+
+    @testset "Shipped V3-B set" begin
+        # The rung files under input_files/campaign/validation/v3_b are this call's output
+        src = joinpath(nd._PACKAGE_ROOT, "input_files", "campaign", "validation", "v3_b")
+        tmp = mktempdir()
+        cp(joinpath(src, "v3_b_pipeline.toml"), joinpath(tmp, "v3_b_pipeline.toml"))
+        rungs = quiet(
+            () -> n_ladder(
+                joinpath(src, "v3_b_king.toml"),
+                tmp;
+                n_total = [25_000, 50_000, 100_000, 200_000, 400_000, 800_000],
+                seeds = [3211:3218, 3221:3224, 3231:3234, 3241:3242, [3251], [3261]],
+                sweep = Dict{String,Any}(
+                    "pipeline_config" => "v3_b_pipeline.toml",
+                    "runs_dir" => "../../../../runs/campaign/v3_b",
+                    "concurrency" => 8,
+                    "omp_threads" => 8,
+                    "poll_interval" => 10.0,
+                    "devices" => [0, 1],
+                    "engines_per_device" => 4,
+                    "arms" => Dict(
+                        "base" => Dict{String,Any}(),
+                        "twin" => Dict{String,Any}("merger.output.twin_amplitude" => 1.0e-10),
+                    ),
+                ),
+            ),
+        )
+        for r in rungs, path in (r.merger_config, r.sweep_config)
+            shipped = joinpath(src, basename(path))
+            @test isfile(shipped)
+            @test TOML.parsefile(shipped) == TOML.parsefile(path)
+        end
+        @test sum(length(r.seeds) for r in rungs) == 20
+        top = load_merger_config(joinpath(src, "v3_b_king_n800000.toml"))
+        @test top.clusters[1].imf.particle_mass == 0.125 && top.stellar.kz19 == 0
+    end
 end

@@ -1,0 +1,36 @@
+# Validation campaign V3, block B: N ladder of an isolated King W0 = 6 cluster of equal-mass bodies at fixed mass and
+# half-mass radius, no stellar evolution, escapers kept, 50 N-body time units. Base of the rungs v3_b_king_n<N>.toml
+# and v3_b_king_n<N>_sweep.toml, which n_ladder writes from this file (Manual, "Parameter sweeps", N ladder).
+
+[merger]
+seed = 3231
+n_clusters = 1
+orbit_mode = "single"
+virial_max_n = 1000000   # ≥ 1; largest N for the exact O(N²) virialisation
+
+[merger.cluster1]
+model = "king"
+N = 100000            # number of bodies; the ladder's axis
+W0 = 6.0
+rbar = 1.0            # half-mass radius [pc]
+imf = "equal"         # one of: "kroupa" | "kroupa_rescaled" | "equal"
+mass_total = 1.0e5    # cluster mass [M☉]; body mass mass_total / N
+
+[merger.output]
+format = "nbody"
+tcrit = 50.0          # end time [NB]
+dtadj = 0.5           # adjustment interval [NB]
+deltat = 0.5          # snapshot interval [NB]
+
+[merger.tidal]
+kz14 = 0              # one of: 0 | 1 | 2 | 5 (isolated)
+
+[merger.stellar]
+kz19 = 0              # point masses
+level = "0"           # one of: "A" | "B" | "C" | "0"
+
+[merger.nbody6]
+preset = "baseline"   # one of: "engine" | "baseline"
+qe = 0.01             # energy-error tolerance per adjustment interval; > 0
+escapers = "keep"     # one of: "remove" | "keep"
+checkpoint = true     # restart dump at every adjustment; bound the disk with simulation.checkpoint_keep

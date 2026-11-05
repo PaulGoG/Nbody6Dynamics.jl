@@ -26,7 +26,8 @@ entries say so.
   the cluster sizes replaced (split exactly in the base's ratio), and a seed-ensemble sweep TOML, so the rungs differ
   in `N` alone: equal-mass bodies given by the cluster mass (`mass_total`, `target_mass`), fixed half-mass radii and
   orbit. Bases with another IMF, a body mass given as `particle_mass`, stellar evolution, primordial binaries, an
-  IMBH or the complex mode are refused.
+  IMBH or the complex mode are refused. Validation block V3-B under `input_files/campaign/validation/v3_b/`: King
+  W0 = 6, 10⁵ M☉, 1 pc, rungs 2.5×10⁴ … 8×10⁵ with 8, 4, 4, 2, 1, 1 seeds in a base and a twin arm, 50 N-body units.
 
 ## [0.8.0] — 2026-11-04
 

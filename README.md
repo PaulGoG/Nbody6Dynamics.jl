@@ -448,7 +448,7 @@ Nbody6Dynamics/
 │   ├── sweeps/                      # sweep_demo (eccentricity × secondary size × seeds over the demo merger)
 │   ├── showcase/                    # Five end-to-end cases with Myr intervals: equal, binary, tidal, flagship, sweep with controls
 │   ├── gpu/                         # CUDA-host recipe: GPU and CPU builds, the 2 × 25k merger, the 6 × 10⁵-body probes
-│   └── campaign/validation/         # Validation campaign on a Slurm GPU node: p0 (node bring-up), p1 (continuous and restart-chained arms)
+│   └── campaign/validation/         # Validation campaign on a Slurm GPU node: p0 (node bring-up), p1 (continuous and restart-chained arms), v3_b (N ladder)
 ├── backend/                         # (gitignored) cloned Nbody6PPGPU-beijing source + build
 └── runs/                            # (gitignored) per-run output/, plots/, frozen config.toml
 ```
