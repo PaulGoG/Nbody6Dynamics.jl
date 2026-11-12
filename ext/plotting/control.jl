@@ -60,6 +60,9 @@ line roles.
     if quantity === :energy && n_pairs > 0 && lo > 0
         ax.yticks = _log_ticks(lo, hi)
         ylims!(ax, lo / 2, hi * 2)
+    elseif quantity !== :energy && n_pairs > 0
+        # The pair count goes into a strip above the series.
+        _reserve_annotation_strip!(ax, lo, hi)
     end
     _annotate!(ax, "$(n_pairs) merger–control pairs"; corner = :tl)
 

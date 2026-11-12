@@ -34,7 +34,7 @@ _point_axis_value(p, axis::AbstractString) = isempty(axis) ? nothing : p["values
 
 """Draw one series per point, coloured by its value of `axis`, with one
 legend entry per distinct value; `series(run_dir) -> (x, y)` or `nothing`."""
-function _sweep_overlay!(ax, pts, axis::AbstractString, series)
+function _sweep_overlay!(ax, pts, axis::AbstractString, series; corners = (:tl, :tr, :br))
     values =
         sort(unique(_point_axis_value(p, axis) for (p, _) in pts); by = v -> v === nothing ? 0 : v)
     colors = _sweep_axis_colors(values)
@@ -64,7 +64,7 @@ function _sweep_overlay!(ax, pts, axis::AbstractString, series)
         end
         n_drawn += 1
     end
-    return n_drawn, length(labelled), _emptiest_corner(all_x, all_y)
+    return n_drawn, length(labelled), _emptiest_corner(all_x, all_y; corners = corners)
 end
 
 """
@@ -93,13 +93,23 @@ first grid axis by default); seeds share the colour.
         xlabel = L"t \; [\mathrm{Myr}]",
         ylabel = latexstring("r_{$(pct)\\,\\%} \\; [\\mathrm{pc}]"),
     )
+    lo, hi = Inf, -Inf
     n_drawn, n_values, corner = _sweep_overlay!(
         ax,
         pts,
         axis,
-        run_dir -> _run_series(run_dir, :lagrangian; fraction = fraction),
+        run_dir -> begin
+            s = _run_series(run_dir, :lagrangian; fraction = fraction)
+            s === nothing && return nothing
+            lo = min(lo, minimum(s[2]))
+            hi = max(hi, maximum(s[2]))
+            s
+        end;
+        corners = (:tl, :tr),
     )
     n_drawn == 0 && _no_data_note!(ax, "No Lagrangian radii in the completed runs")
+    # The run count goes into a strip above the series.
+    _reserve_annotation_strip!(ax, lo, hi)
     n_seeds = length(idx["sweep"]["seeds"])
     _annotate!(
         ax,

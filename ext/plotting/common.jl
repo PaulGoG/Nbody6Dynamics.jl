@@ -664,6 +664,26 @@ function _annotate!(
     return nothing
 end
 
+"""Fractions of the data range reserved above and below the series of a panel
+with an upper-corner annotation; the annotation lives in the upper strip, which
+the series never reach."""
+const _ANNOTATION_HEADROOM = 0.18
+const _ANNOTATION_FOOTROOM = 0.04
+
+"""
+    _reserve_annotation_strip!(ax, lo, hi)
+
+Linear y-limits around the data range `[lo, hi]` that leave the strip of
+`_ANNOTATION_HEADROOM` above it free for an upper-corner annotation. A
+degenerate or non-finite range keeps the automatic limits.
+"""
+function _reserve_annotation_strip!(ax, lo::Real, hi::Real)
+    (isfinite(lo) && isfinite(hi) && hi > lo) || return nothing
+    span = hi - lo
+    ylims!(ax, lo - _ANNOTATION_FOOTROOM * span, hi + _ANNOTATION_HEADROOM * span)
+    return nothing
+end
+
 """
     _emptiest_corner(xs, ys; corners = (:tl, :tr, :br), width = 0.35, height = 0.2,
                      xlims = nothing, ylims = nothing)

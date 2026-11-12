@@ -3,11 +3,6 @@
 # every grid point, coloured by the value of one grid axis
 # =============================================================================
 
-"""Fractions of the data range reserved above and below the bands; the
-annotation lives in the upper strip, which the bands never reach."""
-const _ENSEMBLE_HEADROOM = 0.18
-const _ENSEMBLE_FOOTROOM = 0.04
-
 """
     plot_sweep_ensemble(sweep_dir, cfg::VisualizationConfig;
                         quantity = :lagrangian, axis = "", fixed = Dict{String,Any}(),
@@ -104,10 +99,13 @@ axes. A sweep without grid axes yields one ensemble in a single colour.
     if quantity === :energy && lo_all > 0
         ax.yticks = _log_ticks(lo_all, hi_all)
         span = max(log10(hi_all / lo_all), 0.5)
-        ylims!(ax, lo_all / 10^(_ENSEMBLE_FOOTROOM * span), hi_all * 10^(_ENSEMBLE_HEADROOM * span))
-    elseif isfinite(lo_all) && isfinite(hi_all)
-        span = max(hi_all - lo_all, eps(Float64))
-        ylims!(ax, lo_all - _ENSEMBLE_FOOTROOM * span, hi_all + _ENSEMBLE_HEADROOM * span)
+        ylims!(
+            ax,
+            lo_all / 10^(_ANNOTATION_FOOTROOM * span),
+            hi_all * 10^(_ANNOTATION_HEADROOM * span),
+        )
+    elseif quantity !== :energy
+        _reserve_annotation_strip!(ax, lo_all, hi_all)
     end
 
     ns = unique(e.stats.n for e in ensembles)
