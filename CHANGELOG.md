@@ -6,6 +6,12 @@ entries say so.
 
 ## [Unreleased]
 
+### Fixed
+
+- The IMF figure of the initial conditions draws the law of the clusters: the Kroupa segments, the exponent of a
+  power law shared by all clusters, or no reference line (equal or explicit masses, mixed laws). It drew the Kroupa
+  slopes whatever the IMF, including power-law clusters and equal-mass clusters with a seeded IMBH.
+
 ## [0.10.0] — 2026-11-16
 
 A review of the physics against the literature, with fixes. Several outputs change meaning or scale, listed under

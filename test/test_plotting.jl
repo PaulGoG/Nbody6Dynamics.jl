@@ -531,6 +531,26 @@ end
         VisualizationConfig(; format = "png", output_dir = eq_dir),
     )
     @test isfile(joinpath(eq_dir, "merger_ic_imf.png"))
+    # A power-law IMF is drawn with its own exponent as the single reference line
+    cfg_pl = MergerConfig(
+        [
+            ClusterSpec(
+                profile = PlummerProfile(),
+                N = 200,
+                rbar = 1.0,
+                imf = PowerLawIMF(alpha = 2.35, bodyn = 0.1, body1 = 20.0),
+            ),
+        ],
+        "single",
+        OrbitSpec(),
+        MergerOutputSpec(format = "nbody", output_dir = mktempdir()),
+    )
+    pl_dir = mktempdir()
+    plot_merger_ic(
+        generate_merger_ic(cfg_pl; rng = rng_plot),
+        VisualizationConfig(; format = "png", output_dir = pl_dir),
+    )
+    @test isfile(joinpath(pl_dir, "merger_ic_imf.png"))
 
     # Events at the static black hole: three kinds, then a single kind
     tde_ev = [

@@ -358,9 +358,30 @@ All plots use the publication theme and are saved to `vis.output_dir`.
     # Darker same-hue edge on the band fill
     lines!(ax_h, step_x, step_top; color = _band_edge(hist_color), linewidth = _STYLE.band_edge)
 
-    # Reference slopes (the canonical Kroupa segment exponents and break
-    # masses from imf.jl), normalised to the most populated bin (more robust
-    # than picking m≈0.3 when the sample doesn't span the full Kroupa range).
+    # Reference law of the clusters' IMF, normalised to the most populated bin
+    # (more robust than picking m≈0.3 when the sample doesn't span the full
+    # range): the Kroupa segments (exponents and break masses from imf.jl), the
+    # one exponent of a power law shared by every cluster, or none (equal or
+    # explicit masses, clusters with different laws).
+    imfs = [spec.imf for spec in result.cluster_specs]
+    ref_segments =
+        if all(i -> i isa Union{Nbody6Dynamics.KroupaIMF,Nbody6Dynamics.RescaledKroupaIMF}, imfs)
+            [
+                (
+                    _KROUPA_ALPHAS[2],
+                    L"\alpha = 1.3",
+                    _KROUPA_BREAKS[2],
+                    _KROUPA_BREAKS[3],
+                    _OKABE_ITO[2],
+                ),
+                (_KROUPA_ALPHAS[3], L"\alpha = 2.3", _KROUPA_BREAKS[3], 150.0, _OKABE_ITO[6]),
+            ]
+        elseif all(i -> i isa Nbody6Dynamics.PowerLawIMF, imfs) && allequal(i.alpha for i in imfs)
+            α_pl = first(imfs).alpha
+            [(α_pl, latexstring("\\alpha = ", @sprintf("%.3g", α_pl)), 0.0, Inf, _OKABE_ITO[2])]
+        else
+            Tuple{Float64,LaTeXString,Float64,Float64,Any}[]
+        end
     if any(mask) && !single_mass
         i_ref = argmax(dn)
         norm_val = dn[i_ref]
@@ -371,16 +392,7 @@ All plots use the publication theme and are saved to `vis.output_dir`.
         # previous one at the break mass, so the reference curve is unbroken
         # where the Kroupa exponent changes.
         anchor_m, anchor_y = m_ref, norm_val
-        for (α, lbl, lo, hi, c) in [
-            (
-                _KROUPA_ALPHAS[2],
-                L"\alpha = 1.3",
-                _KROUPA_BREAKS[2],
-                _KROUPA_BREAKS[3],
-                _OKABE_ITO[2],
-            ),
-            (_KROUPA_ALPHAS[3], L"\alpha = 2.3", _KROUPA_BREAKS[3], 150.0, _OKABE_ITO[6]),
-        ]
+        for (α, lbl, lo, hi, c) in ref_segments
             seg = filter(x -> lo ≤ x ≤ hi, x_ref)
             isempty(seg) && continue
             lines!(
@@ -392,12 +404,16 @@ All plots use the publication theme and are saved to `vis.output_dir`.
                 linestyle = :dash,
                 label = lbl,
             )
+            n_slopes += 1
+            isfinite(hi) || break
             anchor_y *= (hi / anchor_m)^(1.0 - α)
             anchor_m = hi
-            n_slopes += 1
         end
         ylims!(ax_h, y_floor, dn_max * 2)
+        # Two segments get a legend; a single reference line is labelled in the axis
         n_slopes ≥ 2 && _top_legend!(fig_h, ax_h)
+        n_slopes == 1 &&
+            _annotate!(ax_h, ref_segments[1][2]; corner = :tr, color = ref_segments[1][5])
     end
     single_mass && ylims!(ax_h, y_floor, dn_max * 2)
 
