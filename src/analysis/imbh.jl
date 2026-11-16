@@ -791,10 +791,17 @@ end
 
 Influence radius of the bodies in columns `i` and `j` of `snap`, the radius
 about their centre of mass enclosing a stellar mass of twice theirs, with
-the one-dimensional velocity dispersion and the mean density of the stars
-inside it (Sesana & Khan 2015, DOI 10.1093/mnrasl/slv131, measure `σ` and
-`ρ` of the hardening rate there). The stars are the columns not in `skip`;
-`NaN` for all three when their mass falls short.
+the stellar density and the one-dimensional velocity dispersion at that
+radius: the `ρ` and `σ` of the hardening rate are those at the influence
+radius, not the means inside it (Sesana & Khan 2015, DOI
+10.1093/mnrasl/slv131, §2.3). Both are measured on the stars nearest the
+radius in rank, `w` on either side of the star that closes the enclosed
+mass, with `w` a quarter of the number of stars inside (at least 8, at most
+the stars available on either side): the density is their mass over the
+volume of the shell they span, the dispersion is mass-weighted about their
+mean velocity. The stars are the columns not in `skip`. `NaN` for all three
+when the stellar mass falls short, and for the density and the dispersion
+when fewer than two stars lie on either side.
 """
 function _imbh_influence(snap::Snapshot, i::Int, j::Int, skip::Set{Int})
     h = snap.header
@@ -815,13 +822,19 @@ function _imbh_influence(snap::Snapshot, i::Int, j::Int, skip::Set{Int})
         n_in += 1
         m_in += Float64(snap.mass[stars[order[n_in]]])
     end
-    inner = stars[order[1:n_in]]
-    v̄ = ntuple(c -> sum(k -> Float64(snap.mass[k]) * snap.vel[c, k], inner) / m_in, 3)
+    r = sqrt(d2[order[n_in]])
+    w = min(max(n_in ÷ 4, 8), n_in - 1, length(stars) - n_in)
+    w ≥ 2 || return (r * L, NaN, NaN)
+    r_lo = sqrt(d2[order[n_in - w]])
+    r_hi = sqrt(d2[order[n_in + w]])
+    shell = stars[order[(n_in - w + 1):(n_in + w)]]
+    m_shell = sum(k -> Float64(snap.mass[k]), shell)
+    v̄ = ntuple(c -> sum(k -> Float64(snap.mass[k]) * snap.vel[c, k], shell) / m_shell, 3)
     s2 =
-        sum(k -> Float64(snap.mass[k]) * sum(c -> (snap.vel[c, k] - v̄[c])^2, 1:3), inner) /
-        (3 * m_in)
-    r = sqrt(d2[order[n_in]]) * L
-    return (r, sqrt(s2) * V, 3 * m_in * Mu / (4π * r^3))
+        sum(k -> Float64(snap.mass[k]) * sum(c -> (snap.vel[c, k] - v̄[c])^2, 1:3), shell) /
+        (3 * m_shell)
+    ρ = m_shell / (4π / 3 * (r_hi^3 - r_lo^3))
+    return (r * L, sqrt(s2) * V, ρ * Mu / L^3)
 end
 
 """
@@ -1064,7 +1077,7 @@ sigma_infl_kms, rho_infl_msun_pc3, h_dimensionless)`:
   `ln(1/a)`, the eccentricity growth rate of Quinlan (1996); `NaN` when
   `1/a` does not vary;
 - `sigma_infl_kms`, `rho_infl_msun_pc3`: the means over the window's rows of
-  the dispersion and density inside the influence radius
+  the dispersion and density at the influence radius
   ([`IMBHPair`](@ref)), and `h_dimensionless` the rate `H = s σ/(G ρ)` at
   those means; `NaN` when the rows carry no influence quantities.
 

@@ -304,6 +304,45 @@ using StableRNGs: StableRNG
         return mksnap(t, names, mass, pos, vel)
     end
 
+    @testset "Influence radius against the Plummer closed forms" begin
+        # Plummer sphere (G = M = a = 1) with two bodies of 0.005 at the centre: the
+        # radius enclosing 0.02 in stars is r = x/√(1 − x²) with x = 0.02^{1/3}; there
+        # ρ = (3/4π)(1 + r²)^{−5/2} and σ² = 1/(6√(1 + r²)). The mean density inside
+        # that radius is 8 % higher than the density at it.
+        n_pl = 200_000
+        pos_pl, vel_pl = nd.sample_plummer(n_pl, 1.0; rng = StableRNG(21))
+        mass_pl = vcat(fill(1 / n_pl, n_pl), 0.005, 0.005)
+        snap_pl = mksnap(
+            0.0,
+            1:(n_pl + 2),
+            mass_pl,
+            hcat(pos_pl, [-1.0e-3, 0.0, 0.0], [1.0e-3, 0.0, 0.0]),
+            hcat(vel_pl, zeros(3, 2)),
+        )
+        r_pc, σ_kms, ρ_msun_pc3 =
+            nd._imbh_influence(snap_pl, n_pl + 1, n_pl + 2, Set([n_pl + 1, n_pl + 2]))
+        x = cbrt(0.02)
+        r_exact = x / sqrt(1 - x^2)
+        ρ_exact = 3 / (4π) * (1 + r_exact^2)^(-2.5)
+        σ_exact = sqrt(1 / (6 * sqrt(1 + r_exact^2)))
+        ρ_inside = 0.02 / (4π / 3 * r_exact^3)
+        @test ρ_inside > 1.07 * ρ_exact
+        @test r_pc ≈ r_exact rtol = 0.02
+        @test ρ_msun_pc3 / M_tot ≈ ρ_exact rtol = 0.05
+        @test abs(ρ_msun_pc3 / M_tot - ρ_exact) < abs(ρ_msun_pc3 / M_tot - ρ_inside)
+        @test σ_kms / vs ≈ σ_exact rtol = 0.03
+        # Too few stars on either side of the radius: the radius alone
+        few = mksnap(
+            0.0,
+            1:5,
+            [0.5, 0.4, 0.3, 0.25, 0.25],
+            hcat([0.1, 0.0, 0.0], [0.0, 0.2, 0.0], [0.0, 0.0, 0.3], zeros(3), [0.01, 0.0, 0.0]),
+            zeros(3, 5),
+        )
+        rf = nd._imbh_influence(few, 4, 5, Set([4, 5]))
+        @test rf[1] > 0 && isnan(rf[2]) && isnan(rf[3])
+    end
+
     @testset "IMBH pairs" begin
         pair_names = [N + 1, N + 2]
         rows = nd.imbh_pairs([pair_snap(t, v_pair) for t in 0.0:2.0], pair_names)
@@ -323,19 +362,13 @@ using StableRNGs: StableRNG
         @test isfinite(r.t_gw_myr) && r.t_gw_myr > 0
         # Influence radius: the stars nearest the pair's centre of mass (the origin) holding 2 (M₁ + M₂)
         ps = Float64.(Float32.(pos_s))
-        vs_s = Float64.(Float32.(vel_s))
         ms_s = Float64.(Float32.(m_s))
         mp = Float64(Float32(m_pair))
         dist = vec(sqrt.(sum(abs2, ps; dims = 1)))
         o = sortperm(dist)
         n_in = findfirst(≥(4mp), cumsum(ms_s[o]))
-        inner = o[1:n_in]
-        m_in = sum(ms_s[inner])
-        v̄ = sum(ms_s[inner]' .* vs_s[:, inner]; dims = 2) ./ m_in
-        σ_ref = sqrt(sum(ms_s[inner]' .* sum(abs2, vs_s[:, inner] .- v̄; dims = 1)) / (3m_in))
         @test isapprox(r.r_infl_pc, dist[o[n_in]]; rtol = 1e-6)
-        @test isapprox(r.sigma_infl_kms, σ_ref * vs; rtol = 1e-5)
-        @test isapprox(r.rho_infl_msun_pc3, 3m_in * M_tot / (4π * dist[o[n_in]]^3); rtol = 1e-5)
+        @test isfinite(r.sigma_infl_kms) && isfinite(r.rho_infl_msun_pc3)
         # Twice the circular speed: unbound
         u = only(nd.imbh_pairs([pair_snap(0.0, 2v_pair)], pair_names))
         @test !u.bound && u.specific_energy_km2s2 > 0
