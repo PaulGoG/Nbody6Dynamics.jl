@@ -14,15 +14,11 @@
 # regularisation distance RMIN are invisible to these diagnostics.
 
 """
-Solar radius [cm] and parsec [cm] of the engine (`units.f`). Every length the
-engine writes in R☉ is scaled with `SU = PC·RBAR/6.955×10¹⁰`, so its output is
+Solar radius of the engine in pc. Every length the engine writes in R☉ is
+scaled with `SU = PC·RBAR/6.955×10¹⁰` (`src/units.jl`), so its output is
 decoded with these values and not with the IAU nominal ones (6.957×10¹⁰ cm
 would bias a semi-major axis by 2.9×10⁻⁴).
 """
-const _ENGINE_RSUN_CM = 6.955e10
-const _ENGINE_PC_CM = 3.0856776e18
-
-"""Solar radius of the engine in pc."""
 const _RSUN_PC = _ENGINE_RSUN_CM / _ENGINE_PC_CM
 
 """Astronomical unit in pc (IAU 2015 Resolution B2: 1 pc = 648000/π au)."""

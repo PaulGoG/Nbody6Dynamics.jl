@@ -8,12 +8,6 @@
 # G = 1, velocity unit _CODE_VSTAR_KMS km s⁻¹. `IMBHSpec` is defined in
 # config.jl (a field type of `ClusterSpec`).
 
-"""Gravitational parameter G M☉ [cm³ s⁻²] of the engine's `units.f` (`GM = 6.6743D-08*1.9884D+33`)."""
-const _ENGINE_GM_CGS = 6.6743e-8 * 1.9884e33
-
-"""Parsec [cm] of the engine's `units.f` (`PC = 3.0856776D+18`)."""
-const _ENGINE_PC_CGS = 3.0856776e18
-
 """
 Speed floor of the IMBH relative to the cluster mean, in units of the central
 dispersion σ_c: the engine's start-up rejects a body whose speed is below
@@ -35,7 +29,7 @@ mass scale `ZMASS · ZMBAR` [M☉] and `rbar` the length unit [pc]. Under
 sum to one the mass scale is the total mass `ZMBAR_in · N`.
 """
 _imbh_engine_vstar_kms(mass_scale_msun::Real, rbar::Real)::Float64 =
-    1.0e-5 * sqrt(_ENGINE_GM_CGS / _ENGINE_PC_CGS) * sqrt(mass_scale_msun / rbar)
+    1.0e-5 * sqrt(_ENGINE_GM_CGS / _ENGINE_PC_CM) * sqrt(mass_scale_msun / rbar)
 
 """
     _imbh_centre(pos, vel, mass, members) -> (x_c, v_c)

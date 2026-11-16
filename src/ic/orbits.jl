@@ -12,11 +12,10 @@ const _G_PC_KMS2_MSUN = 4.30091e-3
 """Code velocity unit √(G M☉ / pc) in km s⁻¹ (≈ 0.06558)."""
 const _CODE_VSTAR_KMS = sqrt(_G_PC_KMS2_MSUN)
 
-# Code time unit pc / (km s⁻¹) / _CODE_VSTAR_KMS in Myr (≈ 14.91 Myr), the
-# crossing-time unit of a 1 M☉, 1 pc system with G = 1.
-const _PC_KM = 3.0857e13
-const _MYR_S = 3.15576e13
-const _CODE_TIME_MYR = _PC_KM / _MYR_S / _CODE_VSTAR_KMS
+# Code time unit in Myr, the time unit of a 1 M☉, 1 pc system with G = 1, in the
+# engine's Myr of 3.15×10¹³ s (14.937 Myr), so that an interval converted here
+# is the interval the engine reports.
+const _CODE_TIME_MYR = _ENGINE_TIME_MYR
 
 """
     kepler_velocity(M1, M2, d_apo, ecc) -> (v1, v2)
@@ -366,7 +365,7 @@ With `M = M1 + M2`, `μ = M1 M2 / M`, `a = d_apo / (1 + e)`, `r_p = a (1 − e)`
 `p = a (1 − e²)`:
 - `a_pc = a`, `apocentre_pc = d_apo`, `pericentre_pc = r_p` [pc]
 - `apocentre_rh = d_apo / rh1`, `pericentre_rh = r_p / rh1`
-- `period_myr = 2π √(a³ / (G M))`, converted from pc / (km s⁻¹) to Myr
+- `period_myr = 2π √(a³ / (G M))` in the engine's Myr (3.15×10¹³ s)
 - `e_orb = −G M1 M2 / (2a)`, orbital energy [M☉ km² s⁻²]
 - `l_orb = μ √(G M p)`, orbital angular momentum [M☉ pc km s⁻¹]
 - `j_orb = √(p / rh1)`, specific orbital angular momentum in units of
@@ -429,7 +428,7 @@ function two_cluster_orbit_quantities(
         pericentre_pc = r_p,
         apocentre_rh = d / r_h,
         pericentre_rh = r_p / r_h,
-        period_myr = 2π * sqrt(a^3 / (G * M)) * (_PC_KM / _MYR_S),
+        period_myr = 2π * sqrt(a^3 / M) * _CODE_TIME_MYR,
         e_orb = -G * m1 * m2 / (2a),
         l_orb = l_orb,
         j_orb = sqrt(p / r_h),

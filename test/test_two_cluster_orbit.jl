@@ -231,7 +231,9 @@ $output
         @test q.a_pc ≈ 8.0 && q.pericentre_pc ≈ 4.0 && q.apocentre_pc == 12.0
         @test q.apocentre_rh ≈ 6.0 && q.pericentre_rh ≈ 2.0
         @test q.j_orb ≈ sqrt(3.0)
-        @test q.period_myr ≈ 2π * sqrt(8.0^3 / (G * 2000.0)) * nd._PC_KM / nd._MYR_S
+        # units.f: T* = √(PC³/GM)/(3.15e13 s) for 1 pc and 1 M☉
+        t_star = sqrt(3.0856776e18^3 / (6.6743e-8 * 1.9884e33)) / 3.15e13
+        @test q.period_myr ≈ 2π * sqrt(8.0^3 / 2000.0) * t_star rtol = 1e-12
         @test q.e_orb ≈ -G * 1000.0^2 / 16.0
         @test q.l_orb ≈ 500.0 * sqrt(G * 2000.0 * 6.0)
         @test q.v_peri_kms ≈ sqrt(G * 2000.0 * 1.5 / 4.0)

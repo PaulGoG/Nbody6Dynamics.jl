@@ -1006,7 +1006,8 @@ dtplot = 2.0
         # Crossing time: G = 1 virial system with E = -M²/(4 r_v) has t_cr = (2 r_v)^{3/2}/√M
         @test crossing_time(1.0, -0.25) ≈ 2.0^1.5
         @test isnan(crossing_time(1.0, 0.1))
-        @test Nbody6Dynamics._nbody_time_myr(1.0, 1.0) ≈ 14.91 rtol = 0.01
+        # The engine's T* (units.f) for 1 M☉ and 1 pc: √(PC³/GM) in its Myr of 3.15e13 s
+        @test Nbody6Dynamics._nbody_time_myr(1.0, 1.0) ≈ 14.936902 rtol = 1e-6
 
         # Checkpoint mode: KZ(2) and the dump counter
         ck_dir = mktempdir()
