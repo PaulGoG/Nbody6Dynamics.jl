@@ -413,7 +413,7 @@ effective mass `m̃` ([`effective_mass`](@ref)),
 
     ⟨x²⟩ = (2/9) a² m̃ / M•
 
-(Chatterjee, Hernquist & Loeb 2002, DOI 10.1086/339174). Valid for
+(Chatterjee, Hernquist & Loeb 2002, DOI 10.1086/340224). Valid for
 `m̃ ≪ M• ≪ M_cluster`; the offsets are those about the stellar density
 centre. `ArgumentError` unless `a_pc`, `m_eff_msun` and `m_imbh_msun` are
 positive.
@@ -443,7 +443,7 @@ of constant density `ρ_c` [M☉ pc⁻³] and one-dimensional velocity dispersio
 
 with `m̃` the effective stellar mass ([`effective_mass`](@ref)) and
 `G = 4.30091×10⁻³ pc km² s⁻² M☉⁻¹` (Lin & Tremaine 1980,
-DOI 10.1086/157803; Merritt 2005, DOI 10.1086/429964). The equipartition
+DOI 10.1086/158513; Merritt 2005, DOI 10.1086/429398). The equipartition
 `⟨v²⟩ = σ_c² m̃/M•` per coordinate and the harmonic restoring force give the
 offset; it holds while the offset stays inside the core. `ArgumentError`
 unless all arguments are positive.

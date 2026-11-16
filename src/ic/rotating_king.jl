@@ -630,7 +630,7 @@ Self-consistent axisymmetric equilibrium of the rotating King distribution
 function `f(E, J_z) = C (e^{−βE} − 1) e^{βΩ₀J_z}` (`E < 0`) of Einsel &
 Spurzem (1999, DOI 10.1046/j.1365-8711.1999.02083.x), with central potential
 `W0 = ψ(0)` and dimensionless angular velocity `ω0 = Ω₀ r_K/σ ≥ 0`
-(`ω0 = 0` is the King 1966 model, DOI 10.1086/109930).
+(`ω0 = 0` is the King 1966 model, DOI 10.1086/109857).
 
 Method (Prendergast–Tomer iteration as in Varri & Bertin 2012, DOI
 10.1051/0004-6361/201118300). In the units `G = σ = r_K = 1`, the potential

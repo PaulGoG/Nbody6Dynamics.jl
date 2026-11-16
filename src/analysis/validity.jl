@@ -727,7 +727,7 @@ end
 The `masks` section of `validity_record`: the masking rules M1–M7
 with the thresholds of `settings`. M6 restricts the equilibrium estimators
 of a tidal run to 0.5 r_J (Küpper et al. 2010, DOI
-10.1111/j.1365-2966.2009.16173.x).
+10.1111/j.1365-2966.2010.17084.x).
 """
 function _validity_masks(settings::PostprocessConfig)::Dict{String,Any}
     return Dict{String,Any}(
@@ -810,7 +810,7 @@ The sections:
 - `calibration`: bias and scatter of the `VALIDITY_TRACKED` estimators at
   the bound star count of the first snapshot
 - `masks`: the masking rules as applied (M6 after Küpper et al. 2010, DOI
-  10.1111/j.1365-2966.2009.16173.x)
+  10.1111/j.1365-2966.2010.17084.x)
 
 The window epochs (`:violent_relaxation`, `:pericentre`,
 `:coalescence_phase`) exclude snapshots from the equilibrium estimators;

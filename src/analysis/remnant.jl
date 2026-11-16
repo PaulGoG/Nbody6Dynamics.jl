@@ -48,7 +48,7 @@ merged-pair graph over the present clusters (union–find). The clusters have
 coalesced at snapshot `k` when `n_distinct == 1` with at least two clusters
 present there and `n_distinct == 1` at every later snapshot, so a first
 passage through the pericentre of an orbit that separates again does not
-count (Fellhauer et al. 2002, doi:10.1046/j.1365-8711.2002.05143.x).
+count (Fellhauer et al. 2002, doi:10.1023/A:1014597702936).
 
 The criterion replaces one based on member centres of mass and RMS radii:
 the RMS radius of a Plummer sphere diverges logarithmically with the
@@ -452,7 +452,7 @@ uncorrelated azimuthal signs.
 
 `v_peak` and `r_peak` fit the rotation curve
 ``V(R) = 2 V_\\mathrm{pk} (R/R_\\mathrm{pk}) / (1 + (R/R_\\mathrm{pk})^2)``
-of Bianchini et al. (2018, doi:10.1093/mnras/sty2225) to the shells within
+of Bianchini et al. (2018, doi:10.1093/mnras/sty2365) to the shells within
 `3 r_h`, weighted by membership: `R_pk` on a logarithmic grid of 64 values
 across the shell radii, `V_pk` the linear least-squares amplitude; `NaN`
 with fewer than two shells.
@@ -784,11 +784,11 @@ size, from the edges of their Euclidean minimum spanning trees (MST).
   (Allison et al. 2009, doi:10.1111/j.1365-2966.2009.14508.x);
 - `Λ̃_MSR` (`lambda_median`), the same ratio with the median edge length of
   each tree, which is insensitive to single long edges to outlying tracer
-  stars (Maschberger & Clarke 2011, doi:10.1111/j.1365-2966.2010.17602.x);
+  stars (Maschberger & Clarke 2011, doi:10.1111/j.1365-2966.2011.19067.x);
 - `Γ_MSR = exp⟨⟨ln l⟩_random⟩ / exp⟨ln l_tracer⟩`, the ratio of geometric
   mean edge lengths, with the multiplicative interval factor
   `exp σ(⟨ln l⟩_random)` as `gamma_err` (Olczak, Spurzem & Henning 2011,
-  doi:10.1051/0004-6361/201015264).
+  doi:10.1051/0004-6361/201116902).
 
 All three are ≈ 1 without segregation and > 1 with the tracers concentrated.
 
@@ -1052,7 +1052,7 @@ rotation fields `lambda_r`, `lambda_peebles`, their floors, `v_peak`,
 `interacting`: before the core coalescence the bound set holds several
 bodies, its core radius measures the denser progenitor, its rotation the
 orbital motion and its segregation the gap between them (Guszejnov et al.
-2022, DOI 10.1093/mnras/stac2063). In the `coalescing` regime they describe
+2022, DOI 10.1093/mnras/stac1737). In the `coalescing` regime they describe
 a remnant out of equilibrium, from `settled` on an equilibrium remnant. The
 counts, bound fraction and hardness series cover every snapshot; the
 segregation time and the structural core-collapse markers follow from the

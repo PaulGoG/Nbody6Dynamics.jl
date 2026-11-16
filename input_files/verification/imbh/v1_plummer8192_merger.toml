@@ -1,5 +1,5 @@
 # IMBH validation block I1 (Brownian ladder, anchor V1 of the IMBH study §4.3; Chatterjee, Hernquist & Loeb 2002,
-# DOI 10.1086/339174): a Plummer sphere of 8192 equal-mass particles with a central IMBH of 1 % of the stellar mass at
+# DOI 10.1086/340224): a Plummer sphere of 8192 equal-mass particles with a central IMBH of 1 % of the stellar mass at
 # rest, isolated, no stellar evolution, kz24 route; 300 N-body time units (T* = 0.1639 Myr at r_h = 1 pc with the IMBH mass). Prediction per
 # coordinate: ⟨x²⟩ = (2/9) a² m/M• with a = r_h/1.305.
 

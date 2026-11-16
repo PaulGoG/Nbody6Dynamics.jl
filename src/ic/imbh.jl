@@ -108,7 +108,7 @@ dispersion `σ_c` [code unit] and mean stellar mass `m_mean` [M☉]. Position:
 `"rest"`; `v_c + velocity_kms / _CODE_VSTAR_KMS` for `"explicit"`; for
 `"equipartition"` a Gaussian draw about `v_c` of per-component variance
 `σ_c² m_mean / M•`, the Brownian equilibrium ⟨v²⟩ of a massive particle in a
-stellar core (Merritt 2005, Eq. 16, DOI 10.1086/429964), drawn from `rng`.
+stellar core (Merritt 2005, Eq. 16, DOI 10.1086/429398), drawn from `rng`.
 A velocity within `_IMBH_REST_SPEED_FLOOR σ_c` of `v_c` (the `"rest"` mode of
 a cluster at rest, or an explicit zero) is replaced by that speed in a random
 direction from `rng`: the engine's start-up rejects a body at exact rest.
@@ -155,7 +155,7 @@ pair expansion; code units, G = 1) for a point mass `imbh_mass` at
 whose virial consequence is `2 K_new = −(W_ss + W_s•)` with
 `W_s• = −G M• Σ m_i / r_i` (exact in the continuum, since
 `3 ∫ P dV = G M• ∫ ρ / r dV`). This approximates the practice of
-Baumgardt, Makino & Ebisuzaki (2004a, DOI 10.1086/381968).
+Baumgardt, Makino & Ebisuzaki (2004a, DOI 10.1086/423298).
 
 The members are sorted by `r_i = |x_i − imbh_pos|` into shells of equal
 membership, `n_s = n_shell > 0 ? n_shell : max(50, length(members) ÷ 40)`

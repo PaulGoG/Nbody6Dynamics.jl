@@ -5,7 +5,7 @@
 # and their guards, the IMBH as the last body of dat.10 repeated on the
 # engine's IMBHINIT line (identity overwrite under the engine's own unit
 # conversion), the velocity modes with the Brownian equilibrium of Merritt
-# (2005, DOI 10.1086/429964), and the isotropic Jeans response against its
+# (2005, DOI 10.1086/429398), and the isotropic Jeans response against its
 # virial identity. Samples use StableRNGs so the reference values hold across
 # Julia versions.
 

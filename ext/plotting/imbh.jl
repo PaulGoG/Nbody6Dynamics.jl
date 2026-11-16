@@ -87,7 +87,7 @@ logarithmic: the rms offset per coordinate ``x_\\mathrm{rms} = \\sqrt{\\langle x
 of every window of `wandering` as a marker at the window centre with a
 horizontal bar over the window, in the centre-of-mass frame when the rows
 hold it (the frame of Chatterjee, Hernquist & Loeb 2002,
-DOI 10.1086/339174), in the density-centre frame otherwise, coloured as the
+DOI 10.1086/340224), in the density-centre frame otherwise, coloured as the
 distance from that centre above. The equilibrium predictions are dashed
 horizontal guide lines labelled at their right end, and the rms offset
 pooled over all windows (weighted by the states per window) is stated in
@@ -99,7 +99,7 @@ the panel.
 - `prediction_plummer_pc`: [`brownian_rms_plummer`](@ref) [pc]; drawn when
   finite and positive
 - `prediction_core_pc`: [`brownian_rms_core`](@ref) (Lin & Tremaine 1980,
-  DOI 10.1086/157803) [pc]; drawn when finite and positive
+  DOI 10.1086/158513) [pc]; drawn when finite and positive
 
 An empty `wandering` leaves the lower panel with the predictions and the
 note `No window`. Throws an error when `traj` holds no state with a finite

@@ -266,7 +266,7 @@ end
 Projected ellipticity `ε = 1 − sqrt(λ_min/λ_max)` from the `2 × 2` second-moment
 matrix, about `centre`, of the particles with projected radius `R ≤ f r_h`,
 for every aperture fraction `f` in `apertures` (Gavagnin et al. 2016,
-DOI 10.1093/mnras/stw2064, measure ε at `R_h/4`, `R_h/2` and `R_h`).
+DOI 10.1093/mnras/stw1397, measure ε at `R_h/4`, `R_h/2` and `R_h`).
 
 Rows are the projections onto the `(x, y)`, `(x, z)` and `(y, z)` planes,
 columns the apertures; `NaN` where fewer than 10 particles fall inside the
@@ -327,7 +327,7 @@ end
 
 Concentration of a tracer population relative to a reference population:
 the area between their cumulative radial distributions (Alessandrini et al.
-2016, DOI 10.3847/0004-637X/833/2/252) in the `r_h`-normalised form of
+2016, DOI 10.3847/1538-4357/833/2/252) in the `r_h`-normalised form of
 Lanzoni et al. 2016 (ApJL 833, L29),
 
     A⁺ = ∫ [φ_T(x) − φ_R(x)] dx,   x = log10(r / r_h),
@@ -336,7 +336,7 @@ where `φ_T` and `φ_R` are the empirical cumulative distributions of the
 radii `≤ r_max`, each normalised to 1 at `r_max`, integrated from the
 smallest `x` of either sample to `log10(r_max / r_h)`. Positive when the
 tracer is more concentrated. Dalessandro et al. 2019
-(DOI 10.3847/1538-4357/ab45f7) use `A₂⁺` within `2 r_h` (`r_max = 2 r_h`).
+(DOI 10.3847/2041-8213/ab45f7) use `A₂⁺` within `2 r_h` (`r_max = 2 r_h`).
 
 The integrand is a step function, and integrating it exactly on the merged
 grid gives every sample point `x_i` the contribution `(x_max − x_i)/n`, so
@@ -432,7 +432,7 @@ of `tags` (the first population is the smaller tag), about `centre`.
 - `aplus2`, `aplus2_error`: [`aplus`](@ref) of the first population against
   the second within `2 r_h` (`A₂⁺`), as used for the radial mixing of
   multiple populations by Vesperini et al. 2013 (MNRAS 429, 1913) and
-  Dalessandro et al. 2019 (DOI 10.3847/1538-4357/ab45f7)
+  Dalessandro et al. 2019 (DOI 10.3847/2041-8213/ab45f7)
 - `d_radius`: [`two_sample_d`](@ref) of the radii within `2 r_h`
 - `d_energy`: the same for the specific energies `energy` (one value per
   particle) of the particles within `2 r_h`; `NaN` without `energy`. Two
