@@ -349,7 +349,7 @@
     @test occursin("NBODY6_GPU_BACKEND=", bench_cmd) &&
           occursin("Nbody6PPGPU-beijing-gpu", bench_cmd)
     @test !haskey(summary["results"], "cpu") && isempty(filter(endswith(".log"), readdir(out)))
-    # The pipeline stages are told the run ID whose artefacts decide their verdict.
+    # The pipeline stages receive the run ID whose artefacts determine their verdict.
     @test haskey(summary, "run_ids") &&
           occursin("--run-id=gpu_validation_", summary["results"]["gpu"]["command"])
     # A stage whose prerequisites are missing is skipped with the reason, no process spawned

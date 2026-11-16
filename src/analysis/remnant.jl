@@ -3,7 +3,7 @@
 # =============================================================================
 #
 # The "remnant" is the self-consistent bound set of the whole system at a
-# snapshot (see `bound_set`); before coalescence it is simply the bound
+# snapshot (see `bound_set`); before coalescence it is the bound
 # part of the whole configuration. The coalescence time follows from the
 # density-centre separations of the surviving per-cluster memberships of the
 # global bound set.
@@ -1174,7 +1174,7 @@ stellar mass) and the extrema of the core radius and core density
 (`core_collapse_markers`, `window = 5`) are the core-collapse markers of
 [`RemnantDiagnostics`](@ref). The pair finder costs O(N log N) per snapshot.
 
-The merger epochs decide where the remnant exists. `coalescence` passes the
+The merger epochs determine where the remnant exists. `coalescence` passes the
 result of [`coalescence_time`](@ref) and `epochs` the `MergerEpochs`
 of the run when the caller has them; otherwise both are evaluated here on the
 bound sets (with `settings`, `max_passes` and `min_members`). With `mask` set

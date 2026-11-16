@@ -495,7 +495,7 @@ Patterns:  `R* = 1.234`  `T* = 5.678`  etc.
 """
 function _parse_scaling_line!(scaling::Dict{String,Float64}, line::AbstractString)
     for m in eachmatch(r"([A-Z<>\*]+)\s*=\s*([\d.Ee\+\-]+)", line)
-        # Both capture groups are non-optional — `something` narrows the
+        # Both capture groups are non-optional; `something` narrows the
         # Union{Nothing,SubString} eltype for type stability (JET-clean).
         key = String(something(m.captures[1]))
         val = tryparse(Float64, String(something(m.captures[2])))
@@ -555,7 +555,7 @@ converted with it is `NaN` rather than a number in the wrong units; a missing
 `R*` or `V*` falls back to 1.
 
 The mass scale is `M*` (ZMBAR, the NB→M☉ conversion factor for the *total*
-mass) — NOT `<M>`, which is the mean stellar mass. Nbody6++ prints both in
+mass), NOT `<M>`, which is the mean stellar mass. Nbody6++ prints both in
 the PHYSICAL SCALING line; `start.F` redefines ZMBAR as the mass scale
 factor at startup, and `units.f` converts masses as `ZMBAR*M`.
 """

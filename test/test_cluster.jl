@@ -5,7 +5,7 @@
     # Stand-in for the engine, copied from the "resume_run" testset of
     # test_resume.jl. Integer time, one step per 0.1 s. Fresh start: t = 0 …
     # TCRIT. Restart (KSTART=2 in the input): t0 from the payload of comm.1,
-    # end = t0 + TCRIT. STOP is honoured with a dump comm.1_<t>.0; END RUN is
+    # end = t0 + TCRIT. STOP produces a dump comm.1_<t>.0; END RUN is
     # followed by a dump comm.1_<end>.0.
     fake_engine = raw"""
     #!/bin/bash

@@ -72,7 +72,7 @@ A stage killed by one of `retry_signals` is run again, up to `max_retries`
 times, when it is listed in `retry_stages`. A retried pipeline stage starts from a
 clean run directory; the crashed attempt's directory is kept as
 `runs/<run_id>.attempt<k>.signal<N>` beside its log. The defaults retry the test
-suite once after a crash signal (SIGILL, SIGABRT, SIGBUS, SIGSEGV — a
+suite once after a crash signal (SIGILL, SIGABRT, SIGBUS, SIGSEGV; a
 compiler crash during JIT is an upstream fault, not a verdict on the
 package) and nothing else: a pipeline stage is hours of work that is not
 repeated unasked, and SIGKILL or SIGTERM come from an operator, the

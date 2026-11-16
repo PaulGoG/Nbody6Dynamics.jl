@@ -208,7 +208,7 @@ end
     # Mixed snapshot: two MS stars (finite TM, one past turnoff), one
     # giant with a partial core, one NS remnant (MC = M).  Records built
     # with the 9-argument convenience constructor carry NaN SSE fields
-    # and must be skipped gracefully.
+    # and must be skipped without error.
     sev_mix = StellarEvolutionSnapshot(
         50.0,
         5,
@@ -286,7 +286,7 @@ end
     plot_core_mass([sev_mix], vis; filename = "test_core_mass")
     @test isfile(joinpath(plots_dir, "test_core_mass.png"))
 
-    # MS-only snapshot: no evolved stars — core-mass plot must warn,
+    # MS-only snapshot: no evolved stars; the core-mass plot must warn,
     # return nothing, and create no file.
     sev_ms = StellarEvolutionSnapshot(
         0.5,
@@ -960,7 +960,7 @@ end
     @test occursin("100", string(labels[3])) && !occursin("10^", string(labels[3]))
     vals, labels = MakieExt._log_ticks(1.0, 1e6; plain = false)
     @test occursin("10^", string(labels[3]))
-    # Without the keyword the range still decides
+    # Without the keyword the range still sets the style
     @test MakieExt._log_ticks(1.0, 1e6)[2] == labels
 
     # The guide label goes to the end of the axis its series leave free

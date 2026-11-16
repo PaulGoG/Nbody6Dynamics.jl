@@ -1,6 +1,6 @@
 # # Walkthrough: a two-cluster merger from configuration to initial conditions
 #
-# What a merger study needs before the engine runs: the configuration, the
+# Before the engine runs, a merger study needs the configuration, the
 # generated initial conditions, the derived integration parameters, and the
 # initial-condition figures. The engine itself is not executed here; the
 # [user manual](@ref "Nbody6Dynamics.jl — User Manual") covers `run_pipeline`

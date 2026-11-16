@@ -477,7 +477,7 @@ end
     @test (r2.radius_envelope1, r2.radius_envelope2) == (11.0, 12.0)
 
     # The engine's period and semi-major axis columns obey Kepler III,
-    # a³/P² = m₁ + m₂ in au, yr, M☉ — a check of the column map and of
+    # a³/P² = m₁ + m₂ in au, yr, M☉; this checks the column map and
     # the R☉ → pc → au conversions.
     P_yr = 10^r1.log_period_days / 365.25
     a_au = semi_major_axis_pc(r1) / Nbody6Dynamics._AU_IN_PC

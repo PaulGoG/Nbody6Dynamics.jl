@@ -266,7 +266,7 @@ several. Colours per arm as in [`plot_paired_shifts`](@ref).
         push!(labels, AbstractString[a for a in arms_drawn])
         push!(titles, "Arm − $(reference):")
     end
-    # Only the bands actually drawn get a legend entry.
+    # Only the bands drawn get a legend entry.
     band_entries = _LegendElement[]
     band_labels = AbstractString[]
     if any(s -> all(isfinite, s.se), drawn)

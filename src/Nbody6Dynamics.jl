@@ -16,12 +16,12 @@ using KernelAbstractions: KernelAbstractions, @kernel, @index, @Const, CPU
 using UnicodePlots: UnicodePlots
 using PrecompileTools: @setup_workload, @compile_workload
 
-# Package root directory — all relative config paths resolve against this.
+# Package root directory; all relative config paths resolve against this.
 # Computed at precompile time: @__DIR__ = src/, dirname = Nbody6Dynamics/.
 """
-Root of the package source tree. Used for read-only purposes only — the
+Root of the package source tree. Used for read-only purposes only: the
 shipped `input_files/`, the CUDA helper headers under `deps/cuda/` and the
-package's own provenance stamp. Nothing is ever written under it: run and
+package's own provenance stamp. Nothing is written under it: run and
 build directories resolve against the configuration's `config_dir` or an
 explicit `base_dir`, so an installation in a read-only depot works as a
 checkout does.
@@ -189,8 +189,8 @@ Besides the readers, the derived data products are computed here: the class
 census (`:stellar_census`), the integrals of motion of every snapshot
 (`:integrals`, [`SnapshotIntegrals`](@ref), with `postprocess.snapshot_integrals`,
 including the Jacobi integral when the stdout capture echoes a linearised tidal
-field) and, for a merger run — one whose output holds a `merger_summary.txt` and
-at least two snapshots — the centre coalescence (`:coalescence`, the result of
+field) and, for a merger run (one whose output holds a `merger_summary.txt` and
+at least two snapshots), the centre coalescence (`:coalescence`, the result of
 [`coalescence_time`](@ref), with two or more initial clusters), the merger epochs
 (`:merger_epochs`, `MergerEpochs`) and the remnant diagnostics (`:remnant`, a
 [`RemnantDiagnostics`](@ref)), which reuse the integrals' bound sets; each is
@@ -216,7 +216,7 @@ function postprocess(
     # Resolve the directory containing simulation output files.
     # run_dir (explicit argument) takes priority over pp.data_dir (config).
     sim_dir = if !isempty(run_dir)
-        # run_dir points to runs/<run_id>/ — the data lives in output/
+        # run_dir points to runs/<run_id>/; the data lives in output/
         joinpath(run_dir, "output")
     elseif !isempty(pp.data_dir)
         # Explicit external directory from config
@@ -938,8 +938,8 @@ function run_pipeline(
     run_id::AbstractString = "",
 )::Dict{Symbol,Any}
     # A run that must end in figures is refused before the build and the
-    # integration, not after them: the backend is a property of the session,
-    # and discovering it missing at phase 4 would cost the whole run.
+    # integration: the backend is a property of the session, and
+    # discovering it missing at phase 4 would cost the whole run.
     cfg.visualization.enabled && _require_plotting(
         :run_pipeline,
         "Set `[visualization] enabled = false` to run the pipeline without figures.",
@@ -1414,9 +1414,9 @@ end
 # The exported surface is the workflow: configuration, orchestration, the
 # readers and their record types, the diagnostics, the merger generator's
 # specification types and entry points, and the figure routines. Lower-level
-# helpers that a session would rarely call unqualified — accessors with short
-# names (`rbar`, `rc`), build internals, IC samplers, sweep-index plumbing —
-# are `public`: documented and reachable as `Nbody6Dynamics.name`, not
+# helpers that a session would rarely call unqualified, such as accessors with
+# short names (`rbar`, `rc`), build internals, IC samplers and sweep-index
+# plumbing, are `public`: documented and reachable as `Nbody6Dynamics.name`, not
 # brought into scope by `using`.
 export Nbody6Config,
     InstallConfig,

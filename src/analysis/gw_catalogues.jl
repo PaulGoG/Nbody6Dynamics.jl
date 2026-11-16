@@ -457,7 +457,7 @@ end
 
 One record of a pair with two compact components (K* 10–14) in the
 compact-binary catalogue, from [`compact_binary_catalogue`](@ref). Times in
-Myr unless the suffix says otherwise; `NaN`, `0` and `:none` mark unavailable
+Myr unless the suffix names another unit; `NaN`, `0` and `:none` mark unavailable
 values. The GW quantities require a bound orbit with positive masses; all
 times to frequency crossings are counted from the record.
 
@@ -829,7 +829,7 @@ end
 
 One escape of a pair with two compact components (K* 10–14) in the
 escaped-binary catalogue, from [`escaped_binary_catalogue`](@ref). Times in
-Myr unless the suffix says otherwise; `NaN`, `0` and `:none` mark unavailable
+Myr unless the suffix names another unit; `NaN`, `0` and `:none` mark unavailable
 values. The orbit is that of the escape line; the GW quantities require a
 bound orbit with positive masses, and all times to frequency crossings are
 counted from the escape.
@@ -1083,7 +1083,7 @@ end
 
 One coalescence of two compact components (K* 10–14) in the GW-merger
 catalogue, from [`gw_merger_catalogue`](@ref). Times in Myr unless the suffix
-says otherwise; `NaN`, `0` and `:none` mark unavailable values. Names,
+names another unit; `NaN`, `0` and `:none` mark unavailable values. Names,
 types and masses are in the order of the coalescence record. The trigger
 state is the orbit of the last GW decay record (GR KSTIDE, GR KSINT2,
 GR TIDES) of the pair at or before the merger.

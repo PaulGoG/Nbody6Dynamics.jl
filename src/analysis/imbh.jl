@@ -700,8 +700,8 @@ Summary of the companion series of [`imbh_companions`](@ref):
 `n_snapshots` rows, `fraction_bound` the fraction of rows with a bound
 companion (`NaN` without rows), `n_exchanges` the changes of
 `companion_name` between consecutive bound rows (unbound rows in between
-skipped), and the longest uninterrupted run of one companion — consecutive
-rows with the same name, broken by an unbound row or another name —
+skipped), and the longest uninterrupted run of one companion (consecutive
+rows with the same name, broken by an unbound row or another name),
 `longest_name` and `longest_span_myr` (last minus first time of the run;
 the earlier run on ties). Without a bound row `longest_name = 0` and
 `longest_span_myr = NaN`.
@@ -765,7 +765,7 @@ Two-body state of a pair of seeded IMBHs at one snapshot, from
 | `t_gw_myr` | Peters coalescence time [`gw_inspiral_time`](@ref) | Myr |
 | `in_pair` | the two are the components of one KS pair | — |
 | `r_infl_pc` | influence radius: the radius about the pair's centre of mass enclosing a stellar mass `2 (M₁ + M₂)` | pc |
-| `sigma_infl_kms` | one-dimensional velocity dispersion of the stars at `r_infl_pc` (the shell of [`_imbh_influence`](@ref)) about their mean velocity | km s⁻¹ |
+| `sigma_infl_kms` | one-dimensional velocity dispersion of the stars at `r_infl_pc` (the shell of `_imbh_influence`) about their mean velocity | km s⁻¹ |
 | `rho_infl_msun_pc3` | stellar density at `r_infl_pc` | M☉ pc⁻³ |
 
 The stars are all bodies but the seeded IMBHs; the three influence

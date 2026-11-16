@@ -178,7 +178,7 @@ end
     )
     @test Nbody6Dynamics._sweep_point_outcome(run_dir)["completed"] == false
 
-    # The sweep's pre-launch binary check honours the build variant
+    # The sweep's pre-launch binary check follows the build variant
     sw = mktempdir()
     bk = joinpath(sw, "backend", "build")
     mkpath(bk)
@@ -1038,7 +1038,7 @@ end
 # =====================================================================
 
 @testset "Wall budget, stop request and exit hook" begin
-    # Stand-in for the engine: one ADJUST line per step, STOP honoured as the
+    # Stand-in for the engine: one ADJUST line per step, STOP handled as the
     # engine does (termination line, dump line, dump file, exit 0), END RUN
     # at FAKE_TCRIT.
     fake_engine = raw"""
@@ -1128,7 +1128,7 @@ end
     @test Nbody6Dynamics._request_stop(sd) == joinpath(sd, "STOP")
     @test isfile(joinpath(sd, "STOP"))
 
-    # Budget stop: the engine honours the request, writes its dump and exits
+    # Budget stop: the engine stops as requested, writes its dump and exits
     budget_dir = withenv("FAKE_TCRIT" => "1000", "FAKE_IGNORE_STOP" => nothing) do
         run_simulation(
             fake_cfg(; wall_budget = 4.0, stop_margin = 3.0);
@@ -1181,7 +1181,7 @@ end
     @test !isfile(joinpath(kill_dir, "output", "engine.pid"))
 
     # SIGKILL of the engine itself: the launch script re-raises it, the record
-    # says killed by SIGKILL, and nothing waits for a grace.
+    # reads killed by SIGKILL, and nothing waits for a grace.
     ekill_task = @async withenv("FAKE_TCRIT" => "1000", "FAKE_IGNORE_STOP" => nothing) do
         run_simulation(fake_cfg(); base_dir = base, run_id = "ekill")
     end

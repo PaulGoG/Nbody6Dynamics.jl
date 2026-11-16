@@ -235,7 +235,7 @@ Cards `(match, label, class, peak, source)` of the `[[card]]` tables in
 `path`, datacenter cards first, each class in file order. A card with a
 `host` takes its FP32 peak from the `fp32_peak_*.toml` among `peak_files`
 whose `host` equals it (domain part ignored: `gethostname()` may return
-`trustee.example.org` where the card says `trustee`) and whose `device`
+`trustee.example.org` where the card has `trustee`) and whose `device`
 (when recorded) contains the card's `match`; several cards may share a
 host name, one record each.
 """

@@ -10,7 +10,7 @@ Orchestrate the full install pipeline:
 
 All paths are resolved relative to `base_dir` (defaults to `cfg.config_dir`,
 the directory of the configuration file). An existing checkout is left as
-it is; when it is not at `install.ref` a warning says so.
+it is; a warning is issued when it is not at `install.ref`.
 """
 function setup_nbody6(cfg::Nbody6Config; base_dir::AbstractString = cfg.config_dir)
     install = cfg.install
@@ -184,8 +184,8 @@ corrections the built engine contains and the energy accounting of a
 linearised tidal field reads `tidal-energy-total` from it; it is
 skipped with a warning when the file is missing or `search` is absent or
 ambiguous, which is what an engine revision other than the validated one
-looks like — the build then proceeds on the unamended source and the build
-record says so. The call is idempotent, and a substitution goes through a
+looks like; the build then proceeds on the unamended source and the build
+record notes it. The call is idempotent, and a substitution goes through a
 sibling temporary file and a rename.
 """
 function _apply_engine_amendments(
@@ -468,7 +468,7 @@ since nothing can be compared then, and for a directory without its own
 `.git`.
 """
 function _check_checkout_ref(src_dir::AbstractString, ref::AbstractString)::Bool
-    # Without its own .git, git would answer for an enclosing repository.
+    # Without its own .git, git would read an enclosing repository.
     ispath(joinpath(src_dir, ".git")) || return true
     rev(spec) =
         try

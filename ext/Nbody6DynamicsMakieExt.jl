@@ -3,8 +3,8 @@
 # =============================================================================
 # Loaded automatically once a Makie backend is in the session
 # (`using CairoMakie`). The core package declares no plotting dependency, so a
-# headless host installs and runs the pipeline — initial conditions, engine
-# build, integration, readers, diagnostics, benchmarks — without the
+# headless host installs and runs the pipeline (initial conditions, engine
+# build, integration, readers, diagnostics, benchmarks) without the
 # Cairo/Pango/GLib/HarfBuzz stack and without precompiling it.
 #
 # MathTeXEngine is the second trigger because the theme resolves the Computer

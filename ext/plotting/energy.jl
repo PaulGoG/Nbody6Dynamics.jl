@@ -61,7 +61,7 @@ records), N-body units otherwise.
 
     # --- Panel 2: virial ratio ---
     # Nbody6++ reports Q = T/|W| (virial equilibrium at Q = 0.5)
-    # For merger systems Q can reach 10^4–10^5 — use log scale for large Q.
+    # For merger systems Q can reach 10^4–10^5; use log scale for large Q.
     q_max = maximum(qvir)
     use_log_q = q_max > cfg.style.q_log_threshold
 

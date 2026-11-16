@@ -277,7 +277,7 @@ returns `nothing`.
     end
     length(classes_present) ≥ 2 && _top_legend!(fig, ax; nbanks = cld(length(classes_present), 4))
 
-    # Points accumulate along/below the identity diagonal — the upper-left
+    # Points accumulate along/below the identity diagonal; the upper-left
     # triangle (MC > M) is empty by construction, so the epoch goes there.
     t_val = _fmt_latex_sig3(sev.time_myr)
     _annotate!(ax, latexstring("t = $(t_val)\\;\\mathrm{Myr}"))

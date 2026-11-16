@@ -309,8 +309,8 @@ The most bound two-body companion of the IMBH per snapshot in two stacked
 panels sharing the time axis: the semi-major axis `a` [au] above
 (logarithmic), the eccentricity `e` below. One marker per snapshot with a
 bound companion (`companion_name > 0`); the colour encodes the companion's
-identity — the `max_named` most frequent companions in Okabe–Ito order of
-frequency, labelled `Body <name>`, every other one grey as `Other` — and the
+identity (the `max_named` most frequent companions in Okabe–Ito order of
+frequency, labelled `Body <name>`, every other one grey as `Other`) and the
 fill its regularisation: filled for the KS partner of the IMBH (`in_pair`),
 open-faced otherwise. A black star on top marks an IMRI candidate, a pair
 whose Peters coalescence time `t_gw_myr` is shorter than the time span of

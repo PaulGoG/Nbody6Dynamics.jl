@@ -7,8 +7,8 @@
 # 10.1093/mnras/stw060), coalescence of the most-bound cores in phase space
 # (Han et al. 2018, DOI 10.1093/mnras/stx2792; Karam & Sills 2022, DOI
 # 10.1093/mnras/stac1298), then spatial and kinematic mixing. The epochs set
-# the regime of every snapshot, progenitor and pair, and the regime decides in
-# which frame a tag-resolved quantity is physical.
+# the regime of every snapshot, progenitor and pair, and the regime determines
+# in which frame a tag-resolved quantity is physical.
 
 """Regimes of a snapshot, a progenitor or a pair, in the order of a merger."""
 const _MERGER_REGIMES = (:detached, :interacting, :coalescing, :settled, :dissolved, :satellite)

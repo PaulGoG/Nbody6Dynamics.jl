@@ -12,7 +12,7 @@
 #                 AGE  EPOCH, with no SSE tail; TM, MC, RCC, RE become NaN.
 #
 # Header time is TPHYS in **Myr**, while token 1 of every data line is TTOT
-# in **NB units** — both clocks are kept.
+# in **NB units**; both clocks are kept.
 
 """
     read_stellar_evolution(path::AbstractString) -> StellarEvolutionSnapshot
@@ -100,7 +100,7 @@ end
         -> Vector{StellarEvolutionSnapshot}
 
 Read all sev.83_* files matching `pattern` in `dir`, sorted by snapshot time.
-The default pattern matches what this fork's `hrplot.F` actually writes
+The default pattern matches what this fork's `hrplot.F` writes
 (`sev.83_<time>`, e.g. `sev.83_0`, `sev.83_0.5`). Files that cannot be read
 are skipped and reported in one warning with their count and the first path.
 """

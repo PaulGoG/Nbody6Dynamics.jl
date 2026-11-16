@@ -262,7 +262,7 @@ Architectures the installed `nvcc` can compile for, as `sm_<cc>` names
 from `nvcc --list-gpu-arch` (`compute_50 … compute_120`); empty when the
 compiler cannot be run. The device side of the pair is
 [`detect_compute_capabilities`](@ref) (from `nvidia-smi`, which `nvcc`
-cannot replace: the compiler knows the toolkit, not the hardware); the
+cannot replace, since the compiler has no access to the hardware); the
 build checks the targets against this list before compiling.
 """
 function nvcc_supported_archs(cuda_path::AbstractString = "")::Vector{String}
@@ -420,9 +420,9 @@ end
 """
     _report_probe_flags(flags, attempts) -> flags
 
-Log what the probe settled on — the host-compiler override or `-ccbin`
+Log what the probe settled on (the host-compiler override or `-ccbin`
 choice, and the glibc feature-macro override with the header-patch
-alternative — quoting the message of the attempt that motivated each, and
+alternative), quoting the message of the attempt that motivated each, and
 return `flags` unchanged.
 """
 function _report_probe_flags(
@@ -528,7 +528,7 @@ Return `(cppflags, libs)` strings for HDF5 Makefile patching.
 function detect_hdf5_flags(platform::Symbol, use_mpi::Bool)::Tuple{String,String}
     hdf5_lib = use_mpi ? "hdf5_openmpi" : "hdf5"
 
-    # Try pkg-config first (suppress stderr — common for pkg-config to warn)
+    # Try pkg-config first (suppress stderr; pkg-config commonly warns)
     try
         cflags = strip(read(pipeline(`pkg-config --cflags $hdf5_lib`; stderr = devnull), String))
         libs = strip(read(pipeline(`pkg-config --libs $hdf5_lib`; stderr = devnull), String))

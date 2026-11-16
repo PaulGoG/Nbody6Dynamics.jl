@@ -85,7 +85,7 @@ end
     @test_throws ArgumentError Nbody6Dynamics._ensure_source_tree(foreign, inst)
     @test read(joinpath(foreign, "data.csv"), String) == "1,2,3"
 
-    # An empty directory is simply cloned into
+    # An empty directory is cloned into
     empty_dir = joinpath(mktempdir(), "engine")
     mkpath(empty_dir)
     Nbody6Dynamics._ensure_source_tree(empty_dir, inst)

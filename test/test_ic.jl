@@ -540,7 +540,7 @@ seed = 5
             """
         end
 
-        # Valid template loads cleanly — smoke test
+        # Valid template loads without error (smoke test)
         ok_path = joinpath(TESTDIR, "merger_val_ok.toml")
         write(ok_path, _merger_toml())
         @test load_merger_config(ok_path) isa MergerConfig

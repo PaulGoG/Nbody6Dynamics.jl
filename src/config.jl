@@ -173,7 +173,7 @@ function save_config(cfg::Nbody6Config, path::AbstractString)
         "cluster" => _struct_to_dict(cfg.cluster),
         "cost" => _struct_to_dict(cfg.cost),
     )
-    # TOML cannot serialize nested structs — convert explicitly
+    # TOML cannot serialize nested structs; convert explicitly
     d["visualization"]["style"] = _struct_to_dict(cfg.visualization.style)
     _backup_existing(path)
     _atomic_write_toml(path, d)
@@ -757,7 +757,7 @@ const _SLURM_MEM_PATTERN = r"^\d+[KMGT]?$"
 
 The `[cluster]` checks of [`_validate`](@ref), applied only when
 `cluster.enabled`: the scheduler, the time formats, the counts, the chain
-mode, and the fit of one segment — `simulation.wall_budget` must be set and
+mode, and the fit of one segment: `simulation.wall_budget` must be set and
 `wall_budget + stop_margin + overhead` must not exceed `time_limit`, which in
 turn must not exceed `partition_limit` when that is given. Raises an
 `ArgumentError` naming the offending `cluster.<key>`.

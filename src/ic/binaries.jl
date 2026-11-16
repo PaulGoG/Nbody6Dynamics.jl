@@ -588,7 +588,7 @@ end
 One primary of mass `m₁` [M☉] under Moe & Di Stefano (2017, DOI
 10.3847/1538-4365/aa6fb6) with the inner-binary sampler of Moe's code. With
 `m₁c = _moe_clamp_m1(m₁)` and `table = _moe_period_table(m₁c, log_period_min,
-log_period_max)` (passed in by a caller that caches it), one uniform `u` decides
+log_period_max)` (passed in by a caller that caches it), one uniform `u` determines
 both: `u ≥ f_bin` leaves the star single (`(false, NaN, NaN, NaN)`), otherwise
 `lP = CumP⁻¹(u)`. Then `q` follows from `_moe_draw_q` at `(lP, m₁c)`
 with `q_min`, and `e` from `_moe_draw_e` with `ecc_turnover`. Draws

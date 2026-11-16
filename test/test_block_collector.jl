@@ -2,8 +2,8 @@
 # constants of that file are in scope.
 #
 # Block collector (roadmap 8.6): the paired comparison, the per-arm ensembles and the
-# block tables over an explicit run list. A synthetic sweep with arms — a reference,
-# a perturbed twin, a null arm and an arm with an injected shift, eight seeds — carries
+# block tables over an explicit run list. A synthetic sweep with arms (a reference,
+# a perturbed twin, a null arm and an arm with an injected shift) and eight seeds carries
 # Lagrangian radii only (`lagr.7`) and the pairing record (`merger_ic.toml`); the run
 # list of its points must reproduce the sweep's table exactly, the shift must be found
 # and the null arm accepted, and the ledger front-end must resolve and refuse runs.
@@ -15,7 +15,7 @@ using StableRNGs: StableRNG
 
 A sweep of the arms `base`, `null`, `shifted` and `twin` over `seeds` at one grid
 point, every point done, with a synthetic `lagr.7` per run (t = 0…10 in steps of 0.1,
-identity scaling): the reference radius of a seed, plus — for every other arm — a
+identity scaling): the reference radius of a seed, plus, for every other arm, a
 per-seed offset of standard deviation `σ` and AR(1) noise (φ = 0.8, innovations
 `σ/5`); the arm `shifted` adds `shift` to every radius. `merger_ic.toml` holds the
 seed's `dat10_sha256`; the twin's carries `[twin]` and its own hash.

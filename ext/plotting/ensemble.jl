@@ -84,8 +84,8 @@ never combined.
         ylabel = _series_label(quantity, fraction),
         yscale = quantity === :energy ? log10 : identity,
     )
-    # Occupancy decides between the two upper corners of the reserved
-    # strip; it counts the band edges, not only the medians.
+    # The upper corner of the reserved strip is chosen by occupancy, which
+    # counts the band edges, not only the medians.
     occ_x = Float64[]
     occ_y = Float64[]
     lo_all, hi_all = Inf, 0.0

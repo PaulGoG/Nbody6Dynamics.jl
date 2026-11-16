@@ -125,8 +125,8 @@ end
 
 Draw the observable population `pop` on `ax`, one scatter per class of
 `classes` and multiplicity, in a fixed order: the backdrop first and small,
-then each evolved class at full size with a darker edge — single stars
-filled, members of KS pairs open — so that one evolved star stays visible
+then each evolved class at full size with a darker edge (single stars
+filled, members of KS pairs open), so that one evolved star stays visible
 against thousands of main-sequence stars.
 """
 function _draw_hr_population!(
@@ -244,7 +244,7 @@ function _hr_legend_groups(run::_HRRun, strip::Bool, guide_label::AbstractString
     key_entries = Vector{_LegendElement}[]
     key_labels = AbstractString[]
     # Open markers exist only on the panels, so their entry follows the epochs
-    # drawn, unlike the class entries, which the strip always answers for.
+    # drawn, unlike the class entries, which the strip always accounts for.
     if _hr_has_evolved_members(run, drawn)
         push!(
             key_entries,

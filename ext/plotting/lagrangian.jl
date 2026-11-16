@@ -50,7 +50,7 @@ function _fraction_pct_label(frac::Real)
 end
 
 """Radii row `idx` scaled by `r_scale`, with non-positive values (empty
-shells at early times) masked to NaN — invalid on the log axis."""
+shells at early times) masked to NaN as invalid on the log axis."""
 _masked_radii(lagr::LagrangianData, idx::Int, r_scale::Real) =
     [r > 0 ? r * r_scale : NaN for r in @view lagr.radii[idx, :]]
 

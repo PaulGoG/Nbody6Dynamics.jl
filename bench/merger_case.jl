@@ -13,7 +13,7 @@ Merger TOML of the benchmark case for `N_total` stars in two equal King
 clusters, integrated for `tcrit` N-body time units with adjustments every
 0.25 and outputs every 0.5. The virialisation limit is raised to 2×10⁶ so
 that the benchmark reaches the engine's `b1m` capacity (NMAX = 1 572 864):
-a benchmark is a deliberate cost.
+the cost is intended for a benchmark.
 """
 function merger_toml(N_total::Integer, tcrit::Real)
     n = N_total ÷ 2

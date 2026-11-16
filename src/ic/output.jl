@@ -1255,7 +1255,7 @@ function generate_merger_ic(
 
     # Resolve RNG and effective seed. When the caller supplies an RNG the
     # sampling is NOT reproducible from `effective_seed`; the metadata records
-    # this honestly via `external_rng` (the seed still feeds Nbody6's NRAND).
+    # this as `external_rng` (the seed still feeds Nbody6's NRAND).
     external_rng = rng !== nothing
     effective_seed::Int = cfg.seed === nothing ? Int(rand(UInt32) % typemax(Int32)) : cfg.seed
     use_rng = external_rng ? rng : Random.MersenneTwister(effective_seed)
@@ -1450,7 +1450,7 @@ function generate_merger_ic(
     M_total = sum(mass_combined)
     N_systems = length(mass_combined)
 
-    # Half-mass radius of the combined system — this is the RBAR length unit
+    # Half-mass radius of the combined system: the RBAR length unit
     # written to the .inp file and used for the NB-unit conversion of dat.10.
     rbar = half_mass_radius(mass_combined, pos_combined)
 
@@ -2179,8 +2179,8 @@ end
 
 Reconstruct a [`MergerICResult`](@ref) from the `dat.10` and `merger_ic.toml`
 files in `dir`, without re-sampling. Useful when the IC plots need to be
-regenerated after a code fix — e.g. bug fixes to `plot_merger_ic` or legend
-rendering — without changing the underlying particle data.
+regenerated after a code fix (e.g. bug fixes to `plot_merger_ic` or legend
+rendering) without changing the underlying particle data.
 
 The particle positions and velocities in the returned result are in
 **physical units** (pc and km/s), matching what `plot_merger_ic` expects.
@@ -2204,7 +2204,7 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
 
     orbit_mode = String(raw["orbit_mode"])
 
-    # Read cluster specs and ranges — the metadata stores the structured
+    # Read cluster specs and ranges; the metadata stores the structured
     # profile/imf tables that `_parse_cluster_table` accepts directly.
     # Parse with the "metadata" mode, which applies no mode rule to
     # position/velocity: metadata always records them (empty in kepler mode).

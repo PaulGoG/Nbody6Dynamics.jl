@@ -67,9 +67,9 @@ _census_interval(s::BoundSpan) = (
 
 Union of the engine-regularised spans ([`binary_spans`](@ref)) and the
 physically bound spans ([`bound_spans`](@ref)) of each pair: spans of the same
-pair whose intervals overlap — a level-P span widened to the midpoints between
+pair whose intervals overlap (a level-P span widened to the midpoints between
 its first member snapshot and the one before, and between its last member
-snapshot and the one after — are joined, transitively, into one
+snapshot and the one after) are joined, transitively, into one
 [`CensusSpan`](@ref). A pair can have several census spans (it separates and
 re-forms). Flyby spans of level E (`:flyby`, never bound) are left out.
 Returns the spans sorted by `(t_form_nb, name1, name2)`; `ArgumentError` for

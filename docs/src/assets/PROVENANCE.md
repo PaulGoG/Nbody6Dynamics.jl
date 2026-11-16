@@ -4,8 +4,8 @@ Every asset here comes from one of the showcase runs of 2026-11-02 listed in
 the Showcase Cases page (`input_files/showcase/`), produced on a laptop
 (Intel Core Ultra 7 155H, AVX build of the engine at the pin `v2026.07.23`,
 engine commit `ce10277`) by the package tree of commit `916fb0a` with the
-three-cluster flagship configuration of the following commit, and rendered
-again on 2026-11-03 from the same engine output by the figure code of
+three-cluster flagship configuration of the following commit. They were
+rendered again on 2026-11-03 from the same engine output by the figure code of
 release 0.7.0 (the merger epochs on the separation figure). Nothing was
 edited by hand: each figure is the package's own export, reduced in size with
 ImageMagick for the web (`magick in.png -resize 1200x -strip out.png`; the

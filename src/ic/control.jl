@@ -17,7 +17,7 @@
 # Intervals given in N-body units are scaled by the ratio of the estimated
 # time units, (RBAR_est / r_h,control)^{3/2}, with RBAR_est the half-mass
 # radius of the initial configuration estimated from the separations and
-# the members' radii — an approximation, stated in the docs.
+# the members' radii (an approximation, stated in the docs).
 
 """
     _control_time_factor(m::AbstractDict, Ns, rbars, rbar_control) -> Float64
@@ -25,7 +25,7 @@
 Ratio of the estimated N-body time units of the merger configuration and
 of its control, `(RBAR_est / rbar_control)^{3/2}`: the total masses are
 equal, so only the length units differ. `RBAR_est` adds the `N`-weighted
-mean member radius to the half-mass radius of the centres of mass — for a
+mean member radius to the half-mass radius of the centres of mass: for a
 Kepler orbit `apocentre × N_min / N_total`, for explicit positions their
 `N`-weighted RMS distance from the `N`-weighted centre.
 """
@@ -133,7 +133,7 @@ function control_merger_dict(raw::AbstractDict)
         haskey(out, key) && (out[key] = Float64(out[key]) * factor)
     end
     # The plotting interval follows the snapshot interval (it must stay ≥
-    # deltat), so its effective NB value is scaled too — also when the base
+    # deltat), so its effective NB value is scaled too, also when the base
     # file leaves it at the default.
     st = get!(m, "stellar", Dict{String,Any}())
     if Float64(get(st, "dtplot_myr", 0.0)) == 0 && Float64(get(out, "deltat_myr", 0.0)) == 0

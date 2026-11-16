@@ -21,7 +21,7 @@
 #   13     ANGLE THETA   escape elevation from the xy-plane [deg], [-90, 90]
 #   14+    SSE quantities, energy budget, tidal terms
 #
-# The physical-unit quantities live in tokens 6–13 — NOT 1–6 (the first five
+# The physical-unit quantities live in tokens 6–13, NOT 1–6 (the first five
 # columns are NB-unit diagnostics). Binary escapers go to unit 31 (escbin.31),
 # so every esc.11 data line has this single shape (27 tokens in full).
 

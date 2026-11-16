@@ -161,7 +161,7 @@ end
 """Default observables of the paired analysis, in table order."""
 const _PAIRED_DEFAULT_OBSERVABLES = ["r10", "r50", "r90", "energy", "n_stars", "n_pairs"]
 
-"""Refuse an observable that [`paired_comparison`](@ref) does not know, naming `caller`."""
+"""Refuse an observable that [`paired_comparison`](@ref) does not support, naming `caller`."""
 function _check_paired_observables(observables::AbstractVector{<:AbstractString}, caller::String)
     for o in observables
         haskey(_PAIRED_OBSERVABLES, o) || throw(

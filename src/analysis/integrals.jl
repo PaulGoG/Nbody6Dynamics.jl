@@ -240,7 +240,7 @@ _csv_precise(v) = _csv_cell(v)
 
 The class of the engine's external field option `KZ(14)`: `:none` (0),
 `:linearised` (1, 2: a static field in the rotating frame, whose potential
-energy the engine never adds to its total — the ADJUST `DE` drifts and the
+energy the engine never adds to its total; the ADJUST `DE` drifts and the
 Jacobi integral `e_jacobi` of [`snapshot_integrals`](@ref) is the conserved
 quantity), `:orbit` (3, 5: the engine accumulates the work of the field in
 `ETIDE`, so its `DE` is an error measure, while snapshots cannot reconstruct

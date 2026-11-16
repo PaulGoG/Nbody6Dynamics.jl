@@ -375,7 +375,7 @@ end
     PlotStyle
 
 Stylistic plotting parameters, configurable via `[visualization.style]` in
-`config.toml`. These are presentation knobs only — data-validity cutoffs
+`config.toml`. These are presentation knobs only; data-validity cutoffs
 (e.g. BSE placeholder filtering) remain named constants in the plot code.
 
 # Fields
@@ -553,8 +553,8 @@ end
 Top-level configuration aggregating all subsections.
 
 `config_dir` is the directory every relative path of the configuration
-resolves against — `install.install_dir`, `simulation.input_file`,
-`simulation.runs_dir`, `postprocess.data_dir` and `merger.config_file` — and
+resolves against (`install.install_dir`, `simulation.input_file`,
+`simulation.runs_dir`, `postprocess.data_dir` and `merger.config_file`) and
 the default `base_dir` of the pipeline entry points. [`load_config`](@ref)
 sets it to the directory of the file it read; a configuration built in memory
 takes the working directory. It is not a configuration key and is not
@@ -661,7 +661,7 @@ rbar(h::SnapshotHeader) = Float64(h.params[3])
 
 """    zmbar(h::SnapshotHeader) -> Float64
 Mass scaling factor: 1 NB mass unit (the total cluster mass) = `zmbar` M☉.
-NOT the mean stellar mass — Nbody6++ redefines ZMBAR as the total-mass
+NOT the mean stellar mass: Nbody6++ redefines ZMBAR as the total-mass
 scale factor at startup (`start.F`); the mean mass is printed separately
 as `<M>` in the PHYSICAL SCALING line."""
 zmbar(h::SnapshotHeader) = Float64(h.params[4])
@@ -972,9 +972,9 @@ const ENGINE_EVENT_KINDS = (
 
 One stamped event line of the engine log, from [`read_engine_events`](@ref).
 `interval` is the index of the ADJUST record whose line follows the event
-in the log — the adjustment interval the event falls in, `(t_{k−1}, t_k]`,
+in the log (the adjustment interval the event falls in, `(t_{k−1}, t_k]`,
 assigned by position because the engine prints every line of an interval
-between the two ADJUST lines that bound it — and `line` the line number in
+between the two ADJUST lines that bound it), and `line` the line number in
 the capture. `time_nb` is the stamp of the line (NaN for the lines without
 one: `NEW CHAIN`). The remaining fields hold what the kind carries, with
 `0`, `KSTAR_ABSENT` and `NaN` where it does not:

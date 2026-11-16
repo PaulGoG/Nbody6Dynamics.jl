@@ -11,7 +11,7 @@
     nd = Nbody6Dynamics
     base = mktempdir()
     # Stand-in for the engine, as in test_cluster.jl: integer time, one step per
-    # 0.1 s, STOP honoured with a dump, KSTART=2 continues from the dump's time.
+    # 0.1 s, STOP produces a dump, KSTART=2 continues from the dump's time.
     fake_engine = raw"""
     #!/bin/bash
     input=$(cat)

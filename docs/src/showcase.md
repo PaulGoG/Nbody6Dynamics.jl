@@ -35,10 +35,10 @@ eccentricities separate in time (12 Myr at `e = 0.5` against 8 Myr at
 `e = 0.9`), which is what its eccentricity axis is for. The triple of the
 flagship is released at the virial ratio of a pair at apocentre with
 `e = 0.33` (0.33 for the truncated clusters of 1.1×10⁴ M☉; the speed was
-chosen for 0.25 at 1.5×10⁴ M☉); its three pairwise separations fall from 10 pc to 5 pc by 6 Myr,
+chosen for 0.25 at 1.5×10⁴ M☉). Its three pairwise separations fall from 10 pc to 5 pc by 6 Myr,
 rebound to 7 pc at 8 Myr and drop below the half-mass radii: clusters 1 and 3
 join at 12 Myr and cluster 2 at 14 Myr, the centre coalescence of
-`coalescence_time` and the last join of the merger tree; the merger epochs
+`coalescence_time` and the last join of the merger tree. The merger epochs
 (`merger_epochs`) put the contact of the three at 2 Myr and the core
 coalescence of the system at 14 Myr.
 

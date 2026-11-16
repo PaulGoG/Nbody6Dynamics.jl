@@ -3,7 +3,7 @@
 
 @testset "Static QA — Aqua" begin
     using Aqua
-    # Method ambiguities are checked for this package only — recursing
+    # Method ambiguities are checked for this package only; recursing
     # into the Makie/SciML dependency tree reports upstream noise.
     Aqua.test_all(Nbody6Dynamics; ambiguities = false, persistent_tasks = false)
     # Aqua's ambiguity check spawns a process that `require`s each module
@@ -29,7 +29,7 @@ end
 
 @testset "Static QA — JET" begin
     using JET
-    # Reports scoped to this package's own frames — Base/dependency
+    # Reports scoped to this package's own frames; Base/dependency
     # internals (e.g. @sync's sync_end, tuple broadcasting) produce
     # known false positives outside our control.
     JET.test_package(Nbody6Dynamics; target_modules = (Nbody6Dynamics,))

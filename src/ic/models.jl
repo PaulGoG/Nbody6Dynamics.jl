@@ -96,7 +96,7 @@ dimensionless form, `u = [Ŵ, dŴ/dr̂]` with `r̂ = r/r₀` and
     = -9\\,\\frac{\\hat{\\rho}(\\hat{W})}{\\hat{\\rho}(W_0)}
 ```
 
-The density on the RHS **must** be normalised to the central value — with
+The density on the RHS **must** be normalised to the central value; with
 the unnormalised density the radial unit is compressed by `√ρ̂₀` and the
 concentration comes out wrong (the pre-rewrite bug).
 """
@@ -340,7 +340,7 @@ function _sample_king_with_energy(
         # = v² [exp(W - v²/2) - 1]
         # Maximum at v* where d/dv [v² (e^{W-v²/2} - 1)] = 0
         if W_local ≤ 1e-10
-            # Near tidal radius: essentially zero velocity
+            # Near tidal radius: zero velocity
             vel[:, i] .= 0.0
             energy[i] = -W_local
             continue
@@ -379,7 +379,7 @@ Mass-weighted half-mass radius: the radius of the particle at which the
 cumulative mass (sorted by distance from `centre`) first reaches half the
 total. `centre` defaults to the mass-weighted centre of mass.
 
-Note this is *not* the count-median radius — with an IMF the two differ by
+This is *not* the count-median radius: with an IMF the two differ by
 sampling noise, and only the mass-based definition matches RBAR semantics.
 """
 function half_mass_radius(
@@ -462,9 +462,9 @@ Shift to centre-of-mass frame and scale velocities so that the virial
 ratio `Q = T/|W| = 0.5` (virial equilibrium). Operates in-place and returns
 the kinetic and potential energies after scaling (`G = 1`).
 
-Assumes `G = 1`. Uses the exact N-body potential energy — O(N²), threaded
-over strided rows. Refuses (with a clear error) above `nmax` particles
-rather than silently burning hours; raise `nmax` deliberately for large ICs.
+Assumes `G = 1`. Uses the exact N-body potential energy, O(N²) and threaded
+over strided rows. Refuses (with an error) above `nmax` particles, where the
+pair sum would run for hours; raise `nmax` explicitly for large ICs.
 
 Determinism note: the pair sum runs over a fixed set of row chunks added in
 a fixed order, so seeded IC generation is bit-reproducible for any thread

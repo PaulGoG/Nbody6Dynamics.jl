@@ -259,8 +259,8 @@ carries the largest mass; the remaining masses go to the remaining particles
 in random order. `S = 0` is a random permutation of the masses, `S = 1` the
 full energy ranking.
 
-The mass set is preserved exactly — the result is a permutation of the
-input — and only its assignment to particles changes; `energy` (per-particle
+The mass set is preserved exactly (the result is a permutation of the
+input), and only its assignment to particles changes; `energy` (per-particle
 specific or total energy, any consistent units) is not modified. `mass` is
 overwritten and returned.
 

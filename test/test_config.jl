@@ -127,7 +127,7 @@ end
 # =====================================================================
 
 @testset "Config validation" begin
-    # Valid config (defaults only) passes validation — smoke test
+    # Valid config (defaults only) passes validation (smoke test)
     ok_path = joinpath(TESTDIR, "val_ok.toml")
     write(
         ok_path,
@@ -425,7 +425,7 @@ config_file = "merger.toml"
     @test !haskey(Nbody6Dynamics.TOML.parsefile(frozen), "config_dir")
     @test load_config(frozen).config_dir == dirname(frozen)
 
-    # One resolution base for every relative path; absolute paths are honoured.
+    # One resolution base for every relative path; absolute paths are kept as given.
     @test Nbody6Dynamics._resolve_path(proj, "a/b") == joinpath(proj, "a", "b")
     @test Nbody6Dynamics._resolve_path(proj, "/abs/c") == "/abs/c"
     @test Nbody6Dynamics._resolve_path(proj, "") == ""

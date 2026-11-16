@@ -104,7 +104,7 @@ method passes `cfg.postprocess.pair_sum_max_n`. `bound` holds the keywords
 `postprocess.bound_max_passes`, `postprocess.bound_min_members` and
 `settings = cfg.postprocess`.
 
-This is the single plot dispatcher — both the config-driven pipeline
+This is the single plot dispatcher: both the config-driven pipeline
 (via the `Nbody6Config` method) and [`postprocess_external`](@ref) route
 through it.
 """

@@ -183,9 +183,10 @@ Phase-space coordinates of the systems of masses `mass` (any order) drawn from
 `profile` with primordial mass segregation of degree `degree` after
 Baumgardt, De Marchi & Kroupa (2008, Appendix A):
 
-1. `N′ = max(n, ⌈n ⟨m⟩/m_min⌉)` points of the unsegregated model — Plummer with
-   scale radius `rh / 1.305`, King with unit tidal radius (`rh` unused), as
-   `_sample_cluster` samples them — ranked by specific energy, most bound first.
+1. `N′ = max(n, ⌈n ⟨m⟩/m_min⌉)` points of the unsegregated model, ranked by
+   specific energy, most bound first. The model is sampled as `_sample_cluster`
+   samples it: Plummer with scale radius `rh / 1.305`, King with unit tidal
+   radius (`rh` unused).
 2. The systems, sorted by mass in descending order (stable), are arranged in
    the slot order [`segregation_order`](@ref)`(n, degree, rng)`; the system in
    slot `k` takes a point drawn uniformly among the energy ranks

@@ -416,9 +416,9 @@ The end of the restart is `t_end` [NB], `t_end_myr` [Myr] (converted with the ru
 unit from `global.30`), or `tcrit_extra` [NB] after the dump; with none of them, the
 run's end time (its input's `TCRIT`, or a later end given to an earlier restart). The
 dump is `dump` (a file name in `output/`) or the one a resume would take (the newest
-complete restart dump before any halt). Both are resolved and checked here — the dump
-complete and outside a chain subsystem (`NSUB = 0`), the span positive, no engine of the
-run alive, no other request pending — and written to `<run_dir>/cluster/restart.toml`
+complete restart dump before any halt). Both are resolved and checked here: the dump must be
+complete and outside a chain subsystem (`NSUB = 0`), the span positive, no engine of the run
+alive and no other request pending. Both are then written to `<run_dir>/cluster/restart.toml`
 with status `pending`; the first job of the chain consumes the request before it starts
 the engine, so a job ended mid-segment is continued by a resume, not by a second restart.
 A consumed request of an earlier restart is kept as `cluster/restart#k.toml`.
@@ -599,7 +599,7 @@ The configuration is read from `<run_dir>/config.toml` when it exists, else
 from `<run_dir>/cluster/config.toml`. The latter is the copy frozen at
 submission and serves only the first job; from the first segment on,
 `<run_dir>/config.toml` holds the whole configuration, `[cluster]` included,
-and is the single source of truth for both the engine segment and the chain
+and governs both the engine segment and the chain
 (`chain`, `max_segments`, `sbatch`, the job script). Changes between jobs,
 such as a different `simulation.wall_budget`, are therefore made in
 `<run_dir>/config.toml`.

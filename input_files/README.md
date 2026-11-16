@@ -1,6 +1,6 @@
 # Shipped inputs
 
-One folder per purpose. `example_input("engine/N1k_quick.inp")` returns the
+There is one folder per purpose. `example_input("engine/N1k_quick.inp")` returns the
 absolute path of any file here for a project outside the checkout; a bare
 name (`example_input("N1k_quick.inp")`) is looked up across the folders.
 

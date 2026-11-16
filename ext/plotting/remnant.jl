@@ -423,7 +423,7 @@ shaded.
     hlines!(ax1, [1.0]; color = (:grey, 0.5), linestyle = :dash, linewidth = _STYLE.guide)
     if any(v)
         # The guide labels keep clear of the error band, not only of its centre line,
-        # and of each other: the unity label sees the threshold guide and the strip
+        # and of each other: the unity label treats the threshold guide and the strip
         # below it, where the threshold label may sit, as occupied
         band_x = vcat(t[v], t[v], t[v])
         band_y = vcat(diag.lambda_msr[v], lo_band, hi_band)

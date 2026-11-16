@@ -4,7 +4,7 @@
 # Track each initial cluster through its own bound set over the course of the
 # run. Gives meaningful pre-coalescence diagnostics for multi-cluster setups
 # where global Lagrangian radii measure cluster separation rather than
-# internal structure. The merger epochs decide where these per-cluster
+# internal structure. The merger epochs determine where these per-cluster
 # quantities hold: the series end where a cluster is retired and the regimes
 # of the system are shaded.
 
@@ -1417,7 +1417,7 @@ bound set of the whole snapshot about the remnant centre, as in
     )
     isempty(sig_all) || ylims!(ax1, _pad_limits(0.0, maximum(sig_all); floor = 0)...)
     if isempty(beta_y)
-        # No shell holds the members the anisotropy needs: say so, and keep the
+        # No shell holds the members the anisotropy needs: note this, and keep the
         # tick labels of the empty panel clear of the joint
         _no_data_note!(
             ax2,

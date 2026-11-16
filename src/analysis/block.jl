@@ -215,7 +215,7 @@ end
 Seeded ensembles per arm over a run list (`(; arm, seed, run_dir[, grid])`, as for
 [`block_comparison`](@ref)): the runs of one arm and grid point are the members, and
 the series of each observable ([`_run_series`](@ref), the observables of
-[`paired_comparison`](@ref)) is summarised by [`ensemble_statistics`](@ref) — the
+[`paired_comparison`](@ref)) is summarised by [`ensemble_statistics`](@ref), as the
 product of [`sweep_ensembles`](@ref) for a sweep, here kept apart per arm. Returns one
 `(; grid, observable, arm, stats)` per grid point, observable and arm with at least one
 series, in that order (grid points and arms by name).
@@ -247,9 +247,9 @@ end
 """
     write_block_ensembles(path, ensembles) -> String
 
-Write the result of [`block_ensembles`](@ref) as CSV in long form — one line per grid
+Write the result of [`block_ensembles`](@ref) as CSV in long form (one line per grid
 point, observable, arm and time node, columns `grid`, `observable`, `arm`, `n`,
-`time_myr`, `median`, `q16`, `q84`, `q025`, `q975` — with the cell formatting of
+`time_myr`, `median`, `q16`, `q84`, `q025`, `q975`) with the cell formatting of
 [`write_paired_comparison`](@ref); an existing file is kept as a `#k` backup. Returns
 `path`.
 """

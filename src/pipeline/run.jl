@@ -618,8 +618,8 @@ function _execute_simulation(
             # leaves the engine without a waiting driver. Stop first, report
             # after: the console may be gone with whoever sent the interrupt,
             # and a report that fails must not leave the engine running. The
-            # SIGTERM is a stop request the engine may honour with a dump
-            # within the grace; the record says which.
+            # SIGTERM is a stop request; the engine may stop with a dump within
+            # the grace, and the record holds the outcome.
             interrupted = e isa InterruptException
             _terminate(process)
             int_status = _segment_status(
@@ -859,16 +859,16 @@ variables, and runs the simulation with proper I/O redirection.
 
 A runtime-generated shell script is the one sanctioned bash use in this
 package: `ulimit -s unlimited` (mandatory for the stack-heavy Fortran) can
-only be applied to the child process from a wrapping shell — Julia's `run`
+only be applied to the child process from a wrapping shell; Julia's `run`
 cannot set resource limits on the spawned binary.
 
 The script stays the parent of the engine and owns the stop request. It
-starts the engine (or `mpirun`) in a subshell that ignores SIGTERM — the
-disposition survives `exec` — writes the engine's process id to
+starts the engine (or `mpirun`) in a subshell that ignores SIGTERM (the
+disposition survives `exec`), writes the engine's process id to
 [`_ENGINE_PID_FILE`](@ref), and waits. A SIGTERM that reaches the script,
 from the driver's [`_terminate`](@ref), from a batch scheduler at the time
-limit or on cancellation, becomes the `STOP` file that the engine honours
-at its next poll with a dump; the engine itself is never ended by SIGTERM.
+limit or on cancellation, becomes the `STOP` file, on which the engine
+stops with a dump at its next poll; the engine itself is never ended by SIGTERM.
 The script exits with the engine's exit status, and re-raises on itself
 the signal that ended the engine, so the driver sees the engine's end as
 if it had spawned the engine directly. SIGKILL cannot be trapped: a SIGKILL
@@ -1106,7 +1106,7 @@ const _KILL_GRACE_SECONDS = 15.0
 Send SIGTERM to `process`, wait up to `grace` seconds for it to exit, and
 send SIGKILL to its process group if it is still running. `process` is the
 launch script, which turns the SIGTERM into a stop request for the engine
-([`_write_launch_script`](@ref)); an engine that honours it within the
+([`_write_launch_script`](@ref)); an engine that stops within the
 grace leaves a dump, one that does not is killed with the script.
 """
 function _terminate(process::Base.Process; grace::Real = _KILL_GRACE_SECONDS)
@@ -1131,8 +1131,8 @@ end
 `@async body()`, except that an `InterruptException` raised inside the task
 is re-thrown in `target` (the task waiting on the engine) instead of ending
 the helper. SIGINT is delivered to whichever task the main thread is running
-at that moment — under a long `wait` that is usually one of the helper
-tasks polling the engine — while the engine's termination lives in the
+at that moment (under a long `wait`, usually one of the helper tasks
+polling the engine), while the engine's termination lives in the
 waiting task's handler; without the hand-over the helper died and the
 engine ran on. `target === nothing` keeps the plain behaviour.
 """
@@ -2277,9 +2277,9 @@ wall time, and with `postprocess_seconds` (the stage times of
 Returns `false`, without raising, when there is no run directory
 or no summary to amend.
 
-A run summary is written as soon as the engine exits, so its presence says
-only that the simulation finished — post-processing and plotting come
-afterwards and a run killed in between leaves a summary that looks
+A run summary is written as soon as the engine exits, so its presence shows
+only that the simulation finished; post-processing and plotting come
+afterwards, and a run killed in between leaves a summary that looks
 complete. This marker is what distinguishes a finished pipeline from an
 interrupted one, and [`_pipeline_completed`](@ref) is what reads it back.
 `engine_completed` states separately whether the last engine segment reached
@@ -2306,7 +2306,7 @@ function _stamp_pipeline_completion(
             Dict{String,Any}(k => round(v; digits = 2) for (k, v) in postprocess_seconds)
     end
     # The pipeline post-processes whatever the engine left, so its own
-    # completion says nothing about the integration; state that separately.
+    # completion implies nothing about the integration; state that separately.
     segments = get(d, "segments", Any[])
     isempty(segments) ||
         (d["pipeline"]["engine_completed"] = get(last(segments), "completed", false) === true)

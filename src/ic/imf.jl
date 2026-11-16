@@ -76,8 +76,8 @@ Draw `N` stellar masses from the Kroupa (2001) broken power-law IMF using
 inverse-CDF sampling (no rejection, O(N)).
 
 Only the segments of the Kroupa IMF that overlap `[m_low, m_up]` are active.
-Masses are returned in M☉, un-normalised — the caller is responsible for
-any post-sampling rescale.
+Masses are returned in M☉, un-normalised; any post-sampling rescale is left
+to the caller.
 """
 function sample_kroupa(
     N::Int;

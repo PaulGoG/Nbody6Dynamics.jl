@@ -148,8 +148,8 @@ Copy finished figures to a manuscript figures directory with provenance
 attached: each file is copied as `<run_id>__<name>` and a TOML sidecar
 `<run_id>__<name>.provenance.toml` records the producing run, the package
 and backend commits (from the run's RUN_INFO.toml when `run_dir` is given),
-and the export date. `dest_dir` is caller-supplied — the package never
-hardcodes paths outside its own tree. Existing files are backed up, never
+and the export date. `dest_dir` is caller-supplied, since the package
+hardcodes no paths outside its own tree. Existing files are backed up, never
 overwritten. Returns the destination paths.
 """
 function export_for_paper(

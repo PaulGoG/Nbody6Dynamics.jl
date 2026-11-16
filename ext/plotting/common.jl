@@ -183,7 +183,7 @@ _export_width_in(cfg::VisualizationConfig)::Float64 =
 """Extra canvas width reserved for a right-side colorbar column."""
 const _COLORBAR_WIDTH = 140
 
-"""Single-panel with a right-side colorbar — extra width keeps axis box size."""
+"""Single panel with a right-side colorbar; the extra width keeps the axis box size."""
 _fig_with_colorbar(cfg::VisualizationConfig) =
     (_figsize_px(cfg)[1] + _COLORBAR_WIDTH, _figsize_px(cfg)[2])
 
@@ -203,12 +203,12 @@ function _strip_rows!(fig::Figure, main_row::Int, strip_row::Int)
 end
 
 """
-Grids of panels get a wider canvas than a single panel —
-`max(_CANVAS.grid_width, ncols × _CANVAS.grid_column)` layout units — shared by
+Grids of panels get a wider canvas than a single panel,
+`max(_CANVAS.grid_width, ncols × _CANVAS.grid_column)` layout units, shared by
 the `ncols` axis boxes after one axis-decoration strip (`_AXIS_PROTRUSION`,
 the outer y label and tick labels), the reserved `extra_width` (a shared
 colorbar column) and the gaps, at `panel_aspect` (height over width; that of
-the single panel by default); the rows stack and one decoration strip is
+the single panel by default). The rows stack and one decoration strip is
 added below for the x label and tick labels, plus `extra_height` for whatever
 sits above or below the grid (a legend row, an auxiliary strip). The panel
 gap is [`_multipanel_gap`](@ref): compact when the inner tick labels are
@@ -231,8 +231,8 @@ _grid_canvas_width(ncols::Int)::Int =
 """
     _fit_canvas_to_boxes!(fig, nrows, ncols, box_width, aspect)
 
-Give the `nrows × ncols` panel cells of `fig` a fixed size — `box_width` wide,
-`aspect` times as high — and resize the canvas to the layout. For panels whose
+Give the `nrows × ncols` panel cells of `fig` a fixed size (`box_width` wide,
+`aspect` times as high) and resize the canvas to the layout. For panels whose
 shape is prescribed (equal-aspect projections) the canvas must follow the
 boxes: sized the other way round, the boxes shrink inside their cells and
 leave blank gutters, and a colourbar spanning the rows overshoots them.
@@ -318,7 +318,7 @@ end
 """
 Compute square (equal-span) axis limits centered on the origin (0,0):
 data extent plus a small margin (tight limits per the economy-of-space
-standard). Returns `(lo, hi, lo, hi)` — symmetric on both axes.
+standard). Returns `(lo, hi, lo, hi)`, symmetric on both axes.
 """
 function _square_limits(xs, ys; pad_frac::Float64 = 0.03)
     r = max(maximum(abs, xs), maximum(abs, ys))
@@ -446,7 +446,7 @@ area (`fig[0, :]`), optional bold family header via `title` shown to the
 left. Callers must still guard against single-entry legends.
 """
 function _top_legend!(fig::Figure, ax::Axis; title = nothing, nbanks::Int = 1, kwargs...)
-    # The family title must be passed positionally — Legend's convenience
+    # The family title must be passed positionally: Legend's convenience
     # constructors take (layout, ax, title); a `title` kwarg is ignored.
     args = title === nothing ? (ax,) : (ax, title)
     Legend(
@@ -504,7 +504,7 @@ function _log_ticks(lo::Real, hi::Real; plain::Union{Nothing,Bool} = nothing)
     lo > 0 || (lo = hi / 1e3)          # guard: log axes need positive range
     e_lo = floor(Int, log10(lo) + 1e-12)
     e_hi = ceil(Int, log10(hi) - 1e-12)
-    # Sparse-decade test counts decades actually inside [lo, hi] — the
+    # Sparse-decade test counts decades actually inside [lo, hi]; the
     # exponent-bin span overcounts when the range endpoints sit mid-decade.
     n_dec = count(e -> lo * (1 - 1e-9) ≤ 10.0^e ≤ hi * (1 + 1e-9), e_lo:e_hi)
     mults = n_dec ≤ 2 ? (1.0, 2.0, 5.0) : (1.0,)
@@ -734,7 +734,7 @@ end
     _pad_limits(lo, hi; frac = 0.08, floor = nothing) -> (lo′, hi′)
 
 Axis limits with a data margin of `frac` of the range on both sides, so that
-the tick labels at the ends — the joint of two stacked panels above all — keep
+the tick labels at the ends (above all at the joint of two stacked panels) keep
 their clearance. A `floor` (the physical lower bound of a non-negative
 quantity, usually `0`) is never crossed: when `lo == floor` the lower limit
 stays at `floor`. Degenerate ranges (`hi == lo`) open to
@@ -900,7 +900,7 @@ end
 # ---------------------------------------------------------------------------
 # Semantic colour table
 # ---------------------------------------------------------------------------
-# NOTE: must precede the includes below — hr.jl builds its stellar-type
+# NOTE: must precede the includes below; hr.jl builds its stellar-type
 # colour map from _OKABE_ITO at include time.
 
 # Okabe–Ito colourblind-safe palette: Makie's Wong colours (7 entries) plus

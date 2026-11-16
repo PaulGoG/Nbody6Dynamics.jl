@@ -7,7 +7,7 @@
 # mass-function sampler and its scaling mode. `ClusterSpec` carries the shared parameters
 # (N, rbar, position, velocity).
 #
-# The IMF hierarchy is the load-bearing design decision:
+# The IMF hierarchy fixes how masses are sampled and scaled:
 #
 #   - `KroupaIMF`           — natural Kroupa sampling in [bodyn, body1].
 #                             Total mass is an *output* (= sum of samples).
@@ -22,7 +22,7 @@
 #
 # The TOML loader accepts two equivalent schemas: the flat
 # form (`imf = "kroupa"`, `mass_total`, `bodyn`, `body1` at the cluster
-# level) is the canonical user-facing one — all shipped configs use it —
+# level) is the canonical user-facing one (all shipped configs use it),
 # while the structured table form (`profile = {type=...}`, `imf =
 # {type=...}`) exists for the lossless metadata round-trip of merger_ic.toml.
 # The flat form with `mass_total` set translates to `RescaledKroupaIMF`. The
@@ -127,7 +127,7 @@ The loader refuses an expected rescale factor `target_mass/(N⟨m⟩)` outside
 factor is outside ×[1/1.4, 1.4] ≈ ×[0.71, 1.4]: in that regime the individual body masses no longer correspond
 to real stars and downstream stellar-evolution output is non-physical.
 
-Use this mode deliberately when constructing super-particle simulations.
+Use this mode for super-particle simulations.
 """
 Base.@kwdef struct RescaledKroupaIMF <: IMFSpec
     bodyn::Float64 = 0.08
@@ -243,7 +243,7 @@ Specification for a single star cluster.
   [`PlummerProfile`](@ref) or [`RotatingKingProfile`](@ref)).
 - `imf::IMFSpec`: mass-function sampler ([`KroupaIMF`](@ref),
   [`RescaledKroupaIMF`](@ref), [`EqualMassIMF`](@ref), [`PowerLawIMF`](@ref)
-  or [`ExplicitMassesIMF`](@ref)).
+  or `ExplicitMassesIMF`).
 - `position::Vector{Float64}`: centre-of-mass position [pc] (length 3). For
   `orbit_mode = "kepler"` and `"single"` this is left empty.
 - `velocity::Vector{Float64}`: centre-of-mass velocity [km s⁻¹]. For
@@ -559,7 +559,7 @@ end
 Output and integration parameters for merger ICs.
 
 # Fields
-- `format::String`: `"nbody"` (KZ(22)=2, N-body units) — the only supported format.
+- `format::String`: `"nbody"` (KZ(22)=2, N-body units), the only supported format.
 - `truncate_jacobi::Bool`: truncate each cluster at its orbit-dependent
   tidal radius with respect to its nearest neighbour (`truncate_rule`)
   before combining.
@@ -582,7 +582,7 @@ Output and integration parameters for merger ICs.
   default) = the first single star, after the primordial pairs, so no
   regularised pair is touched; ≥ 0
 - `output_dir::String`: directory for generated files; empty (the default)
-  leaves the choice to the caller — `run_merger_pipeline` then creates a
+  leaves the choice to the caller: `run_merger_pipeline` then creates a
   `runs/merger_<timestamp>/` under the working directory, and the main
   pipeline always writes into its run directory.
 - `tcrit::Float64`: simulation end time (NB units when `format = "nbody"`).
@@ -706,7 +706,7 @@ input manual.
   `"engine"`: the rules the engine's own example inputs follow (η = 0.02,
   neighbour number √N, `RMIN` from the engine's `adjust.F` rule for the
   smallest member, `DTMIN` from the Aarseth close-encounter step).
-  `"baseline"`: the integration baseline of the calibration programme — `ETAI` 0.01,
+  `"baseline"`: the integration baseline of the calibration programme: `ETAI` 0.01,
   `ETAR` 0.02, `ETAU` 0.1, `NNBOPT` 100, `RMIN` three times the 90°
   deflection scale 4 r_h/N of the smallest member, `DTMIN` 0.4 of the
   Aarseth close-encounter step at that `RMIN`; the engine's automatic

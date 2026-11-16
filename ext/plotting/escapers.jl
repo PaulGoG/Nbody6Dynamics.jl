@@ -98,7 +98,7 @@ axes are Myr / M☉ / km s⁻¹ regardless of `cfg.units`.  Warns and returns
         limits = ((t_lo, t_hi), _pad_limits(0.0, m_cum[end]; floor = 0)),
     )
     stairs!(ax1, t, m_cum; color = esc_color, step = :post)
-    # The curve rises towards the lower right corner's diagonal — the
+    # The curve rises towards the lower right corner's diagonal; the
     # top-left corner stays free for the totals annotation.
     m_str = _fmt_latex_sig3(m_cum[end])
     _annotate!(
