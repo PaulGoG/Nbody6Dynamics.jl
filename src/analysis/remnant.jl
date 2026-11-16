@@ -428,9 +428,11 @@ The [`RotationProfile`](@ref) uses cylindrical shells of equal membership,
 of a shell is measured by the sign-flip null rather than assumed through
 `N_eff = (Σm)² / Σm²`, which enters the analytic λ_P floor only. Each
 carries the mass-weighted mean azimuthal
-velocity `v_rot`, the dispersions `sigma` and `sigma_phi`, and the debiased
-amplitude ``\\sqrt{\\bar v_φ^2 − σ_φ^2/n}``, which removes the noise bias of
-a mean of `n` azimuthal velocities. From the shells follow the
+velocity `v_rot`, the one-dimensional dispersion `sigma` about the shell's
+mean streaming velocity in cylindrical components ``(\\bar v_R, \\bar v_φ, \\bar v_z)``,
+the azimuthal dispersion `sigma_phi`, and the debiased amplitude
+``\\sqrt{\\bar v_φ^2 − σ_φ^2/n_\\mathrm{eff}}`` with ``n_\\mathrm{eff} = (Σm)^2/Σm^2`` of
+the shell, which removes the noise bias of a mass-weighted mean. From the shells follow the
 ordered-to-total motion parameter
 ``λ_R = Σ m R |v_\\mathrm{rot}| / Σ m R \\sqrt{v_\\mathrm{rot}^2 + σ^2}``
 (Emsellem et al. 2007, doi:10.1111/j.1365-2966.2007.11752.x) and the
@@ -440,8 +442,8 @@ set (`G = 1`).
 
 Finite-N noise sets a floor to all three. The sign-flip null reverses the
 azimuthal velocity of every particle with probability ½ (`n_null` draws
-from a `MersenneTwister` seeded with `seed`), leaving the shells, `σ` and
-`E` unchanged, and recomputes `v_rot`, `λ_R` and `|L|`: a non-rotating
+from a `MersenneTwister` seeded with `seed`), leaving the shells and `E`
+unchanged, and recomputes `v_rot`, `σ` about the reversed streaming, `λ_R` and `|L|`: a non-rotating
 realisation of the same particles, the N-body analogue of the non-rotating
 Monte-Carlo clusters of Sollima, Baumgardt & Hilker (2019,
 doi:10.1093/mnras/stz505). `v_rot_floor`, `lambda_r_floor` and
@@ -549,6 +551,9 @@ function rotation_analysis(
     # part m v_φ (R ẑ − z R̂) of its angular momentum that the sign flip reverses
     R = zeros(n)
     vφ = zeros(n)
+    v_R = zeros(n)
+    v_z = zeros(n)
+    v² = zeros(n)
     Lφ = zeros(3, n)
     @inbounds for i in 1:n
         rx, ry, rz = pos[1, i] - c[1], pos[2, i] - c[2], pos[3, i] - c[3]
@@ -557,8 +562,11 @@ function rotation_analysis(
         qx, qy, qz = rx - z * a1, ry - z * a2, rz - z * a3
         Ri = sqrt(qx * qx + qy * qy + qz * qz)
         R[i] = Ri
+        v²[i] = vx * vx + vy * vy + vz * vz
+        v_z[i] = vx * a1 + vy * a2 + vz * a3
         Ri > 0 || continue
         ux, uy, uz = qx / Ri, qy / Ri, qz / Ri
+        v_R[i] = vx * ux + vy * uy + vz * uz
         fx = a2 * uz - a3 * uy
         fy = a3 * ux - a1 * uz
         fz = a1 * uy - a2 * ux
@@ -580,6 +588,9 @@ function rotation_analysis(
     sigma = zeros(nb)
     sigma_phi = zeros(nb)
     v_rot_debiased = zeros(nb)
+    # Second moment of a shell about its mean radial and axial streaming, per unit
+    # mass: σ² = (moment − v̄_φ²)/3 for any mean azimuthal velocity v̄_φ
+    moment = zeros(nb)
     counts = zeros(Int, nb)
     M_shell = zeros(nb)
     w_R = zeros(nb)
@@ -587,42 +598,39 @@ function rotation_analysis(
     @inbounds for b in 1:nb
         lo, hi = edges[b] + 1, edges[b + 1]
         Mb = 0.0
+        m²b = 0.0
         sR = 0.0
         sφ = 0.0
-        sx = sy = sz = 0.0
+        s_R = 0.0
+        s_z = 0.0
+        s2 = 0.0
         for q in lo:hi
             i = order[q]
             m = mass[i]
             shell_of[i] = b
             Mb += m
+            m²b += m * m
             sR += m * R[i]
             sφ += m * vφ[i]
-            sx += m * (vel[1, i] - vc[1])
-            sy += m * (vel[2, i] - vc[2])
-            sz += m * (vel[3, i] - vc[3])
+            s_R += m * v_R[i]
+            s_z += m * v_z[i]
+            s2 += m * v²[i]
         end
         counts[b] = hi - lo + 1
         M_shell[b] = Mb
         w_R[b] = sR
         radius[b] = sR / Mb
         v_rot[b] = sφ / Mb
-        mx, my, mz = sx / Mb, sy / Mb, sz / Mb
-        s2 = 0.0
+        moment[b] = s2 / Mb - (s_R / Mb)^2 - (s_z / Mb)^2
         sp2 = 0.0
         for q in lo:hi
             i = order[q]
-            m = mass[i]
-            s2 +=
-                m * (
-                    (vel[1, i] - vc[1] - mx)^2 +
-                    (vel[2, i] - vc[2] - my)^2 +
-                    (vel[3, i] - vc[3] - mz)^2
-                )
-            sp2 += m * (vφ[i] - v_rot[b])^2
+            sp2 += mass[i] * (vφ[i] - v_rot[b])^2
         end
-        sigma[b] = sqrt(s2 / (3 * Mb))
+        sigma[b] = sqrt(max(moment[b] - v_rot[b]^2, 0.0) / 3)
         sigma_phi[b] = sqrt(sp2 / Mb)
-        v_rot_debiased[b] = sign(v_rot[b]) * sqrt(max(v_rot[b]^2 - sigma_phi[b]^2 / counts[b], 0.0))
+        v_rot_debiased[b] =
+            sign(v_rot[b]) * sqrt(max(v_rot[b]^2 - sigma_phi[b]^2 * m²b / Mb^2, 0.0))
     end
     ratio = [sigma[b] > 0 ? v_rot[b] / sigma[b] : NaN for b in 1:nb]
     lambda_r = _shell_lambda_r(w_R, v_rot, sigma)
@@ -651,6 +659,7 @@ function rotation_analysis(
         Lfix = L .- vec(sum(Lφ; dims = 2))
         acc = zeros(nb)
         v_null = zeros(nb)
+        σ_null = zeros(nb)
         sv2 = zeros(nb)
         sλr2 = 0.0
         sλp2 = 0.0
@@ -666,9 +675,10 @@ function rotation_analysis(
             end
             for b in 1:nb
                 v_null[b] = acc[b] / M_shell[b]
+                σ_null[b] = sqrt(max(moment[b] - v_null[b]^2, 0.0) / 3)
                 sv2[b] += v_null[b]^2
             end
-            sλr2 += _shell_lambda_r(w_R, v_null, sigma)^2
+            sλr2 += _shell_lambda_r(w_R, v_null, σ_null)^2
             sλp2 += (sqrt(lx * lx + ly * ly + lz * lz) * peebles)^2
         end
         v_rot_floor .= sqrt.(sv2 ./ n_null)

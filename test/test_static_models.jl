@@ -133,6 +133,57 @@ end
     @test rot.v_peak > 0 && 0 < rot.r_peak < 5
 end
 
+@testset "Static models — rotation against closed forms" begin
+    # Plummer positions with a prescribed streaming about the z axis and a prescribed
+    # dispersion, one shell: v_rot/σ and λ_R = v/√(v² + σ²) are known (Emsellem et al.
+    # 2007, σ about the mean streaming velocity). The centre is the shrinking-sphere
+    # estimate, a few 10⁻² scale radii from the origin, which sets the tolerances.
+    rng = StableRNG(11)
+    n = 20_000
+    pos, _ = Nbody6Dynamics.sample_plummer(n, 1.0; rng)
+    m = fill(1 / n, n)
+    Rc = [hypot(pos[1, i], pos[2, i]) for i in 1:n]
+    eφ = [(-pos[2, i] / Rc[i], pos[1, i] / Rc[i]) for i in 1:n]
+    one_shell(vel, mass = m) =
+        rotation_analysis(pos, vel, mass; nbins_max = 1, n_null = 0, peebles = false)
+    # Cold rotator: all motion is ordered
+    vel = zeros(3, n)
+    for i in 1:n
+        vel[1, i], vel[2, i] = eφ[i]
+    end
+    cold = one_shell(vel)
+    @test cold.lambda_r > 0.99
+    @test cold.profile.sigma[1] < 0.1
+    # Streaming 1 with an isotropic dispersion 0.2: v/σ = 5, λ_R = 1/√1.04. The
+    # offset of the centre misdirects the streaming of the innermost stars; the cold
+    # case measures that contribution, which adds in quadrature.
+    warm = one_shell(vel .+ 0.2 .* randn(rng, 3, n))
+    @test warm.profile.sigma[1] ≈ hypot(0.2, cold.profile.sigma[1]) rtol = 0.02
+    @test warm.profile.v_rot_over_sigma[1] ≈ 5 rtol = 0.08
+    @test warm.lambda_r ≈ 1 / sqrt(1.04) rtol = 0.01
+    # Isotropic unit dispersion with every azimuthal velocity made positive (the
+    # Lynden-Bell flip at p = 1): v̄_φ = √(2/π), σ² = 1 − 2/(3π)
+    vel = randn(rng, 3, n)
+    for i in 1:n
+        vφi = vel[1, i] * eφ[i][1] + vel[2, i] * eφ[i][2]
+        vφi < 0 && (vel[1, i] -= 2 * vφi * eφ[i][1]; vel[2, i] -= 2 * vφi * eφ[i][2])
+    end
+    flip = one_shell(vel)
+    v̄, σ = sqrt(2 / π), sqrt(1 - 2 / (3π))
+    @test flip.profile.v_rot[1] ≈ v̄ rtol = 0.03
+    @test flip.profile.sigma[1] ≈ σ rtol = 0.03
+    @test flip.lambda_r ≈ v̄ / sqrt(v̄^2 + σ^2) rtol = 0.02
+    # Unequal masses: the debiasing uses the noise of a mass-weighted mean,
+    # σ_φ² Σm²/(Σm)², and removes a mean that is noise alone
+    mw = rand(rng, n) .^ 4 .+ 1e-3
+    mw ./= sum(mw)
+    noise = one_shell(randn(rng, 3, n), mw)
+    n_eff = 1 / sum(abs2, mw)
+    @test n_eff < n / 2
+    @test abs(noise.profile.v_rot[1]) < 4 / sqrt(n_eff)
+    @test abs(noise.profile.v_rot_debiased[1]) ≤ abs(noise.profile.v_rot[1])
+end
+
 @testset "Static models — shape" begin
     rng = StableRNG(13)
     N = 40_000
