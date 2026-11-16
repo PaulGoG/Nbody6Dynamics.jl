@@ -185,7 +185,7 @@
         ρ_gb = gw_snr(0.5, 0.25, a_gb, 0.0)
         @test isapprox(ρ_gb, 140; rtol = 0.02)
         # Stationary circular: h₂² T / S_n(f₂) (J0651 chirps by 2×10⁻⁶ of the SNR in 4 yr);
-        # eccentric: the harmonic sum (LEGWORK Eqs. 35, 34)
+        # eccentric: the harmonic sum (LEGWORK Eqs. 65, 64)
         @test ρ_gb ≈ sqrt(gw_harmonic_strain(0.5, 0.25, a_gb, 0.0, 2)^2 * 4yr / lisa_psd(2.6e-3)) rtol =
             1e-5
         ae, ee = 0.003, 0.5
@@ -217,9 +217,39 @@
             ),
         )
         @test f2(a_end) > 1.5 * f2(ac)   # the source chirps over the observation
-        @test gw_snr(m1c, m2c, ac, 0.0; n_time = 1025) ≈ ρ_f rtol = 1e-3
+        @test gw_snr(m1c, m2c, ac, 0.0; rtol = 1e-6) ≈ ρ_f rtol = 1e-3
 
-        @test_throws ArgumentError gw_snr(0.5, 0.25, a_gb, 0.0; n_time = 4)
+        # A source that reaches 6GM/c² inside the observation: the integral ends there.
+        # Reference: ∫ h_c²/(f² S_n) df from the initial f₂₂ to f₂₂ at a = 6GM/c², in ln f
+        am = 6.4036e-4   # t_c ≈ 1 yr
+        @test gw_inspiral_time(m1c, m2c, am, 0.0) < t_obs
+        a_isco = 6 * G * (m1c + m2c) * msun / nd._GW_C^2 / au
+        lfs = range(log(f2(am)), log(f2(a_isco)); length = 20001)
+        gl = [
+            gw_characteristic_strain(m1c, m2c, a_of_f(exp(lf)), 0.0, 2)^2 /
+            (exp(lf) * lisa_psd(exp(lf))) for lf in lfs
+        ]
+        ρ_m = sqrt(
+            step(lfs) / 3 * sum(
+                gl[k] * (k == 1 || k == length(lfs) ? 1 : (iseven(k) ? 4 : 2)) for
+                k in eachindex(lfs)
+            ),
+        )
+        @test gw_snr(m1c, m2c, am, 0.0; rtol = 1e-6) ≈ ρ_m rtol = 2e-3
+        @test gw_snr(m1c, m2c, am, 0.0) ≈ ρ_m rtol = 5e-3
+        # the observation time beyond the coalescence adds nothing
+        @test gw_snr(m1c, m2c, am, 0.0; t_obs_yr = 2.0, confusion = false) ≈
+              gw_snr(m1c, m2c, am, 0.0; t_obs_yr = 4.0, confusion = false) rtol = 2e-3
+
+        # The confusion fit far above its knee: no NaN, and no contribution
+        @test lisa_psd(3.229) == lisa_psd(3.229; confusion = false)
+        @test lisa_psd(30.0) == lisa_psd(30.0; confusion = false)
+        @test lisa_psd(1.0e-3) > 2 * lisa_psd(1.0e-3; confusion = false)
+        ρ_ecc = gw_snr(10.0, 10.0, 0.0067, 0.99)   # harmonics up to 4 Hz
+        ρ_ecc_inst = gw_snr(10.0, 10.0, 0.0067, 0.99; confusion = false)
+        @test isfinite(ρ_ecc) && 0.5 * ρ_ecc_inst < ρ_ecc ≤ ρ_ecc_inst
+
+        @test_throws ArgumentError gw_snr(0.5, 0.25, a_gb, 0.0; rtol = 0.0)
         @test_throws ArgumentError gw_snr(0.5, 0.25, a_gb, 0.0; t_obs_yr = 0.0)
         @test_throws ArgumentError gw_snr(0.5, 0.25, a_gb, 1.0)
     end

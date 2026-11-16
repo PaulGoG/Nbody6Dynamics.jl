@@ -337,7 +337,7 @@ function _gwcat_orbit_state(m1::Float64, m2::Float64, a::Float64, e::Float64)
         hc2_kpc = strains ? gw_characteristic_strain(m1, m2, a, e, 2) : NaN,
         snr_lisa_kpc = (
             strains && e ≤ _GWCAT_SNR_E_MAX && _GWCAT_SNR_F_RANGE[1] ≤ f22 ≤ _GWCAT_SNR_F_RANGE[2]
-        ) ? gw_snr(m1, m2, a, e; n_time = 3) : NaN,
+        ) ? gw_snr(m1, m2, a, e) : NaN,
     )
 end
 
@@ -1616,7 +1616,6 @@ function gw_observer_catalogue(
                 distance_kpc = d_kpc,
                 t_obs_yr,
                 confusion,
-                n_time = 3,
             )
             ci = cos(ι)
             ρ = ρ̄ * sqrt((((1 + ci^2) / 2)^2 + ci^2) / 0.8)

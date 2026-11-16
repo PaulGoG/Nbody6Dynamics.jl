@@ -534,7 +534,7 @@ using StableRNGs: StableRNG
             @test r.h2_avg_kpc ≈ gw_harmonic_strain(r.m1_msun, r.m2_msun, r.a_au, r.e, 2) rtol =
                 1e-12
             snr_ok = r.e ≤ 0.99 && 1e-5 ≤ r.f_gw22_hz ≤ 1.0
-            @test snr_ok ? r.snr_lisa_kpc ≈ gw_snr(r.m1_msun, r.m2_msun, r.a_au, r.e; n_time = 3) :
+            @test snr_ok ? r.snr_lisa_kpc ≈ gw_snr(r.m1_msun, r.m2_msun, r.a_au, r.e) :
                   isnan(r.snr_lisa_kpc)
         end
 
@@ -630,14 +630,7 @@ using StableRNGs: StableRNG
         for (o, r) in zip(obs, rows)
             @test o.f_gw22_obs_hz ≈ r.f_gw22_hz / (1 + o.z) rtol = 1e-12
             zf = 1 + o.z
-            ρ̄ = gw_snr(
-                r.m1_msun * zf,
-                r.m2_msun * zf,
-                r.a_au * zf,
-                r.e;
-                distance_kpc = 8.0,
-                n_time = 3,
-            )
+            ρ̄ = gw_snr(r.m1_msun * zf, r.m2_msun * zf, r.a_au * zf, r.e; distance_kpc = 8.0)
             ci = cos(o.incl_rad)
             @test o.snr_lisa ≈ ρ̄ * sqrt((((1 + ci^2) / 2)^2 + ci^2) / 0.8) rtol = 1e-10
         end
