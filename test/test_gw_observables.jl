@@ -11,25 +11,30 @@
     @testset "Peters–Mathews enhancement and the time factor" begin
         @test gw_enhancement(0.0) == 1.0
         @test gw_enhancement(0.5) ≈ (1 + 73 / 24 * 0.25 + 37 / 96 * 0.0625) / 0.75^3.5
-        # F(e₀) = T / [T_c (1 − e₀²)^{7/2}]
+        # F(e₀) = T / [T_c (1 − e₀²)^{7/2}], against Peters' (1964) closed integral evaluated here
+        # by direct quadrature in e: T = (12/19) c₀⁴/β ∫₀^{e₀} e^{29/19} (1 + k e²)^{1181/2299}
+        # (1 − e²)^{−3/2} de with c₀ = a₀ (1 − e₀²) e₀^{−12/19} (1 + k e₀²)^{−870/2299},
+        # k = 121/304, and T_c = a₀⁴/(4β)
         @test gw_time_factor(0.0) ≈ 1.0 rtol = 1e-12
-        for (e, F) in (
-            (0.5, 0.979318),
-            (0.9, 1.139561),
-            (0.99, 1.500922),
-            (0.999, 1.696682),
-            (0.9999, 1.770611),
-        )
-            @test gw_time_factor(e) ≈ F rtol = 1e-6
+        k_p = 121 / 304
+        function peters_factor(e0)
+            I = nd.quadgk(
+                e -> e^(29 / 19) * (1 + k_p * e^2)^(1181 / 2299) / (1 - e^2)^1.5,
+                0.0,
+                e0;
+                rtol = 1e-13,
+            )[1]
+            c_ratio = (1 - e0^2) * e0^(-12 / 19) * (1 + k_p * e0^2)^(-870 / 2299)
+            return 48 / 19 * c_ratio^4 * I / (1 - e0^2)^3.5
+        end
+        for e in (0.01, 0.1, 0.5, 0.9, 0.99, 0.999, 0.9999)
+            @test gw_time_factor(e) ≈ peters_factor(e) rtol = 1e-10
         end
         @test gw_time_factor(1 - 1e-14) ≈ 768 / 425 rtol = 1e-5
         # The two quadratures agree where both apply
         for e in (0.2, 0.4, 0.5, 0.6, 0.8)
             @test nd._gw_time_factor_x(e) ≈ nd._gw_time_factor_tau(e) rtol = 1e-8
         end
-        # Low-e limit: F → [(1 + k e²)^{−870/2299}]⁴ (1 − e²)^{−7/2} (1 − e²)⁴, within 1 % at e = 0.1
-        k = 121 / 304
-        @test gw_time_factor(0.1) ≈ (1 - 0.01)^0.5 * (1 + k * 0.01)^(-3480 / 2299) rtol = 0.01
         @test_throws ArgumentError gw_time_factor(1.0)
         @test_throws ArgumentError gw_time_factor(-0.1)
     end
