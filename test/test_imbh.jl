@@ -264,6 +264,14 @@ using Logging: Logging
         @test length(rows) == 3002
         @test isapprox(rows[end - 1][1], 30 / result.M_total; rtol = 1e-12)
         @test isapprox(rows[end][1], 30 / result.M_total; rtol = 1e-12)
+        # The IMBHs carry their clusters' velocities; the system stays in its
+        # centre-of-mass frame (the engine does not correct KZ(22) = 2 input)
+        mom = [sum(r[1] * r[4 + k] for r in rows) for k in 1:3]
+        cmx = [sum(r[1] * r[1 + k] for r in rows) for k in 1:3]
+        @test sqrt(sum(abs2, mom)) <
+              1e-12 * sum(r[1] * sqrt(r[5]^2 + r[6]^2 + r[7]^2) for r in rows)
+        @test sqrt(sum(abs2, cmx)) <
+              1e-12 * sum(r[1] * sqrt(r[2]^2 + r[3]^2 + r[4]^2) for r in rows)
 
         meta = nd.TOML.parsefile(joinpath(dir, "merger_ic.toml"))
         lines = readlines(joinpath(dir, "merger.inp"))

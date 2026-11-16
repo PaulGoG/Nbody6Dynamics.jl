@@ -1663,6 +1663,10 @@ function generate_merger_ic(
         mass_combined = vcat(mass_combined, st.mass)
         M_total += st.mass
     end
+    # The IMBHs carry their cluster's mean velocity and a Brownian velocity: with
+    # several clusters, or a kick, the system leaves its centre-of-mass frame,
+    # which the engine does not restore for KZ(22) = 2 input
+    isempty(imbh_states) || _shift_to_centre_of_mass!(pos_combined, vel_combined, mass_combined)
     # Inertial velocities into the engine's rotating frame (kz14 = 1, 2): v − Ω × r,
     # with Ω converted to the code velocity unit per pc; no rotating frame otherwise.
     if cfg.tidal.velocity_frame == "inertial" && cfg.tidal.kz14 in (1, 2)
