@@ -141,7 +141,7 @@ from `validity_record`:
   `n_eff = (Σm)² / Σm²`
 - `t_cr`: crossing time `M^{5/2} / (−2E)^{3/2}` of the bound set (`G = 1`;
   Heggie & Mathieu 1986), `M` its mass and `E = T + W` its energy
-- `q_virial = 2T / |W|` of the bound set
+- `two_t_over_w = 2T / |W|` of the bound set (1 in virial equilibrium)
 - `lagr_f_min = lagr_n_min / n_eff` and `lagr_f_max = 1 − lagr_n_min / n_eff`,
   the mass-fraction range a Lagrangian radius can resolve; NaN when
   `n_eff < 2 lagr_n_min`
@@ -159,7 +159,7 @@ struct ValiditySnapshot
     n_bound::Int
     n_eff::Float64            # (Σm)² / Σm² over the bound stars
     t_cr::Float64
-    q_virial::Float64         # 2 T_b / |W_b|
+    two_t_over_w::Float64     # 2 T_b / |W_b|
     lagr_f_min::Float64       # lagr_n_min / n_eff; NaN when n_eff < 2 lagr_n_min
     lagr_f_max::Float64       # 1 − lagr_n_min / n_eff; NaN likewise
     bound_converged::Bool
@@ -910,7 +910,7 @@ function validity_record(
     n_bound = zeros(Int, nrow)
     n_eff = fill(NaN, nrow)
     t_cr = fill(NaN, nrow)
-    q_virial = fill(NaN, nrow)
+    two_t_over_w = fill(NaN, nrow)
     converged = falses(nrow)
     for (k, s) in enumerate(ints)
         b = s.bound
@@ -927,7 +927,7 @@ function validity_record(
             n_eff[k] = Σm² > 0 ? Σm^2 / Σm² : NaN
         end
         t_cr[k] = s.bound_mass > 0 ? crossing_time(s.bound_mass, b.kinetic + b.potential) : NaN
-        q_virial[k] = b.potential != 0 ? 2 * b.kinetic / abs(b.potential) : NaN
+        two_t_over_w[k] = b.potential != 0 ? 2 * b.kinetic / abs(b.potential) : NaN
         converged[k] = b.status === :converged
     end
     t_cr_initial = nrow ≥ 1 ? t_cr[1] : NaN
@@ -1108,7 +1108,7 @@ function validity_record(
     if length(after) ≥ 3
         virialised = "not_reached"
         k_q = _validity_holds_from(
-            j -> abs(q_virial[j] - 1) ≤ settings.validity_virial_tolerance,
+            j -> abs(two_t_over_w[j] - 1) ≤ settings.validity_virial_tolerance,
             nrow,
         )
         if k_q !== nothing
@@ -1236,7 +1236,7 @@ function validity_record(
             n_bound[k],
             n_eff[k],
             t_cr[k],
-            q_virial[k],
+            two_t_over_w[k],
             resolvable ? lagr_n_min / n_eff[k] : NaN,
             resolvable ? 1 - lagr_n_min / n_eff[k] : NaN,
             converged[k],
@@ -1306,7 +1306,7 @@ end
     write_validity_snapshots(path, rec::ValidityRecord) -> String
 
 Write the per-snapshot rows of the record as CSV: `time_nb, n_bound, n_eff,
-t_cr, q_virial, lagr_f_min, lagr_f_max, bound_converged, in_window,
+t_cr, two_t_over_w, lagr_f_min, lagr_f_max, bound_converged, in_window,
 equilibrium_ok`, then for every entry `<estimator>__<quantity>` of
 `VALIDITY_TRACKED` the columns `_bias`, `_scatter` and `_ok`, and last the
 system `regime` of the merger epochs (empty without epochs). Booleans as
@@ -1320,7 +1320,7 @@ function write_validity_snapshots(path::AbstractString, rec::ValidityRecord)::St
         "n_bound",
         "n_eff",
         "t_cr",
-        "q_virial",
+        "two_t_over_w",
         "lagr_f_min",
         "lagr_f_max",
         "bound_converged",
@@ -1339,7 +1339,7 @@ function write_validity_snapshots(path::AbstractString, rec::ValidityRecord)::St
                 string(s.n_bound),
                 string(s.n_eff),
                 string(s.t_cr),
-                string(s.q_virial),
+                string(s.two_t_over_w),
                 string(s.lagr_f_min),
                 string(s.lagr_f_max),
                 string(s.bound_converged),
