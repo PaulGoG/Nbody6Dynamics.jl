@@ -230,6 +230,33 @@ using StableRNGs: StableRNG
         differ = nd.logrank_test(mktable(y, ones(Int, 1000)), h)
         @test differ.p_value < 1e-6
         @test differ.observed[2] > differ.expected[2]    # the faster group fails more often
+        # Textbook case: remission times in weeks of the 6-MP and placebo groups of the
+        # Freireich et al. (1963) leukaemia trial (21 patients each, 12 censored under 6-MP);
+        # O = (9, 21), E = (19.25, 10.75), log-rank statistic 16.79 (Kleinbaum & Klein 2012,
+        # Survival Analysis, 3rd ed., ch. 2, DOI 10.1007/978-1-4419-6646-9)
+        t_6mp = [6, 6, 6, 7, 10, 13, 16, 22, 23, 6, 9, 10, 11, 17, 19, 20, 25, 32, 32, 34, 35]
+        c_6mp = vcat(ones(Int, 9), zeros(Int, 12))
+        t_plc = [1, 1, 2, 2, 3, 4, 4, 5, 5, 8, 8, 8, 8, 11, 11, 12, 12, 15, 17, 22, 23]
+        lr = nd.logrank_test(
+            mktable(vcat(t_6mp, t_plc), vcat(c_6mp, ones(Int, 21))),
+            vcat(fill(1, 21), fill(2, 21)),
+        )
+        @test lr.observed == [9, 21]
+        @test lr.expected ≈ [19.25, 10.75] atol = 0.005
+        @test lr.statistic ≈ 16.79 atol = 0.005
+        # and the product-limit estimate of the 6-MP group at its event times (same source)
+        km_6mp = nd.kaplan_meier(mktable(t_6mp, c_6mp))
+        for (t, S) in (
+            (6, 0.8571),
+            (7, 0.8067),
+            (10, 0.7529),
+            (13, 0.6902),
+            (16, 0.6275),
+            (22, 0.5378),
+            (23, 0.4482),
+        )
+            @test nd.survival_at(km_6mp, t) ≈ S atol = 1e-4
+        end
         @test_throws ArgumentError nd.logrank_test(mktable(x, ones(Int, 1000)), mod1.(1:1000, 3))
         @test_throws ArgumentError nd.logrank_test(mktable(x, ones(Int, 1000)), ones(Int, 1000))
     end
