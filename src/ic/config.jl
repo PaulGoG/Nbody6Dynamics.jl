@@ -998,7 +998,9 @@ booked and its mass removed (engine line `TDE`).
 - `partial`: `"off"` (full disruption when r_t/q ≥ `beta_full`), `"gamma43"`
   or `"gamma53"` (full disruption above β = 1.85 or 0.9 and partial
   disruption down to 0.6 or 0.5, the star losing the fraction of Guillochon &
-  Ramirez-Ruiz 2013, DOI 10.1088/0004-637X/767/1/25)
+  Ramirez-Ruiz 2013, DOI 10.1088/0004-637X/767/1/25). Their fits hold for
+  β = R★ (M/m★)^{1/3}/q of a polytropic star; under `rt_mode = "fixed"` β is
+  `r_acc_pc/q` and the fits become a scaled prescription (a warning at load)
 - `beta_full`: threshold of `partial = "off"`; > 0
 - `accretion_fraction`: fraction of every disrupted or stripped mass the black
   hole gains (`FACC`; a plunging star is gained whole when it is > 0;
@@ -1654,6 +1656,10 @@ function _validate_mbh(
         "merger.mbh.partial",
         "must be one of \"off\", \"gamma43\", \"gamma53\"; got \"$(b.partial)\"",
     )
+    (b.rt_mode == "fixed" && b.partial != "off") &&
+        @warn "merger.mbh.partial = \"$(b.partial)\" with rt_mode = \"fixed\": the fits of " *
+              "Guillochon & Ramirez-Ruiz (2013) are for β = R★ (M/m★)^(1/3)/q of a polytropic star; " *
+              "with the fixed radius r_acc_pc they act as a scaled prescription"
     (isfinite(b.beta_full) && b.beta_full > 0) ||
         _config_error("merger.mbh.beta_full", "must be finite and > 0; got $(b.beta_full)")
     (isfinite(b.accretion_fraction) && 0 ≤ b.accretion_fraction ≤ 1) || _config_error(

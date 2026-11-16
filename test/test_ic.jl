@@ -1699,6 +1699,10 @@ end
     @test isempty(
         nd.TOML.parsefile(joinpath(rigid.output_dir, "merger_ic.toml"))["mbh"]["jeans_factors"],
     )
+    # the partial-disruption fits with a fixed radius: accepted, with a warning
+    @test_logs (:warn, r"scaled prescription") nd.load_merger_config(
+        mbh_config("mass_msun = 100.0\nr_acc_pc = 1.0e-3\npartial = \"gamma43\""),
+    )
     # stellar disruption radius and partial disruptions
     dir2 = mktempdir()
     nd.generate_merger_ic(

@@ -18,6 +18,11 @@
 # time units, (RBAR_est / r_h,control)^{3/2}, with RBAR_est the half-mass
 # radius of the initial configuration estimated from the separations and
 # the members' radii (an approximation, stated in the docs).
+#
+# The control is not truncated: single mode ignores `truncate_jacobi`, while
+# the merger's clusters are cut at their Roche lobes (by default). The control
+# therefore integrates the stars the merger loses at its start, 25 to 35 % more
+# in the showcase sweep (995–999 bodies against 737–802 per merger point).
 
 """
     _control_time_factor(m::AbstractDict, Ns, rbars, rbar_control) -> Float64
