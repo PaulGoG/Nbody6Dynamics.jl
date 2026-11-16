@@ -230,7 +230,9 @@ end
 # pairs' internal energy; the members of chains and hierarchies appear with
 # their physical coordinates, so ESUB and EMERGE are inside the snapshot sums.
 # Hence e_jacobi(t) + E_escaped(t) + ECOLL + EMDOT + ECDOT is the conserved
-# total the engine checks, reconstructed from the snapshot.
+# total the engine checks, reconstructed from the snapshot; under KZ(14) = 3 and 5
+# the accumulated tidal work ETIDE of the ADJUST lines is added, which no snapshot
+# sum contains.
 
 """
     EnergyBudgetRow
@@ -253,7 +255,8 @@ accumulates into its total (ADJUST record at the snapshot time; a snapshot
 between two adjustments has no value, and its total is NaN); `e_total =
 e_snapshot + e_escaped + e_channels`; `residual` its change since the first
 snapshot with a finite total and `residual_rel` that change over the cluster
-energy `max(T, |T + W|)` of that snapshot, the engine's divisor of `DE` (the
+energy `max(T, |T + W|)` of that snapshot, the engine's divisor of `DE` without
+its external-potential terms (the
 pairs' binding energy, which can exceed the cluster energy several times,
 would dilute it); `detot` the engine's own cumulative energy
 change `DETOT` at the ADJUST record at the snapshot time (NaN between

@@ -85,7 +85,15 @@ const MODEL_TRUTH = Dict(
     "plummer" => (; q = 1.0, s = 1.0, beta = r -> 0.0, isotropic = true, segregation = NaN),
     "plummer_om15" =>
         (; q = 1.0, s = 1.0, beta = om_beta, isotropic = false, segregation = NaN),
-    "plummer_rot" => (; q = 1.0, s = 1.0, beta = r -> 0.0, isotropic = true, segregation = NaN),
+    # The flip keeps |v_φ|: about the mean streaming β = ⟨|v_φ|⟩²/(2⟨v_φ²⟩) = 6 (512/(693π))²
+    # for the isotropic Plummer distribution function, at every radius
+    "plummer_rot" => (;
+        q = 1.0,
+        s = 1.0,
+        beta = r -> 6 * (512 / (693π))^2,
+        isotropic = true,
+        segregation = NaN,
+    ),
     "plummer_kroupa" =>
         (; q = 1.0, s = 1.0, beta = r -> 0.0, isotropic = true, segregation = 1.0),
     "plummer_kroupa_s05" =>

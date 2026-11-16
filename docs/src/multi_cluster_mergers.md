@@ -117,7 +117,7 @@ r_L = d\,\frac{0.49\,q^{2/3}}{0.6\,q^{2/3} + \ln(1 + q^{1/3})},
 
 ## Units and output files
 
-Sampling and orbit placement happen in internal code units: `G = 1` with masses in M☉ and lengths in pc, so one code velocity unit is `√(G M☉/pc) = 0.06558` km s⁻¹ (with `G = 4.30091×10⁻³ pc (km s⁻¹)² M☉⁻¹`) and the code time unit is 14.91 Myr. User-facing quantities (positions, velocities, masses, times of the summary) are physical.
+Sampling and orbit placement happen in internal code units: `G = 1` with masses in M☉ and lengths in pc, so one code velocity unit is `√(G M☉/pc) = 0.06558` km s⁻¹ (with `G = 4.30091×10⁻³ pc (km s⁻¹)² M☉⁻¹`) and the code time unit is 14.94 Myr (the engine's, with 3.15×10¹³ s per Myr). User-facing quantities (positions, velocities, masses, times of the summary) are physical.
 
 `generate_merger_ic` writes four files (all protected by the never-overwrite `name#k.ext` backup policy):
 

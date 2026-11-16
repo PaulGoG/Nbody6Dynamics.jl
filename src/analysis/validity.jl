@@ -597,8 +597,10 @@ function _validity_energy(
     e0 = available ? adj[1].e_tot : NaN
     detot = available ? adj[end].detot : NaN
     # The cumulative change over the engine's divisor of DE at the start,
-    # max(ZKIN, |E|) with E = ZKIN − POT the energy of the reduced system:
-    # |ETOT| holds the binding energy of the pairs and would dilute it
+    # max(ZKIN, |E|) with E = ZKIN − POT the energy of the reduced system (the
+    # engine adds EPL, and ETIDE under the linearised tides, which the ADJUST
+    # line does not separate): |ETOT| holds the binding energy of the pairs and
+    # would dilute it
     scale0 = available ? max(adj[1].ekin, abs(adj[1].ekin - adj[1].pot)) : NaN
     isfinite(scale0) && scale0 > 0 || (scale0 = abs(e0))
     cumulative = abs(detot) / scale0

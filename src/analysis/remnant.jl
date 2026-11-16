@@ -1148,7 +1148,8 @@ const _MSR_THRESHOLD = 2.0
 The systems of the stars `sel` of `snap` (`mass`, `pos`, `vel` their values in
 the order of `sel`): a regularised pair whose two components are both in `sel`
 is one body at its centre of mass; the slots of a merged hierarchy (negative
-pair name) are an inner component and the outer body, not a pair. Returns the
+pair name) are an inner component and the outer body, not a pair, so the inner
+binary of a stable hierarchy stays two systems. Returns the
 [`SystemSet`](@ref) and the system of each member name.
 """
 function _selected_systems(snap::Snapshot, sel::AbstractVector{Int}, mass, pos, vel)
@@ -1409,9 +1410,12 @@ function remnant_diagnostics(
             ρ = _snapshot_density(snap, sel; k = k_nb, engine = isempty(excluded))
             cr = core_radius(pos, ρ)
             r_core[k] = cr.r_core
-            # Density-weighted density Σρ²/Σρ (Casertano & Hut 1985); the maximum of
-            # the estimates measures the noise of the estimator, not the core
-            ρ_core[k] = sum(abs2, ρ) / sum(ρ)
+            # Density-weighted density Σρ²/Σρ (Casertano & Hut 1985) over every bound
+            # star: the engine fills its column only inside max(r_h, 3 r_c) (core.f), so
+            # the package's own estimate keeps the set the same at every snapshot. The
+            # maximum of the estimates would measure the noise of the estimator.
+            ρm = local_density(pos, mass; k = k_nb)
+            ρ_core[k] = sum(abs2, ρm) / sum(ρm)
             ρn = _snapshot_density(snap, sel; weighting = :number, k = k_nb)
             r_core_n[k] = core_radius(pos, ρn).r_core
         end

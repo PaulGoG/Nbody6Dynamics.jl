@@ -6,6 +6,11 @@ entries say so.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-11-16
+
+A review of the physics against the literature, with fixes. Several outputs change meaning or scale, listed under
+Changed; analyses made with 0.9.x should be rerun with `postprocess` on the existing runs.
+
 ### Changed
 
 - Engine pin `v2026.07.27`: the static black hole of `[merger.mbh]` swallows a star whose Newtonian pericentre lies
@@ -37,9 +42,10 @@ entries say so.
 - `validity_snapshots.csv`: the 2T/|W| column is `two_t_over_w`; it was `q_virial`, the name of T/|W| in
   `snapshot_integrals.csv`.
 - `rho_core` of the remnant diagnostics is the density-weighted density Σρ²/Σρ (Casertano & Hut 1985); it was the
-  largest sixth-neighbour density, 4.9 ρ₀ with 20 % scatter for a Plummer model. `t_rho_max` moves with it. The
-  engine's density column (M₅/r₆³, without 4π/3) is converted to the package's M₅/(4π r₆³/3); it entered 4.19 times
-  too large.
+  largest sixth-neighbour density, 4.9 ρ₀ with 20 % scatter for a Plummer model, and is now taken over every bound
+  star with the package's estimate (the engine fills its density column only inside max(r_h, 3 r_c)). `t_rho_max`
+  moves with it. The engine's density column (M₅/r₆³, without 4π/3), which the core radius still uses, is converted
+  to the package's M₅/(4π r₆³/3).
 - The `kt` of the remnant diagnostics is 2K/(3n) with n the number of bound systems, as `hardness_scale`; it was
   divided by the star count. `n_hard_pairs` and `hardness_max` change for runs with pairs.
 - Mass segregation: the tracer class is the `msr_n_tracer` most massive systems of the first snapshot (a regularised
@@ -51,6 +57,8 @@ entries say so.
   the stages did nothing and the segregation failed at sampling.
 - The logged cost basis names its table and says when the built-in H200 rows estimate a CPU build.
 - `config.toml` lists every `[postprocess]` key.
+- The calibration table (`assets/calibration/`) is regenerated for the tangential dispersion about the mean
+  streaming; the true β of the flipped Plummer model is 6 (512/(693π))² = 0.332.
 
 ### Fixed
 

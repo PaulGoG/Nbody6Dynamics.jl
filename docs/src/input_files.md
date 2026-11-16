@@ -597,7 +597,7 @@ The two controls test whether the substructure of a complex matters at fixed ste
 ### Seed semantics
 
 - `seed` **omitted** → a random seed is drawn at generation time (`0` is an ordinary seed). The IC is still reproducible after the fact: the effective seed is recorded in `merger_ic.toml` (`meta.seed`)
-- `seed = n` (any integer, `0` included) → deterministic sampling with `MersenneTwister(n)`
+- `seed = n` (any integer, `0` included) → deterministic sampling with `MersenneTwister(n)`, reproducible within one Julia version (Julia does not promise the same random stream across versions; `merger_ic.toml` records the Julia version of the generation under `[hardware]`)
 - The effective seed also feeds the `NRAND` parameter of the generated `merger.inp`, so the Nbody6++ run inherits it
 - If a caller passes an explicit `rng` to `generate_merger_ic`, sampling is **not** reproducible from the recorded seed; the metadata records it as `meta.external_rng = true` (the seed still feeds `NRAND`)
 - `meta.seed_streams` records the stream layout
