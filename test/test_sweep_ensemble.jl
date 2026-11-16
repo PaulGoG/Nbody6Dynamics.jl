@@ -434,6 +434,15 @@ end
     ens0 = sweep_ensembles(sdir0, :lagrangian)
     @test length(ens0) == 1 && ens0[1].stats.n == 3 && isempty(ens0[1].values)
     @test ens0[1].stats.median ≈ ens0[1].stats.q975    # identical members → zero-width bands
+    @test ens0[1].arm == ""
+    # Arms are separate ensembles: the same index with the third point on another arm
+    sdir_arm = joinpath(work, "seeds_arms")
+    mkpath(sdir_arm)
+    idx_arm = Nbody6Dynamics.TOML.parsefile(joinpath(sdir0, "sweep_index.toml"))
+    idx_arm["points"][3]["arm"] = "twin"
+    open(io -> Nbody6Dynamics.TOML.print(io, idx_arm), joinpath(sdir_arm, "sweep_index.toml"), "w")
+    ens_arm = sweep_ensembles(sdir_arm, :lagrangian)
+    @test [(e.arm, e.stats.n) for e in ens_arm] == [("", 2), ("twin", 1)]
     vis_e = VisualizationConfig(;
         format = "png",
         column = "single",

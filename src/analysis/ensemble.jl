@@ -187,27 +187,33 @@ end
 
 """
     sweep_ensembles(sweep_dir, quantity; fraction = 0.5)
-        -> Vector{NamedTuple{(:values, :stats)}}
+        -> Vector{NamedTuple{(:arm, :values, :stats)}}
 
-Group the completed points of a sweep by their grid values (one ensemble
-per grid point, its members the seeds) and summarise the series of
-`quantity` ([`_run_series`](@ref)) with [`ensemble_statistics`](@ref).
-Only runs that completed enter (`_sweep_done_points` warns with the
-count of points left out); groups whose members carry no series are skipped.
-The stdout capture of a run is the `postprocess.stdout_file` of its frozen
-`config.toml`.
+Group the completed points of a sweep by arm and grid values (one ensemble
+per arm and grid point, its members the seeds) and summarise the series of
+`quantity` ([`_run_series`](@ref)) with [`ensemble_statistics`](@ref). The
+arm is the empty string for a sweep without arms. Only runs that completed
+enter (`_sweep_done_points` warns with the count of points left out);
+groups whose members carry no series are skipped. The stdout capture of a
+run is the `postprocess.stdout_file` of its frozen `config.toml`.
 """
 function sweep_ensembles(sweep_dir::AbstractString, quantity::Symbol; fraction::Real = 0.5)
     _, pts = _sweep_done_points(sweep_dir)
-    groups = Dict{Vector{Pair{String,Any}},Vector{Tuple{Vector{Float64},Vector{Float64}}}}()
-    order = Vector{Vector{Pair{String,Any}}}()
+    Key = Tuple{String,Vector{Pair{String,Any}}}
+    groups = Dict{Key,Vector{Tuple{Vector{Float64},Vector{Float64}}}}()
+    order = Key[]
     for (p, run_dir) in pts
-        key = sort!([String(k) => v for (k, v) in p["values"]]; by = first)
+        key = (
+            String(get(p, "arm", "")),
+            sort!(Pair{String,Any}[String(k) => v for (k, v) in p["values"]]; by = first),
+        )
         s = _run_series(run_dir, quantity; fraction = fraction)
         s === nothing && continue
         haskey(groups, key) ||
             (groups[key] = Tuple{Vector{Float64},Vector{Float64}}[]; push!(order, key))
         push!(groups[key], (Float64.(s[1]), Float64.(s[2])))
     end
-    return [(values = key, stats = ensemble_statistics(groups[key])) for key in order]
+    return [
+        (arm = key[1], values = key[2], stats = ensemble_statistics(groups[key])) for key in order
+    ]
 end

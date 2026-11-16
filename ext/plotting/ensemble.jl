@@ -6,7 +6,8 @@
 """
     plot_sweep_ensemble(sweep_dir, cfg::VisualizationConfig;
                         quantity = :lagrangian, axis = "", fixed = Dict{String,Any}(),
-                        fraction = 0.5, filename = "ensemble_<quantity>") -> String
+                        fraction = 0.5, arm = nothing,
+                        filename = "ensemble_<quantity>") -> String
 
 Median (line) and central 68 % (dark band) and 95 % (light band) intervals
 over the seeds of each grid point for `quantity` (`:lagrangian`,
@@ -15,6 +16,9 @@ value of `axis` (the first grid axis by default). With several axes the
 other axes are held at `fixed[key]`, or at their first value when not
 given; the fixed values are annotated. `fixed` may name only other grid
 axes. A sweep without grid axes yields one ensemble in a single colour.
+The ensembles of a sweep with arms are those of one arm, `arm` or, when it
+is not given, the first arm of the index; the seeds of different arms are
+never combined.
 """
 @publication function Nbody6Dynamics.plot_sweep_ensemble(
     sweep_dir::AbstractString,
@@ -23,12 +27,23 @@ axes. A sweep without grid axes yields one ensemble in a single colour.
     axis::AbstractString = "",
     fixed::AbstractDict = Dict{String,Any}(),
     fraction::Real = 0.5,
+    arm::Union{Nothing,AbstractString} = nothing,
     filename::AbstractString = "ensemble_" * String(quantity),
 )::String
     idx = read_sweep_index(sweep_dir)
     axes = String[idx["sweep"]["axes"]...]
     ensembles = sweep_ensembles(sweep_dir, quantity; fraction = fraction)
     isempty(ensembles) && error("No completed runs with $(quantity) series in sweep $sweep_dir")
+    arms = unique(e.arm for e in ensembles)
+    if arm !== nothing || length(arms) > 1
+        chosen = arm === nothing ? first(arms) : String(arm)
+        chosen in arms || throw(
+            ArgumentError(
+                "arm \"$chosen\" has no ensemble in $sweep_dir; arms: $(join(arms, ", "))",
+            ),
+        )
+        ensembles = filter(e -> e.arm == chosen, ensembles)
+    end
 
     # Hold every other axis at a fixed value (given, or the first one seen)
     held = Dict{String,Any}()
