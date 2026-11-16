@@ -433,7 +433,10 @@ Kinematic shells, of equal membership (counts differing by at most one):
 - `rho`: shell density `ΔM / (4π/3 (r_{k+1}³ − r_k³))`
 - `sigma_r`, `sigma_t`: radial and one-dimensional tangential velocity
   dispersions of the shell about its mean flow, with velocities taken
-  relative to the set's centre-of-mass velocity (`σ_t² = ½ ⟨|v_t − ⟨v_t⟩|²⟩`);
+  relative to the set's centre-of-mass velocity; the tangential velocity is
+  split into its azimuthal and polar components about the angular momentum
+  of the set, `σ_t² = ½ (⟨(v_φ − ⟨v_φ⟩)²⟩ + ⟨(v_θ − ⟨v_θ⟩)²⟩)`, so that the
+  rotation of a shell is not counted as dispersion;
   `NaN` in shells with fewer than `n_min_sigma` members
 - `beta`: anisotropy `1 − σ_t²/σ_r²` (0 isotropic, 1 radial); `NaN` in
   shells with fewer than `n_min_beta` members
@@ -558,6 +561,20 @@ function radial_profile(
     r_max > r_min || (r_max = r_min * 10)
     N_used = searchsortedlast(ds, r_max)::Int
     vc = vec(sum(vel .* mass'; dims = 2)) ./ M
+    # Axis of the set's angular momentum: the tangential velocities are split
+    # into azimuthal and polar components about it, so that the mean rotation
+    # of a shell is removed from σ_t (over a spherical shell the mean
+    # tangential vector of a rotation vanishes, its mean v_φ does not)
+    Lx = Ly = Lz = 0.0
+    @inbounds for i in 1:N
+        rx, ry, rz = pos[1, i] - centre[1], pos[2, i] - centre[2], pos[3, i] - centre[3]
+        vx, vy, vz = vel[1, i] - vc[1], vel[2, i] - vc[2], vel[3, i] - vc[3]
+        Lx += mass[i] * (ry * vz - rz * vy)
+        Ly += mass[i] * (rz * vx - rx * vz)
+        Lz += mass[i] * (rx * vy - ry * vx)
+    end
+    L_norm = sqrt(Lx^2 + Ly^2 + Lz^2)
+    ax, ay, az = L_norm > 0 ? (Lx / L_norm, Ly / L_norm, Lz / L_norm) : (0.0, 0.0, 1.0)
 
     # Kinematic shells: sorted positions bounds[s]+1 : bounds[s+1]
     n_k = max(1, min(nbins, N_used ÷ n_min_sigma))
@@ -583,7 +600,7 @@ function radial_profile(
     n = zeros(Int, n_k)
     n_buf = base + (extra > 0 ? 1 : 0)
     vr = Vector{Float64}(undef, n_buf)
-    vt = Matrix{Float64}(undef, 3, n_buf)
+    vt = Matrix{Float64}(undef, 2, n_buf)
     for s in 1:n_k
         lo = bounds[s] + 1
         hi = bounds[s + 1]
@@ -597,7 +614,7 @@ function radial_profile(
         r_med[s] = _sorted_median(ds, lo, hi)
         ns < n_min_sigma && continue
         mean_vr = 0.0
-        mvx, mvy, mvz = 0.0, 0.0, 0.0
+        mvx, mvy = 0.0, 0.0
         @inbounds for jj in 1:ns
             i = order[lo + jj - 1]
             rn = max(d[i], eps())
@@ -607,21 +624,31 @@ function radial_profile(
             dvx, dvy, dvz = vel[1, i] - vc[1], vel[2, i] - vc[2], vel[3, i] - vc[3]
             v = dvx * ux + dvy * uy + dvz * uz
             vr[jj] = v
-            vt[1, jj] = dvx - v * ux
-            vt[2, jj] = dvy - v * uy
-            vt[3, jj] = dvz - v * uz
+            # Azimuthal unit vector a × r̂ (normalised; on the axis any unit
+            # vector normal to r̂) and polar unit vector r̂ × φ̂
+            fx, fy, fz = ay * uz - az * uy, az * ux - ax * uz, ax * uy - ay * ux
+            fn = sqrt(fx^2 + fy^2 + fz^2)
+            if fn > 1.0e-12
+                fx, fy, fz = fx / fn, fy / fn, fz / fn
+            else
+                fx, fy, fz = abs(ux) < 0.9 ? (0.0, -uz, uy) : (-uz, 0.0, ux)
+                fn = sqrt(fx^2 + fy^2 + fz^2)
+                fx, fy, fz = fx / fn, fy / fn, fz / fn
+            end
+            tx, ty, tz = uy * fz - uz * fy, uz * fx - ux * fz, ux * fy - uy * fx
+            vt[1, jj] = dvx * fx + dvy * fy + dvz * fz
+            vt[2, jj] = dvx * tx + dvy * ty + dvz * tz
             w = mass[i] / ΔM
             mean_vr += w * v
             mvx += w * vt[1, jj]
             mvy += w * vt[2, jj]
-            mvz += w * vt[3, jj]
         end
         σr2 = 0.0
         σt2 = 0.0
         @inbounds for jj in 1:ns
             w = mass[order[lo + jj - 1]] / ΔM
             σr2 += w * (vr[jj] - mean_vr)^2
-            σt2 += w * ((vt[1, jj] - mvx)^2 + (vt[2, jj] - mvy)^2 + (vt[3, jj] - mvz)^2)
+            σt2 += w * ((vt[1, jj] - mvx)^2 + (vt[2, jj] - mvy)^2)
         end
         σt2 *= 0.5
         σr[s] = sqrt(σr2)

@@ -331,6 +331,54 @@ end
     @test with_bh.f_max[1] ≈ 1.0                          # equal stellar masses, the IMBH left out
     no_bh = remnant_diagnostics([sb, sb], [1:601]; settings = pp_b)
     @test no_bh.f_max[1] > 20
+    # Core density: the density-weighted mean Σρ²/Σρ of the local densities (Casertano & Hut 1985)
+    ρ_s = local_density(ps, ms)
+    @test with_bh.rho_core[1] ≈ sum(abs2, ρ_s) / sum(ρ_s) rtol = 1e-10
+
+    # Mass segregation on systems: twenty heavy stars at random positions (no segregation),
+    # five of them in regularised pairs with another heavy star 10⁻⁵ away. A pair enters the
+    # trees at its centre of mass, so Γ_MSR stays near unity; star by star the five short
+    # edges would raise it by an order of magnitude.
+    rng_t = StableRNG(31)
+    n_t = 4000
+    p_t, v_t = sample_plummer(n_t, 1.0; rng = rng_t)
+    m_t = fill(1.0 / n_t, n_t)
+    heavy = sortperm(rand(rng_t, n_t))[1:20]
+    m_t[heavy] .= 10.0 / n_t
+    for k in 1:5
+        i, j = heavy[2k - 1], heavy[2k]
+        p_t[:, j] .= p_t[:, i] .+ [1.0e-5, 0.0, 0.0]
+        v_t[:, j] .= v_t[:, i]
+    end
+    # The engine lists the components of its regularised pairs first, pair k as stars 2k − 1, 2k
+    first_ten = vcat([[heavy[2k - 1], heavy[2k]] for k in 1:5]...)
+    order_t = vcat(first_ten, setdiff(1:n_t, first_ten))
+    params_t = zeros(Float32, 20)
+    params_t[3] = 1.0f0
+    params_t[4] = 1.0f0
+    params_t[11] = 1.0f0
+    params_t[12] = 1.0f0
+    st = Snapshot(
+        SnapshotHeader(Int32(n_t), Int32(1), Int32(1), Int32(20), params_t),
+        Int32.(1:n_t),
+        Float32.(m_t[order_t]),
+        Float32.(p_t[:, order_t]),
+        Float32.(v_t[:, order_t]),
+        Float32[],
+        Float32[],
+        5,
+    )
+    pp_t = PostprocessConfig(; msr_n_tracer = 20, msr_scan = [10, 15], msr_n_random = 100)
+    seg_t = remnant_diagnostics([st, st], [1:n_t]; settings = pp_t, mask = false)
+    @test seg_t.gamma_msr[1] < 3
+    star_level = mass_segregation(
+        Float64.(st.pos),
+        Float64.(st.mass);
+        tracer = vcat(1:10, invperm(order_t)[heavy[11:20]]),
+        n_mst = (15,),
+        n_random = 100,
+    )
+    @test star_level.gamma_msr > 3 * seg_t.gamma_msr[1]
 
     csv_path = joinpath(mktempdir(), "remnant.csv")
     @test write_remnant_diagnostics(csv_path, diag) == csv_path

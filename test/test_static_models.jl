@@ -92,6 +92,19 @@ end
                 @test isapprox(prof.sigma_r[k], σ_true; rtol = 3 * prof.sigma_err[k] + 0.03)
             end
         end
+        if isinf(r_a)
+            # Rotation is not dispersion: with every negative v_φ about z reversed (the
+            # Lynden-Bell flip at p = 1) the dispersion about the mean streaming is
+            # σ_φ² = σ²(1 − 2/π), σ_θ² = σ_r² = σ², so β = 1 − (σ_θ² + σ_φ²)/(2σ_r²) = 1/π
+            # (Binney & Tremaine 2008, Eq. 4.61)
+            vel_f = copy(vel)
+            lynden_bell_flip!(vel_f, pos, [0.0, 0.0, 1.0], 1.0; rng = StableRNG(8))
+            prof_f = radial_profile(pos, vel_f, m, c; nbins = 12, n_min_beta = 300)
+            for k in eachindex(prof_f.r)
+                isnan(prof_f.beta[k]) && continue
+                @test isapprox(prof_f.beta[k], 1 / π; atol = 3 * prof_f.beta_err[k] + 0.02)
+            end
+        end
         # Total energy of the sample: a Plummer sphere has E = −3π/64 GM²/a
         T = 0.5 * sum(m[i] * sum(abs2, @view vel[:, i]) for i in 1:N)
         W = 0.5 * sum(m .* pair_potential(pos, m))

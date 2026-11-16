@@ -1017,6 +1017,8 @@ Diagnostics of the bound remnant of the whole system at every snapshot
   (`l_orb` of `MergerEpochs`); of the initial clusters at the first
   snapshot when the cores never coalesce
 - `lambda_msr`, `lambda_msr_err`, `segregation_ratio`: mass segregation of
+  the systems (a regularised pair at its centre of mass, so that a massive
+  binary is one tracer and not an edge of the tracer tree) of
   the tracer class, headline values ([`mass_segregation`](@ref))
 - `coalescence_time`, `coalescence_time_myr`: first snapshot from which all
   initial clusters form one group ([`coalescence_time`](@ref)); `NaN` if never
@@ -1024,7 +1026,8 @@ Diagnostics of the bound remnant of the whole system at every snapshot
   `Λ_MSR − σ > msr_threshold`; `NaN` if never
 - `profile`: rotation profile of the last snapshot with enough members
 - `r_core_number`: Casertano–Hut core radius from the number density
-- `rho_core`: maximum local mass density among the bound members
+- `rho_core`: core density, the density-weighted mean `Σρ_i²/Σρ_i` of the local
+  mass densities of the bound members (Casertano & Hut 1985)
 - `lambda_r_floor`, `lambda_peebles_floor`: sign-flip null floors of λ_R and λ_P
 - `lambda_median`, `gamma_msr`, `gamma_msr_err`: median-edge ratio `Λ̃_MSR`
   and geometric-mean ratio `Γ_MSR` with its interval factor
@@ -1338,7 +1341,9 @@ function remnant_diagnostics(
             ρ = _snapshot_density(snap, sel; k = k_nb, engine = isempty(excluded))
             cr = core_radius(pos, ρ)
             r_core[k] = cr.r_core
-            ρ_core[k] = maximum(ρ)
+            # Density-weighted density Σρ²/Σρ (Casertano & Hut 1985); the maximum of
+            # the estimates measures the noise of the estimator, not the core
+            ρ_core[k] = sum(abs2, ρ) / sum(ρ)
             ρn = _snapshot_density(snap, sel; weighting = :number, k = k_nb)
             r_core_n[k] = core_radius(pos, ρn).r_core
         end
@@ -1353,7 +1358,8 @@ function remnant_diagnostics(
             nbins_max = settings.rotation_nbins_max,
             n_null = settings.rotation_n_null,
             seed = settings.msr_seed,
-            energy = b.kinetic + b.potential,
+            # With seeded IMBHs left out, λ_P takes the energy of the stars alone
+            energy = isempty(excluded) ? b.kinetic + b.potential : nothing,
             r_h = r_half[k],
             centre_kw...,
         )
@@ -1367,18 +1373,32 @@ function remnant_diagnostics(
         align[k] = all(isfinite, L_hat) ? dot(rot.axis, L_hat) : NaN
         profile = rot.profile
 
-        # Positions of the tracer names among the bound stars, order kept
-        slot = Dict{Int32,Int}(snap.name[sel[j]] => j for j in eachindex(sel))
+        # The trees are built on systems: a regularised pair whose two components
+        # are bound enters at its centre of mass with the pair's mass, so that the
+        # edge between the components of a massive binary does not shorten the
+        # tracer tree. Tracers are the systems holding a tracer name, order kept.
+        slot = Dict{Int,Int}(sel[j] => j for j in eachindex(sel))
+        ks_pairs = NTuple{2,Int}[]
+        for p in 1:(snap.npairs)
+            i, j = get(slot, 2p - 1, 0), get(slot, 2p, 0)
+            (i > 0 && j > 0) && push!(ks_pairs, (i, j))
+        end
+        sys = reduce_pairs(mass, pos, vel, ks_pairs)
+        system_of = Dict{Int32,Int}()
+        for s in eachindex(sys.mass)
+            system_of[snap.name[sel[sys.star1[s]]]] = s
+            sys.star2[s] > 0 && (system_of[snap.name[sel[sys.star2[s]]]] = s)
+        end
         tracer = Int[]
         for nm in tracer_names
-            j = get(slot, nm, 0)
-            j > 0 && push!(tracer, j)
+            s = get(system_of, nm, 0)
+            (s > 0 && s ∉ tracer) && push!(tracer, s)
         end
         n_scan = maximum((m for m in settings.msr_scan if 2 ≤ m ≤ length(tracer)); init = 0)
-        if n_scan ≥ 2 && length(sel) > n_scan
+        if n_scan ≥ 2 && length(sys.mass) > n_scan
             ms = mass_segregation(
-                pos,
-                mass;
+                sys.pos,
+                sys.mass;
                 tracer,
                 n_mst = Tuple(settings.msr_scan),
                 n_random = settings.msr_n_random,
