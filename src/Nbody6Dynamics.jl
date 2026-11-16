@@ -698,7 +698,7 @@ function postprocess(
     end
     lap!("tde")
     # Lifetimes of the regularised binaries: Kaplan–Meier on the age axis and the
-    # cumulative incidence of the end classes (escape and the open ends censor)
+    # cumulative incidence of the end classes (every end an event, the open ends censored)
     if pp.binary_survival && haskey(results, :binary_spans) && haskey(results, :diagnostics)
         spans = results[:binary_spans]
         t_last = maximum((s.t_end_myr for s in spans); init = 0.0)

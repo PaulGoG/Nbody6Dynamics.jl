@@ -75,8 +75,9 @@ The lifetimes of the binary spans of [`binary_spans`](@ref) as an
 A right-censored span (open at the end of the record) exits at `t_end` with
 cause 0, whatever its end class; every other span exits at its end with the
 cause its end class maps to. On the age axis a left-censored span (formed before
-the first record, `left_censored = true`) has an unknown age and is left out;
-the count of spans dropped is logged at the `Info` level. On the cluster axis a
+the first record, `left_censored = true`) has an unknown age and is left out,
+unless it is a primordial pair formed at t = 0, whose age is known; the count
+of spans dropped is logged at the `Info` level. On the cluster axis a
 left-censored span enters at 0, every other span at its formation time, so the
 risk set at t holds the binaries that exist at t (delayed entry; the
 product-limit estimate is then conditional on survival to entry). The
@@ -137,7 +138,9 @@ function event_table(
         t1 > t0 || throw(
             ArgumentError("event_table: span $i has a lifetime ≤ 0 (t_form = $t0, t_end = $t1)"),
         )
-        if time_axis === :age && s.left_censored
+        # A primordial pair that formed at the start of the record has a known
+        # age even when its opening was not logged
+        if time_axis === :age && s.left_censored && !(s.origin === :primordial && t0 == 0)
             n_left += 1
             continue
         end
