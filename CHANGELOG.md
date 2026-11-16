@@ -21,6 +21,40 @@ entries say so.
 - Perturbed twin: `twin_amplitude` is `0` or within `[1e-14, 1e-6]`, and the generator refuses a displacement
   that leaves the body unchanged in the `%.15e` columns of `dat.10` (an amplitude at the resolution, a body at
   the origin); before, the twin record could claim a displacement the file did not carry.
+- `gw_snr` takes `rtol` (relative tolerance on ρ², default 10⁻³) in place of `n_time`: the time integral is an
+  adaptive quadrature. Calls that passed `n_time` must drop it.
+- `sweep_ensembles` returns one ensemble per arm and grid point, each row with its `arm`; `plot_sweep_ensemble`
+  draws one arm (keyword `arm`, by default the first of the index).
+- A rotating King profile is accepted for `0 < W0 ≤ 8` and a King profile for `0 < W0 ≤ 16`;
+  `postprocess.relaxation_gamma` must hold two factors. Values outside are refused when the file is loaded.
+
+### Fixed
+
+- `gw_snr`: a binary that reaches 6GM/c² within the observation was integrated past its coalescence on a fixed
+  time grid, which gave a wrong SNR (14 % low one year from coalescence at the catalogues' setting) or a
+  `BoundsError`. The integral now ends at the coalescence.
+- `lisa_psd` returned `NaN` above about 2.4 Hz with the confusion noise on, and with it the SNR of eccentric
+  sources whose harmonics reach those frequencies.
+- Rotation analysis: the dispersion of a shell is taken about its mean streaming velocity. It was taken about
+  the mean Cartesian velocity, which counted the rotation as dispersion: `λ_R` and `v_rot/σ` were low by 7 and
+  11 % for a maximal Lynden-Bell rotator, a cold ring gave `λ_R = 0.87`. The debiased amplitude uses the noise
+  of a mass-weighted mean.
+- IMBH pairs: the density and dispersion of the dimensionless hardening rate are those at the influence radius
+  (Sesana & Khan 2015), where the means inside it were used; `rho_infl_msun_pc3`, `sigma_infl_kms` and
+  `h_dimensionless` of `imbh_pairs.csv` and of `imbh_pair_hardening` change.
+- Seed ensembles of a sweep with arms combined the seeds of all arms in one band.
+- Lengths the engine writes in solar radii are decoded with the engine's solar radius (6.955×10¹⁰ cm) and
+  parsec. The semi-major axes of `bev.82` were 2.8×10⁻⁴ too large, and with them the pair energies of the
+  energy budget and, four times that, the Peters times of the catalogues.
+- A King model with `W0` above about 18 was cut at 10⁴ King radii without notice; the solver now raises.
+- Fifteen DOIs in docstrings, the manual and the input reference pointed at other papers; the LEGWORK citation
+  named the wrong co-authors and equation numbers.
+- `scripts/run_verif_suite.jl` exits with status 1 when a target fails; an interrupt that arrives during a log
+  write is no longer swallowed.
+- Documentation: the flagship triple starts at a point-mass virial ratio of 0.33 after the Roche truncation, not
+  0.25; the equal-mass Lagrange triangle of `verif_triorbit` is an unstable equilibrium (e-folding time 14 Myr),
+  and its late asymmetry is not a fault of the velocities; the Kroupa mean mass over 0.08-100 M☉ is 0.574 M☉;
+  the `moe2017` branch of the massive binaries is documented.
 
 ## [0.9.2] — 2026-11-05
 
