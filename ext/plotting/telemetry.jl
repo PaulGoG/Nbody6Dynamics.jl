@@ -176,7 +176,7 @@ Returns the output path, or `nothing` with fewer than two samples.
             elements,
             labels,
             latexstring(
-                @sprintf("\\mathrm{GPU\\;utilisation\\;(mean\\;%.1f\\,\\%%)}", _mean(finite(util)))
+                @sprintf("\\mathrm{GPU\\;utilisation\\;(mean\\;%.1f\\,\\%%)}", _mean(finite(util))),
             );
             color = _TELEMETRY_COLORS.gpu,
         )
