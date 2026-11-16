@@ -71,7 +71,8 @@ end
 Derive the control configuration from a parsed merger TOML (`raw` holds the
 top-level `"merger"` table): one cluster in single orbit mode at the
 origin and at rest, `N` the sum over the merger's clusters, `rbar` their
-`N`-weighted mean, every other cluster-1 key (model, `W0`, IMF, binaries)
+`N`-weighted mean, a total mass (`mass_total`, `imf.target_mass`) the sum of
+theirs, every other cluster-1 key (model, `W0`, IMF, binaries)
 and the `output`, `nbody6`, `stellar`, `tidal` and `seed` entries kept
 verbatim; the `orbit` table and the other clusters are dropped. Time
 intervals in N-body units (`output.tcrit`, `dtadj`, `deltat`,
@@ -101,6 +102,28 @@ function control_merger_dict(raw::AbstractDict)
     control = deepcopy(tables[1])
     control["N"] = N_total
     control["rbar"] = sum(Ns .* rbars) / N_total
+    # A cluster mass given as a total is summed over the clusters: the copy of
+    # cluster 1 would otherwise keep that cluster's mass for all the stars.
+    if haskey(control, "mass_total")
+        all(t -> haskey(t, "mass_total"), tables) || throw(
+            ArgumentError(
+                "control_merger_dict: mass_total must be given for every cluster or for none",
+            ),
+        )
+        control["mass_total"] = sum(Float64(t["mass_total"]) for t in tables)
+    end
+    imf = get(control, "imf", nothing)
+    if imf isa AbstractDict && haskey(imf, "target_mass")
+        all(
+            t -> get(t, "imf", nothing) isa AbstractDict && haskey(t["imf"], "target_mass"),
+            tables,
+        ) || throw(
+            ArgumentError(
+                "control_merger_dict: imf.target_mass must be given for every cluster or for none",
+            ),
+        )
+        imf["target_mass"] = sum(Float64(t["imf"]["target_mass"]) for t in tables)
+    end
     delete!(control, "position")
     delete!(control, "velocity")
     factor = _control_time_factor(m, Ns, rbars, control["rbar"])

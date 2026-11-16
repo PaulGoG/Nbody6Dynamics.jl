@@ -545,6 +545,19 @@ end
     @test f_ex ≈ ((rms + rbar_c) / rbar_c)^1.5
     @test raw["merger"]["n_clusters"] == 2                            # input untouched
     @test_throws ArgumentError control_merger_dict(Dict{String,Any}())
+    # A total mass per cluster is summed, in the flat and in the structured form
+    raw_m = deepcopy(raw)
+    raw_m["merger"]["cluster1"]["mass_total"] = 600.0
+    raw_m["merger"]["cluster2"]["mass_total"] = 300.0
+    @test control_merger_dict(raw_m)["merger"]["cluster1"]["mass_total"] == 900.0
+    delete!(raw_m["merger"]["cluster2"], "mass_total")
+    @test_throws ArgumentError control_merger_dict(raw_m)
+    raw_s = deepcopy(raw)
+    for (k, tm) in (("cluster1", 600.0), ("cluster2", 300.0))
+        raw_s["merger"][k]["imf"] = Dict{String,Any}("type" => "equal", "target_mass" => tm)
+    end
+    @test control_merger_dict(raw_s)["merger"]["cluster1"]["imf"]["target_mass"] == 900.0
+    @test raw_s["merger"]["cluster1"]["imf"]["target_mass"] == 600.0   # input untouched
     bad = deepcopy(raw)
     delete!(bad["merger"], "cluster2")
     @test_throws ArgumentError control_merger_dict(bad)

@@ -43,6 +43,8 @@ entries say so.
   (Sesana & Khan 2015), where the means inside it were used; `rho_infl_msun_pc3`, `sigma_infl_kms` and
   `h_dimensionless` of `imbh_pairs.csv` and of `imbh_pair_hardening` change.
 - Seed ensembles of a sweep with arms combined the seeds of all arms in one band.
+- The isolated control of a merger whose clusters give a total mass (`mass_total`, `imf.target_mass`) took
+  the summed star count with the mass of cluster 1 alone; it now takes the summed mass.
 - Lengths the engine writes in solar radii are decoded with the engine's solar radius (6.955×10¹⁰ cm) and
   parsec. The semi-major axes of `bev.82` were 2.8×10⁻⁴ too large, and with them the pair energies of the
   energy budget and, four times that, the Peters times of the catalogues.
