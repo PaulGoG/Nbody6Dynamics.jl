@@ -232,6 +232,15 @@ format = "nbody"
         @test nd._power_integral(0.5, 1.0, -1.0) == log(2)
         @test nd._power_integral(1.0, 3.0, 1.0) ≈ 4.0 rtol = 1e-14
         @test nd._power_law_quantile(0.25, 0.0 + 1.0, 3.0, 1.0) ≈ sqrt(1 + 0.25 * 8) rtol = 1e-14
+        # From zero the integral diverges for k ≤ −1; large exponents overflow x₁^{k+1}
+        # in the lower-end form, and are taken from the upper end
+        @test nd._power_integral(0.0, 1.0, -1.5) == Inf
+        @test_throws ArgumentError nd._power_law_quantile(0.5, 0.0, 1.0, -1.5)
+        @test nd._power_integral(0.0, 2.0, 1.0) ≈ 2.0 rtol = 1e-14
+        @test nd._power_integral(0.01, 8.0, 200.0) ≈ Float64(big(8.0)^201 / 201) rtol = 1e-12
+        x = nd._power_law_quantile(0.3, 0.01, 8.0, 200.0)
+        @test Float64((big(x)^201 - big(0.01)^201) / (big(8.0)^201 - big(0.01)^201)) ≈ 0.3 rtol =
+            1e-10
     end
 
     @testset "Moe & Di Stefano 2017: pool pairing, guard, determinism" begin

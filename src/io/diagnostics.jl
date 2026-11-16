@@ -439,13 +439,14 @@ function _parse_options_row!(kz::Vector{Int}, line::AbstractString)
 end
 
 """
-Parse `TIDAL(1:4)` from the `TIDAL PARAMETERS:` echo; zeros when the line
-does not match or a value does not parse.
+Parse `TIDAL(1:4)` from the `TIDAL PARAMETERS:` echo (`xtrnl0.F`, `4E13.5`);
+zeros, with a warning, when the line does not hold four values or one does not
+parse.
 """
 function _parse_tidal_line(line::AbstractString)::NTuple{4,Float64}
     m = match(r"TIDAL PARAMETERS:\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)", line)
     if isnothing(m)
-        @debug "Unparseable TIDAL PARAMETERS echo" line
+        @warn "Unparseable TIDAL PARAMETERS echo; the tidal terms are taken as zero" line
         return (0.0, 0.0, 0.0, 0.0)
     end
     try

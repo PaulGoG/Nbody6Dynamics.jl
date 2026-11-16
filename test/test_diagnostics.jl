@@ -334,6 +334,13 @@ end
     # Core density: the density-weighted mean Σρ²/Σρ of the local densities (Casertano & Hut 1985)
     ρ_s = local_density(ps, ms)
     @test with_bh.rho_core[1] ≈ sum(abs2, ρ_s) / sum(ρ_s) rtol = 1e-10
+    # The engine's density column is M₅/r₆³ (core.f, no 4π/3): read from a snapshot it gives
+    # the same densities as the package's own M₅/(4π r₆³/3)
+    all_idx = collect(1:length(mass_b))
+    ρ_own = local_density(Float64.(sb.pos), Float64.(sb.mass))
+    s_rho =
+        Snapshot(sb.header, sb.name, sb.mass, sb.pos, sb.vel, Float32.(ρ_own .* (4π / 3)), sb.phi)
+    @test Nbody6Dynamics._snapshot_density(s_rho, all_idx) ≈ ρ_own rtol = 1e-6
 
     # Mass segregation on systems: twenty heavy stars at random positions (no segregation),
     # five of them in regularised pairs with another heavy star 10⁻⁵ away. A pair enters the

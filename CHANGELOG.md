@@ -37,7 +37,13 @@ entries say so.
 - `validity_snapshots.csv`: the 2T/|W| column is `two_t_over_w`; it was `q_virial`, the name of T/|W| in
   `snapshot_integrals.csv`.
 - `rho_core` of the remnant diagnostics is the density-weighted density Σρ²/Σρ (Casertano & Hut 1985); it was the
-  largest sixth-neighbour density, 4.9 ρ₀ with 20 % scatter for a Plummer model. `t_rho_max` moves with it.
+  largest sixth-neighbour density, 4.9 ρ₀ with 20 % scatter for a Plummer model. `t_rho_max` moves with it. The
+  engine's density column (M₅/r₆³, without 4π/3) is converted to the package's M₅/(4π r₆³/3); it entered 4.19 times
+  too large.
+- The `kt` of the remnant diagnostics is 2K/(3n) with n the number of bound systems, as `hardness_scale`; it was
+  divided by the star count. `n_hard_pairs` and `hardness_max` change for runs with pairs.
+- Mass segregation: the tracer class is the `msr_n_tracer` most massive systems of the first snapshot (a regularised
+  pair with its total mass), followed by the names of their members.
 - The generator converts Myr intervals with the engine's time unit (3.15×10¹³ s per Myr, units.f); the N-body
   intervals in `merger.inp` are 0.18 % smaller and runs stop at the requested Myr of the engine's clock.
 - Configuration: `ldc_export` and `gw_observer` without `gw_catalogues`, `binary_survival` without
@@ -90,8 +96,14 @@ entries say so.
   in the first row no longer makes every residual NaN.
 - The hard/soft boundary of the pair-type and distribution series is kT = ⟨m v²⟩/3 (Heggie 1975), as in
   `hardness_scale`; the unweighted dispersion counted hard binaries as soft by a factor ⟨m⟩⟨1/m⟩.
-- Binary survival: primordial pairs formed at t = 0 without a regularisation line keep their age instead of
-  being left out as left-censored.
+- Energy budget: ETIDE, DETOT and the ADJUST-sourced channels enter only at snapshots that coincide with an
+  adjustment; between adjustments they are NaN, where the values of the previous ADJUST line were used.
+- λ_P with seeded IMBHs takes the energy of the stellar systems (pair internal energies left out).
+- `max_abs_d_ebin_rel` counts intervals with DE = 0.
+- `esc.11`: the header line is not counted as unparseable, short lines are counted, and glued exponents are read.
+- Power-law sampling from zero refuses exponents ≤ −1, and exponents large enough to overflow are integrated from
+  the upper end.
+- `merger.inp` writes `TCRIT` with six decimals; two decimals moved the stop time by up to 0.075 Myr.
 - `moe2017`: the companion probability integrates the mass-ratio law from `q_min`; with `q_min = 0.5` it gave the
   binaries of q > 0.1 squeezed into [0.5, 1]. The power-law integral and quantile are exact at exponent −1.
 - `population_frame = "milone"` with a projected core radius beyond R_h: the core region ends at R_h, with a

@@ -246,17 +246,18 @@ the engine subtracted for the escapers removed at or before the snapshot time
 or ``Σ m\\,E_\\mathrm{esc}`` over the `esc.11` records when there is no
 counters file (`:escapers`; the internal energy of escaping pairs is then
 missing), or 0 (`:none`); `e_channels` the engine's `ECOLL + EMDOT + ECDOT`,
-from the same `event.35` row with `:counters` and from the last ADJUST record
-at or before the snapshot time otherwise (four printed digits; NaN when there
-is none), and under `KZ(14) = 3, 5` also `ETIDE`, the work of the tidal field
-the engine accumulates into its total (last ADJUST record); `e_total =
+from the same `event.35` row with `:counters` and from the ADJUST record at
+the snapshot time otherwise (four printed digits; NaN when there is none), and
+under `KZ(14) = 3, 5` also `ETIDE`, the work of the tidal field the engine
+accumulates into its total (ADJUST record at the snapshot time; a snapshot
+between two adjustments has no value, and its total is NaN); `e_total =
 e_snapshot + e_escaped + e_channels`; `residual` its change since the first
 snapshot with a finite total and `residual_rel` that change over the cluster
 energy `max(T, |T + W|)` of that snapshot, the engine's divisor of `DE` (the
 pairs' binding energy, which can exceed the cluster energy several times,
 would dilute it); `detot` the engine's own cumulative energy
-change `DETOT` at the last ADJUST record at or before the snapshot, which the
-residual tracks when the reconstruction is exact.
+change `DETOT` at the ADJUST record at the snapshot time (NaN between
+adjustments), which the residual tracks when the reconstruction is exact.
 """
 struct EnergyBudgetRow
     time_nb::Float64
@@ -378,10 +379,13 @@ function energy_budget(
         lower_myr = s.time_nb - (bound_myr - s.time_nb)
         j = searchsortedlast(t_esc, bound_myr)
         e_escaped = esc_unknown ? NaN : j == 0 ? 0.0 : e_esc[j]
+        # Values of the ADJUST lines hold at the adjustment times only: a snapshot
+        # between two adjustments (DELTAT not a multiple of DTADJ) has none
+        j_adj = searchsortedlast(t_adj, bound_myr)
+        adj_here = j_adj > 0 && t_adj[j_adj] >= lower_myr
         j = searchsortedlast(t_chan, bound_myr)
-        e_channels = chan_unknown || j == 0 ? NaN : e_chan[j]
-        j = searchsortedlast(t_adj, bound_myr)
-        detot = j == 0 ? NaN : detot_adj[j]
+        e_channels = chan_unknown || j == 0 || (source === :escapers && !adj_here) ? NaN : e_chan[j]
+        detot = adj_here ? detot_adj[j_adj] : NaN
         j = searchsortedlast(t_bev, bound_myr)
         pair_source = j > 0 && t_bev[j] >= lower_myr ? :bev : :snapshot
         e_pairs = if pair_source === :snapshot
@@ -397,10 +401,7 @@ function energy_budget(
                 init = 0.0,
             ) / e_scale
         end
-        if orbit_tide
-            j = searchsortedlast(t_adj, bound_myr)
-            e_channels += j == 0 ? NaN : etide_adj[j]
-        end
+        orbit_tide && (e_channels += adj_here ? etide_adj[j_adj] : NaN)
         e_snapshot = s.kinetic + s.potential + e_pairs + s.tidal_potential
         e_total = e_snapshot + e_escaped + e_channels
         # The first snapshot with a finite total is the reference; its cluster
@@ -432,8 +433,8 @@ end
     energy_budget_summary(rows::AbstractVector{EnergyBudgetRow}) -> String
 
 One-line summary of [`energy_budget`](@ref): the largest |residual| relative
-to the first snapshot's total and its time, and the source of the escaper
-energy.
+to the cluster energy scale max(T, |T + W|) of the reference snapshot and its
+time, and the source of the escaper energy.
 """
 function energy_budget_summary(rows::AbstractVector{EnergyBudgetRow})::String
     isempty(rows) && return "energy budget: no snapshots"
@@ -446,7 +447,7 @@ function energy_budget_summary(rows::AbstractVector{EnergyBudgetRow})::String
     end
     f(v) = @sprintf("%.3g", v)
     n_bev = count(r -> r.pair_source === :bev, rows)
-    return "energy budget over $(length(rows)) snapshots: max |residual|/|E0| = $(f(worst)) " *
+    return "energy budget over $(length(rows)) snapshots: max |residual|/max(T, |T + W|)₀ = $(f(worst)) " *
            "at t = $(f(t_worst)) NB; escaper energy and corrections from $(rows[1].source); " *
            "pair energies from bev.82 at $n_bev snapshots"
 end

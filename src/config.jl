@@ -619,8 +619,8 @@ function _validate_estimators(pp::PostprocessConfig)
             "postprocess.gw_catalogues",
             "needs parse_stdout = true (the catalogues are built from the stdout capture)",
         )
-    for key in (:ldc_export, :gw_observer)
-        getfield(pp, key) &&
+    for (key, on) in (("ldc_export", pp.ldc_export), ("gw_observer", pp.gw_observer))
+        on &&
             !pp.gw_catalogues &&
             _config_error(
                 "postprocess.$key",

@@ -192,10 +192,21 @@ it to cancellation, as the interpolated exponents of `moe2017` can be).
 """
 function _power_law_quantile(u::Float64, x₀::Float64, x₁::Float64, k::Float64)::Float64
     s = k + 1
-    # From zero (k > −1): x₁ u^{1/(k+1)}, exact
-    x₀ == 0 && return clamp(x₁ * u^(1 / s), x₀, x₁)
+    # From zero: x₁ u^{1/(k+1)}, exact; the law is not normalisable for k ≤ −1
+    if x₀ == 0
+        s > 0 || throw(ArgumentError("x^$k is not integrable from 0"))
+        return clamp(x₁ * u^(1 / s), x₀, x₁)
+    end
     L = log(x₁ / x₀)
-    x = s == 0 ? x₀ * exp(u * L) : x₀ * exp(log1p(u * expm1(s * L)) / s)
+    g = expm1(s * L)
+    x = if s == 0
+        x₀ * exp(u * L)
+    elseif isfinite(g)
+        x₀ * exp(log1p(u * g) / s)
+    else
+        # x₁^{k+1} overflows: the same quantile from the upper end
+        x₁ * exp(log1p(-(1 - u) * -expm1(-s * L)) / s)
+    end
     return clamp(x, x₀, x₁)
 end
 
@@ -411,9 +422,12 @@ end
 # and without cancellation next to it
 function _power_integral(x₀::Float64, x₁::Float64, k::Float64)::Float64
     s = k + 1
-    x₀ == 0 && return x₁^s / s
+    x₀ == 0 && return s > 0 ? x₁^s / s : Inf
     L = log(x₁ / x₀)
-    return s == 0 ? L : x₀^s * expm1(s * L) / s
+    s == 0 && return L
+    I = x₀^s * expm1(s * L) / s
+    # x₀^{k+1} underflows or expm1 overflows for large exponents: from the upper end
+    return isfinite(I) && I > 0 ? I : -x₁^s * expm1(-s * L) / s
 end
 
 """

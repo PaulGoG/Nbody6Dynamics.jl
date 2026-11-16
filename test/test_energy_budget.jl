@@ -529,6 +529,17 @@ end
     @test ro[1].e_channels == 0.0
     @test ro[2].e_channels ≈ 0.5 - 0.04
     @test ro[2].residual ≈ rows[2].residual - 0.04
+    # A snapshot between two adjustments (ADJUST at 1 and 3, snapshot at 2) has neither
+    # ETIDE nor DETOT: the values of the earlier line would be stale
+    diag_g = DiagnosticsData(
+        [adj_o(0.0, 0.0, 0.0, 0.0), adj_o(1.0, 0.0, -0.02, -0.1), adj_o(3.0, 0.01, -0.05, -0.1)],
+        Dict{String,Float64}(),
+        kz5,
+        (0.0, 0.0, 0.0, 0.0),
+    )
+    rg = energy_budget(ints, escapers, counters, diag_g, u)
+    @test rg[1].e_channels == 0.0 && rg[1].detot == 0.0
+    @test isnan(rg[2].e_channels) && isnan(rg[2].e_total) && isnan(rg[2].detot)
     # The relative residual is taken over the cluster energy max(T, |T + W|) of the
     # first snapshot, the engine's divisor of DE
     @test r1.residual_rel ≈ r1.residual / max(ints[1].kinetic, abs(e0))

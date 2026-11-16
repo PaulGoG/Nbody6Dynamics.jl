@@ -95,15 +95,21 @@ end
         if isinf(r_a)
             # Rotation is not dispersion: with every negative v_φ about z reversed (the
             # Lynden-Bell flip at p = 1) the dispersion about the mean streaming is
-            # σ_φ² = σ²(1 − 2/π), σ_θ² = σ_r² = σ², so β = 1 − (σ_θ² + σ_φ²)/(2σ_r²) = 1/π
-            # (Binney & Tremaine 2008, Eq. 4.61)
+            # σ_φ² = ⟨v_φ²⟩ − ⟨|v_φ|⟩², σ_θ² = σ_r² = ⟨v_φ²⟩, so β = 1 − (σ_θ² + σ_φ²)/(2σ_r²)
+            # = ⟨|v_φ|⟩²/(2⟨v_φ²⟩) (Binney & Tremaine 2008, Eq. 4.61). For the isotropic
+            # Plummer model f ∝ (1 − u²)^{7/2} in u = v/v_esc at every radius, ⟨u_φ²⟩ = 1/12 and
+            # ⟨|u_φ|⟩ = 512/(693π), so β = 6 (512/(693π))² = 0.33184 in every shell (a Gaussian
+            # would give 1/π = 0.31831)
+            β_flip = 6 * (512 / (693π))^2
             vel_f = copy(vel)
             lynden_bell_flip!(vel_f, pos, [0.0, 0.0, 1.0], 1.0; rng = StableRNG(8))
             prof_f = radial_profile(pos, vel_f, m, c; nbins = 12, n_min_beta = 300)
-            for k in eachindex(prof_f.r)
-                isnan(prof_f.beta[k]) && continue
-                @test isapprox(prof_f.beta[k], 1 / π; atol = 3 * prof_f.beta_err[k] + 0.02)
+            shells = findall(!isnan, prof_f.beta)
+            for k in shells
+                @test isapprox(prof_f.beta[k], β_flip; atol = 3 * prof_f.beta_err[k] + 0.01)
             end
+            # The mean of the twelve shells (error ≈ 0.005) separates the two values
+            @test abs(sum(prof_f.beta[shells]) / length(shells) - β_flip) < 0.006
         end
         # Total energy of the sample: a Plummer sphere has E = −3π/64 GM²/a
         T = 0.5 * sum(m[i] * sum(abs2, @view vel[:, i]) for i in 1:N)

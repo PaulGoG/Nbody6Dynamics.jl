@@ -598,7 +598,7 @@ function generate_merger_inp(
         )
         @printf(
             io,
-            "ETAI=%.4G,ETAR=%.4G,RS0=%.4G,DTADJ=%s,DELTAT=%s,TCRIT=%.2f,QE=%.3E,RBAR=%.6f,ZMBAR=%.6f,\n",
+            "ETAI=%.4G,ETAR=%.4G,RS0=%.4G,DTADJ=%s,DELTAT=%s,TCRIT=%.6f,QE=%.3E,RBAR=%.6f,ZMBAR=%.6f,\n",
             nbody6.etai,
             nbody6.etar,
             nbody6.rs0,

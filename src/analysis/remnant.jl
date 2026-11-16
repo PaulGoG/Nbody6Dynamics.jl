@@ -266,6 +266,11 @@ positive entries for most of them, otherwise the k-d tree estimate
 always computed locally, the engine column being a mass density. `engine =
 false` is for subsets that leave out bodies the engine counted as neighbours
 (a seeded IMBH would otherwise enter the density of every star around it).
+
+The engine stores `RHO = M₅/r₆³`, the mass of the five nearest neighbours
+over the cube of the sixth-neighbour distance, without the `4π/3` of a
+volume (`core.f`); its values are divided by `4π/3` here so that both
+sources give the same estimator, `M₅ / (4π r₆³/3)`.
 """
 function _snapshot_density(
     snap::Snapshot,
@@ -275,7 +280,7 @@ function _snapshot_density(
     engine::Bool = true,
 )
     if engine && weighting === :mass && length(snap.rho) == nparticles(snap)
-        ρ = Float64.(snap.rho[idx])
+        ρ = Float64.(snap.rho[idx]) .* (3 / (4π))
         count(>(0), ρ) ≥ length(idx) ÷ 2 && return ρ
     end
     return local_density(Float64.(snap.pos[:, idx]), Float64.(snap.mass[idx]); k, weighting)
@@ -1032,14 +1037,15 @@ Diagnostics of the bound remnant of the whole system at every snapshot
 - `lambda_median`, `gamma_msr`, `gamma_msr_err`: median-edge ratio `Λ̃_MSR`
   and geometric-mean ratio `Γ_MSR` with its interval factor
 - `v_peak`, `r_peak`: rotation-curve fit ([`rotation_analysis`](@ref))
-- `tracer_names`: names of the tracer class of the mass segregation, in
-  decreasing mass at the first snapshot
+- `tracer_names`: names of the members of the tracer systems of the mass
+  segregation, in decreasing system mass at the first snapshot
 - `n_pairs_snapshot`: pairs of the snapshot pair finder among the bound
   stars that pass its tidal criterion (`tidal_ok`)
 - `n_hard_pairs`: those of them with hardness `E_b / kT > 1`
 - `hardness_max`: largest hardness among them; `NaN` when there is none
 - `kt`: hard/soft energy scale `kT = 2K / (3n)` of the bound set, `K` its
-  kinetic energy about its mean velocity and `n` its star count
+  kinetic energy about its mean velocity and `n` its number of systems (a
+  regularised pair counted once)
 - `f_max`: largest stellar mass of the bound set over its mean stellar mass
 - `t_first_10kt`, `t_first_10kt_myr`: first snapshot with
   `hardness_max > 10`; `NaN` if never
@@ -1134,6 +1140,48 @@ end
 const _MSR_THRESHOLD = 2.0
 
 """
+    _selected_systems(snap, sel, mass, pos, vel) -> (SystemSet, Dict{Int32,Int})
+
+The systems of the stars `sel` of `snap` (`mass`, `pos`, `vel` their values in
+the order of `sel`): a regularised pair whose two components are both in `sel`
+is one body at its centre of mass; the slots of a merged hierarchy (negative
+pair name) are an inner component and the outer body, not a pair. Returns the
+[`SystemSet`](@ref) and the system of each member name.
+"""
+function _selected_systems(snap::Snapshot, sel::AbstractVector{Int}, mass, pos, vel)
+    slot = Dict{Int,Int}(sel[j] => j for j in eachindex(sel))
+    pairs = NTuple{2,Int}[]
+    for p in 1:(snap.npairs)
+        !isempty(snap.pair_name) && snap.pair_name[p] < 0 && continue
+        i, j = get(slot, 2p - 1, 0), get(slot, 2p, 0)
+        (i > 0 && j > 0) && push!(pairs, (i, j))
+    end
+    sys = reduce_pairs(mass, pos, vel, pairs)
+    system_of = Dict{Int32,Int}()
+    for q in eachindex(sys.mass)
+        system_of[snap.name[sel[sys.star1[q]]]] = q
+        sys.star2[q] > 0 && (system_of[snap.name[sel[sys.star2[q]]]] = q)
+    end
+    return sys, system_of
+end
+
+"""
+    _system_energy(sys::SystemSet) -> Float64
+
+`T + W` of the systems about their centre of mass (G = 1), the internal
+energies of the regularised pairs left out, as in a [`BoundSet`](@ref).
+"""
+function _system_energy(sys::SystemSet)::Float64
+    M = sum(sys.mass)
+    vc = ntuple(k -> sum(sys.mass[q] * sys.vel[k, q] for q in eachindex(sys.mass)) / M, 3)
+    T = 0.0
+    for q in eachindex(sys.mass)
+        T += 0.5 * sys.mass[q] * sum((sys.vel[k, q] - vc[k])^2 for k in 1:3)
+    end
+    return T + 0.5 * sum(sys.mass .* pair_potential(sys.pos, sys.mass))
+end
+
+"""
     remnant_diagnostics(snaps, cluster_ranges; settings = PostprocessConfig(),
                         bound_sets = nothing, max_passes = 100,
                         min_members = 10, exclude_names = Int[],
@@ -1158,10 +1206,11 @@ Every estimator parameter comes from `settings`, a
 [`PostprocessConfig`](@ref). The local densities use the neighbour rank
 `density_neighbours`; the half-mass radius and the rotation are measured
 about the shrinking-sphere centre with the centre keys. The mass segregation
-follows a fixed tracer class: the names of the `msr_n_tracer` most massive
-stars of the first snapshot's bound set, in decreasing mass. At every
-snapshot the tracers still in the bound set enter [`mass_segregation`](@ref)
-in that order, with the N_MST scan `msr_scan`, `msr_n_random` random sets per
+follows a fixed tracer class: the names of the members of the `msr_n_tracer`
+most massive systems of the first snapshot's bound set (a regularised pair at
+its centre of mass with its total mass), in decreasing mass. At every snapshot
+the systems of the bound set that hold a tracer name enter
+[`mass_segregation`](@ref) in that order, with the N_MST scan `msr_scan`, `msr_n_random` random sets per
 N_MST above `msr_n_small` (`msr_n_random_small` up to it) and the seed
 `msr_seed`; the segregation time is the first snapshot with
 `Λ_MSR − σ > msr_threshold`. [`rotation_analysis`](@ref) takes
@@ -1303,19 +1352,26 @@ function remnant_diagnostics(
         # Excluded bodies (seeded IMBHs) stay in the bound set but not in the stellar estimators
         isempty(excluded) || (sel = filter(i -> snap.name[i] ∉ excluded, sel))
         if k == 1
-            # Tracer class: fixed identities, in decreasing mass at the first snapshot
-            n_tr = min(settings.msr_n_tracer, length(sel))
-            top = n_tr > 0 ? partialsortperm(mass_all[sel], 1:n_tr; rev = true) : Int[]
-            tracer_names = snap.name[sel[top]]
+            # Tracer class: the most massive systems of the first snapshot (a regularised
+            # pair counts with its total mass), followed by the names of their members
+            sys1, _ = _selected_systems(snap, sel, mass_all[sel], pos_all[:, sel], vel_all[:, sel])
+            n_tr = min(settings.msr_n_tracer, length(sys1.mass))
+            top = n_tr > 0 ? partialsortperm(sys1.mass, 1:n_tr; rev = true) : Int[]
+            tracer_names = Int32[]
+            for s in top
+                push!(tracer_names, snap.name[sel[sys1.star1[s]]])
+                sys1.star2[s] > 0 && push!(tracer_names, snap.name[sel[sys1.star2[s]]])
+            end
         end
         length(sel) < _MIN_MEMBERS && continue
         pos = pos_all[:, sel]
         vel = vel_all[:, sel]
         mass = mass_all[sel]
 
-        # Snapshot pairs on the bound stars, hardness against kT = 2K/(3n)
+        # Snapshot pairs on the bound stars, hardness against kT = 2K/(3n), K the kinetic
+        # energy of the bound systems and n their number, as in `hardness_scale`
         n_sel = length(sel)
-        kt[k] = b.kinetic > 0 ? 2 * b.kinetic / (3 * n_sel) : NaN
+        kt[k] = b.kinetic > 0 ? 2 * b.kinetic / (3 * length(b.systems)) : NaN
         f_max[k] = maximum(mass) / (sum(mass) / n_sel)
         found = snapshot_pairs(
             pos,
@@ -1349,6 +1405,7 @@ function remnant_diagnostics(
         end
         c = _shrinking_sphere_centre(pos, mass; centre_kw...)
         r_half[k] = _lagrangian_radii(pos, mass, c, (0.5,))[1]
+        sys, system_of = _selected_systems(snap, sel, mass, pos, vel)
 
         rot = rotation_analysis(
             pos,
@@ -1358,8 +1415,8 @@ function remnant_diagnostics(
             nbins_max = settings.rotation_nbins_max,
             n_null = settings.rotation_n_null,
             seed = settings.msr_seed,
-            # With seeded IMBHs left out, λ_P takes the energy of the stars alone
-            energy = isempty(excluded) ? b.kinetic + b.potential : nothing,
+            # With seeded IMBHs left out, λ_P takes the energy of the stellar systems alone
+            energy = isempty(excluded) ? b.kinetic + b.potential : _system_energy(sys),
             r_h = r_half[k],
             centre_kw...,
         )
@@ -1376,19 +1433,8 @@ function remnant_diagnostics(
         # The trees are built on systems: a regularised pair whose two components
         # are bound enters at its centre of mass with the pair's mass, so that the
         # edge between the components of a massive binary does not shorten the
-        # tracer tree. Tracers are the systems holding a tracer name, order kept.
-        slot = Dict{Int,Int}(sel[j] => j for j in eachindex(sel))
-        ks_pairs = NTuple{2,Int}[]
-        for p in 1:(snap.npairs)
-            i, j = get(slot, 2p - 1, 0), get(slot, 2p, 0)
-            (i > 0 && j > 0) && push!(ks_pairs, (i, j))
-        end
-        sys = reduce_pairs(mass, pos, vel, ks_pairs)
-        system_of = Dict{Int32,Int}()
-        for s in eachindex(sys.mass)
-            system_of[snap.name[sel[sys.star1[s]]]] = s
-            sys.star2[s] > 0 && (system_of[snap.name[sel[sys.star2[s]]]] = s)
-        end
+        # tracer tree. Tracers are the systems holding a tracer name, order kept;
+        # their number changes when a tracer pair forms or dissolves.
         tracer = Int[]
         for nm in tracer_names
             s = get(system_of, nm, 0)

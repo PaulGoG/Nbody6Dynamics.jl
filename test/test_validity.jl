@@ -402,4 +402,15 @@ end
     # reported as their activity, not as an error
     @test e["max_abs_d_ebin_rel"] ≈ 0.2
     @test !haskey(e, "max_abs_de_rel_excl_pairs")
+    # An interval without energy error (DE = DELTA = 0) still reports the exchange, over
+    # max(ZKIN, |ZKIN − POT|) of its closing record: 0.05 / max(0.1, 0.25) = 0.2
+    diag0 = DiagnosticsData([rec(0.0, 0.0, -1.0), rec(1.0, 0.0, -1.05)], Dict{String,Float64}())
+    e0 = Nbody6Dynamics._validity_energy(
+        diag0,
+        energy_intervals(diag0, EngineEvent[]),
+        EnergyBudgetRow[],
+        String[],
+        settings,
+    )
+    @test e0["max_abs_d_ebin_rel"] ≈ 0.2
 end

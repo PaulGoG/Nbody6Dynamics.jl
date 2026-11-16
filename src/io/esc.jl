@@ -29,9 +29,11 @@
     read_escapers(path::AbstractString) -> Vector{EscaperRecord}
 
 Parse the esc.11 file and return a vector of `EscaperRecord` (physical
-units: Myr, M☉, km/s, degrees). Skips the header, blank lines, and lines
-with fewer than 13 tokens (the direction angles in tokens 12–13 are part
-of the record; real files carry 27 tokens per line).
+units: Myr, M☉, km/s, degrees). Skips blank lines and the header (the line
+starting with `TTOT`); a data line with fewer than 13 tokens (the direction
+angles in tokens 12–13 are part of the record; real files carry 27 tokens per
+line) or a field that does not parse is skipped and counted in one warning.
+Real fields with a glued exponent (`1.08726-157`) are read.
 """
 function read_escapers(path::AbstractString)::Vector{EscaperRecord}
     isfile(path) || error("Escaper file not found: $path")
@@ -43,19 +45,24 @@ function read_escapers(path::AbstractString)::Vector{EscaperRecord}
         stripped = strip(line)
         isempty(stripped) && continue
         startswith(stripped, '#') && continue
+        # Column header of escape.F
+        startswith(stripped, "TTOT") && continue
 
         tokens = split(stripped)
-        length(tokens) < 13 && continue
+        if length(tokens) < 13
+            n_skipped += 1
+            continue
+        end
 
         try
-            tesc = parse(Float64, tokens[6])
-            besc = parse(Float64, tokens[7])
-            eesc = parse(Float64, tokens[8])
-            vkm = parse(Float64, tokens[9])
+            tesc = _parse_fortran_real(tokens[6])
+            besc = _parse_fortran_real(tokens[7])
+            eesc = _parse_fortran_real(tokens[8])
+            vkm = _parse_fortran_real(tokens[9])
             kstar = parse(Int, tokens[10])
             namei = parse(Int, tokens[11])
-            phi = parse(Float64, tokens[12])
-            theta = parse(Float64, tokens[13])
+            phi = _parse_fortran_real(tokens[12])
+            theta = _parse_fortran_real(tokens[13])
             push!(records, EscaperRecord(tesc, besc, eesc, vkm, kstar, namei, phi, theta))
         catch e
             e isa Union{ArgumentError,BoundsError,InexactError} || rethrow()
@@ -63,7 +70,7 @@ function read_escapers(path::AbstractString)::Vector{EscaperRecord}
             @debug "Skipping unparseable escaper line" line exception = e
         end
     end
-    n_skipped > 0 && @warn "esc.11: $n_skipped escaper lines skipped (unparseable)" path
+    n_skipped > 0 && @warn "esc.11: $n_skipped escaper lines skipped (short or unparseable)" path
 
     return records
 end

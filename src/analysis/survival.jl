@@ -75,14 +75,20 @@ The lifetimes of the binary spans of [`binary_spans`](@ref) as an
 A right-censored span (open at the end of the record) exits at `t_end` with
 cause 0, whatever its end class; every other span exits at its end with the
 cause its end class maps to. On the age axis a left-censored span (formed before
-the first record, `left_censored = true`) has an unknown age and is left out,
-unless it is a primordial pair formed at t = 0, whose age is known; the count
-of spans dropped is logged at the `Info` level. On the cluster axis a
+the first record, `left_censored = true`) has an unknown age and is left out;
+the count of spans dropped is logged at the `Info` level. On the cluster axis a
 left-censored span enters at 0, every other span at its formation time, so the
 risk set at t holds the binaries that exist at t (delayed entry; the
 product-limit estimate is then conditional on survival to entry). The
 `cause_labels` are the distinct labels other than `:censored` in order of first
 appearance among the rows kept.
+
+A pair the engine regularised at start-up without a log line (KZ(10) = 0)
+has a span only if it ends within the record: the survivors of these pairs
+are absent from both axes. When the first record holds such pairs, the
+left-censored spans on the cluster axis are their failures alone, and the
+cluster-axis estimate is biased towards early ends; the age axis, which
+leaves them out, is not.
 
 The time axes and the treatment of escape (a censoring for the binary lifetime,
 a competing cause for the in-cluster lifetime: map `:escape_bound` to
@@ -138,9 +144,7 @@ function event_table(
         t1 > t0 || throw(
             ArgumentError("event_table: span $i has a lifetime ≤ 0 (t_form = $t0, t_end = $t1)"),
         )
-        # A primordial pair that formed at the start of the record has a known
-        # age even when its opening was not logged
-        if time_axis === :age && s.left_censored && !(s.origin === :primordial && t0 == 0)
+        if time_axis === :age && s.left_censored
             n_left += 1
             continue
         end

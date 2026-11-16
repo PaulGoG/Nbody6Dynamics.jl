@@ -281,21 +281,15 @@ using StableRNGs: StableRNG
             span(6.0, 7.0, :unresolved),
             span(1.0, 9.0, :gw_merger),
         ]
-        # Age axis: the left-censored primordial span formed at t = 0 has a known age and is
-        # kept; the open span is censored at the record end
-        age = nd.event_table(spans; t_end = 12.0, unit = :nb)
-        @test age.id == [1, 2, 3, 4, 5]
-        @test age.time ≈ [10.0, 3.0, 8.0, 1.0, 8.0]
+        # Age axis: the left-censored span is left out; the open span is censored at the record end
+        age = @test_logs (:info, r"left-censored") nd.event_table(spans; t_end = 12.0, unit = :nb)
+        @test age.id == [2, 3, 4, 5]
+        @test age.time ≈ [3.0, 8.0, 1.0, 8.0]
         @test all(iszero, age.entry)
-        @test age.cause_labels == [:gw_merger, :exchange]
-        @test age.cause == [1, 2, 0, 0, 1]
-        age_myr = nd.event_table(spans; t_end = 24.0)
+        @test age.cause_labels == [:exchange, :gw_merger]
+        @test age.cause == [1, 0, 0, 2]
+        age_myr = @test_logs (:info, r"left-censored") nd.event_table(spans; t_end = 24.0)
         @test age_myr.time ≈ 2 .* age.time && age_myr.cause == age.cause
-        # A left-censored span of another origin has an unknown age and is left out
-        unknown = [span(3.0, 8.0, :exchange; left_censored = true), span(2.0, 5.0, :exchange)]
-        age_u =
-            @test_logs (:info, r"left-censored") nd.event_table(unknown; t_end = 12.0, unit = :nb)
-        @test age_u.id == [2]
         # Cluster axis: delayed entry at formation, the left-censored span enters at 0
         cl = nd.event_table(spans; time_axis = :cluster, t_end = 12.0, unit = :nb)
         @test cl.id == collect(1:5)

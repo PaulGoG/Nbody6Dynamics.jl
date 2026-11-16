@@ -577,16 +577,21 @@ function _validity_energy(
     # Energy the regularised pairs exchanged with the cluster per interval,
     # relative to the interval's divisor: activity of the pairs, not an error
     # (the engine's total contains EBIN, so DE already excludes the exchange)
+    # The divisor is DELTA/DE where both are printed and non-zero, otherwise
+    # max(ZKIN, |ZKIN − POT|) of the ADJUST record that ends the interval
     d_ebin = Float64[]
     if ev !== nothing
         for iv in ev.intervals
-            usable =
-                isfinite(iv.de_rel) &&
-                iv.de_rel != 0 &&
-                isfinite(iv.de_abs) &&
-                iv.de_abs != 0 &&
-                isfinite(iv.d_ebin)
-            usable && push!(d_ebin, abs(iv.d_ebin * iv.de_rel / iv.de_abs))
+            isfinite(iv.d_ebin) || continue
+            scale =
+                if isfinite(iv.de_rel) && iv.de_rel != 0 && isfinite(iv.de_abs) && iv.de_abs != 0
+                    abs(iv.de_abs / iv.de_rel)
+                elseif 1 ≤ iv.index ≤ length(adj)
+                    max(adj[iv.index].ekin, abs(adj[iv.index].ekin - adj[iv.index].pot))
+                else
+                    NaN
+                end
+            isfinite(scale) && scale > 0 && push!(d_ebin, abs(iv.d_ebin) / scale)
         end
     end
     e0 = available ? adj[1].e_tot : NaN

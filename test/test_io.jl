@@ -310,14 +310,15 @@ end
         """
      TTOT         BODY         RI           VI           STEP         T[Myr]       M[M*]      EESC      VI[km/s]     K*  NAME      ANGLE PHI     ANGLE THETA
    1.00000E+00  5.00000E-04  2.00000E+01  4.00000E+01  1.95312E-03  1.23400E+00  5.00000E-01 -1.23000E-01  1.56000E+01   0       101  1.20000E+01  2.50000E+01
-   2.00000E+00  3.00000E-04  2.50000E+01  4.20000E+01  1.95312E-03  2.56700E+00  3.00000E-01  4.56000E-01  2.23000E+01   1       202  1.85000E+02 -3.00000E+01
+   2.00000E+00  3.00000E-04  2.50000E+01  4.20000E+01  1.95312E-03  2.56700E+00  3.00000E-01  4.56000-157  2.23000E+01   1       202  1.85000E+02 -3.00000E+01
    3.00000E+00  1.20000E-03  3.00000E+01  4.40000E+01  1.95312E-03  3.89000E+00  1.20000E+00 -7.89000E-01  1.01000E+01  14       303  3.40000E+02  6.00000E+01
    4.00000E+00  1.00000E-03  3.10000E+01  4.50000E+01  1.95312E-03  4.50000E+00  1.00000E+00  1.00000E-01  1.20000E+01   1       404
 """,
     )
 
-    escs = read_escapers(esc_path)
-    @test length(escs) == 3   # the 11-token line is skipped
+    # The header is not a record; the 11-token line is skipped and counted in one warning
+    escs = @test_logs (:warn, r"esc.11: 1 escaper lines skipped") read_escapers(esc_path)
+    @test length(escs) == 3
 
     @test escs[1].time_myr ≈ 1.234
     @test escs[1].mass_solar ≈ 0.500
@@ -329,6 +330,7 @@ end
     @test escs[1].theta_deg ≈ 25.0
 
     @test escs[2].phi_deg ≈ 185.0
+    @test escs[2].escape_energy ≈ 4.56e-157   # glued exponent of an E13.5 field
     @test escs[2].theta_deg ≈ -30.0
 
     @test escs[3].stellar_type == 14   # BH (Hurley convention)
