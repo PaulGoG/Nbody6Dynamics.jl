@@ -765,8 +765,8 @@ Two-body state of a pair of seeded IMBHs at one snapshot, from
 | `t_gw_myr` | Peters coalescence time [`gw_inspiral_time`](@ref) | Myr |
 | `in_pair` | the two are the components of one KS pair | — |
 | `r_infl_pc` | influence radius: the radius about the pair's centre of mass enclosing a stellar mass `2 (M₁ + M₂)` | pc |
-| `sigma_infl_kms` | one-dimensional velocity dispersion of the stars inside `r_infl_pc` about their mean velocity | km s⁻¹ |
-| `rho_infl_msun_pc3` | mean stellar density inside `r_infl_pc` | M☉ pc⁻³ |
+| `sigma_infl_kms` | one-dimensional velocity dispersion of the stars at `r_infl_pc` (the shell of [`_imbh_influence`](@ref)) about their mean velocity | km s⁻¹ |
+| `rho_infl_msun_pc3` | stellar density at `r_infl_pc` | M☉ pc⁻³ |
 
 The stars are all bodies but the seeded IMBHs; the three influence
 quantities are `NaN` when the stars hold less than `2 (M₁ + M₂)`.
@@ -796,14 +796,18 @@ about their centre of mass enclosing a stellar mass of twice theirs, with
 the stellar density and the one-dimensional velocity dispersion at that
 radius: the `ρ` and `σ` of the hardening rate are those at the influence
 radius, not the means inside it (Sesana & Khan 2015, DOI
-10.1093/mnrasl/slv131, §2.3). Both are measured on the stars nearest the
-radius in rank, `w` on either side of the star that closes the enclosed
-mass, with `w` a quarter of the number of stars inside (at least 8, at most
-the stars available on either side): the density is their mass over the
-volume of the shell they span, the dispersion is mass-weighted about their
-mean velocity. The stars are the columns not in `skip`. `NaN` for all three
-when the stellar mass falls short, and for the density and the dispersion
-when fewer than two stars lie on either side.
+10.1093/mnrasl/slv131, §2.3). Both are measured on the `2w` stars nearest
+the radius in rank, `w` on either side of the star that closes the enclosed
+mass, with `w` an eighth of the number of stars inside (at least 8, at most
+the stars available on either side). The density is `(2w − 1)/(2w)` of their
+mass over the volume of the shell they span, the count that makes a
+spacing estimate unbiased; the dispersion is mass-weighted about their mean
+velocity. For a cusp `ρ ∝ r^{−γ}` the density is within 1 % for `γ ≤ 2` and
+5 % low at `γ = 2.5` when hundreds of stars lie inside the radius, and a few
+per cent high (7 % at `γ = 1.75`) when only twenty do, where its scatter is
+25 %. The stars are the columns not in `skip`. `NaN` for all three when the
+stellar mass falls short, and for the density and the dispersion when fewer
+than two stars lie on either side.
 """
 function _imbh_influence(snap::Snapshot, i::Int, j::Int, skip::Set{Int})
     h = snap.header
@@ -825,7 +829,7 @@ function _imbh_influence(snap::Snapshot, i::Int, j::Int, skip::Set{Int})
         m_in += Float64(snap.mass[stars[order[n_in]]])
     end
     r = sqrt(d2[order[n_in]])
-    w = min(max(n_in ÷ 4, 8), n_in - 1, length(stars) - n_in)
+    w = min(max(n_in ÷ 8, 8), n_in - 1, length(stars) - n_in)
     w ≥ 2 || return (r * L, NaN, NaN)
     r_lo = sqrt(d2[order[n_in - w]])
     r_hi = sqrt(d2[order[n_in + w]])
@@ -835,7 +839,7 @@ function _imbh_influence(snap::Snapshot, i::Int, j::Int, skip::Set{Int})
     s2 =
         sum(k -> Float64(snap.mass[k]) * sum(c -> (snap.vel[c, k] - v̄[c])^2, 1:3), shell) /
         (3 * m_shell)
-    ρ = m_shell / (4π / 3 * (r_hi^3 - r_lo^3))
+    ρ = m_shell * (2w - 1) / (2w) / (4π / 3 * (r_hi^3 - r_lo^3))
     return (r * L, sqrt(s2) * V, ρ * Mu / L^3)
 end
 

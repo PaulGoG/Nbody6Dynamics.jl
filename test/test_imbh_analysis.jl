@@ -331,6 +331,25 @@ using StableRNGs: StableRNG
         @test ρ_msun_pc3 / M_tot ≈ ρ_exact rtol = 0.05
         @test abs(ρ_msun_pc3 / M_tot - ρ_exact) < abs(ρ_msun_pc3 / M_tot - ρ_inside)
         @test σ_kms / vs ≈ σ_exact rtol = 0.03
+        # A cusp ρ ∝ r⁻² of unit mass inside r = 1 (M(r) = r): the radius enclosing 0.02 is
+        # r = 0.02, where ρ = 1/(4π r²). The mean density inside it is three times that.
+        rng_c = StableRNG(22)
+        n_c = 200_000
+        r_c = rand(rng_c, n_c)
+        μ_c = 2 .* rand(rng_c, n_c) .- 1
+        φ_c = 2π .* rand(rng_c, n_c)
+        s_c = sqrt.(1 .- μ_c .^ 2)
+        pos_c = permutedims(hcat(r_c .* s_c .* cos.(φ_c), r_c .* s_c .* sin.(φ_c), r_c .* μ_c))
+        snap_c = mksnap(
+            0.0,
+            1:(n_c + 2),
+            vcat(fill(1 / n_c, n_c), 0.005, 0.005),
+            hcat(pos_c, [-1.0e-5, 0.0, 0.0], [1.0e-5, 0.0, 0.0]),
+            zeros(3, n_c + 2),
+        )
+        r_cusp, _, ρ_cusp = nd._imbh_influence(snap_c, n_c + 1, n_c + 2, Set([n_c + 1, n_c + 2]))
+        @test r_cusp ≈ 0.02 rtol = 0.02
+        @test ρ_cusp / M_tot ≈ 1 / (4π * 0.02^2) rtol = 0.08
         # Too few stars on either side of the radius: the radius alone
         few = mksnap(
             0.0,

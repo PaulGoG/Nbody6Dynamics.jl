@@ -496,7 +496,7 @@ times to frequency crossings are counted from the record.
 | `amp_ldc22_kpc` | LDC 22-mode amplitude [`gw_amplitude_ldc`](@ref)(𝓜, f₂₂) at 1 kpc | kpc |
 | `h2_avg_kpc` | orientation-averaged strain of the n = 2 harmonic, [`gw_harmonic_strain`](@ref) at 1 kpc | kpc |
 | `hc2_kpc` | characteristic strain of the n = 2 harmonic, [`gw_characteristic_strain`](@ref) at 1 kpc | kpc |
-| `snr_lisa_kpc` | sky- and orientation-averaged LISA SNR over 4 yr with the Galactic confusion noise, [`gw_snr`](@ref) (three time samples) at 1 kpc | kpc |
+| `snr_lisa_kpc` | sky- and orientation-averaged LISA SNR over 4 yr with the Galactic confusion noise, [`gw_snr`](@ref) at 1 kpc | kpc |
 
 The three strain columns and the SNR are distance-free products h × D (ρ × D)
 with D in kpc: the value at a distance D is the stored one divided by D in kpc.
@@ -860,7 +860,7 @@ counted from the escape.
 | `amp_ldc22_kpc` | LDC 22-mode amplitude [`gw_amplitude_ldc`](@ref)(𝓜, f₂₂) of the escape orbit at 1 kpc | kpc |
 | `h2_avg_kpc` | orientation-averaged strain of the n = 2 harmonic, [`gw_harmonic_strain`](@ref) at 1 kpc | kpc |
 | `hc2_kpc` | characteristic strain of the n = 2 harmonic, [`gw_characteristic_strain`](@ref) at 1 kpc | kpc |
-| `snr_lisa_kpc` | sky- and orientation-averaged LISA SNR of the escape orbit over 4 yr with the Galactic confusion noise, [`gw_snr`](@ref) (three time samples) at 1 kpc; `NaN` for e > 0.99 and f₂₂ outside 10⁻⁵–1 Hz | kpc |
+| `snr_lisa_kpc` | sky- and orientation-averaged LISA SNR of the escape orbit over 4 yr with the Galactic confusion noise, [`gw_snr`](@ref) at 1 kpc; `NaN` for e > 0.99 and f₂₂ outside 10⁻⁵–1 Hz | kpc |
 
 The present-epoch columns are `NaN` when `t_now_myr` is `NaN` or earlier than
 the escape, and when the pair merges before it. The three strain columns are
@@ -1557,7 +1557,7 @@ switches the Galactic confusion noise; `noise_model` is `:robson2019` or
 
 `f_gw22_obs_hz` = f₂₂/(1 + z). `snr_lisa` is the sky- and polarisation-averaged
 SNR at the drawn inclination, ρ̄ [((1 + cos²ι)/2)² + cos²ι]^{1/2}/(4/5)^{1/2},
-with ρ̄ the [`gw_snr`](@ref) (three time samples) of the detector-frame binary
+with ρ̄ the [`gw_snr`](@ref) of the detector-frame binary
 (masses and semi-major axis scaled by 1 + z, so that the frequencies are
 divided by it and the strain carries the redshifted chirp mass) at
 `distance_kpc`; the inclination factor is that of the quadrupole n = 2 mode,

@@ -449,6 +449,10 @@ end
         output_dir = joinpath(work, "plots"),
     )
     @test isfile(plot_sweep_ensemble(sdir0, vis_e))
+    # A sweep with arms: one arm per figure, the first of the index unless named
+    @test isfile(plot_sweep_ensemble(sdir_arm, vis_e; filename = "ens_arm_first"))
+    @test isfile(plot_sweep_ensemble(sdir_arm, vis_e; arm = "twin", filename = "ens_arm_twin"))
+    @test_throws ArgumentError plot_sweep_ensemble(sdir_arm, vis_e; arm = "absent")
     @test isfile(plot_sweep_ensemble(sdir0, vis_e; quantity = :energy))
     @test isfile(plot_sweep_ensemble(sdir0, vis_e; quantity = :n_stars, filename = "ens_n"))
     @test isfile(plot_sweep_lagrangian(sdir0, vis_e; filename = "seeds_lagr"))   # no axes: one colour, no legend

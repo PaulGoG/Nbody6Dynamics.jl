@@ -325,7 +325,7 @@ radius per shell), `v_rot` (mass-weighted mean azimuthal velocity), `sigma`
 (one-dimensional dispersion of the shell about its mean velocity), the
 ratio `v_rot_over_sigma`, `n` (members per shell), `sigma_phi`
 (one-dimensional azimuthal dispersion of the shell about `v_rot`),
-`v_rot_debiased` (``\\mathrm{sign}(\\bar v_φ) \\sqrt{\\max(\\bar v_φ^2 − σ_φ^2/n, 0)}``)
+`v_rot_debiased` (``\\mathrm{sign}(\\bar v_φ) \\sqrt{\\max(\\bar v_φ^2 − σ_φ^2/n_\\mathrm{eff}, 0)}``)
 and `v_rot_floor` (rms of `v_rot` over the sign-flip null draws of
 [`rotation_analysis`](@ref)).
 """
