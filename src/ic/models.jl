@@ -134,6 +134,11 @@ function _solve_king(W0::Float64; n_grid::Int = 2000)
     sol = solve(prob, Tsit5(); callback = cb, abstol = 1e-12, reltol = 1e-12)
 
     rhat_t = sol.t[end]
+    rhat_t < 1.0e4 || throw(
+        ArgumentError(
+            "King model W0 = $W0 does not end within 10⁴ King radii; W0 ≤ $(_KING_W0_MAX) is supported",
+        ),
+    )
 
     # Evaluate the dense solution on a log-spaced grid: resolves the core
     # (r ≪ r₀) and the edge for any concentration, unlike a uniform grid.

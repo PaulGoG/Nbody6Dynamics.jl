@@ -38,11 +38,24 @@
 abstract type DensityProfile end
 
 """
+Largest `W0` of a King model: the solver integrates to 10⁴ King radii, and the
+tidal radius passes that near `W0 = 18` (concentration c = 4).
+"""
+const _KING_W0_MAX = 16.0
+
+"""
+Largest `W0` of a rotating King model. The solver's uniform radial grid loses
+the core above it: the scalar virial residual |2T + W|/|W| of the non-rotating
+solution is 5×10⁻⁴ at `W0 = 6`, 0.5 % at 8, 1.3 % at 9 and 5.7 % at 12.
+"""
+const _ROTATING_KING_W0_MAX = 8.0
+
+"""
     KingProfile(; W0 = 6.0)
 
-King (1966) model with dimensionless central potential `W0`. Larger `W0`
-produces a more centrally concentrated cluster (and a larger ratio of tidal
-to King radius).
+King (1966) model with dimensionless central potential `W0`, `0 < W0 ≤ 16`.
+Larger `W0` produces a more centrally concentrated cluster (and a larger
+ratio of tidal to King radius).
 """
 Base.@kwdef struct KingProfile <: DensityProfile
     W0::Float64 = 6.0
@@ -60,7 +73,8 @@ struct PlummerProfile <: DensityProfile end
     RotatingKingProfile(; W0 = 6.0, omega0 = 0.6, axis = [0.0, 0.0, 1.0])
 
 Rotating King model of Einsel & Spurzem (1999, DOI 10.1046/j.1365-8711.1999.02083.x):
-central potential `W0`, dimensionless angular velocity `omega0 = Ω₀ r_K/σ ≥ 0`
+central potential `W0` (`0 < W0 ≤ 8`, the range the solver's radial grid
+resolves), dimensionless angular velocity `omega0 = Ω₀ r_K/σ ≥ 0`
 (`0` is the King 1966 model), rotation axis `axis` (the angular momentum of the
 cluster points along it; `[0, 0, 1]` is prograde with respect to the Galactic
 rotation of `KZ(14) = 1, 2`, `[0, 0, -1]` retrograde). Solved and sampled by
@@ -2461,12 +2475,16 @@ end
 
 "Validate a density-profile tag; `key` names the owning cluster table."
 function _validate_profile(p::KingProfile, key::String)
-    p.W0 > 0 || _config_error("$key.W0", "must be > 0; got $(p.W0)")
+    0 < p.W0 ≤ _KING_W0_MAX ||
+        _config_error("$key.W0", "must be in (0, $(_KING_W0_MAX)]; got $(p.W0)")
     return nothing
 end
 _validate_profile(::PlummerProfile, ::String) = nothing
 function _validate_profile(p::RotatingKingProfile, key::String)
-    p.W0 > 0 || _config_error("$key.W0", "must be > 0; got $(p.W0)")
+    0 < p.W0 ≤ _ROTATING_KING_W0_MAX || _config_error(
+        "$key.W0",
+        "must be in (0, $(_ROTATING_KING_W0_MAX)] for a rotating King model; got $(p.W0)",
+    )
     (isfinite(p.omega0) && p.omega0 ≥ 0) ||
         _config_error("$key.omega0", "must be finite and ≥ 0; got $(p.omega0)")
     length(p.axis) == 3 ||

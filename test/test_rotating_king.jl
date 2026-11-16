@@ -242,6 +242,14 @@ using LinearAlgebra: Symmetric, eigvals
             return ""
         end
         @test validation_message(nd.RotatingKingProfile()) == ""
+        # The radial grid of the solver resolves the core up to W0 = 8
+        @test validation_message(nd.RotatingKingProfile(W0 = 8.0)) == ""
+        @test occursin("merger.cluster1.W0", validation_message(nd.RotatingKingProfile(W0 = 9.0)))
+        @test occursin("merger.cluster1.W0", validation_message(nd.KingProfile(W0 = 16.5)))
+        @test validation_message(nd.KingProfile(W0 = 12.0)) == ""
+        @test_throws ArgumentError nd._solve_king(20.0)
+        m8 = nd.rotating_king_moments(nd.solve_rotating_king(8.0, 0.0))
+        @test abs(2 * m8.T_kin + m8.W) / abs(m8.W) < 6e-3
         @test occursin(
             "merger.cluster1.omega0",
             validation_message(nd.RotatingKingProfile(omega0 = -1.0)),

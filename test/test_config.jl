@@ -259,6 +259,11 @@ format = "pdf"
             "[postprocess]\nrelaxation_gamma = [0.02, -0.1]\n",
             "postprocess.relaxation_gamma",
         ),
+        (
+            "relaxation_gamma, one factor",
+            "[postprocess]\nrelaxation_gamma = [0.11]\n",
+            "postprocess.relaxation_gamma",
+        ),
         ("pair_k", "[postprocess]\npair_k = 0\n", "postprocess.pair_k"),
         ("rotation_n_null", "[postprocess]\nrotation_n_null = -1\n", "postprocess.rotation_n_null"),
         ("format", "[visualization]\nformat = \"gif\"\n", "visualization.format"),

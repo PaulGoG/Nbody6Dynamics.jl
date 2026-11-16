@@ -562,6 +562,11 @@ seed = 5
                 "merger.cluster1.W0",
             ),
             (
+                "W0 beyond the solver's span",
+                _merger_toml(cluster1 = "model = \"king\"\nN = 100\nW0 = 17.0\nrbar = 1.0"),
+                "merger.cluster1.W0",
+            ),
+            (
                 "kroupa_bounds",
                 _merger_toml(
                     cluster1 = "model = \"king\"\nN = 100\nrbar = 1.0\n" *

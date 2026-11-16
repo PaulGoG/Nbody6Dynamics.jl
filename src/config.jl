@@ -539,8 +539,10 @@ function _validate_estimators(pp::PostprocessConfig)
     pp.pair_k ≥ 1 || _config_error("postprocess.pair_k", "must be ≥ 1; got $(pp.pair_k)")
     pp.pair_tidal_factor > 0 ||
         _config_error("postprocess.pair_tidal_factor", "must be > 0; got $(pp.pair_tidal_factor)")
-    isempty(pp.relaxation_gamma) &&
-        _config_error("postprocess.relaxation_gamma", "must be nonempty")
+    length(pp.relaxation_gamma) == 2 || _config_error(
+        "postprocess.relaxation_gamma",
+        "must hold two factors; got $(length(pp.relaxation_gamma))",
+    )
     all(>(0), pp.relaxation_gamma) || _config_error(
         "postprocess.relaxation_gamma",
         "entries must be > 0; got $(pp.relaxation_gamma)",
