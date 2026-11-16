@@ -1,8 +1,15 @@
 # Nbody6Dynamics.jl
 
-| Documentation | Build and tests | Code quality | Release |
-|:-:|:-:|:-:|:-:|
-| [![Docs stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/stable/) | [![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml)<br>[![Backend build](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml)<br>[![Codecov](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl) | [![Format check](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml)<br>[![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)<br>[![JET](https://img.shields.io/badge/tested_with-JET.jl-233f9a.svg)](https://github.com/aviatesk/JET.jl) | [![Release](https://img.shields.io/github/v/release/PaulGoG/Nbody6Dynamics.jl?display_name=tag&sort=semver)](https://github.com/PaulGoG/Nbody6Dynamics.jl/releases)<br>[![Julia](https://img.shields.io/badge/Julia-1.13%2B-9558B2.svg?logo=julia&logoColor=white)](https://julialang.org)<br>[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) |
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://PaulGoG.github.io/Nbody6Dynamics.jl/stable/)
+[![CI](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Backend build](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml/badge.svg?branch=main)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Backend.yml?query=branch%3Amain)
+[![Documentation](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Documentation.yml/badge.svg?branch=main)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Documentation.yml?query=branch%3Amain)
+[![Coverage](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/PaulGoG/Nbody6Dynamics.jl)
+[![Aqua QA](https://juliatesting.github.io/Aqua.jl/dev/assets/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![JET](https://img.shields.io/badge/tested%20with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
+[![Format](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml/badge.svg?branch=main)](https://github.com/PaulGoG/Nbody6Dynamics.jl/actions/workflows/Format.yml?query=branch%3Amain)
+[![Julia](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FPaulGoG%2FNbody6Dynamics.jl%2Fmain%2FProject.toml&query=%24.compat.julia&label=julia&color=9558b2)](https://julialang.org/downloads/)
+[![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](#installation)
 
 A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations end to end: it clones and builds the Fortran engine, generates initial conditions for single clusters and multi-cluster mergers, launches and supervises the integration (with restart dumps, wall budgets and resumption across queue segments), reads every standard output file, computes the cluster diagnostics and draws the figures. One TOML configuration drives every phase through a single entry point, `run_pipeline`.
 
@@ -62,7 +69,7 @@ cfg = load_config("config.toml")        # your project's configuration
 results = run_pipeline(cfg)
 ```
 
-The directory of that `config.toml` is the project directory: the engine is cloned and built under its `backend/` and the runs land under its `runs/`, never inside the package. The shipped inputs are reachable with `example_input("N1k_quick.inp")`, and `example_input("showcase/equal_pipeline.toml")` returns a complete pipeline configuration to copy and edit (copy `equal_merger.toml` beside it, since its paths are relative to its own directory). Building the Fortran engine needs `git`, `gfortran` and `make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
+The directory of that `config.toml` is the project directory: the engine is cloned and built under its `backend/` and the runs land under its `runs/`, not inside the package. The shipped inputs are reachable with `example_input("N1k_quick.inp")`, and `example_input("showcase/equal_pipeline.toml")` returns a complete pipeline configuration to copy and edit (copy `equal_merger.toml` beside it, since its paths are relative to its own directory). Building the Fortran engine needs `git`, `gfortran` and `make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
 
 ## Environment setup of a checkout
 
@@ -90,11 +97,11 @@ using CairoMakie        # brings in every plot_*, animate_* and generate_plots
 using Nbody6Dynamics
 ```
 
-Without a backend the figure routines report the remedy instead of failing obscurely, and a pipeline whose `[visualization] enabled = true` is refused before it builds or integrates anything rather than after. `plotting_available()` answers the question in code. The entry scripts under `scripts/` load CairoMakie for you; a numerics-only session (`julia activate.jl`, then `using Nbody6Dynamics`) does not.
+Without a backend the figure routines raise an error that names the package to load, and a pipeline with `[visualization] enabled = true` is refused before the build starts. `plotting_available()` returns whether a backend is loaded. The entry scripts under `scripts/` load CairoMakie for you; a numerics-only session (`julia activate.jl`, then `using Nbody6Dynamics`) does not.
 
 ## Entry points
 
-One invocation each; details in the sections below.
+Each task has one invocation; the sections below give the details.
 
 | Task | Invocation |
 |------|------------|
@@ -118,7 +125,7 @@ One invocation each; details in the sections below.
 
 ## Usage
 
-`run_pipeline(cfg)` is the single entry point; `config.toml` flags select which phases run. Six modes:
+`run_pipeline(cfg)` is the single entry point; `config.toml` flags select which phases run. There are six modes:
 
 | # | Mode | Config flags |
 |---|------|--------------|
@@ -141,14 +148,14 @@ Or via the CLI wrapper:
 julia scripts/run_setup.jl [config.toml]
 ```
 
-Initial conditions alone, without a pipeline configuration (a single cluster or a merger; the file decides):
+Initial conditions alone, without a pipeline configuration (a single cluster or a merger, depending on the file):
 
 ```julia
 result = run_merger_pipeline("input_files/clusters/gc_bh_subsystem.toml")
 # writes dat.10, merger.inp, merger_summary.txt, merger_ic.toml and the IC figures
 ```
 
-Post-process any directory containing Nbody6++ output, config-free:
+A directory of Nbody6++ output can be post-processed without a configuration:
 
 ```julia
 scan = scan_output("/scratch/sim42/output")     # report available files
@@ -188,7 +195,7 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 julia -e 'include("activate.jl"); Pkg.test()'
 ```
 
-The default suite needs no Fortran binary. The engine-dependent tests (build, launch, restart, tidal field, live telemetry, and the engine regression suite: the integrator's convergence order and momentum drift, an e = 0.9 binary on both KS paths, a Kozai–Lidov triple, the start-up step of a cold system and the Pythagorean problem through the chain, each against its closed form or reference trajectory) run when `NBODY6_BINARY_TESTS=1` is set; without `NBODY6_BACKEND_ROOT` they clone and build the backend in a temporary directory, with it they use the build under `<root>/backend/Nbody6PPGPU-beijing`:
+The default suite needs no Fortran binary. The engine-dependent tests run when `NBODY6_BINARY_TESTS=1` is set. They cover the build, launch, restart, tidal field and live telemetry, and the engine regression suite: the integrator's convergence order and momentum drift, an e = 0.9 binary on both KS paths, a Kozai–Lidov triple, the start-up step of a cold system and the Pythagorean problem through the chain, each against its closed form or a reference trajectory. Without `NBODY6_BACKEND_ROOT` they clone and build the backend in a temporary directory; with it they use the build under `<root>/backend/Nbody6PPGPU-beijing`:
 
 ```bash
 NBODY6_BINARY_TESTS=1 NBODY6_BACKEND_ROOT=$PWD julia -e 'include("activate.jl"); Pkg.test()'
@@ -220,7 +227,7 @@ julia docs/make.jl   # builds to docs/build/
 
 ## Contributing
 
-Issues and pull requests are welcome; `CONTRIBUTING.md` says what a change needs (tests, formatting, docstrings, a changelog entry, and the formulation behind any physics).
+Issues and pull requests are welcome; `CONTRIBUTING.md` lists what a change needs (tests, formatting, docstrings, a changelog entry, and the formulation behind any physics).
 
 ## Licence
 

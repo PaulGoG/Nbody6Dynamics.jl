@@ -36,9 +36,9 @@ needs a CUDA host. Julia 1.13 or later is required; a Linux host with
 - Docstrings for every public function or type, and the manual or the input
   file reference updated when behaviour or configuration keys change.
 - An entry under `[Unreleased]` in `CHANGELOG.md`.
-- Physics first: a change to a diagnostic, a sampler or a generated engine
-  parameter says in its description what the formulation is and where it comes
-  from (a reference with a DOI where one exists), and its tests check a
+- A change to a diagnostic, a sampler or a generated engine parameter states
+  its formulation and source in the description (a reference with a DOI,
+  copied from the resolved record, where one exists), and its tests check a
   limiting case or a published value.
 - No run outputs, engine sources, manifests or figures in the commit; `runs/`,
   `backend/` and `Manifest.toml` are ignored for that reason.
