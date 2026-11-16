@@ -39,13 +39,15 @@ companion at `log(P/d) ≤ 3.5`: a wider `log_period_max` keeps the density in
 - `fraction`: binary fraction of the massive primaries, one Bernoulli trial per
   primary reached unpaired; `[0, 1]` (Sana: `f_bin = 0.69 ± 0.09`)
 - `pairing`: `"pool"` (the partner is the unpaired star of mass `≤ m₁` closest to
-  `q m₁`; the IMF multiset is kept) or `"replace"` (a random unpaired star below
-  `m_min` takes the mass `q m₁`; this alters the IMF)
+  `q m₁`; the IMF multiset is kept, and where the IMF is sparse, at the top of
+  the mass range, the realised `q` departs from the drawn one) or `"replace"` (a
+  random unpaired star below `m_min` takes the mass `q m₁`; this alters the IMF)
 - `log_period_min`, `log_period_max`: period range [log10 d];
   `0 ≤ log_period_min < log_period_max ≤ 8.43` (Sana: 0.15 and 3.5, secondary);
   `moe2017` requires `log_period_min ≥ 0.15` and `log_period_max ≤ 8.0`
 - `period_exponent`: π (Sana: −0.55 ± 0.22)
-- `q_min`: lower mass-ratio bound; `0 < q_min < 1` (Sana: 0.1, secondary)
+- `q_min`: lower mass-ratio bound; `0 < q_min < 1` (Sana: 0.1, secondary); for
+  `moe2017` the binary fraction counts the companions above `max(q_min, 0.1)`
 - `q_exponent`: κ (Sana: −0.10 ± 0.58)
 - `ecc_exponent`: η; `> −1` (Sana: −0.45 ± 0.17, secondary)
 - `ecc_max`: upper eccentricity bound; `0 < ecc_max < 1` (Sana: 0.9, secondary)
@@ -184,14 +186,16 @@ end
 
 Inverse CDF at `u ∈ [0, 1]` of `p(x) ∝ x^k` on `[x₀, x₁]`:
 `[x₀^{k+1} + u (x₁^{k+1} − x₀^{k+1})]^{1/(k+1)}`, and `x₀ (x₁/x₀)^u` for `k = −1`.
+Evaluated as `x₀ exp(log1p(u expm1(s L))/s)` with `s = k + 1`, `L = ln(x₁/x₀)`,
+which keeps full precision for an exponent next to −1 (the direct form loses
+it to cancellation, as the interpolated exponents of `moe2017` can be).
 """
 function _power_law_quantile(u::Float64, x₀::Float64, x₁::Float64, k::Float64)::Float64
-    x = if k == -1
-        x₀ * (x₁ / x₀)^u
-    else
-        s = k + 1
-        (x₀^s + u * (x₁^s - x₀^s))^(1 / s)
-    end
+    s = k + 1
+    # From zero (k > −1): x₁ u^{1/(k+1)}, exact
+    x₀ == 0 && return clamp(x₁ * u^(1 / s), x₀, x₁)
+    L = log(x₁ / x₀)
+    x = s == 0 ? x₀ * exp(u * L) : x₀ * exp(log1p(u * expm1(s * L)) / s)
     return clamp(x, x₀, x₁)
 end
 
@@ -403,9 +407,14 @@ function _moe_q_parameters(
     )
 end
 
-# ∫_{x₀}^{x₁} x^k dx
-_power_integral(x₀::Float64, x₁::Float64, k::Float64)::Float64 =
-    k == -1 ? log(x₁ / x₀) : (x₁^(k + 1) - x₀^(k + 1)) / (k + 1)
+# ∫_{x₀}^{x₁} x^k dx, as x₀^{k+1} expm1((k+1) L)/(k+1) with L = ln(x₁/x₀), exact at k = −1
+# and without cancellation next to it
+function _power_integral(x₀::Float64, x₁::Float64, k::Float64)::Float64
+    s = k + 1
+    x₀ == 0 && return x₁^s / s
+    L = log(x₁ / x₀)
+    return s == 0 ? L : x₀^s * expm1(s * L) / s
+end
 
 """
     _moe_q_weights(p, q_lo) -> (w_small, w_twin, w_large)
@@ -430,11 +439,14 @@ function _moe_q_weights(
 end
 
 """
-`1 + W_s`, the factor converting `f_logP;q>0.3` into `f_logP;q>0.1` at `(lP, M₁)`
-(Moe & Di Stefano 2017, DOI 10.3847/1538-4365/aa6fb6, §9.1; COSMIC's `q_factor`).
+    _moe_q_factor(lP, m₁, q_lo = 0.1) -> Float64
+
+The factor converting `f_logP;q>0.3` into the companion frequency above `q_lo ≥
+0.1` at `(lP, M₁)`; `1 + W_s` at the default `q_lo = 0.1` (Moe & Di Stefano
+2017, DOI 10.3847/1538-4365/aa6fb6, §9.1; COSMIC's `q_factor`).
 """
-_moe_q_factor(lP::Float64, m₁::Float64)::Float64 =
-    sum(_moe_q_weights(_moe_q_parameters(lP, m₁), 0.1))
+_moe_q_factor(lP::Float64, m₁::Float64, q_lo::Float64 = 0.1)::Float64 =
+    sum(_moe_q_weights(_moe_q_parameters(lP, m₁), max(q_lo, 0.1)))
 
 """
 Power-law index η of `f(e) ∝ e^η`, Moe & Di Stefano (2017, DOI
@@ -466,18 +478,21 @@ _moe_probbin(lP::Float64, m₁::Float64)::Float64 =
     lP ≤ 1.5 ? 1.0 : max(0.0, 1 - 0.11 * (lP - 1.5)^1.43 * (m₁ / 10)^0.56)
 
 """
-    _moe_period_table(m₁, lP_lo, lP_hi) -> (lP, CumP)
+    _moe_period_table(m₁, lP_lo, lP_hi, q_lo = 0.1) -> (lP, CumP)
 
 Grid `lP` [log10 d] of step 0.005 from `lP_lo` to `lP_hi` (both included; the
 last step may be shorter) and the cumulative trapezoid integral
-`CumP(lP) = ∫ f_logP;q>0.3 (1 + W_s) probbin dlP` of Moe & Di Stefano (2017,
-DOI 10.3847/1538-4365/aa6fb6) with the inner-binary probability of Moe's code.
-`CumP[end]` is the inner-binary fraction `f_bin(M₁)` over `[lP_lo, lP_hi]`.
+`CumP(lP) = ∫ f_logP;q>0.3 q_factor(q_lo) probbin dlP` of Moe & Di Stefano (2017,
+DOI 10.3847/1538-4365/aa6fb6) with the inner-binary probability of Moe's code,
+counting the companions above `q_lo` (`max(q_min, 0.1)` of the spec).
+`CumP[end]` is the inner-binary fraction `f_bin(M₁)` over `[lP_lo, lP_hi]` for
+those companions.
 """
 function _moe_period_table(
     m₁::Float64,
     lP_lo::Float64,
     lP_hi::Float64,
+    q_lo::Float64 = 0.1,
 )::Tuple{Vector{Float64},Vector{Float64}}
     n = floor(Int, (lP_hi - lP_lo) / 0.005 + 1e-9)
     lP = [lP_lo + 0.005k for k in 0:n]
@@ -488,9 +503,14 @@ function _moe_period_table(
     end
     cum = zeros(length(lP))
     g_prev =
-        _moe_companion_frequency(lP[1], m₁) * _moe_q_factor(lP[1], m₁) * _moe_probbin(lP[1], m₁)
+        _moe_companion_frequency(lP[1], m₁) *
+        _moe_q_factor(lP[1], m₁, q_lo) *
+        _moe_probbin(lP[1], m₁)
     for k in 2:length(lP)
-        g = _moe_companion_frequency(lP[k], m₁) * _moe_q_factor(lP[k], m₁) * _moe_probbin(lP[k], m₁)
+        g =
+            _moe_companion_frequency(lP[k], m₁) *
+            _moe_q_factor(lP[k], m₁, q_lo) *
+            _moe_probbin(lP[k], m₁)
         cum[k] = cum[k - 1] + 0.5 * (g_prev + g) * (lP[k] - lP[k - 1])
         g_prev = g
     end
@@ -602,6 +622,7 @@ function _moe_draw(
         _moe_clamp_m1(m₁),
         spec.log_period_min,
         spec.log_period_max,
+        spec.q_min,
     ),
 )::Tuple{Bool,Float64,Float64,Float64}
     m₁c = _moe_clamp_m1(m₁)
@@ -876,7 +897,7 @@ function _pair_massive!(
             m₁c = round(_moe_clamp_m1(m[i]); digits = 6)
             n_clamped += !(0.8 ≤ m[i] ≤ 40.0)
             haskey(tables, m₁c) ||
-                (tables[m₁c] = _moe_period_table(m₁c, s.log_period_min, s.log_period_max))
+                (tables[m₁c] = _moe_period_table(m₁c, s.log_period_min, s.log_period_max, s.q_min))
             table = tables[m₁c]
             is_binary, lP, q, e_draw = _moe_draw(s, m[i], rng; table = table)
             is_binary || continue

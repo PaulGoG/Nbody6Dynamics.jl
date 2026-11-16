@@ -206,6 +206,34 @@ format = "nbody"
         @test abs(-1 - n_e / sum(log.(e ./ e_max)) - η) < 0.05
     end
 
+    @testset "Moe & Di Stefano 2017: q_min in the binary fraction" begin
+        # The fraction with q_min = 0.5 equals the fraction with q_min = 0.1 times the share of
+        # q ≥ 0.5 among the drawn mass ratios (two code paths: the integral and the draw)
+        spec01 = nd.MassiveBinarySpec(; model = "moe2017", q_min = 0.1)
+        spec05 = nd.MassiveBinarySpec(; model = "moe2017", q_min = 0.5)
+        m₁ = 20.0
+        f01 = last(last(nd._moe_period_table(m₁, 0.15, 3.5, 0.1)))
+        f05 = last(last(nd._moe_period_table(m₁, 0.15, 3.5, 0.5)))
+        @test f05 < f01
+        table = nd._moe_period_table(m₁, spec01.log_period_min, spec01.log_period_max, 0.1)
+        rng = StableRNG(41)
+        draws = [nd._moe_draw(spec01, m₁, rng; table) for _ in 1:40_000]
+        q = [d[3] for d in draws if d[1]]
+        frac_hi = count(≥(0.5), q) / length(q)
+        f05_all =
+            last(last(nd._moe_period_table(m₁, spec05.log_period_min, spec05.log_period_max, 0.5)))
+        @test f05_all ≈ last(last(table)) * frac_hi rtol = 0.03
+    end
+
+    @testset "Power laws next to the exponent −1" begin
+        k = nextfloat(-1.0)
+        @test nd._power_integral(0.5, 1.0, k) ≈ log(2) rtol = 1e-12
+        @test nd._power_law_quantile(0.5, 0.5, 1.0, k) ≈ sqrt(0.5) rtol = 1e-12
+        @test nd._power_integral(0.5, 1.0, -1.0) == log(2)
+        @test nd._power_integral(1.0, 3.0, 1.0) ≈ 4.0 rtol = 1e-14
+        @test nd._power_law_quantile(0.25, 0.0 + 1.0, 3.0, 1.0) ≈ sqrt(1 + 0.25 * 8) rtol = 1e-14
+    end
+
     @testset "Moe & Di Stefano 2017: pool pairing, guard, determinism" begin
         m = nd.sample_kroupa(20_000; m_low = 0.08, m_up = 100.0, rng = StableRNG(6))
         spec = BinarySpec(;
