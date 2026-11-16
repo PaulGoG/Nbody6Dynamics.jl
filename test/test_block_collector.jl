@@ -67,6 +67,11 @@ function _synthetic_arm_sweep(work::AbstractString; seeds = 1:8, shift = 0.05, Ï
                 println(io, tk, "  ", join(string.(r[k] .* (0.2 .+ 2 .* fractions)), "  "))
             end
         end
+        # The stdout capture states the scaling (the identity: radii and times in N-body units)
+        write(
+            joinpath(out, Nbody6Dynamics.PostprocessConfig().stdout_file),
+            " PHYSICAL SCALING:  R* = 1.000  M* = 1.0  V* = 1.000  T* = 1.000\n",
+        )
         twin = p.arm == "twin" ? "\n[twin]\nbody = 1\namplitude = 1e-10\n" : ""
         hash = p.arm == "twin" ? "t$(p.seed)" : "h$(p.seed)"
         write(joinpath(out, "merger_ic.toml"), "[meta]\ndat10_sha256 = \"$(hash)\"\n$(twin)")

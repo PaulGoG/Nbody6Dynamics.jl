@@ -18,6 +18,11 @@ function _write_lagr_run(dir, t, r; hash, twin = false)
     out = joinpath(dir, "output")
     mkpath(out)
     fractions = Nbody6Dynamics.LAGR_MASS_FRACTIONS
+    # The stdout capture states the scaling (the identity: radii and times in N-body units)
+    write(
+        joinpath(out, Nbody6Dynamics.PostprocessConfig().stdout_file),
+        " PHYSICAL SCALING:  R* = 1.000  M* = 1.0  V* = 1.000  T* = 1.000\n",
+    )
     open(joinpath(out, "lagr.7"), "w") do io
         println(io, "TIME  ", join(string.(fractions), "  "))
         for (k, tk) in enumerate(t)
@@ -186,4 +191,13 @@ end
         @test_throws ArgumentError plot_paired_shifts(rows, vis; observable = "energy")
         @test_throws ArgumentError plot_paired_shifts(rows, vis; grid = "absent")
     end
+end
+
+@testset "series without a scaling" begin
+    # A run without its stdout capture has no scaling: its Lagrangian radii are left
+    # out rather than returned as N-body values labelled pc
+    dir = _write_lagr_run(mktempdir(), [0.0, 1.0], [1.0, 1.1]; hash = "h")
+    @test Nbody6Dynamics._run_series(dir, :lagrangian) !== nothing
+    rm(joinpath(dir, "output", Nbody6Dynamics.PostprocessConfig().stdout_file))
+    @test Nbody6Dynamics._run_series(dir, :lagrangian) === nothing
 end

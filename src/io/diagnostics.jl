@@ -456,7 +456,8 @@ function _parse_tidal_line(line::AbstractString)::NTuple{4,Float64}
             _parse_fortran_float(something(m.captures[4])),
         )
     catch e
-        @debug "Unparseable TIDAL PARAMETERS echo" line exception = e
+        e isa Union{ArgumentError,BoundsError,InexactError} || rethrow()
+        @warn "Unparseable TIDAL PARAMETERS echo; the tidal terms are taken as zero" line
         return (0.0, 0.0, 0.0, 0.0)
     end
 end
@@ -603,8 +604,8 @@ function cumulative_energy_error(diag::DiagnosticsData)
     return (; time_nb, errtot, detot)
 end
 
-"""Parse a Fortran real with an `E` or `D` exponent."""
-_parse_fortran_float(s::AbstractString)::Float64 = parse(Float64, replace(s, r"[dD]" => "E"))
+"""Parse a Fortran real with an `E` or `D` exponent, or a glued exponent such as `1.08726-157` ([`_parse_fortran_real`](@ref))."""
+_parse_fortran_float(s::AbstractString)::Float64 = _parse_fortran_real(s)
 
 """
     read_energy_totals(path::AbstractString)

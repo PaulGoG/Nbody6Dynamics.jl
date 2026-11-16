@@ -37,6 +37,7 @@ function read_escapers(path::AbstractString)::Vector{EscaperRecord}
     isfile(path) || error("Escaper file not found: $path")
 
     records = EscaperRecord[]
+    n_skipped = 0
 
     for line in eachline(path)
         stripped = strip(line)
@@ -57,9 +58,12 @@ function read_escapers(path::AbstractString)::Vector{EscaperRecord}
             theta = parse(Float64, tokens[13])
             push!(records, EscaperRecord(tesc, besc, eesc, vkm, kstar, namei, phi, theta))
         catch e
+            e isa Union{ArgumentError,BoundsError,InexactError} || rethrow()
+            n_skipped += 1
             @debug "Skipping unparseable escaper line" line exception = e
         end
     end
+    n_skipped > 0 && @warn "esc.11: $n_skipped escaper lines skipped (unparseable)" path
 
     return records
 end

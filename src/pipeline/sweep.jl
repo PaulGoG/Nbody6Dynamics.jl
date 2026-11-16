@@ -1254,7 +1254,7 @@ function sweep_summary(sweep_dir::AbstractString)
 end
 
 _csv_cell(v::AbstractString) =
-    occursin(r"[,\"\n]", v) ? "\"" * replace(v, "\"" => "\"\"") * "\"" : v
+    occursin(r"[,\"\n\r]", v) ? "\"" * replace(v, "\"" => "\"\"") * "\"" : v
 _csv_cell(v::Bool) = string(v)
 _csv_cell(v::Integer) = string(v)
 _csv_cell(v::Real) = isfinite(v) ? @sprintf("%.6g", v) : ""

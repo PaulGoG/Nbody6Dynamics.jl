@@ -129,9 +129,9 @@ function ensemble_statistics(
     return EnsembleStatistics(grid, med, q16, q84, q025, q975, n)
 end
 
-"""Physical unit scaling of a run from its stdout capture `path`; identity when absent."""
+"""Physical unit scaling of a run from its stdout capture `path`; `nothing` when absent."""
 function _run_scaling(path::AbstractString)
-    isfile(path) || return UnitScaling(1.0, 1.0, 1.0, 1.0)
+    isfile(path) || return nothing
     return extract_scaling(read_diagnostics(path))
 end
 
@@ -141,7 +141,9 @@ end
 Time series `(t_myr, y)` of one run for `quantity`:
 `:lagrangian` (radius of mass fraction `fraction` [pc]), `:energy`
 (|ΔE/E| per adjustment, zeros dropped), `:n_stars` and `:n_pairs` (from
-the ADJUST records). `nothing` when the source file is absent or empty.
+the ADJUST records). `nothing` when the source file is absent or empty, and
+for `:lagrangian` also without the stdout capture or its scaling (the radii
+would otherwise be N-body values labelled pc).
 """
 function _run_series(run_dir::AbstractString, quantity::Symbol; fraction::Real = 0.5)
     out = joinpath(run_dir, "output")
@@ -152,6 +154,7 @@ function _run_series(run_dir::AbstractString, quantity::Symbol; fraction::Real =
         isempty(lagr.time) && return nothing
         k = argmin(abs.(lagr.mass_fractions .- fraction))
         u = _run_scaling(_run_stdout_path(run_dir))
+        (u === nothing || !(isfinite(u.tscale) && isfinite(u.rbar))) && return nothing
         return (to_myr(u, lagr.time), to_pc(u, lagr.radii[k, :]))
     end
     path = _run_stdout_path(run_dir)

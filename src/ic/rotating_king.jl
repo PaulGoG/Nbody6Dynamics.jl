@@ -1109,8 +1109,10 @@ end
 # Model cache, orientation and realised rotation
 # ---------------------------------------------------------------------------
 
-# Solved models by (W0, ω0), default solver settings.
+# Solved models by (W0, ω0), default solver settings, and the lock that
+# serialises access to them
 const _ROTATING_KING_CACHE = Dict{Tuple{Float64,Float64},RotatingKingModel}()
+const _ROTATING_KING_LOCK = ReentrantLock()
 
 """
     _rotating_king_cached(W0, ω0) -> RotatingKingModel
@@ -1118,12 +1120,14 @@ const _ROTATING_KING_CACHE = Dict{Tuple{Float64,Float64},RotatingKingModel}()
 [`solve_rotating_king`](@ref)`(W0, ω0)` with the default solver settings,
 stored in `_ROTATING_KING_CACHE` on the first call and returned from it
 afterwards (a solve takes several seconds; the generator samples every cluster
-of a configuration from the model of its profile). The cache is a plain `Dict`
-and not thread-safe: concurrent first calls from several tasks must not occur.
+of a configuration from the model of its profile). Access is serialised by a
+lock, so concurrent calls from several tasks solve each model once.
 """
 function _rotating_king_cached(W0::Real, ω0::Real)::RotatingKingModel
     key = (Float64(W0), Float64(ω0))
-    return get!(() -> solve_rotating_king(key[1], key[2]), _ROTATING_KING_CACHE, key)
+    return lock(_ROTATING_KING_LOCK) do
+        get!(() -> solve_rotating_king(key[1], key[2]), _ROTATING_KING_CACHE, key)
+    end
 end
 
 """

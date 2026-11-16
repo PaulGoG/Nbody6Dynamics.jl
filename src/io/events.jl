@@ -46,14 +46,15 @@ Parse the stamped event lines of the engine log (`out1000`) and return one
 docstring of `EngineEvent`. `interval` is one more than the number of
 `ADJUST:` lines above the event, so a line printed between the (k−1)-th and
 the k-th ADJUST line has `interval == k`; `line` is the 1-based line number.
-Lines that do not parse (overflowed Fortran fields, glued exponents such as
-`1.08726-157`) are skipped.
+Lines that do not parse (overflowed Fortran fields) are skipped and counted
+in one warning.
 """
 function read_engine_events(path::AbstractString)::Vector{EngineEvent}
     isfile(path) || error("Diagnostics file not found: $path")
 
     events = EngineEvent[]
     n_adjust = 0
+    n_skipped = 0
     line = 0
 
     for text in eachline(path)
@@ -71,9 +72,12 @@ function read_engine_events(path::AbstractString)::Vector{EngineEvent}
         try
             push!(events, _parse_engine_event(kind, split(s), n_adjust + 1, line))
         catch e
+            e isa Union{ArgumentError,BoundsError,InexactError} || rethrow()
+            n_skipped += 1
             @debug "Skipping unparseable event line" line exception = e
         end
     end
+    n_skipped > 0 && @warn "engine stdout: $n_skipped event lines skipped (unparseable)" path
 
     return events
 end
@@ -92,21 +96,26 @@ function read_event_counters(path::AbstractString)::Vector{EventCounters}
     isfile(path) || error("Event counters file not found: $path")
 
     records = EventCounters[]
+    n_skipped = 0
 
     for text in eachline(path)
         tokens = split(text)
         isempty(tokens) && continue
         tokens[1] == "TIME[Myr]" && continue
         if length(tokens) < 58
+            n_skipped += 1
             @debug "Skipping short event.35 row" text ntokens = length(tokens)
             continue
         end
         try
             push!(records, _parse_event_counters(tokens))
         catch e
+            e isa Union{ArgumentError,BoundsError,InexactError} || rethrow()
+            n_skipped += 1
             @debug "Skipping unparseable event.35 row" text exception = e
         end
     end
+    n_skipped > 0 && @warn "event.35: $n_skipped rows skipped (short or unparseable)" path
 
     return records
 end
