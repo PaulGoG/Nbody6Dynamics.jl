@@ -96,7 +96,7 @@
         @test (c.name1, c.name2) == (200, 201)
         @test (c.progenitor1, c.progenitor2) == (2, 2)
         @test !c.mixed && !c.primordial_pair
-        @test c.separation_rsun ≈ 1e-8 * rbar * 4.435e7 rtol = 1e-12
+        @test c.separation_rsun ≈ 1e-8 * rbar * (3.0856776e18 / 6.955e10) rtol = 1e-12   # units.f
         @test c.r_centre == 0.1
         @test all(r -> r.kind === :collision && r.channel === :none, rows[2:end])
         @test (p.name1, p.name2) == (3, 4)

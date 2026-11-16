@@ -13,11 +13,20 @@
 # lower bound on the bound-pair population: wide pairs beyond the
 # regularisation distance RMIN are invisible to these diagnostics.
 
-"""Solar radius in pc (IAU 2015 nominal R☉ = 6.957 × 10⁸ m; 1 pc = 3.0857 × 10¹⁶ m)."""
-const _RSUN_PC = 6.957e8 / 3.0857e16
+"""
+Solar radius [cm] and parsec [cm] of the engine (`units.f`). Every length the
+engine writes in R☉ is scaled with `SU = PC·RBAR/6.955×10¹⁰`, so its output is
+decoded with these values and not with the IAU nominal ones (6.957×10¹⁰ cm
+would bias a semi-major axis by 2.9×10⁻⁴).
+"""
+const _ENGINE_RSUN_CM = 6.955e10
+const _ENGINE_PC_CM = 3.0856776e18
 
-"""Astronomical unit in pc (IAU 2012: 1 au = 1.495978707 × 10¹¹ m)."""
-const _AU_IN_PC = 1.495978707e11 / 3.0857e16
+"""Solar radius of the engine in pc."""
+const _RSUN_PC = _ENGINE_RSUN_CM / _ENGINE_PC_CM
+
+"""Astronomical unit in pc (IAU 2015 Resolution B2: 1 pc = 648000/π au)."""
+const _AU_IN_PC = π / 648000
 
 """
     semi_major_axis_pc(r::BinaryRecord) -> Float64

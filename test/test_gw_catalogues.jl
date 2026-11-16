@@ -245,7 +245,7 @@ using StableRNGs: StableRNG
             line_form = 3,
             line_end = 0,
         )
-        # One bev.82 record of the pair: a = 10^{log₁₀(a/R☉)}/215.032 au
+        # One bev.82 record of the pair: a = 10^{log₁₀(a/R☉)} R☉ with the engine's R☉ = 6.955×10¹⁰ cm (units.f)
         a_bev = 1e-7 * au_per_nb
         bev = BinaryEvolutionSnapshot(
             120.0 * tstar,
@@ -263,7 +263,7 @@ using StableRNGs: StableRNG
                     0.1,
                     0.4,
                     0.0,
-                    log10(a_bev * 215.032),
+                    log10(a_bev * (1.495978707e13 / 6.955e10)),
                     20.0,
                     30.0,
                     ntuple(_ -> 0.0, 18)...,

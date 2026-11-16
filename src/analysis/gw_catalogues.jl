@@ -9,9 +9,9 @@
 # band residence is the interval between the crossings of the two band edges,
 # which does not depend on the output cadence of the run.
 
-# au per pc and R☉ per au
+# au per pc, and the engine's R☉ per au (bev.82 and sev.83 lengths; IAU 2012 au)
 const _GWCAT_AU_PER_PC = 206264.806
-const _GWCAT_RSUN_PER_AU = 215.032
+const _GWCAT_RSUN_PER_AU = 1.495978707e13 / _ENGINE_RSUN_CM
 # Hubble time [Myr]
 const _GWCAT_T_HUBBLE_MYR = 13_800.0
 # Default GW band and reference frequencies of f₂₂ [Hz]
@@ -684,7 +684,7 @@ holes (K* 10–14).
 - every [`GWEvent`](@ref) of an applied Peters step (`:gw_decay_step`,
   `:gw_ksint`, `:gw_tides`): the orbit before the step, its γ and TGR;
 - every [`KSEvent`](@ref) of kind `:ks_new_compact` (NS/BH BINARY);
-- every bev.82 record, with a = 10^{log₁₀(a/R☉)}/215.032 au.
+- every bev.82 record, with a = 10^{log₁₀(a/R☉)}/215.094 au (the engine's R☉ of 6.955×10¹⁰ cm).
 
 Lengths convert as a [au] = a [NB]·R̄·206264.806 and times as t [Myr] =
 t [NB]·T*. Records with an absent type are dropped and counted, non-compact

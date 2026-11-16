@@ -11,8 +11,8 @@
 # NAME(I1), NAME(I2) to coal.24 before it exchanges the two names when
 # BODY0(I1) < BODY0(I2); BODY0 is not part of the record.
 
-"""R☉ per pc, for the coal.24 separation in N-body units."""
-const _COLLCAT_RSUN_PER_PC = 4.435e7
+"""R☉ per pc with the engine's constants, for the coal.24 separation in N-body units."""
+const _COLLCAT_RSUN_PER_PC = _ENGINE_PC_CM / _ENGINE_RSUN_CM
 
 """
     CollisionRow
