@@ -260,7 +260,7 @@ end
                       engine = true) -> Vector{Float64}
 
 Local densities of the particles `idx`. Mass densities are the engine's
-values when `engine` is set and the snapshot carries a density column with
+values (sixth neighbour) when `engine` is set, `k` is 6 and the snapshot carries a density column with
 positive entries for most of them, otherwise the k-d tree estimate
 [`local_density`](@ref) on the subset with neighbour rank `k`; number densities (`weighting = :number`) are
 always computed locally, the engine column being a mass density. `engine =
@@ -279,7 +279,10 @@ function _snapshot_density(
     k::Int = _DENSITY_NEIGHBOURS,
     engine::Bool = true,
 )
-    if engine && weighting === :mass && length(snap.rho) == nparticles(snap)
+    if engine &&
+       weighting === :mass &&
+       k == _DENSITY_NEIGHBOURS &&
+       length(snap.rho) == nparticles(snap)
         ρ = Float64.(snap.rho[idx]) .* (3 / (4π))
         count(>(0), ρ) ≥ length(idx) ÷ 2 && return ρ
     end
@@ -1045,7 +1048,7 @@ Diagnostics of the bound remnant of the whole system at every snapshot
 - `hardness_max`: largest hardness among them; `NaN` when there is none
 - `kt`: hard/soft energy scale `kT = 2K / (3n)` of the bound set, `K` its
   kinetic energy about its mean velocity and `n` its number of systems (a
-  regularised pair counted once)
+  regularised pair counted once; the excluded bodies left out of both)
 - `f_max`: largest stellar mass of the bound set over its mean stellar mass
 - `t_first_10kt`, `t_first_10kt_myr`: first snapshot with
   `hardness_max > 10`; `NaN` if never
@@ -1171,14 +1174,18 @@ end
 `T + W` of the systems about their centre of mass (G = 1), the internal
 energies of the regularised pairs left out, as in a [`BoundSet`](@ref).
 """
-function _system_energy(sys::SystemSet)::Float64
+_system_energy(sys::SystemSet)::Float64 =
+    _system_kinetic(sys) + 0.5 * sum(sys.mass .* pair_potential(sys.pos, sys.mass))
+
+"""Kinetic energy of the systems about their centre-of-mass velocity."""
+function _system_kinetic(sys::SystemSet)::Float64
     M = sum(sys.mass)
     vc = ntuple(k -> sum(sys.mass[q] * sys.vel[k, q] for q in eachindex(sys.mass)) / M, 3)
     T = 0.0
     for q in eachindex(sys.mass)
         T += 0.5 * sys.mass[q] * sum((sys.vel[k, q] - vc[k])^2 for k in 1:3)
     end
-    return T + 0.5 * sum(sys.mass .* pair_potential(sys.pos, sys.mass))
+    return T
 end
 
 """
@@ -1219,7 +1226,8 @@ N_MST above `msr_n_small` (`msr_n_random_small` up to it) and the seed
 The snapshot pair finder (`snapshot_pairs` with `pair_k` and
 `pair_tidal_factor`) runs on the bound stars of every snapshot with the
 energy scale `kT = 2K / (3n)`, `K` the kinetic energy of the bound set about
-its mean velocity and `n` its star count; the hardness series count the
+its mean velocity and `n` its number of systems (of the stellar systems when
+`exclude_names` is given); the hardness series count the
 pairs that pass the tidal criterion. The first snapshots with a pair harder
 than `10 kT` and than `10 f_max kT` (`f_max` the largest over the mean
 stellar mass) and the extrema of the core radius and core density
@@ -1369,9 +1377,13 @@ function remnant_diagnostics(
         mass = mass_all[sel]
 
         # Snapshot pairs on the bound stars, hardness against kT = 2K/(3n), K the kinetic
-        # energy of the bound systems and n their number, as in `hardness_scale`
+        # energy of the bound systems and n their number, as in `hardness_scale`; with
+        # seeded IMBHs left out, of the stellar systems alone
         n_sel = length(sel)
-        kt[k] = b.kinetic > 0 ? 2 * b.kinetic / (3 * length(b.systems)) : NaN
+        sys, system_of = _selected_systems(snap, sel, mass, pos, vel)
+        K = isempty(excluded) ? b.kinetic : _system_kinetic(sys)
+        n_sys = isempty(excluded) ? length(b.systems) : length(sys.mass)
+        kt[k] = K > 0 ? 2 * K / (3 * n_sys) : NaN
         f_max[k] = maximum(mass) / (sum(mass) / n_sel)
         found = snapshot_pairs(
             pos,
@@ -1405,7 +1417,6 @@ function remnant_diagnostics(
         end
         c = _shrinking_sphere_centre(pos, mass; centre_kw...)
         r_half[k] = _lagrangian_radii(pos, mass, c, (0.5,))[1]
-        sys, system_of = _selected_systems(snap, sel, mass, pos, vel)
 
         rot = rotation_analysis(
             pos,

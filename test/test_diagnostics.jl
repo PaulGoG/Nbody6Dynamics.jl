@@ -329,6 +329,26 @@ end
     @test 601 in b_sb.stars && with_bh.n_bound[1] == length(b_sb.stars)
     @test with_bh.r_core[1] ≈ core_radius(ps, local_density(ps, ms)).r_core rtol = 1e-10
     @test with_bh.f_max[1] ≈ 1.0                          # equal stellar masses, the IMBH left out
+    # kT and λ_P of the stars alone: kT = 2T/(3n) and E = T + W over the 600 stars about their
+    # centre of mass, the IMBH's kinetic energy and potential left out
+    vs = Float64.(sb.vel[:, stars])
+    vcs = vs * ms / sum(ms)
+    T_s = 0.5 * sum(ms[i] * sum(abs2, vs[:, i] .- vcs) for i in eachindex(ms))
+    @test with_bh.kt[1] ≈ 2 * T_s / (3 * length(stars)) rtol = 1e-6
+    E_s = T_s + 0.5 * sum(ms .* pair_potential(ps, ms))
+    rot_s = rotation_analysis(
+        ps,
+        vs,
+        ms;
+        n_min = pp_b.rotation_n_min,
+        nbins_max = pp_b.rotation_nbins_max,
+        n_null = pp_b.rotation_n_null,
+        seed = pp_b.msr_seed,
+        energy = E_s,
+        r_h = with_bh.r_half[1],
+        Nbody6Dynamics._centre_keywords(pp_b)...,
+    )
+    @test with_bh.lambda_peebles[1] ≈ rot_s.lambda_peebles rtol = 1e-6
     no_bh = remnant_diagnostics([sb, sb], [1:601]; settings = pp_b)
     @test no_bh.f_max[1] > 20
     # Core density: the density-weighted mean Σρ²/Σρ of the local densities (Casertano & Hut 1985)
@@ -386,6 +406,31 @@ end
         n_random = 100,
     )
     @test star_level.gamma_msr > 3 * seg_t.gamma_msr[1]
+    # kT counts systems: the five pairs once each
+    b_t = bound_set(st)
+    @test length(b_t.systems) == length(b_t.stars) - 5
+    @test seg_t.kt[1] ≈ 2 * b_t.kinetic / (3 * (length(b_t.stars) - 5)) rtol = 1e-12
+    # The tracer class is chosen among systems: the five pairs (20/n_t) outrank the ten
+    # single heavy stars (10/n_t), and the ten members of the pairs are followed
+    pp_5 = PostprocessConfig(; msr_n_tracer = 5, msr_scan = [5], msr_n_random = 20)
+    seg_5 = remnant_diagnostics([st, st], [1:n_t]; settings = pp_5, mask = false)
+    @test sort(seg_5.tracer_names) == Int32.(1:10)
+    # A slot with a negative pair name is a merged hierarchy (an inner component and the
+    # outer body), not a pair: its members are separate systems of 10/n_t each
+    st_h = Snapshot(
+        st.header,
+        st.name,
+        st.mass,
+        st.pos,
+        st.vel,
+        st.rho,
+        st.phi,
+        5,
+        Int32[-1, n_t + 2, n_t + 3, n_t + 4, n_t + 5],
+    )
+    seg_h = remnant_diagnostics([st_h, st_h], [1:n_t]; settings = pp_5, mask = false)
+    @test all(in(seg_h.tracer_names), Int32.(3:10)) &&
+          count(in(Int32[1, 2]), seg_h.tracer_names) ≤ 1
 
     csv_path = joinpath(mktempdir(), "remnant.csv")
     @test write_remnant_diagnostics(csv_path, diag) == csv_path

@@ -596,7 +596,7 @@ end
     @test meta_p["output"]["deltat"] == engine_interval(4.0 / t_star)
     @test abs(meta_p["output"]["deltat"] - 4.0 / t_star) ≤ 4.0 / t_star / 256
     inp_p = read(joinpath(work, "ic_phys", "merger.inp"), String)
-    @test occursin(Nbody6Dynamics.Printf.@sprintf("TCRIT=%.2f", 20.0 / t_star), inp_p)
+    @test occursin(Nbody6Dynamics.Printf.@sprintf("TCRIT=%.6f", 20.0 / t_star), inp_p)
     @test occursin("Time unit: T* =", read(joinpath(work, "ic_phys", "merger_summary.txt"), String))
     both = replace(small, r"tcrit = [0-9.]+" => "tcrit = 1.0\ntcrit_myr = 20.0")
     write(joinpath(work, "both.toml"), both)

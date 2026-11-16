@@ -663,6 +663,10 @@ end
         @test isempty(td.kz) && td.nzero == -1
         @test td.tidal == (5.34429e-3, 0.0, -1.78143e-3, 8.44140e-2)
         @test td.adjust[1].ekin == 0.3405 && td.adjust[1].pot == 0.7952
+        # A tidal echo without four values warns and gives zero tidal terms
+        @test (@test_logs (:warn, r"TIDAL") Nbody6Dynamics._parse_tidal_line(
+            "             TIDAL PARAMETERS:   5.34429E-03 -1.78143E-03",
+        )) == (0.0, 0.0, 0.0, 0.0)
     end
 
     @testset "TIME[NB] NMERGE, the N and NBIN0 echoes" begin

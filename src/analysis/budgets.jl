@@ -384,7 +384,7 @@ function energy_budget(
         j_adj = searchsortedlast(t_adj, bound_myr)
         adj_here = j_adj > 0 && t_adj[j_adj] >= lower_myr
         j = searchsortedlast(t_chan, bound_myr)
-        e_channels = chan_unknown || j == 0 || (source === :escapers && !adj_here) ? NaN : e_chan[j]
+        e_channels = chan_unknown || j == 0 || (source !== :counters && !adj_here) ? NaN : e_chan[j]
         detot = adj_here ? detot_adj[j_adj] : NaN
         j = searchsortedlast(t_bev, bound_myr)
         pair_source = j > 0 && t_bev[j] >= lower_myr ? :bev : :snapshot
