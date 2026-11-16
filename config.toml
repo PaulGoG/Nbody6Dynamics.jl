@@ -111,6 +111,25 @@ population_q_min     = 0.5          # 0 < x < 1; mass-ratio limit of the q-restr
 population_m1_min    = 0.47         # M☉; ≥ 0; lower primary mass of the q-restricted fraction
 population_m1_max    = 0.76         # M☉; > population_m1_min; upper primary mass of the q-restricted fraction
 population_edges     = []           # strictly increasing from 0 (ending at 1 for "lagrangian"); [] = the frame's default shells
+population_projection_axis = 3     # one of: 1 | 2 | 3; line of sight of the projected frames
+population_r_tide_nb = 0.0          # NB length; ≥ 0; systems beyond this radius are left out of the binary series (0 = off)
+binary_pair_types    = false        # write binary_pair_types.csv (pair types, hard/soft split, median elements per shell)
+binary_distributions = false        # write binary_distributions.csv (histograms of log a, e, q, log |E_b|/⟨m⟩σ²)
+gw_catalogues        = false        # write the compact-binary, escaped-binary and GW-merger catalogues; needs parse_stdout
+gw_band_hz           = [1.0e-4, 1.0e-1]  # Hz; two increasing positive values; band of the residence times
+gw_t_now_myr         = 0.0          # Myr; ≥ 0; observation epoch of the escaped pairs (0 = none)
+ldc_export           = false        # write ldc_galactic_binaries.csv (LDC galactic-binary table); needs gw_catalogues
+ldc_distance_kpc     = 8.0          # kpc; > 0; distance of every exported source
+ldc_e_max            = 0.01         # 0 < e < 1; largest eccentricity of an exported pair
+ldc_seed             = 1            # RNG seed of the sky positions and orientation angles of the export
+gw_observer          = false        # write gw_observer_catalogue.csv (observed f₂₂, LISA SNR, drawn sky and orientation); needs gw_catalogues
+gw_observer_distance_kpc = 8.0      # kpc; > 0; luminosity distance of every pair
+gw_observer_t_obs_yr = 4.0          # yr; one of: 0.5 | 1 | 2 | 4; LISA observation time
+gw_observer_seed     = 1            # RNG seed of the sky positions and orientation angles
+collision_catalogue  = true         # write collision_catalogue.csv when coll.13 or coal.24 exists
+tde                  = true         # write tde_events.csv when the stdout carries TDE lines
+binary_survival      = false        # write binary_survival.csv and binary_incidence.csv; needs binary_spans
+imbh                 = true         # IMBH diagnostics when the run seeded an IMBH; inert otherwise
 validity                  = true          # write validity.toml and validity_snapshots.csv
 validity_interval_de      = 1.0e-4        # > 0; per-interval |DE| above which an interval is flagged
 validity_cumulative_de    = 1.0e-3        # > 0; |DETOT| / max(ZKIN, |E|) at the start above which the run is flagged

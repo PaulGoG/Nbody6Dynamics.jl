@@ -2479,6 +2479,15 @@ function _validate_cluster_spec(spec::ClusterSpec, key_table::AbstractString)
     _validate_binaries(spec.binaries, key)
     _validate_binary_extensions(spec.binaries, key)
     _validate_segregation(spec.segregation, key)
+    # The energy ranking of the segregation scheme has no counterpart for f(E, J_z)
+    spec.profile isa RotatingKingProfile &&
+        spec.segregation.method != "none" &&
+        _config_error(
+            "$key.segregation.method",
+            "must be \"none\" for the rotating King profile (the scheme ranks systems by " *
+            "energy, which does not determine a distribution function of E and J_z); " *
+            "got \"$(spec.segregation.method)\"",
+        )
     return nothing
 end
 

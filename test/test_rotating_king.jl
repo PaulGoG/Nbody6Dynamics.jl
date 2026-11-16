@@ -326,6 +326,22 @@ using LinearAlgebra: Symmetric, eigvals
             degree = 0.5,
             rng = StableRNG(5),
         )
+        # and the cluster table is refused when it is validated, before any sampling
+        spec(method) = nd.ClusterSpec(;
+            N = 100,
+            rbar = 1.0,
+            profile = nd.RotatingKingProfile(),
+            imf = nd.EqualMassIMF(particle_mass = 1.0),
+            segregation = nd.SegregationSpec(; method),
+        )
+        err = try
+            nd._validate_cluster_spec(spec("bdk08"), 1)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("merger.cluster1.segregation.method", err.msg)
+        @test nd._validate_cluster_spec(spec("none"), 1) === nothing
     end
 
     @testset "Rotating King cluster record" begin

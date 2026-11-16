@@ -619,6 +619,20 @@ function _validate_estimators(pp::PostprocessConfig)
             "postprocess.gw_catalogues",
             "needs parse_stdout = true (the catalogues are built from the stdout capture)",
         )
+    for key in (:ldc_export, :gw_observer)
+        getfield(pp, key) &&
+            !pp.gw_catalogues &&
+            _config_error(
+                "postprocess.$key",
+                "= true needs postprocess.gw_catalogues = true (it reads the compact-binary catalogue)",
+            )
+    end
+    pp.binary_survival &&
+        !pp.binary_spans &&
+        _config_error(
+            "postprocess.binary_survival",
+            "= true needs postprocess.binary_spans = true (the survival curves are built from the spans)",
+        )
     0 < pp.population_q_min < 1 || _config_error(
         "postprocess.population_q_min",
         "must lie in (0, 1); got $(pp.population_q_min)",

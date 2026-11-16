@@ -285,6 +285,13 @@ function estimate_cost(
         rate *= c.merger_factor
         basis *= " × merger factor $(c.merger_factor)"
     end
+    basis *= if !isempty(c.table)
+        "; cost.table"
+    elseif cfg.build.enable_gpu
+        "; built-in H200 GPU table"
+    else
+        "; built-in H200 GPU table, not measured for the CPU build: set cost.table"
+    end
     wall_s = rate * span
 
     segments = if sim.wall_budget > 0

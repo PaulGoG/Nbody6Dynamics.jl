@@ -22,16 +22,18 @@
         stop_margin = 120.0,
         checkpoint_keep = 0,
         budget_hours = 0.0,
+        enable_gpu = true,
+        table = Vector{Float64}[],
     )
         return Nbody6Config(
             InstallConfig(),
-            BuildConfig(),
+            BuildConfig(; enable_gpu),
             SimulationConfig(; wall_budget, stop_margin, checkpoint_keep),
             PostprocessConfig(),
             VisualizationConfig(),
             MergerPipelineConfig(),
             ClusterConfig(),
-            CostConfig(; budget_hours),
+            CostConfig(; budget_hours, table),
         )
     end
     dump_size(n, nnbopt) = Nbody6Dynamics._checkpoint_dump_bytes(n, nnbopt)
@@ -45,6 +47,17 @@
         @test e.wall_s == 28100.0
         @test e.segments == 1
         @test startswith(e.basis, "interpolated between N = ")
+        # The basis names the table, and says when the built-in GPU rows estimate a CPU build
+        @test endswith(e.basis, "; built-in H200 GPU table")
+        @test endswith(
+            estimate_cost(cost_cfg(; enable_gpu = false); args...).basis,
+            "set cost.table",
+        )
+        own = [[1.0e5, 10.0], [1.0e6, 1000.0]]
+        @test endswith(
+            estimate_cost(cost_cfg(; enable_gpu = false, table = own); args...).basis,
+            "; cost.table",
+        )
         e = estimate_cost(cost_cfg(; wall_budget = 7200, stop_margin = 600); args...)
         @test e.segments == 5
         @test estimate_cost(cost_cfg(); args...).segments == 1

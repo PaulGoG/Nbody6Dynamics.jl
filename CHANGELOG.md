@@ -27,6 +27,21 @@ entries say so.
   draws one arm (keyword `arm`, by default the first of the index).
 - A rotating King profile is accepted for `0 < W0 ≤ 8` and a King profile for `0 < W0 ≤ 16`;
   `postprocess.relaxation_gamma` must hold two factors. Values outside are refused when the file is loaded.
+- `validity.toml`: `max_abs_de_rel_excl_pairs` is replaced by `max_abs_d_ebin_rel`, the energy the regularised
+  pairs exchanged with the cluster, which is what the old key held; `cumulative_rel` divides |DETOT| by the
+  engine's own divisor of DE at the start, max(ZKIN, |ZKIN − POT|), in place of |ETOT(0)|, which holds the
+  binding energy of the pairs (4.8 times the cluster energy in the binary showcase run).
+- `validity_snapshots.csv`: the 2T/|W| column is `two_t_over_w`; it was `q_virial`, the name of T/|W| in
+  `snapshot_integrals.csv`.
+- `rho_core` of the remnant diagnostics is the density-weighted density Σρ²/Σρ (Casertano & Hut 1985); it was the
+  largest sixth-neighbour density, 4.9 ρ₀ with 20 % scatter for a Plummer model. `t_rho_max` moves with it.
+- The generator converts Myr intervals with the engine's time unit (3.15×10¹³ s per Myr, units.f); the N-body
+  intervals in `merger.inp` are 0.18 % smaller and runs stop at the requested Myr of the engine's clock.
+- Configuration: `ldc_export` and `gw_observer` without `gw_catalogues`, `binary_survival` without
+  `binary_spans`, and a rotating King cluster with `segregation.method = "bdk08"` are refused at load; before,
+  the stages did nothing and the segregation failed at sampling.
+- The logged cost basis names its table and says when the built-in H200 rows estimate a CPU build.
+- `config.toml` lists every `[postprocess]` key.
 
 ### Fixed
 
@@ -58,6 +73,35 @@ entries say so.
   0.25; the equal-mass Lagrange triangle of `verif_triorbit` is an unstable equilibrium (e-folding time 14 Myr),
   and its late asymmetry is not a fault of the velocities; the Kroupa mean mass over 0.08-100 M☉ is 0.574 M☉;
   the `moe2017` branch of the massive binaries is documented.
+- Λ_MSR, Λ̃_MSR and Γ_MSR built their trees on stars, so the components of a massive regularised pair entered
+  joined by an edge of their separation: with five of twenty tracers in pairs and no segregation Γ_MSR was 10.6.
+  The trees are built on systems.
+- `radial_profile`: σ_t was taken about the shell's mean tangential vector, which vanishes for rotation over a
+  spherical shell, and drove β negative; it is taken about the mean azimuthal and polar streaming.
+- λ_P took the energy of the bound set with the mass and angular momentum of the stars alone when IMBHs were
+  seeded.
+- Seeded IMBHs moved the system off its centre-of-mass frame (net momentum 1.5×10⁻⁴ of Σm|v| in the IMBH pair
+  case); the system is centred after they are added.
+- Energy budget under KZ(14) = 3 and 5: the tidal work ETIDE of the engine's total is a channel, where the
+  residual drifted by the whole tidal work. The mass budget counts losses from its first snapshot; a NaN total
+  in the first row no longer makes every residual NaN.
+- The hard/soft boundary of the pair-type and distribution series is kT = ⟨m v²⟩/3 (Heggie 1975), as in
+  `hardness_scale`; the unweighted dispersion counted hard binaries as soft by a factor ⟨m⟩⟨1/m⟩.
+- Binary survival: primordial pairs formed at t = 0 without a regularisation line keep their age instead of
+  being left out as left-censored.
+- `moe2017`: the companion probability integrates the mass-ratio law from `q_min`; with `q_min = 0.5` it gave the
+  binaries of q > 0.1 squeezed into [0.5, 1]. The power-law integral and quantile are exact at exponent −1.
+- `population_frame = "milone"` with a projected core radius beyond R_h: the core region ends at R_h, with a
+  warning, where the middle region was inverted.
+- The escaper and event readers count the lines they cannot parse and warn once per file; an unparseable TIDAL
+  echo warns instead of becoming zero tidal terms. Glued Fortran exponents (`1.08726-157`) in ADJUST and event
+  fields are read.
+- A sweep point without its stdout capture returned its Lagrangian radii in N-body units labelled pc and Myr;
+  the series is left out, as the others are.
+- Sweep CSV cells with a carriage return are quoted; the rotating King model cache is locked.
+- Documented: the isolated control is not Roche-truncated (995–999 bodies against 737–802 per merger point in
+  the showcase sweep); under `rt_mode = "fixed"` the partial-disruption fits of Guillochon & Ramirez-Ruiz (2013)
+  act as a scaled prescription, and the loader warns.
 
 ## [0.9.2] — 2026-11-05
 

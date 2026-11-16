@@ -146,6 +146,16 @@
             "postprocess.binary_spans",
         )
         @test !refused("[postprocess]\nbinary_spans = true\n", "postprocess")
+        # stages that read another stage's product refuse to run without it
+        for key in ("ldc_export", "gw_observer")
+            @test refused("[postprocess]\n$key = true\n", "postprocess.$key")
+            @test !refused("[postprocess]\n$key = true\ngw_catalogues = true\n", "postprocess")
+        end
+        @test refused("[postprocess]\nbinary_survival = true\n", "postprocess.binary_survival")
+        @test !refused(
+            "[postprocess]\nbinary_survival = true\nbinary_spans = true\n",
+            "postprocess",
+        )
         @test refused("[simulation]\nbinary_name = \"\"\n", "simulation.binary_name")
         @test refused("[visualization.style]\nmarker_min = 0.0\n", "visualization.style.marker_min")
         @test refused(
