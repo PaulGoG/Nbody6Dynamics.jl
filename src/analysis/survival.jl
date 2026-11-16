@@ -537,7 +537,7 @@ before t_(j),
     F̂_k(t) = Σ_{t_(j) ≤ t} Ŝ(t_(j)−) d_kj/n_j,
 
 so that Σ_k F̂_k = 1 − Ŝ. The variance is the delta-method estimate
-(Marubini & Valsecchi 1995, eq. 10.11; Aalen 1978)
+(Marubini & Valsecchi 1995, ch. 10; Aalen 1978)
 
     Var F̂_k(t) = Σ_{t_(j) ≤ t} [F̂_k(t) − F̂_k(t_(j))]² d_j/[n_j (n_j − d_j)]
                + Σ_{t_(j) ≤ t} Ŝ(t_(j)−)² (n_j − d_kj) d_kj/n_j³

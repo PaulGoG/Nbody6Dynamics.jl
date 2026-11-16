@@ -1395,7 +1395,9 @@ and units follow the Sangria galactic-binary table (LDC manual, Tab. 3).
 - `distance_kpc`: distance of every source [kpc]; > 0
 - `e_max`: largest eccentricity of an exported pair; 0 < e_max < 1
 - `t_obs_s`, `cadence_s`: observation span and sampling interval [s] of the
-  `ObservationDuration` and `Cadence` columns; > 0
+  `ObservationDuration` and `Cadence` columns; > 0. The defaults are this
+  package's choice, not the values of a particular LDC data set: set them to
+  those of the data set the table is combined with
 - `rng`: random number generator of the sky position and orientation angles,
   `nothing` for empty angle cells
 

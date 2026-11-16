@@ -784,6 +784,14 @@ function _bpop_shells(
     milone = frame === :milone
     r_h = frame === :lagrangian ? NaN : _bpop_half_mass_radius(radius, mass)
     r_c = milone ? _bpop_core_radius(radius) : NaN
+    # A core radius beyond the half-mass radius (a disturbed or uncondensed
+    # system) leaves no core-to-half-mass region: the core region ends at R_h
+    if milone && isfinite(r_c) && isfinite(r_h) && r_c > r_h
+        @warn "binary_population_series: projected core radius $(round(r_c; sigdigits = 3)) exceeds " *
+              "the half-mass radius $(round(r_h; sigdigits = 3)); the :milone core region ends at R_h" maxlog =
+            1
+        r_c = r_h
+    end
     e = milone ? [0.0; r_c / r_h; edges[3:end]] : edges
     edge_lo = [0.0; e[1:nb]]
     edge_hi = [frame === :lagrangian ? 1.0 : Inf; e[2:end]]
