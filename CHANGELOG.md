@@ -38,7 +38,8 @@ entries say so.
 - Rotation analysis: the dispersion of a shell is taken about its mean streaming velocity. It was taken about
   the mean Cartesian velocity, which counted the rotation as dispersion: `λ_R` and `v_rot/σ` were low by 7 and
   11 % for a maximal Lynden-Bell rotator, a cold ring gave `λ_R = 0.87`. The debiased amplitude uses the noise
-  of a mass-weighted mean.
+  of a mass-weighted mean. The calibration table (`assets/calibration/`) is regenerated; its `rotation` rows
+  change and no other.
 - IMBH pairs: the density and dispersion of the dimensionless hardening rate are those at the influence radius
   (Sesana & Khan 2015), where the means inside it were used; `rho_infl_msun_pc3`, `sigma_infl_kms` and
   `h_dimensionless` of `imbh_pairs.csv` and of `imbh_pair_hardening` change.
