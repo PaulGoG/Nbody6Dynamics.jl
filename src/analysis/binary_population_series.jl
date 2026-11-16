@@ -454,9 +454,11 @@ function _bpop_log_tidal(label::String, r_tide::Float64, n_removed::Int)
     return nothing
 end
 
-# Hard/soft boundary |E_b| = ⟨m⟩σ² (NB) of a set of systems: ⟨m⟩ the mean mass
-# and σ the one-dimensional velocity dispersion of the systems inside their
-# half-mass radius (three-dimensional); NaN without systems.
+# Hard/soft boundary |E_b| = kT = ⟨m v²⟩/3 (NB) of a set of systems (Heggie
+# 1975): ⟨m⟩σ² with ⟨m⟩ the mean mass and σ the mass-weighted one-dimensional
+# velocity dispersion of the systems inside their half-mass radius
+# (three-dimensional), about their mass-weighted mean velocity, as in
+# `hardness_scale`; NaN without systems.
 function _bpop_hard_soft_energy(sys::_BpopSystems)::Float64
     r_h = _bpop_half_mass_radius(sys.r_3d, sys.mass)
     isnan(r_h) && return NaN
@@ -467,16 +469,16 @@ function _bpop_hard_soft_energy(sys::_BpopSystems)::Float64
     @inbounds for s in inside
         m_sum += sys.mass[s]
         for d in 1:3
-            v̄[d] += sys.velocity[d, s]
+            v̄[d] += sys.mass[s] * sys.velocity[d, s]
         end
     end
-    v̄ ./= n_in
+    v̄ ./= m_sum
     ss = 0.0
     @inbounds for s in inside, d in 1:3
-        ss += (sys.velocity[d, s] - v̄[d])^2
+        ss += sys.mass[s] * (sys.velocity[d, s] - v̄[d])^2
     end
-    σ² = ss / (3n_in)
-    return m_sum / n_in * σ²
+    # ⟨m⟩ σ²_mass-weighted = Σ m |v − v̄|² / (3 n)
+    return ss / (3n_in)
 end
 
 function _bpop_levels(levels)::Vector{Symbol}
@@ -1156,11 +1158,11 @@ The semi-major axis a, eccentricity e and binding energy
 ``E_b = m_1 m_2/(2a)`` follow from the relative orbit of the two components
 in the snapshot (G = 1); pairs that are not bound have no elements. A binary
 is hard when ``\\lvert E_b \\rvert > ⟨m⟩σ²`` (Heggie 1975,
-DOI 10.1093/mnras/173.3.729), with ⟨m⟩ the mean mass and σ the
-one-dimensional velocity dispersion,
-``σ² = \\sum_i \\lvert \\mathbf{v}_i - \\bar{\\mathbf{v}} \\rvert^2 / (3n)``,
-of the n systems of the level within their three-dimensional half-mass
-radius, per snapshot and level and after the tidal filter; `e_hs_nb` is this
+DOI 10.1093/mnras/173.3.729), ``⟨m⟩σ² = kT = ⟨m v²⟩/3`` with ⟨m⟩ the mean
+mass and σ the mass-weighted one-dimensional velocity dispersion,
+``σ² = \\sum_i m_i \\lvert \\mathbf{v}_i - \\bar{\\mathbf{v}} \\rvert^2 / (3 \\sum_i m_i)``
+about the mass-weighted mean velocity, of the n systems of the level within
+their three-dimensional half-mass radius, per snapshot and level and after the tidal filter; `e_hs_nb` is this
 boundary. The mass ratio is q = m₂/m₁ ≤ 1.
 
 Throws `ArgumentError` as [`binary_population_series`](@ref).

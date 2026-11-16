@@ -329,15 +329,38 @@
         tail = (2npairs + 1):length(m)
         return vcat(ms, m[tail]), hcat(cm(x), x[:, tail]), hcat(cm(v), v[:, tail])
     end
-    # Hard/soft boundary ⟨m⟩σ² about the origin: mean mass and 1-D velocity dispersion inside the half-mass radius
+    # Hard/soft boundary kT = ⟨m v²⟩/3 (Heggie 1975) of the systems inside the half-mass radius,
+    # velocities about their mass-weighted mean
     function ehs_of(m, x, v)
         r = vec(sqrt.(sum(abs2, x; dims = 1)))
         o = sortperm(r)
         inside = r .≤ r[o[findfirst(≥(0.5), cumsum(m[o]) ./ sum(m))]]
-        vi = v[:, inside]
-        n = count(inside)
-        return sum(m[inside]) / n * sum(abs2, vi .- sum(vi; dims = 2) ./ n) / (3n)
+        mi, vi = m[inside], v[:, inside]
+        v̄ = sum(vi .* mi'; dims = 2) ./ sum(mi)
+        return sum(mi' .* sum(abs2, vi .- v̄; dims = 1)) / (3 * count(inside))
     end
+    # Equipartition of two mass classes (m v² = 1 for every system, random directions): kT =
+    # ⟨m v²⟩/3 = 1/3, where ⟨m⟩ times the unweighted dispersion would give ⟨m⟩⟨1/m⟩/3 = 5/12 · 2.0
+    rng_q = StableRNG(1033)
+    n_q = 4000
+    m_q = [isodd(i) ? 1.0 : 4.0 for i in 1:n_q]
+    dir_q = randn(rng_q, 3, n_q)
+    dir_q ./= sqrt.(sum(abs2, dir_q; dims = 1))
+    v_q = dir_q ./ sqrt.(m_q')
+    x_q = randn(rng_q, 3, n_q)
+    sys_q = nd._BpopSystems(
+        m_q,
+        fill(NaN, n_q),
+        collect(1:n_q),
+        zeros(Int, n_q),
+        falses(n_q),
+        fill(NaN, n_q),
+        fill(NaN, n_q),
+        fill(NaN, n_q),
+        vec(sqrt.(sum(abs2, x_q; dims = 1))),
+        v_q,
+    )
+    @test nd._bpop_hard_soft_energy(sys_q) ≈ 1 / 3 rtol = 0.02
     # Plummer systems of equal mass in virial equilibrium for the pair-type, hardness and distribution cases
     rng_h = StableRNG(1032)
     n_h = 200
