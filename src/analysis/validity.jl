@@ -574,8 +574,10 @@ function _validity_energy(
     de = Float64[abs(a.de_rel) for a in adj[2:end] if isfinite(a.de_rel)]
     n_above = count(>(settings.validity_interval_de), de)
     n_flagged = ev === nothing ? 0 : count(iv -> iv.flagged, ev.intervals)
-    # Relative error with the change of the pairs' binding energy removed
-    excl = Float64[]
+    # Energy the regularised pairs exchanged with the cluster per interval,
+    # relative to the interval's divisor: activity of the pairs, not an error
+    # (the engine's total contains EBIN, so DE already excludes the exchange)
+    d_ebin = Float64[]
     if ev !== nothing
         for iv in ev.intervals
             usable =
@@ -584,13 +586,17 @@ function _validity_energy(
                 isfinite(iv.de_abs) &&
                 iv.de_abs != 0 &&
                 isfinite(iv.d_ebin)
-            usable && push!(excl, abs((iv.de_abs - iv.d_ebin) * iv.de_rel / iv.de_abs))
+            usable && push!(d_ebin, abs(iv.d_ebin * iv.de_rel / iv.de_abs))
         end
     end
-    excl_pairs = _validity_finite_max(excl)
     e0 = available ? adj[1].e_tot : NaN
     detot = available ? adj[end].detot : NaN
-    cumulative = abs(detot) / abs(e0)
+    # The cumulative change over the engine's divisor of DE at the start,
+    # max(ZKIN, |E|) with E = ZKIN − POT the energy of the reduced system:
+    # |ETOT| holds the binding energy of the pairs and would dilute it
+    scale0 = available ? max(adj[1].ekin, abs(adj[1].ekin - adj[1].pot)) : NaN
+    isfinite(scale0) && scale0 > 0 || (scale0 = abs(e0))
+    cumulative = abs(detot) / scale0
     verdict, reasons = if !valid
         "not_applicable", String[]
     elseif !available
@@ -604,7 +610,7 @@ function _validity_energy(
         )
         cumulative > settings.validity_cumulative_de && push!(
             msgs,
-            "cumulative |DETOT/E0| = $(_validity_sci(cumulative)) > " *
+            "cumulative |DETOT|/max(ZKIN, |E|)₀ = $(_validity_sci(cumulative)) > " *
             _validity_sci(settings.validity_cumulative_de),
         )
         (isempty(msgs) ? "ok" : "flag"), msgs
@@ -617,7 +623,7 @@ function _validity_energy(
         "median_abs_de_rel" => _validity_finite_median(de),
         "n_above_threshold" => n_above,
         "n_flagged" => n_flagged,
-        "max_abs_de_rel_excl_pairs" => excl_pairs,
+        "max_abs_d_ebin_rel" => _validity_finite_max(d_ebin),
         "e0" => e0,
         "detot" => detot,
         "cumulative_rel" => cumulative,

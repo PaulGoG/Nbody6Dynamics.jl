@@ -113,7 +113,7 @@ population_m1_max    = 0.76         # M☉; > population_m1_min; upper primary m
 population_edges     = []           # strictly increasing from 0 (ending at 1 for "lagrangian"); [] = the frame's default shells
 validity                  = true          # write validity.toml and validity_snapshots.csv
 validity_interval_de      = 1.0e-4        # > 0; per-interval |DE| above which an interval is flagged
-validity_cumulative_de    = 1.0e-3        # > 0; |DETOT / E0| above which the run is flagged
+validity_cumulative_de    = 1.0e-3        # > 0; |DETOT| / max(ZKIN, |E|) at the start above which the run is flagged
 validity_mass_tolerance   = 1.0e-6        # > 0; |relative mass-budget residual| above which an epoch is flagged
 validity_settle_tcr       = 5.0           # ≥ 0; violent-relaxation window after the start [crossing times]
 validity_pericentre_tcr   = 2.0           # ≥ 0; half-width of the window around a pericentre [crossing times of the denser progenitor]

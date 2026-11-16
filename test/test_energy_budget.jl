@@ -321,6 +321,9 @@ end
     r = mass_budget(ints, escapers, EventCounters[], EngineEvent[], u)[2]
     @test r.m_lost_stellar == 0.0 && r.m_lost_collision == 0.0 && isnan(r.m_engine)
     @test r.residual ≈ 0.06 atol = 1.0e-6
+    # A first snapshot after the start: the losses before it are in neither term
+    r_late = only(mass_budget(ints[2:2], escapers, counters, events, u))
+    @test abs(r_late.residual) < 1.0e-12 && r_late.m_escaped ≈ 0.2
     @test_throws ArgumentError mass_budget(SnapshotIntegrals[], escapers, counters, events, u)
     @test_throws ArgumentError mass_budget(
         ints,
@@ -490,6 +493,54 @@ end
         u,
     )
     @test all(r -> isnan(r.e_channels) && isnan(r.e_total) && isnan(r.detot), rl)
+    # Under KZ(14) = 5 the engine's total holds ETIDE, the accumulated tidal work: it
+    # enters the channels, and the residual is the engine's own DETOT when the
+    # reconstruction is exact (ETIDE = −0.02 t here)
+    adj_o(t, ecoll, emdot, ecdot) = AdjustRecord(
+        t,
+        t * tscale,
+        0.5,
+        0.0,
+        e0,
+        2,
+        0,
+        1.0,
+        0.0,
+        1.5e-5 * t,
+        0.1,
+        0.35,
+        -0.02 * t,
+        0.0,
+        0.0,
+        0.0,
+        ecoll,
+        emdot,
+        ecdot,
+    )
+    kz5 = zeros(Int, 50)
+    kz5[14] = 5
+    diag_o = DiagnosticsData(
+        [adj_o(0.0, 0.0, 0.0, 0.0), adj_o(1.0, 0.0, -0.02, -0.1), adj_o(2.0, 0.01, -0.05, -0.1)],
+        Dict{String,Float64}(),
+        kz5,
+        (0.0, 0.0, 0.0, 0.0),
+    )
+    ro = energy_budget(ints, escapers, counters, diag_o, u)
+    @test ro[1].e_channels == 0.0
+    @test ro[2].e_channels ≈ 0.5 - 0.04
+    @test ro[2].residual ≈ rows[2].residual - 0.04
+    # The relative residual is taken over the cluster energy max(T, |T + W|) of the
+    # first snapshot, the engine's divisor of DE
+    @test r1.residual_rel ≈ r1.residual / max(ints[1].kinetic, abs(e0))
+    # The first snapshot without a channel record: the reference is the first finite total
+    rf = energy_budget(
+        ints,
+        escapers,
+        EventCounters[],
+        DiagnosticsData([adj(2.0, 0.0, 0.0, 0.0)], Dict{String,Float64}()),
+        u,
+    )
+    @test isnan(rf[1].e_total) && isnan(rf[1].residual) && rf[2].residual == 0.0
     @test_throws ArgumentError energy_budget(SnapshotIntegrals[], escapers, counters, diag, u)
     @test_throws ArgumentError energy_budget(
         ints,

@@ -366,3 +366,40 @@ end
     @test Nbody6Dynamics._validate_estimators(PostprocessConfig(; validity_settle_tcr = 0.0)) ===
           nothing
 end
+
+@testset "Validity: energy scale of the cumulative check" begin
+    # A binary-rich start: ETOT = −1.25 holds the pairs' binding energy, the reduced
+    # system has E = ZKIN − POT = 0.1 − 0.35 = −0.25. DETOT = 1e-3 is 4e-3 of the
+    # engine's divisor max(ZKIN, |E|) and must flag at the 1e-3 threshold.
+    rec(t, detot, ebin) = AdjustRecord(
+        t,
+        t,
+        0.5,
+        detot / 0.25,
+        -1.25,
+        100,
+        10,
+        1.0,
+        detot,
+        detot,
+        0.1,
+        0.35,
+        0.0,
+        ebin,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    )
+    diag = DiagnosticsData([rec(0.0, 0.0, -1.0), rec(1.0, 1.0e-3, -1.05)], Dict{String,Float64}())
+    settings = PostprocessConfig()
+    ev = energy_intervals(diag, EngineEvent[])
+    e = Nbody6Dynamics._validity_energy(diag, ev, EnergyBudgetRow[], String[], settings)
+    @test e["cumulative_rel"] ≈ 4.0e-3
+    @test e["verdict"] == "flag"
+    # The pairs exchanged 0.05 with the cluster in the interval: 0.2 of the divisor,
+    # reported as their activity, not as an error
+    @test e["max_abs_d_ebin_rel"] ≈ 0.2
+    @test !haskey(e, "max_abs_de_rel_excl_pairs")
+end

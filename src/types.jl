@@ -158,7 +158,8 @@ The validity keys set the per-run validity record of `validity_record`:
 `validity` switches the output of `validity.toml` and
 `validity_snapshots.csv`; `validity_interval_de` and
 `validity_cumulative_de` are the per-interval |DE| and the cumulative
-|DETOT/E₀| above which the energy check flags the run;
+|DETOT|/max(ZKIN, |E|)₀ (the engine's divisor of DE at the start) above
+which the energy check flags the run;
 `validity_mass_tolerance` is the relative mass-budget residual above which
 an epoch is flagged; `validity_settle_tcr`, `validity_pericentre_tcr` and
 `validity_window_tcr` are the violent-relaxation window after the start,

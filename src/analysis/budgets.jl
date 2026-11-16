@@ -21,8 +21,10 @@ row at or before it (0 when there is none); `m_lost_collision` the mass lost in
 the collisions and coalescences up to it (the `DM` of the `NEW STAR` and `COAL`
 lines); `m_engine` the engine's own total ZMASS after the last escape at or
 before it (NaN when none); `residual = m0 − (m_snapshot + m_escaped +
-m_lost_stellar + m_lost_collision)` with `m0` the first snapshot's mass, and
-`residual_rel = residual / m0`.
+m_lost_stellar + m_lost_collision)` with `m0` the first snapshot's mass and
+each loss counted from the first snapshot on (a first snapshot after t = 0
+carries the losses before it in neither term), and `residual_rel = residual
+/ m0`.
 """
 struct MassBudgetRow
     time_nb::Float64
@@ -104,6 +106,9 @@ function mass_budget(
 
     m0 = Float64(ints[1].mass)
     rows = Vector{MassBudgetRow}(undef, length(ints))
+    # Losses before the first snapshot are not in m0: the budget counts them
+    # from the first snapshot on (zero for a first snapshot at t = 0)
+    l0 = (0.0, 0.0, 0.0)
     for (i, s) in enumerate(ints)
         bound_myr, bound_nb = _budget_bounds(s.time_nb, time_tolerance)
         j = searchsortedlast(t_esc, bound_myr)
@@ -114,7 +119,8 @@ function mass_budget(
         m_collision = isnan(zmbar) && !isempty(coll) ? NaN : j == 0 ? 0.0 : m_coll_cum[j]
         j = searchsortedlast(t_ev, bound_nb)
         m_engine = j == 0 ? NaN : m_ev[j]
-        residual = m0 - (s.mass + m_escaped + m_stellar + m_collision)
+        i == 1 && (l0 = (m_escaped, m_stellar, m_collision))
+        residual = m0 - (s.mass + (m_escaped - l0[1]) + (m_stellar - l0[2]) + (m_collision - l0[3]))
         rows[i] = MassBudgetRow(
             s.time_nb,
             s.time_myr,
@@ -242,9 +248,13 @@ counters file (`:escapers`; the internal energy of escaping pairs is then
 missing), or 0 (`:none`); `e_channels` the engine's `ECOLL + EMDOT + ECDOT`,
 from the same `event.35` row with `:counters` and from the last ADJUST record
 at or before the snapshot time otherwise (four printed digits; NaN when there
-is none); `e_total = e_snapshot + e_escaped + e_channels`; `residual` its
-change since the first snapshot and `residual_rel` that change over
-`|e_total|` of the first snapshot; `detot` the engine's own cumulative energy
+is none), and under `KZ(14) = 3, 5` also `ETIDE`, the work of the tidal field
+the engine accumulates into its total (last ADJUST record); `e_total =
+e_snapshot + e_escaped + e_channels`; `residual` its change since the first
+snapshot with a finite total and `residual_rel` that change over the cluster
+energy `max(T, |T + W|)` of that snapshot, the engine's divisor of `DE` (the
+pairs' binding energy, which can exceed the cluster energy several times,
+would dilute it); `detot` the engine's own cumulative energy
 change `DETOT` at the last ADJUST record at or before the snapshot, which the
 residual tracks when the reconstruction is exact.
 """
@@ -340,6 +350,10 @@ function energy_budget(
     q = sortperm(Float64[a.time_nb for a in diag.adjust])
     t_adj = Float64[diag.adjust[j].time_nb for j in q]
     detot_adj = Float64[diag.adjust[j].detot for j in q]
+    # Under KZ(14) = 3 and 5 the engine's total holds ETIDE, the work of the
+    # tidal field accumulated along the run, which no snapshot sum contains
+    orbit_tide = tidal_mode(diag) === :orbit
+    etide_adj = Float64[diag.adjust[j].etide for j in q]
 
     # Pair energies from bev.82 (double precision in the engine) at the
     # snapshot times it covers; the single-precision snapshot otherwise.
@@ -358,6 +372,7 @@ function energy_budget(
 
     rows = Vector{EnergyBudgetRow}(undef, length(ints))
     e_ref = NaN
+    cluster_scale = NaN
     for (i, s) in enumerate(ints)
         bound_myr, _ = _budget_bounds(s.time_nb, time_tolerance)
         lower_myr = s.time_nb - (bound_myr - s.time_nb)
@@ -382,9 +397,18 @@ function energy_budget(
                 init = 0.0,
             ) / e_scale
         end
+        if orbit_tide
+            j = searchsortedlast(t_adj, bound_myr)
+            e_channels += j == 0 ? NaN : etide_adj[j]
+        end
         e_snapshot = s.kinetic + s.potential + e_pairs + s.tidal_potential
         e_total = e_snapshot + e_escaped + e_channels
-        i == 1 && (e_ref = e_total)
+        # The first snapshot with a finite total is the reference; its cluster
+        # energy max(T, |T + W|) the scale, as the engine's DE (adjust.F)
+        if isnan(e_ref) && isfinite(e_total)
+            e_ref = e_total
+            cluster_scale = max(s.kinetic, abs(s.kinetic + s.potential))
+        end
         residual = e_total - e_ref
         rows[i] = EnergyBudgetRow(
             s.time_nb,
@@ -395,7 +419,7 @@ function energy_budget(
             e_channels,
             e_total,
             residual,
-            e_ref == 0 ? NaN : residual / abs(e_ref),
+            cluster_scale > 0 ? residual / cluster_scale : NaN,
             detot,
             source,
             pair_source,
