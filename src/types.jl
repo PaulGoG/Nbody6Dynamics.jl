@@ -335,7 +335,7 @@ Base.@kwdef struct PostprocessConfig
     bound_gamma_max::Float64 = 0.1
     bound_n_miss::Int = 1
     binary_population::Bool = false
-    population_frame::String = "lagrangian"   # "lagrangian" | "rh"
+    population_frame::String = "lagrangian"   # "lagrangian" | "rh" | "projected_rh" | "milone"
     population_q_min::Float64 = 0.5
     population_m1_min::Float64 = 0.47         # M☉
     population_m1_max::Float64 = 0.76         # M☉
