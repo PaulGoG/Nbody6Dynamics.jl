@@ -1464,6 +1464,19 @@ dtplot = 2.0
         @test ic_b.cluster_specs[1].binaries.fraction == 0.3
         @test parse_merger_summary(joinpath(res_b.output_dir, "merger_summary.txt")) ==
               res_b.cluster_ranges
+        # The recorded blocks give the same membership; a record without them falls back to
+        # the summary, and a directory with neither gives none
+        @test merger_cluster_ranges(res_b.output_dir) == res_b.cluster_ranges
+        old_dir = mktempdir()
+        cp(
+            joinpath(res_b.output_dir, "merger_summary.txt"),
+            joinpath(old_dir, "merger_summary.txt"),
+        )
+        rec_old = Nbody6Dynamics.TOML.parsefile(joinpath(res_b.output_dir, "merger_ic.toml"))
+        delete!(rec_old, "cluster_blocks")
+        open(io -> Nbody6Dynamics.TOML.print(io, rec_old), joinpath(old_dir, "merger_ic.toml"), "w")
+        @test merger_cluster_ranges(old_dir) == res_b.cluster_ranges
+        @test isempty(merger_cluster_ranges(mktempdir()))
         @test occursin(
             "Primordial binaries: NBIN0 = $(nb)",
             read(joinpath(res_b.output_dir, "merger_summary.txt"), String),

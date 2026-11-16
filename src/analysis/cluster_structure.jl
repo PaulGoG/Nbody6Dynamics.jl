@@ -1129,6 +1129,32 @@ function parse_merger_summary(path::AbstractString)::Vector{Vector{Int}}
 end
 
 """
+    merger_cluster_ranges(dir::AbstractString) -> Vector{Vector{Int}}
+
+Body indices (`dat.10` order, 1-based) of every initial cluster of the run
+whose generated input and engine output lie in `dir`: the `cluster_blocks`
+recorded in `merger_ic.toml`, or, when the record has none (runs generated
+before the key existed), the counts of `merger_summary.txt`
+([`parse_merger_summary`](@ref)). Empty when neither file gives them.
+
+# Example
+```julia
+ranges = merger_cluster_ranges(joinpath(run_dir, "output"))
+progenitor_of(150, ranges)
+```
+"""
+function merger_cluster_ranges(dir::AbstractString)::Vector{Vector{Int}}
+    record = joinpath(dir, "merger_ic.toml")
+    if isfile(record)
+        blocks = get(TOML.parsefile(record), "cluster_blocks", nothing)
+        if blocks isa AbstractVector && !isempty(blocks)
+            return [_members_from_blocks([Int(b[1]):Int(b[2]) for b in bl]) for bl in blocks]
+        end
+    end
+    return parse_merger_summary(joinpath(dir, "merger_summary.txt"))
+end
+
+"""
     _cluster_virial_snapshot(snap, rng; bound_only = true, max_passes, min_members) -> (Q, n_mem)
 
 Virial ratio `Q = T/|W|` of the members of an initial cluster in one

@@ -130,9 +130,8 @@ function Nbody6Dynamics.generate_plots(
             # Merger-specific: inter-cluster separation and per-cluster virial.
             # merger_summary.txt lives in the simulation output directory.
             if !isempty(sim_dir) && isdir(sim_dir)
-                summary_path = joinpath(sim_dir, "merger_summary.txt")
-                if isfile(summary_path) && length(snaps) ≥ 2
-                    ranges = parse_merger_summary(summary_path)
+                if length(snaps) ≥ 2
+                    ranges = merger_cluster_ranges(sim_dir)
                     if !isempty(ranges)
                         # The pipeline's bound sets, centre coalescence and merger
                         # epochs; evaluated once here, with the configured settings,

@@ -384,9 +384,8 @@ function postprocess(
         end
     end
     lap!("budgets")
-    summary_path = joinpath(sim_dir, "merger_summary.txt")
-    if haskey(results, :snapshots) && length(results[:snapshots]) ≥ 2 && isfile(summary_path)
-        ranges = parse_merger_summary(summary_path)
+    if haskey(results, :snapshots) && length(results[:snapshots]) ≥ 2
+        ranges = merger_cluster_ranges(sim_dir)
         if !isempty(ranges) &&
            _within_pair_sum_limit(results[:snapshots], pp, "Remnant diagnostics")
             snaps_r = results[:snapshots]
@@ -672,7 +671,7 @@ function postprocess(
             coalescences = get!(results, :coalescences) do
                 isfile(coal_path) ? read_coalescence_log(coal_path) : CoalescenceRecord[]
             end
-            ranges = parse_merger_summary(joinpath(sim_dir, "merger_summary.txt"))
+            ranges = merger_cluster_ranges(sim_dir)
             log = get(results, :binary_event_log, nothing)
             results[:collision_catalogue] = collision_catalogue(
                 collisions,
@@ -1468,7 +1467,12 @@ export EnergyInterval, EnergyEventAnalysis, energy_intervals, energy_events_summ
 export write_energy_intervals, write_engine_events
 export MassBudgetRow, mass_budget, mass_budget_summary, write_mass_budget
 export EnergyBudgetRow, energy_budget, energy_budget_summary, write_energy_budget
-export ClusterStructure, cluster_structure, bound_fraction, per_cluster_virial, parse_merger_summary
+export ClusterStructure,
+    cluster_structure,
+    bound_fraction,
+    per_cluster_virial,
+    parse_merger_summary,
+    merger_cluster_ranges
 export RadialProfile, radial_profile, cluster_profiles, system_profile, model_density
 export RemnantDiagnostics, RotationProfile, remnant_diagnostics, write_remnant_diagnostics
 export coalescence_time, core_radius, rotation_analysis, mass_segregation

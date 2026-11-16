@@ -6,6 +6,12 @@ entries say so.
 
 ## [Unreleased]
 
+### Changed
+
+- Cluster membership comes from the `cluster_blocks` that `merger_ic.toml` records (`merger_cluster_ranges`, new);
+  the regular expression over `merger_summary.txt` (`parse_merger_summary`) remains for runs whose record lacks the
+  key. Post-processing and figures no longer depend on the wording of the summary.
+
 ### Fixed
 
 - The IMF figure of the initial conditions draws the law of the clusters: the Kroupa segments, the exponent of a

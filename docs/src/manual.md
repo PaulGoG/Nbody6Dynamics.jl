@@ -1080,7 +1080,7 @@ Static plots take the extension from `visualization.format`; animations are alwa
 | `plot_sweep_ensemble(sweep_dir, vis; quantity)` | Median with the central 68 % and 95 % bands over the seeds of each grid point for `:lagrangian`, `:energy`, `:n_stars` or `:n_pairs`, coloured by one axis with the others held at annotated fixed values | `ensemble_<quantity>` |
 | `plot_control_comparison(sweep_dir, vis; quantity)` | Every completed merger point (solid) against its isolated control (dashed), coloured by the point's value of one grid axis; seeds share the colour | `control_<quantity>` |
 
-The merger plots are generated automatically by `generate_plots`/`postprocess_external` when a `merger_summary.txt` is found next to the snapshots; the cluster index ranges come from `parse_merger_summary`, and the merger epochs from the pipeline's results (`:merger_epochs`, `:coalescence`), or are evaluated once by the dispatcher with the `[postprocess]` settings for results without them. `plot_merger_ic` runs whenever a merger IC was generated in the same pipeline invocation (or can be re-run later via `load_merger_ic_result`).
+The merger plots are generated automatically by `generate_plots`/`postprocess_external` when `merger_ic.toml` or `merger_summary.txt` is found next to the snapshots; the cluster index ranges come from `merger_cluster_ranges` (the recorded `cluster_blocks`, or the summary of an older run), and the merger epochs from the pipeline's results (`:merger_epochs`, `:coalescence`), or are evaluated once by the dispatcher with the `[postprocess]` settings for results without them. `plot_merger_ic` runs whenever a merger IC was generated in the same pipeline invocation (or can be re-run later via `load_merger_ic_result`).
 
 ### Customising plots
 

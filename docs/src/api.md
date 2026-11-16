@@ -739,6 +739,7 @@ check_stellar_echo
 ### Merger Run Diagnostics
 
 ```@docs
+merger_cluster_ranges
 parse_merger_summary
 per_cluster_virial
 bound_fraction

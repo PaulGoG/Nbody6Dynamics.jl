@@ -77,7 +77,7 @@ name table once instead.
 
 # Example
 ```julia
-cluster_ranges = parse_merger_summary(joinpath(dir, "merger_summary.txt"))
+cluster_ranges = merger_cluster_ranges(dir)
 progenitor_of(150, cluster_ranges)
 ```
 """
@@ -234,7 +234,7 @@ lies in two clusters of `cluster_ranges`.
 ```julia
 rows = collision_catalogue(read_collision_log(joinpath(dir, "coll.13")),
                            read_coalescence_log(joinpath(dir, "coal.24")),
-                           parse_merger_summary(joinpath(dir, "merger_summary.txt"));
+                           merger_cluster_ranges(dir);
                            tstar_myr = 0.87, rbar_pc = 2.5, nbin0 = 500,
                            mass_loss = read_binary_events(log_path).mass_loss)
 collision_summary(rows).n_mixed
