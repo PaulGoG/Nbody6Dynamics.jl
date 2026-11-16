@@ -426,7 +426,10 @@ converted to `Float64`), sorted by `(name1, name2)`.
    ``R_{p,\\mathrm{out}} = a_\\mathrm{out}(1 - e_\\mathrm{out})`` of the orbit of
    ``l^*`` about the pair's centre of mass and ``i`` [deg] the angle between
    the inner and outer orbital angular momenta (0 when one of them vanishes);
-   it is rejected otherwise.
+   it is rejected otherwise. Eq. 90 holds for coplanar prograde orbits and was
+   calibrated for outer mass ratios ``q_\\mathrm{out} ≲ 5``; the inclination
+   factor ``(1 - 0.3\\, i / 180°)`` is the heuristic of Aarseth & Mardling
+   (2001) as used in the Aarseth codes, not part of Eq. 90.
 3. Every KS pair of the snapshot with a positive centre-of-mass name
    (`pair_name`; every slot when the snapshot carries none) is a member
    whatever steps 1 and 2 give, with `ks = true`; such a pair not accepted in

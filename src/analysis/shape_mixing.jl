@@ -54,7 +54,8 @@ frame. The iteration starts from `q = s = 1` in the coordinate frame and
 stops when both ratios change by less than `tol`, or after `max_iter`
 iterations (`converged = false`).
 
-The tensor is unweighted: the `r⁻²`-weighted (reduced) tensor gives inner
+The tensor is number-weighted, every particle counting equally where Eq. 8
+of Zemp et al. weights by mass, and unweighted in radius: the `r⁻²`-weighted (reduced) tensor gives inner
 particles of a shell more weight and biases the result towards rounder
 shapes (Allgood et al. 2006, DOI 10.1111/j.1365-2966.2006.10094.x).
 
@@ -270,10 +271,10 @@ DOI 10.1093/mnras/stw1397, measure ε at `R_h/4`, `R_h/2` and `R_h`).
 
 Rows are the projections onto the `(x, y)`, `(x, z)` and `(y, z)` planes,
 columns the apertures; `NaN` where fewer than 10 particles fall inside the
-aperture. For an elliptical distribution with axis ratio `b/a`, `ε → 1 − b/a`
-in apertures well inside the minor axis extent; the circular aperture
-truncates the major axis first, so ε of an elongated system decreases
-towards large apertures.
+aperture. For a cored elliptical distribution with axis ratio `b/a`, `ε → 0`
+in apertures small against the core, where the circular aperture cuts a
+nearly uniform density, and ε approaches `1 − b/a` once the aperture
+encloses the system.
 """
 function projected_ellipticity(
     pos::AbstractMatrix{Float64},

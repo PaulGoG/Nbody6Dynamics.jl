@@ -27,14 +27,15 @@ TOMLs use the AVX engine built under `backend/Nbody6PPGPU-beijing`
 | `binary` | 4000 (`W0 = 6`, 1 pc) + 1000 (`W0 = 5`, 0.7 pc), `q ≈ 0.25`, 20 % primordial binaries in both | apocentre 5 pc, `e = 0.7` | 15 Myr | 0.01 | the binary suite (pair counts with the hard/soft split, `a`–`e` diagrams, period distributions) on an unequal pair, and the relaxed tolerance a binary-rich run needs |
 | `tidal` | 2 × 2500 as `equal` | apocentre 6 pc, `e = 0.9`, point-mass galaxy of 10¹¹ M☉ at 8.5 kpc (`KZ(14) = 2`) | 20 Myr | 0.05 | the same encounter inside an external field: escapers removed on the distance criterion, and an engine energy check that measures the tidal work rather than the integration error |
 | `sweep` | 2 × 500, King `W0 = 6`, `r_h = 1` pc | apocentre 5 pc, `e ∈ {0.5, 0.9}`, seeds 2, 3, 4, with an isolated control per point | 20 Myr | 0.01 | a twelve-point grid: comparison figures on common axes, seed ensembles with 68/95 % bands, and each merger against its control |
-| `flagship` | 3 × 25 000, King `W0 = 6`, `r_h = 2` pc, Kroupa 0.08–100 M☉ | equilateral triangle of side 10 pc, each cluster on a sub-virial rotating orbit about the common centre (virial ratio 0.25 of the three point masses, 1.80 km/s tangential), explicit placement | 50 Myr | 0.01 | the triple merger of the README: a first close configuration at 6 Myr, a rebound to 7 pc, coalescence of all three at 14 Myr, the remnant to 50 Myr |
+| `flagship` | 3 × 25 000, King `W0 = 6`, `r_h = 2` pc, Kroupa 0.08–100 M☉ | equilateral triangle of side 10 pc, each cluster on a sub-virial rotating orbit about the common centre (1.80 km/s tangential: virial ratio 0.33 of the three point masses after the Roche truncation), explicit placement | 50 Myr | 0.01 | the triple merger of the README: a first close configuration at 6 Myr, a rebound to 7 pc, coalescence of all three at 14 Myr, the remnant to 50 Myr |
 
 The infall time from apocentre is half the Kepler period, so the eccentric
 cases coalesce early in the run (`equal` at 5 Myr) and the sweep's two
 eccentricities separate in time (12 Myr at `e = 0.5` against 8 Myr at
 `e = 0.9`), which is what its eccentricity axis is for. The triple of the
-flagship is released at the same virial ratio as a pair at apocentre with
-`e = 0.5`; its three pairwise separations fall from 10 pc to 5 pc by 6 Myr,
+flagship is released at the virial ratio of a pair at apocentre with
+`e = 0.33` (0.33 for the truncated clusters of 1.1×10⁴ M☉; the speed was
+chosen for 0.25 at 1.5×10⁴ M☉); its three pairwise separations fall from 10 pc to 5 pc by 6 Myr,
 rebound to 7 pc at 8 Myr and drop below the half-mass radii: clusters 1 and 3
 join at 12 Myr and cluster 2 at 14 Myr, the centre coalescence of
 `coalescence_time` and the last join of the merger tree; the merger epochs
@@ -57,7 +58,7 @@ at these sizes.
 | `binary` | `merger_showcase_binary_20261102_165418_b7bf` | 4212, 703 primordial pairs | 212 s | +5.8×10⁻³ |
 | `tidal` | `merger_showcase_tidal_20261102_165852_4a2d` | 4301 | 88 s | +4.2×10⁻³ (`ETIDE` −3.3×10⁻³, the tidal work) |
 | `sweep` | `sweep_showcase_20261102_170236` | 737–802 per merger, 995–999 per control | 106–128 s per point, four at a time; all twelve finished | last interval within ±3×10⁻⁶ for the mergers and ±1.4×10⁻⁵ for the controls |
-| `flagship` | `merger_showcase_flagship_20261102_170948_a01b` | 58 221 | 3328 s (55 min; AVX build, eight threads) | +2.9×10⁻³ |
+| `flagship` | `merger_showcase_flagship_20261102_170948_a01b` | 58 221 | 3326 s (55 min; AVX build, eight threads) | +2.9×10⁻³ |
 
 `DETOT` is the engine's cumulative relative energy change at the end of the
 run; the merger runs evolve stars and form binaries, so it sits well above
@@ -95,7 +96,7 @@ kicks at 10²–10³ km/s.*
 
 ![Half-mass radius of every finished merger of the sweep, coloured by eccentricity](assets/showcase_sweep_lagrangian.png)
 
-*`sweep`: the half-mass radius of the five finished mergers on common axes.
+*`sweep`: the half-mass radius of the six mergers on common axes.
 The infall is half a Kepler period from apocentre, so the eccentric pairs
 collapse first, around 9 Myr, and the `e = 0.5` pairs two to three Myr later;
 each remnant then re-expands.*
@@ -103,15 +104,16 @@ each remnant then re-expands.*
 ![Median half-mass radius per eccentricity with 68 and 95 % bands over the seeds](assets/showcase_sweep_ensemble.png)
 
 *`sweep`: the same series as seed ensembles, the median per eccentricity with
-its 68 and 95 % bands. The point at `e = 0.5` has two seeds after the stalled
-run; the sweep figures and summary are drawn from whatever finished, and
-`sweep_index.toml` records the killed point with its status.*
+its 68 and 95 % bands. Each eccentricity has three seeds, so the bands span
+the sample rather than estimate its percentiles. The sweep figures and the
+summary are drawn from the points that finished; a point that did not is
+recorded with its status in `sweep_index.toml`.*
 
 
-The `flagship` configuration is the merger of the hardware validation
-(`gpu/merger_50k.toml` is identical in content to `flagship_merger.toml`,
-header comment and table order aside). Its integration over 45.8 N-body units, 50.6 Myr, at eight host
-threads measured in the validation chains of 2026-09-24 to 2026-09-26:
+The hardware validation ran a merger of the same size class,
+`gpu/merger_50k.toml`: a Kepler pair of two King clusters of 25 000 stars
+each. Its integration over 45.8 N-body units, 50.6 Myr, at eight host
+threads was measured in the validation chains of 2026-09-24 to 2026-09-26:
 
 | Host | CUDA build | AVX build |
 |---|---|---|

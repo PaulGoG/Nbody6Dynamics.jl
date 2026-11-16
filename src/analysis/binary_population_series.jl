@@ -197,9 +197,11 @@ The projected frames take the projected radius R, the distance from the
 centre in the plane normal to `projection_axis`, and the projected half-mass
 radius R_h, defined from R as r_h is from r. With `:projected_rh` shell b holds
 the systems with ``e_b R_h ≤ R < e_{b+1} R_h``. `:milone` has the three regions
-of Milone et al. (2012, DOI 10.1051/0004-6361/201016384, §3.2): bin 1
+of Milone et al. (2012, DOI 10.1051/0004-6361/201016384, §4): bin 1
 ``R < R_c``, bin 2 ``R_c ≤ R < R_h`` and bin 3 ``R_h ≤ R < 2R_h``, with
-`edge_lo`, `edge_hi` in units of R_h. R_c is the projected radius at which the
+`edge_lo`, `edge_hi` in units of R_h. Their outer region is everything outside
+R_h within the field of view; the upper edge at 2 R_h is a choice of this
+package. R_c is the projected radius at which the
 projected number density of the systems falls to half its central value. With
 ``n_a = \\max(20, ⌈0.01 N⌉)`` systems, the central density is that inside the
 projected radius of the ``n_a``-th system in R order, and the profile is

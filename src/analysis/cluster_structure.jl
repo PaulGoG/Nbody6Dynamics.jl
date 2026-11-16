@@ -137,8 +137,10 @@ end
                             stop_fraction = 0.01, n_floor = 500)
         -> (; centre::Vector{Float64}, radius::Float64, n_final::Int, sigma::Float64)
 
-Centre of a particle set by the shrinking-sphere iteration of Power et al.
-(2003, DOI 10.1046/j.1365-8711.2003.05925.x). Starting from all particles,
+Centre of a particle set by a shrinking-sphere iteration after Power et al.
+(2003, DOI 10.1046/j.1365-8711.2003.05925.x), which differs from theirs in
+removing a fraction `shrink` of the particles per step where they shrink the
+radius by 2.5 %, and in the floor on the final count. Starting from all particles,
 the centre is the centroid of the current set; the set is then reduced to
 the `max(n_f, round(Int, (1 − shrink) n))` particles closest to that centre
 (at least one particle is dropped per step) and the centroid is recomputed,
@@ -881,9 +883,10 @@ in N-body units (`G = 1`).
   `G M^{5/2} / (2|E|)^{3/2}` differs from it by a factor of order unity.
 
 Both times are reported for the two Coulomb-logarithm factors in `gamma`:
-`γ = 0.11` is calibrated for equal masses (Giersz & Heggie 1994), `γ ≈ 0.02`
-is adopted for a mass spectrum (e.g. Vesperini et al. 2013,
-DOI 10.1093/mnras/sts434). Neither is calibrated for a Kroupa spectrum with
+`γ = 0.11` is calibrated for equal masses (Giersz & Heggie 1994, DOI
+10.1093/mnras/268.1.257), `γ ≈ 0.02` for a mass spectrum (Giersz & Heggie
+1996, DOI 10.1093/mnras/279.3.1037); Vesperini et al. (2013, DOI
+10.1093/mnras/sts434) use `ln(0.11 N)`. Neither is calibrated for a Kroupa spectrum with
 stellar remnants, so the pair brackets the uncertainty.
 
 # Arguments
@@ -1073,7 +1076,7 @@ function parse_merger_summary(path::AbstractString)::Vector{Vector{Int}}
     # Match e.g. "Cluster 5: plummer, imf=kroupa, N=1000 (after trunc: 966, binaries: 12),"
     # Tolerant of extra comma-separated fields between the profile name and
     # the N=… count (the summary format has grown fields before; the
-    # write→parse round-trip test in runtests.jl guards this coupling).
+    # write→parse round-trip test in test/test_ic.jl guards this coupling).
     pattern = r"Cluster\s+\d+:\s+.*?\bN=\d+\s+\(after trunc:\s+(\d+)(?:,\s*binaries:\s+(\d+))?\)"
     for line in eachline(path)
         m = match(pattern, line)

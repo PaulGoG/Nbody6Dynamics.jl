@@ -28,7 +28,7 @@ struct EquipartitionFit
 end
 
 """
-Mass dependence `g(m; m_eq)` of the dispersion, Bianchini et al. (2016), eq. 1:
+Mass dependence `g(m; m_eq)` of the dispersion, Bianchini et al. (2016), eq. 3:
 `exp(−m / (2 m_eq))` for `m ≤ m_eq`, `exp(−1/2) (m / m_eq)^{−1/2}` above.
 """
 _equipartition_g(m::Float64, m_eq::Float64)::Float64 =
@@ -62,7 +62,7 @@ end
                       m_eq_max_factor::Real = 100.0) -> EquipartitionFit
 
 Fit the equipartition mass of Bianchini et al. (2016), MNRAS 458, 3644,
-DOI 10.1093/mnras/stw552, eq. 1, to the velocity dispersion of a star sample binned in mass.
+DOI 10.1093/mnras/stw552, eq. 3, to the velocity dispersion of a star sample binned in mass.
 
 # Arguments
 - `mass`: stellar masses [M☉], length n, each positive and finite.

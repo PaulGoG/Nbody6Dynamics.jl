@@ -3,8 +3,8 @@
 # =============================================================================
 #
 # Two tag hierarchies drive the IC generation: `DensityProfile` selects the
-# spatial sampler (King or Plummer) and `IMFSpec` selects the mass-function
-# sampler and its scaling mode. `ClusterSpec` carries the shared parameters
+# spatial sampler (King, Plummer or rotating King) and `IMFSpec` selects the
+# mass-function sampler and its scaling mode. `ClusterSpec` carries the shared parameters
 # (N, rbar, position, velocity).
 #
 # The IMF hierarchy is the load-bearing design decision:
@@ -25,9 +25,10 @@
 # level) is the canonical user-facing one — all shipped configs use it —
 # while the structured table form (`profile = {type=...}`, `imf =
 # {type=...}`) exists for the lossless metadata round-trip of merger_ic.toml.
-# The flat form with `mass_total` set translates to `RescaledKroupaIMF`,
-# which warns at sample time when the rescale factor falls outside
-# ×[0.7, 1.4].
+# The flat form with `mass_total` set translates to `RescaledKroupaIMF`. The
+# loader refuses an expected rescale factor target_mass/(N⟨m⟩) outside
+# ×[0.5, 2] and warns outside ×[1/1.4, 1.4] ≈ ×[0.71, 1.4]; the sampler warns
+# again when the realised factor falls outside ×[1/1.4, 1.4].
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -121,8 +122,9 @@ apply a uniform linear rescale so the sum equals `target_mass`. The IMF
 shape (power-law slope) is preserved but the effective mass range shifts by
 the rescale factor.
 
-A warning is emitted at sample time when the rescale factor is outside
-×[0.7, 1.4]: in that regime the individual body masses no longer correspond
+The loader refuses an expected rescale factor `target_mass/(N⟨m⟩)` outside
+×[0.5, 2], and a warning is emitted at load and at sample time when the
+factor is outside ×[1/1.4, 1.4] ≈ ×[0.71, 1.4]: in that regime the individual body masses no longer correspond
 to real stars and downstream stellar-evolution output is non-physical.
 
 Use this mode deliberately when constructing super-particle simulations.
@@ -240,7 +242,8 @@ Specification for a single star cluster.
 - `profile::DensityProfile`: spatial sampler ([`KingProfile`](@ref),
   [`PlummerProfile`](@ref) or [`RotatingKingProfile`](@ref)).
 - `imf::IMFSpec`: mass-function sampler ([`KroupaIMF`](@ref),
-  [`RescaledKroupaIMF`](@ref), or [`EqualMassIMF`](@ref)).
+  [`RescaledKroupaIMF`](@ref), [`EqualMassIMF`](@ref), [`PowerLawIMF`](@ref)
+  or [`ExplicitMassesIMF`](@ref)).
 - `position::Vector{Float64}`: centre-of-mass position [pc] (length 3). For
   `orbit_mode = "kepler"` and `"single"` this is left empty.
 - `velocity::Vector{Float64}`: centre-of-mass velocity [km s⁻¹]. For

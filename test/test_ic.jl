@@ -215,7 +215,7 @@
 
     # --- Kroupa mean mass vs analytic (physics validation) ---
     @testset "Kroupa mean mass" begin
-        @test kroupa_mean_mass(0.08, 100.0) ≈ 0.58 rtol = 0.05
+        @test kroupa_mean_mass(0.08, 100.0) ≈ 0.57386 rtol = 1e-4   # closed form of the three segments
         N = 50_000
         m = sample_kroupa(N; m_low = 0.08, m_up = 100.0, rng = rng)
         μ = kroupa_mean_mass(0.08, 100.0)

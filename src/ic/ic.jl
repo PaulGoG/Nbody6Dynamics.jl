@@ -33,7 +33,7 @@ include("output.jl")
 One-call entry point for the initial conditions of a single cluster or of a multi-cluster merger.
 
 1. Loads the merger TOML configuration from `config_path`
-2. Generates particle ICs (Plummer/King + Kroupa IMF + Kepler orbit)
+2. Generates particle ICs (density profile, IMF and `orbit_mode` placement of the configuration)
 3. Writes `dat.10` + `merger.inp` + `merger_summary.txt`
 4. Generates diagnostic plots (projections, velocity field, IMF, density)
 
@@ -80,7 +80,7 @@ function run_merger_pipeline(
 
     if make_plots
         @info "Generating diagnostic plots..."
-        # Project visualization defaults (PDF vector, single-column preset)
+        # Project visualization defaults (PDF vector, export_width 6.5 in, no column preset)
         vis = VisualizationConfig(; output_dir = joinpath(out, "plots"))
         plot_merger_ic(result, vis)
     end

@@ -59,7 +59,7 @@ Analytical mean stellar mass `⟨m⟩` of the Kroupa (2001) IMF restricted to
   this value for a natural stellar population).
 - Estimating the expected cluster mass when only `N` is specified.
 
-For the standard range [0.08, 100] this returns ≈ 0.58 M☉.
+For the standard range [0.08, 100] this returns 0.574 M☉ (0.57386).
 """
 function kroupa_mean_mass(m_low::Real = 0.08, m_up::Real = 100.0)::Float64
     segs = _active_kroupa_segments(Float64(m_low), Float64(m_up))
@@ -131,8 +131,9 @@ the concrete `IMFSpec` subtype:
 
 - `KroupaIMF`          — natural Kroupa sampling; no rescale.
 - `RescaledKroupaIMF`  — Kroupa then uniform rescale to `target_mass`; emits
-                         a `@warn` when the rescale factor is outside
-                         ×[0.7, 1.4].
+                         a `@warn` when the rescale factor
+                         `target_mass/Σm` is outside ×[1/1.4, 1.4]
+                         ≈ ×[0.71, 1.4].
 - `EqualMassIMF`       — every body gets `particle_mass`.
 """
 sample_masses(imf::EqualMassIMF, N::Int, ::AbstractRNG) = fill(imf.particle_mass, N)
@@ -145,7 +146,7 @@ sample_masses(imf::KroupaIMF, N::Int, rng::AbstractRNG) =
 
 Mean mass [M☉] of the single power law `dN/dm ∝ m^{−alpha}` on `[m_low, m_up]`,
 `∫ m^{1−alpha} dm / ∫ m^{−alpha} dm` (logarithmic forms at `alpha` = 1 and 2);
-Salpeter's 2.35 on 0.15–50 M☉ gives 0.504 M☉.
+Salpeter's 2.35 on 0.15–50 M☉ gives 0.503 M☉.
 """
 function powerlaw_mean_mass(alpha::Real, m_low::Real, m_up::Real)::Float64
     0 < m_low < m_up ||

@@ -14,7 +14,7 @@ One event at the static black hole, from [`read_tde_events`](@ref).
 
 | field | meaning | unit |
 |---|---|---|
-| `kind` | `:full` (the star disrupted, removed), `:plunge` (pericentre inside 4 G M/c² above r_t, removed), `:partial` (the star loses `dm_msun` and survives) | — |
+| `kind` | `:full` (the star disrupted, removed), `:plunge` (pericentre q inside r_pl = 4 G M/c² with r_t < β_d r_pl, β_d the full-disruption penetration factor, 1.85 or 0.9 with partial disruptions and the engine's `BETAF` without; removed), `:partial` (the star loses `dm_msun` and survives) | — |
 | `time_nb`, `time_myr` | event time (the pericentre passage within one step) | NB, Myr |
 | `name`, `kstar` | body name and stellar type | — |
 | `mass_msun` | stellar mass before the event | M☉ |
@@ -103,8 +103,9 @@ end
 
 Counts of the events by kind (`n_full`, `n_partial`, `n_plunge`), the mass
 removed from the cluster `dm_msun` (all kinds), the time span of the events
-`t_first_myr`, `t_last_myr` and the event rate `rate_per_myr` (events over the
-span; `NaN` for fewer than two events).
+`t_first_myr`, `t_last_myr` and the event rate `rate_per_myr = (n − 1)/(t_last −
+t_first)`, the intervals between the `n` events over their span (`NaN` for fewer
+than two events or a zero span).
 """
 function tde_summary(events::AbstractVector{TDEEvent})
     n = length(events)

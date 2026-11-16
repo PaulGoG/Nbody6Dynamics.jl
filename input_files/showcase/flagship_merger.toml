@@ -1,6 +1,7 @@
 # Three equal King clusters of 25 000 stars at the vertices of an equilateral triangle of side 10 pc, each on a
-# sub-virial rotating orbit about the common centre (virial ratio 0.25 of the three point masses, the same as a pair
-# released at the apocentre of an orbit of eccentricity 0.5), followed for 50 Myr
+# sub-virial rotating orbit about the common centre, followed for 50 Myr. The tangential speed gives the three point
+# masses a virial ratio of 0.26 before the Roche truncation and 0.33 after it (a fifth of each cluster's mass is
+# removed), the ratio of a pair released at the apocentre of an orbit of eccentricity 0.33
 [merger]
 seed = 31
 n_clusters = 3

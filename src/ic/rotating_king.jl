@@ -26,7 +26,9 @@ const _RK_CLOSURE_ITERATIONS = 50
 
 Self-consistent rotating King model (Einsel & Spurzem 1999, DOI
 10.1046/j.1365-8711.1999.02083.x) with distribution function
-`f(E, J_z) = C (e^{−βE} − 1) e^{βΩ₀J_z}` for `E < 0`, tabulated on a polar
+`f(E, J_z) = C (e^{−βE} − 1) e^{βΩ₀J_z}` for `E < 0` (the sign of `βΩ₀J_z`
+is the opposite of their Eq. 14, so that the model rotates in the positive
+sense about its axis), tabulated on a polar
 grid `(r̂, μ = cos θ)`, as returned by [`solve_rotating_king`](@ref). All
 quantities are dimensionless (`G = σ = r_K = 1`).
 
@@ -319,8 +321,8 @@ and each multipole is integrated with the Green's function
 `Φ̂_l(r) = −(9/(2l + 1)) [r^{−l−1} ∫₀^r ρ_l s^{l+2} ds + r^l ∫_r^{r_max} ρ_l s^{1−l} ds]`,
 
 the factor `9 = 4πGρ_c r_K²/σ²` converting the Newtonian potential of
-`ρ/ρ_c` into units of `σ²`. Both integrals use product-trapezoid rules (`ρ_l`
-linear on each grid interval, the power of `s` integrated exactly), the inner
+`ρ/ρ_c` into units of `σ²`. Both integrals use product-trapezoid rules (the
+interval mean of `ρ_l` times the exact integral of the power of `s`), the inner
 ones accumulated outward and the outer ones inward; on the first interval the
 regular behaviour `ρ_l ∝ s^l` is used, and `r = 0` takes the limits
 `Φ̂_0(0) = −9 ∫ ρ_0 s ds`, `Φ̂_{l≥2}(0) = 0`.
@@ -628,8 +630,10 @@ end
 
 Self-consistent axisymmetric equilibrium of the rotating King distribution
 function `f(E, J_z) = C (e^{−βE} − 1) e^{βΩ₀J_z}` (`E < 0`) of Einsel &
-Spurzem (1999, DOI 10.1046/j.1365-8711.1999.02083.x), with central potential
-`W0 = ψ(0)` and dimensionless angular velocity `ω0 = Ω₀ r_K/σ ≥ 0`
+Spurzem (1999, DOI 10.1046/j.1365-8711.1999.02083.x), the sign of `βΩ₀J_z`
+opposite to their Eq. 14 so that the model rotates in the positive sense
+about its axis. The central potential is `W0 = ψ(0)` and the dimensionless
+angular velocity `ω0 = Ω₀ r_K/σ ≥ 0`
 (`ω0 = 0` is the King 1966 model, DOI 10.1086/109857).
 
 Method (Prendergast–Tomer iteration as in Varri & Bertin 2012, DOI
@@ -801,21 +805,27 @@ end
 
 Global moments of the rotating King model `m` (Einsel & Spurzem 1999, DOI
 10.1046/j.1365-8711.1999.02083.x), as volume integrals over the grid with
-`dV̂ = 2π r̂² dr̂ dμ` (sixth-order radial quadrature, Gauss weights in `μ`), in
-units of `ρ_c r_K³ σ²` for the energies:
+`dV̂ = 2π r̂² dr̂ dμ` (sixth-order radial quadrature, Gauss weights in `μ`;
+`W` is of second order, the accuracy of the multipole potential), in units
+of `ρ_c r_K³ σ²` for the energies:
 
 - `T_kin = ½∫ρ̂⟨u²⟩ dV̂` (total kinetic energy, rotation included);
 - `T_rot = ½∫ρ̂⟨v_φ⟩² dV̂` (ordered rotational energy);
 - `W = ½∫ρ̂ Φ̂ dV̂` with the self-consistent multipole potential `Φ̂` (zero at infinity);
 - `λ = T_rot/T_kin`; `t_rot = T_rot/|W|` (Ostriker & Peebles 1973, DOI 10.1086/152513);
-- `e_dyn = 1 − r_t_pole/r_t_equator`, the ellipticity of the surface `ψ = 0`;
+- `e_dyn = 1 − r_t_pole/r_t_equator`, the flattening of the surface `ψ = 0`.
+  Einsel & Spurzem (1999) use the symbol for the dynamical ellipticity of
+  Goodman (1983), a tensor-virial quantity about ten times larger (0.21
+  against 0.024 here at `W0 = 6`, `ω0 = 0.6`);
 - `σ_c`, the central one-dimensional velocity dispersion in units of `σ`
   (`⟨u²⟩/3` at `ψ = W₀`, `k = 0`), and `r_c = r_K σ_c/σ`, King's core radius
   formed with the central dispersion (the `r_c` of Einsel & Spurzem 1999 and
   of King 1966, Eq. 9), in units of `r_K`;
-- `r_t_over_r_c = r_t_equator/r_c` and `r_h_over_r_c = r_h/r_c` (the table
-  convention of Einsel & Spurzem 1999), with `r_t_over_r_K = r_t_equator` and
-  `r_h_over_r_K = r_h` in King radii;
+- `r_t_over_r_c = r_t_equator/r_c` and `r_h_over_r_c = r_h/r_c`, with
+  `r_t_over_r_K = r_t_equator` and `r_h_over_r_K = r_h` in King radii: the
+  equatorial truncation radius and the sphere enclosing half the mass,
+  whereas Einsel & Spurzem (1999) take both radii along `θ = 54.74°`, at
+  which `P₂` vanishes;
 - `v_rot_rms_over_σ1d = √(2T_rot/M̂) / √(2T_kin/(3M̂))`.
 
 For a converged model `2T_kin + W = 0` to the discretisation accuracy (scalar

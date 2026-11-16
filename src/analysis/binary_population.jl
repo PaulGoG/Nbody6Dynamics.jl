@@ -153,8 +153,8 @@ bev.82 snapshots (see [`binary_population`](@ref)).
 # Fields
 - `time_myr`: epochs [Myr]
 - `n_pairs`: number of regularised pairs listed at each epoch
-- `n_hard`, `n_soft`: hard/soft split by the Heggie criterion (zeros when
-  `classified == false`)
+- `n_hard`, `n_soft`: hard/soft split by the Heggie criterion (when
+  `classified == false`, `n_hard` is zero and `n_soft` equals `n_pairs`)
 - `binary_fraction`: ``f_\\mathrm{b} = N_\\mathrm{b} / (N_\\mathrm{s} + N_\\mathrm{b})``,
   pairs over systems; `NaN` when the stellar count was not supplied
 - `classified`: whether a hard/soft energy scale was available

@@ -261,8 +261,8 @@ end
 
 Local densities of the particles `idx`. Mass densities are the engine's
 values when `engine` is set and the snapshot carries a density column with
-positive entries for most of them, otherwise [`_local_density`](@ref) on the
-subset with neighbour rank `k`; number densities (`weighting = :number`) are
+positive entries for most of them, otherwise the k-d tree estimate
+[`local_density`](@ref) on the subset with neighbour rank `k`; number densities (`weighting = :number`) are
 always computed locally, the engine column being a mass density. `engine =
 false` is for subsets that leave out bodies the engine counted as neighbours
 (a seeded IMBH would otherwise enter the density of every star around it).
@@ -285,8 +285,10 @@ end
     core_radius(pos, rho) -> (; r_core, centre)
 
 Density-weighted centre `Σ ρ_i r_i / Σ ρ_i` and core radius
-`√(Σ ρ_i² |r_i − r_d|² / Σ ρ_i²)` of Casertano & Hut (1985), the
-definition behind the engine's `RC`. Summed over particles the weights are
+`√(Σ ρ_i² |r_i − r_d|² / Σ ρ_i²)`, the density-squared weighted form of
+the NBODY codes (Aarseth 2001, DOI 10.1016/S1384-1076(01)00060-4) behind
+the engine's `RC`, a modification of the density radius of Casertano & Hut
+(1985, DOI 10.1086/163589), whose estimator gives the densities. Summed over particles the weights are
 `ρ³` in the continuum limit, so for a Plummer sphere of scale length `a`
 the estimator gives `√0.3 a ≈ 0.548 a` with exact densities. With
 sixth-neighbour number densities the calibration table
@@ -450,7 +452,8 @@ doi:10.1093/mnras/stz505). `v_rot_floor`, `lambda_r_floor` and
 `lambda_peebles_floor` are the rms values over the draws (`NaN` for
 `n_null = 0`). `lambda_peebles_floor_analytic = 3π / (32 √N_eff) ≈
 0.295 / √N_eff` is the corresponding analytic floor of λ_P for
-uncorrelated azimuthal signs.
+uncorrelated azimuthal signs in an isotropic Plummer sphere, from ⟨r²v²⟩
+and |E| of that model, and an order-of-magnitude guide for other models.
 
 `v_peak` and `r_peak` fit the rotation curve
 ``V(R) = 2 V_\\mathrm{pk} (R/R_\\mathrm{pk}) / (1 + (R/R_\\mathrm{pk})^2)``
@@ -796,9 +799,12 @@ size, from the edges of their Euclidean minimum spanning trees (MST).
   each tree, which is insensitive to single long edges to outlying tracer
   stars (Maschberger & Clarke 2011, doi:10.1111/j.1365-2966.2011.19067.x);
 - `Γ_MSR = exp⟨⟨ln l⟩_random⟩ / exp⟨ln l_tracer⟩`, the ratio of geometric
-  mean edge lengths, with the multiplicative interval factor
-  `exp σ(⟨ln l⟩_random)` as `gamma_err` (Olczak, Spurzem & Henning 2011,
-  doi:10.1051/0004-6361/201116902).
+  mean edge lengths (Olczak, Spurzem & Henning 2011,
+  doi:10.1051/0004-6361/201116902), with the multiplicative interval factor
+  `exp σ(⟨ln l⟩_random)` as `gamma_err`, the scatter of the tree-mean log
+  edge length over the random sets. It is not their ΔΓ_MST (Eq. 9), the
+  scatter of the edge lengths of the reference tree, and the two are not
+  comparable.
 
 All three are ≈ 1 without segregation and > 1 with the tracers concentrated.
 

@@ -230,8 +230,9 @@ centre is [`shrinking_sphere_centre`](@ref) of the stars with
 `centre_kwargs` (the centre keys of [`PostprocessConfig`](@ref)), the
 reference velocity the mass-weighted mean velocity of the stars; the
 half-mass radius of the stars is measured about the density centre and
-their core radius by [`core_radius`](@ref) from the snapshot's density
-column (`NaN` without one). A KS component (`index ≤ 2 npairs`) has its
+their core radius by [`core_radius`](@ref) from the sixth-neighbour
+densities of the stars alone, computed from their positions whatever the
+snapshot's density column holds (`NaN` with ≤ 6 stars). A KS component (`index ≤ 2 npairs`) has its
 partner at `index + 1` for odd and `index − 1` for even `index`.
 
 Snapshots without the IMBH (escaped, merged, or inside a chain or merged
@@ -414,8 +415,9 @@ effective mass `m̃` ([`effective_mass`](@ref)),
     ⟨x²⟩ = (2/9) a² m̃ / M•
 
 (Chatterjee, Hernquist & Loeb 2002, DOI 10.1086/340224). Valid for
-`m̃ ≪ M• ≪ M_cluster`; the offsets are those about the stellar density
-centre. `ArgumentError` unless `a_pc`, `m_eff_msun` and `m_imbh_msun` are
+`m̃ ≪ M• ≪ M_cluster`; the offsets are those from the centre of the stellar
+system, which [`imbh_wandering`](@ref) measures in the centre-of-mass frame
+(`frame = :centre_of_mass`) when the states hold `x_cm_pc`. `ArgumentError` unless `a_pc`, `m_eff_msun` and `m_imbh_msun` are
 positive.
 
 # Example
@@ -1172,8 +1174,8 @@ Events of the IMBH of body name `name`, from the engine's records:
 
 | kind | source |
 |---|---|
-| `:tde` | a `coll.13` record ([`CollisionRecord`](@ref)) naming the IMBH whose partner has K* ≤ 12 (a star or white dwarf) |
-| `:collision` | other `coll.13` records naming the IMBH |
+| `:tde` | a `coll.13` record ([`CollisionRecord`](@ref)) naming the IMBH whose partner has 0 ≤ K* ≤ 12 (a star or white dwarf) |
+| `:collision` | other `coll.13` records naming the IMBH (a record without a stellar type counts as a collision) |
 | `:coalescence` | a `coal.24` record ([`CoalescenceRecord`](@ref)) naming the IMBH |
 | `:gw_merger` | a [`GWEvent`](@ref) of the merger kinds (`:gw_ksint_coll`, `:gw_unpert_coll`) with `name1` or `name2` the IMBH |
 | `:recoil` | a `:gw_recoil` [`GWEvent`](@ref) naming the IMBH |
@@ -1213,7 +1215,7 @@ function imbh_events(
         push!(
             rows,
             (
-                kind = pk ≤ 12 ? :tde : :collision,
+                kind = 0 ≤ pk ≤ 12 ? :tde : :collision,
                 time_myr = nb_myr(c.time_nb),
                 partner_name = pname,
                 partner_kstar = pk,

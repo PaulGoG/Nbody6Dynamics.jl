@@ -57,7 +57,9 @@ draw is kept). The inverse CDF of dN/dM ∝ M^−β on `[lo, hi]` with `u` unifo
 `r_h = rh` (`"constant"`); `r_h = 0.10 pc (M/M☉)^0.13` (`"marks_kroupa"`, Marks &
 Kroupa 2012, Eq. 7, DOI 10.1051/0004-6361/201118231); `r_h = (2.365/8) pc
 (M/10⁴ M☉)^0.18` (`"frost"`, Rantala, Naab & Lahén 2024, DOI
-10.1093/mnras/stae1413, with f_h = 1/8 and R₄ = 2.365 pc; 0.45 pc at 10⁵ M☉);
+10.1093/mnras/stae1413, with f_h = 1/8 and R₄ = 2.365 pc; 0.45 pc at 10⁵ M☉,
+the anchor they quote, where their Eq. 11 as printed carries a further factor
+1/1.3 and would give 0.34 pc);
 `r_h = 2.26 pc (M/10⁴ M☉)^0.27` (`"dobbs"`, Dobbs et al. 2022, DOI
 10.1093/mnras/stac2474). Each radius is multiplied by `10^(size_scatter_dex g)`,
 `g` standard normal.
@@ -93,7 +95,9 @@ segregated.
   10.1051/0004-6361:20031529) of dimension D: each parent cube of side L spawns
   8 children at ± L/4 per coordinate with uniform noise of ± 0.05 L, inheriting
   the parent velocity plus a Gaussian component of standard deviation 2^(−g)
-  in generation g (halved per generation); a child is a parent of the next generation with probability
+  in generation g. Goodwin & Whitworth give each family random velocities that
+  virialise it; the halving per generation is the choice made here and equals
+  theirs only for D = 3. A child is a parent of the next generation with probability
   2^(D − 3). The construction stops at the first generation with at least
   `n` parents inside the unit sphere, of which `n` are chosen at random and
   scaled by `radius`.
@@ -228,6 +232,7 @@ function complex_member_radius(spec::ComplexSpec, M::Real)::Float64
     s = spec.size_mass
     s == "constant" && return spec.rh
     s == "marks_kroupa" && return 0.10 * m^0.13
+    # The 0.45 pc anchor at 10⁵ M☉ quoted by Rantala et al., not their Eq. 11 as printed (0.34 pc)
     s == "frost" && return (2.365 / 8) * (m / 1.0e4)^0.18
     s == "dobbs" && return 2.26 * (m / 1.0e4)^0.27
     throw(
@@ -341,7 +346,7 @@ function _fractal_attempt(spec::ComplexSpec, n::Int, rng::AbstractRNG)
     x = zeros(3)
     w = zeros(3)
     for g in 1:_FRACTAL_MAX_GENERATIONS
-        # Goodwin & Whitworth (2004): the random component shrinks by 1/N_div = 1/2 per generation
+        # Halved per generation by choice; Goodwin & Whitworth (2004) virialise each family
         σ = 2.0^(-g)
         child_pos = Float64[]
         child_vel = Float64[]

@@ -54,7 +54,7 @@ Inverse-CDF sampling for radius (`r = a/√(X^{-2/3} − 1)`) and von Neumann re
 
 ## IMF sampling
 
-Masses are drawn from the [Kroupa2001](@cite) continuous broken power law (`ξ(m) ∝ m^{-α}` with `α = 0.3, 1.3, 2.3` across breaks at 0.01, 0.08, 0.5 M☉) by exact inverse-CDF sampling over the segments overlapping the requested `[bodyn, body1]` window — O(N), no rejection. `kroupa_mean_mass(m_low, m_up)` gives the analytic mean (`≈ 0.58` M☉ for [0.08, 100]).
+Masses are drawn from the [Kroupa2001](@cite) continuous broken power law (`ξ(m) ∝ m^{-α}` with `α = 0.3, 1.3, 2.3` across breaks at 0.01, 0.08, 0.5 M☉) by exact inverse-CDF sampling over the segments overlapping the requested `[bodyn, body1]` window — O(N), no rejection. `kroupa_mean_mass(m_low, m_up)` gives the analytic mean (0.574 M☉ for [0.08, 100]).
 
 Three modes, selected by the `IMFSpec` tag on each cluster:
 
@@ -180,7 +180,7 @@ Nbody6++GPU integrates a multi-cluster system correctly as a set of point masses
 
 **Integration accuracy.** The generated input uses `QE = 2×10⁻⁴` by default (`[merger.nbody6]`); the shipped engine inputs, which evolve stars and mostly sit in a tidal field, use `1×10⁻²` (see the input-file reference). The small runs without binaries conserved energy to better than 10⁻⁴ per adjustment interval; with 20 % primordial binaries the same demo reached 4×10⁻³ over its first time unit, so binary-rich configurations need `qe` of order 10⁻³ to 10⁻².
 
-**Stellar masses.** `mass_total` together with `N` fixes the mean stellar mass. `N` and `mass_total` must be consistent with the IMF mean (about 0.58 M☉ for Kroupa over 0.08–100 M☉): the loader refuses a rescale factor outside ×[0.5, 2] and warns outside ×[0.7, 1.4]. Alternatively, omit `mass_total`.
+**Stellar masses.** `mass_total` together with `N` fixes the mean stellar mass. `N` and `mass_total` must be consistent with the IMF mean (0.574 M☉ for Kroupa over 0.08–100 M☉): the loader refuses a rescale factor outside ×[0.5, 2] and warns outside ×[0.7, 1.4]. Alternatively, omit `mass_total`.
 
 **Execution.** The engine takes its thread count from the OpenMP runtime alone and reports it at start-up; `simulation.omp_threads` controls it, and `RUN_INFO.toml` records the configured and reported values with the CPU accounting of the run. GPU devices are selected through the engine's `GPU_LIST` environment variable, not `CUDA_VISIBLE_DEVICES`.
 
@@ -190,7 +190,7 @@ Nbody6++GPU integrates a multi-cluster system correctly as a set of point masses
 
 ## Verification configs
 
-Two configurations in `input_files/verification/` exercise the machinery end-to-end: `verif_triorbit.toml` (three clusters on a rotating Lagrange-equilibrium triangle, `ω² = Gm/(√3 r³)` — see [Input File Reference](@ref) for the derivation) and `verif_3d5cluster.toml` (five clusters distributed in 3D). The test suite additionally validates the King concentration `c(W0)`, the Plummer `r_hm = 1.305 a` relation, the Kroupa mean mass, `virialise!` reaching `Q = 0.5`, and the Kepler/Jacobi relations.
+Two configurations in `input_files/verification/` exercise the machinery end-to-end: `verif_triorbit.toml` (three clusters released on the rotating Lagrange triangle, `ω² = Gm/(√3 r³)`, an unstable equilibrium; see [Input File Reference](@ref) for the derivation) and `verif_3d5cluster.toml` (five clusters distributed in 3D). The test suite additionally validates the King concentration `c(W0)`, the Plummer `r_hm = 1.305 a` relation, the Kroupa mean mass, `virialise!` reaching `Q = 0.5`, and the Kepler/Jacobi relations.
 
 ## Related work
 
