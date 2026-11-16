@@ -90,6 +90,8 @@ const SUITE = [
     ),
 ]
 
+const FAILED = String[]
+
 # Intermediate configs go to a scratch dir (the TOML round-trip through
 # load_config is deliberate — it exercises the parser), so the project
 # directory is passed explicitly as base_dir: the relative paths above
@@ -110,9 +112,15 @@ mktempdir() do scratch
             Nbody6Dynamics.run_pipeline(cfg; base_dir = PROJ)
             @info "✓ $(entry.name) completed in $(round(time() - t0, digits=1))s"
         catch e
+            e isa InterruptException && rethrow()
             @error "✗ $(entry.name) failed" exception = (e, catch_backtrace())
+            push!(FAILED, entry.name)
         end
     end
+end
+if !isempty(FAILED)
+    @error "Verification targets failed: $(join(FAILED, ", "))"
+    exit(1)
 end
 
 @info "Verification suite done."

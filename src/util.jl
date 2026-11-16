@@ -102,8 +102,10 @@ Logging.catch_exceptions(::_ResilientLogger) = false
 function Logging.handle_message(l::_ResilientLogger, args...; kwargs...)
     try
         Logging.handle_message(l.inner, args...; kwargs...)
-    catch
-        # The sink is gone; there is nowhere left to report that.
+    catch err
+        # The sink is gone; there is nowhere left to report that. An interrupt
+        # that arrives during the write is passed on.
+        err isa InterruptException && rethrow()
     end
     return nothing
 end
