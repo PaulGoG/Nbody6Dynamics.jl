@@ -8,6 +8,9 @@ entries say so.
 
 ### Changed
 
+- Engine pin `v2026.07.27`: the static black hole of `[merger.mbh]` swallows a star whose Newtonian pericentre lies
+  inside 8 GM/c², the parabolic capture radius of a Schwarzschild black hole (Kesden 2012,
+  doi:10.1103/PhysRevD.85.024037); it was 4 GM/c².
 - Sweep arms: an arm may set only merger keys the generator does not read (`merger.nbody6.*`, `merger.stellar.*`,
   `merger.mbh.*`, the output intervals and the twin keys) and no structural pipeline key (`simulation.runs_dir`,
   `merger.config_file`, `merger.enabled`); every other key is refused at load, where before an arm could change the
