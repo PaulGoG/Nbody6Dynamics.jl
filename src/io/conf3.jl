@@ -41,6 +41,32 @@ function read_conf3(path::AbstractString)::Snapshot
 end
 
 """
+    _conf3_files(dir, pattern = "conf.3_*") -> Vector{String}
+
+Names of the snapshot files of `dir` in time order: the bare file (`pattern` without
+its `_*` suffix, the legacy single snapshot written at the start) first, then the
+stamped files by the number after the prefix. A stamped name whose suffix is not a
+number sorts last.
+"""
+function _conf3_files(dir::AbstractString, pattern::AbstractString = "conf.3_*")::Vector{String}
+    prefix = replace(pattern, "*" => "")
+    bare = replace(pattern, "_*" => "")
+
+    files = filter(readdir(dir; join = false)) do f
+        startswith(f, prefix) || f == bare
+    end
+    # Sort numerically by the suffix after the prefix. Suffixes may be integer
+    # (conf.3_10) or decimal (conf.3_0.5, conf.3_10.0) depending on DELTAT; both
+    # must parse so that time-order is preserved for downstream evolution plots.
+    sort!(files; by = f -> begin
+        f == bare && return -Inf
+        suffix = replace(f, prefix => ""; count = 1)
+        something(tryparse(Float64, suffix), Inf)
+    end)
+    return files
+end
+
+"""
     read_all_conf3(dir, pattern = "conf.3_*"; threaded = Threads.nthreads() > 1) -> Vector{Snapshot}
 
 Read every conf.3 snapshot matching `pattern` in `dir`, ordered by the
@@ -55,18 +81,7 @@ function read_all_conf3(
     pattern::AbstractString = "conf.3_*";
     threaded::Bool = Threads.nthreads() > 1,
 )::Vector{Snapshot}
-    prefix = replace(pattern, "*" => "")
-
-    files = filter(readdir(dir; join = false)) do f
-        startswith(f, prefix) || f == replace(pattern, "_*" => "")
-    end
-    # Sort numerically by the suffix after the prefix. Suffixes may be integer
-    # (conf.3_10) or decimal (conf.3_0.5, conf.3_10.0) depending on DELTAT; both
-    # must parse so that time-order is preserved for downstream evolution plots.
-    sort!(files; by = f -> begin
-        suffix = replace(f, prefix => ""; count = 1)
-        something(tryparse(Float64, suffix), Inf)
-    end)
+    files = _conf3_files(dir, pattern)
 
     isempty(files) &&
         (@warn "No snapshot files matching '$pattern' found in $dir"; return Snapshot[])

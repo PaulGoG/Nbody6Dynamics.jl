@@ -32,13 +32,24 @@ const LAGR_MASS_FRACTIONS = [
     1.0,
 ]
 
+"""Real of a `lagr.7` field; `NaN` for a field that does not parse (an overflowed `****` field)."""
+function _lagr_real(token::AbstractString)::Float64
+    try
+        return _parse_fortran_real(token)
+    catch e
+        e isa ArgumentError || rethrow()
+        return NaN
+    end
+end
+
 """
     read_lagr(path::AbstractString) -> LagrangianData
 
 Parse a lagr.7 file (upstream `lagr.f` single-row format: `##`/`TIME`
 header lines, then one row per epoch) and return the Lagrangian radii
 evolution. Raises an error on files without the expected header, rather
-than mis-parsing an unrecognised layout.
+than mis-parsing an unrecognised layout. A radius field that does not parse
+(an overflowed `****` field) is stored as `NaN`, with one warning per file.
 """
 function read_lagr(path::AbstractString)::LagrangianData
     isfile(path) || error("Lagrangian radii file not found: $path")
@@ -62,6 +73,7 @@ function read_lagr(path::AbstractString)::LagrangianData
 
     times = Float64[]
     radii_rows = Vector{Vector{Float64}}()
+    n_unreadable = 0
 
     for line in lines
         s = strip(line)
@@ -81,7 +93,13 @@ function read_lagr(path::AbstractString)::LagrangianData
         # (the 19th is typically the core radius <RC, which we skip)
         nlagr = length(LAGR_MASS_FRACTIONS)
         ncols = min(nlagr, length(tokens) - 1)
-        push!(radii_rows, [parse(Float64, tokens[1 + k]) for k in 1:ncols])
+        row = [_lagr_real(tokens[1 + k]) for k in 1:ncols]
+        n_unreadable += count(isnan, row)
+        push!(radii_rows, row)
+    end
+
+    if n_unreadable > 0
+        @warn "lagr.7: $n_unreadable radius fields unreadable (stored as NaN)" path
     end
 
     isempty(times) &&

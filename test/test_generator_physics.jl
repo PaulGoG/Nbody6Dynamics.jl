@@ -193,3 +193,106 @@ truncate_jacobi = false
         )
     end
 end
+
+@testset "Generator review fixes of 2026-11" begin
+    nd = Nbody6Dynamics
+    cluster(; kw...) = Dict{String,Any}(string(k) => v for (k, v) in kw)
+    merger(c1, c2) = Dict{String,Any}(
+        "merger" => Dict{String,Any}(
+            "n_clusters" => 2,
+            "cluster1" => c1,
+            "cluster2" => c2,
+            "orbit" => Dict{String,Any}("apocentre" => 10.0, "eccentricity" => 0.5),
+        ),
+    )
+    control_rbar(d) = control_merger_dict(d)["merger"]["cluster1"]["rbar"]
+
+    # Equal density at eight times the mass: r₂ = 2 r₁, and the N-weighted mean of (1, 2) is 1.5
+    by_mass = merger(
+        cluster(; N = 100, rbar = 1.0, imf = "equal", mass_total = 100.0),
+        cluster(; N = 100, density_ratio = 1.0, imf = "equal", mass_total = 800.0),
+    )
+    @test control_rbar(by_mass) ≈ 1.5
+    # Eight times the density at eight times the mass: the same radius
+    by_mass["merger"]["cluster2"]["density_ratio"] = 8.0
+    @test control_rbar(by_mass) ≈ 1.0
+    # The same mass function without totals: the star counts give the mass ratio,
+    # r₂ = 2 r₁ and the mean is (100 + 800 × 2)/900
+    by_count = merger(cluster(; N = 100, rbar = 1.0), cluster(; N = 800, density_ratio = 1.0))
+    @test control_rbar(by_count) ≈ 1700 / 900
+    # Different mass functions and no total on cluster 1: refused
+    mixed = merger(
+        cluster(; N = 100, rbar = 1.0),
+        cluster(; N = 100, density_ratio = 1.0, imf = "equal", mass_total = 800.0),
+    )
+    @test_throws ArgumentError control_merger_dict(mixed)
+
+    mktempdir() do dir
+        write_config(name, body) = (p = joinpath(dir, name); write(p, body); p)
+        # Flat table: mass bounds do not apply to equal masses
+        flat = """
+            [merger]
+            n_clusters = 1
+            orbit_mode = "single"
+            [merger.cluster1]
+            model = "plummer"
+            N = 100
+            rbar = 1.0
+            imf = "equal"
+            mass_total = 100.0
+            EXTRA
+            [merger.output]
+            output_dir = "$dir"
+            """
+        @test load_merger_config(write_config("eq.toml", replace(flat, "EXTRA" => ""))).clusters[1].imf isa
+              nd.EqualMassIMF
+        @test_throws ArgumentError load_merger_config(
+            write_config("eq_bodyn.toml", replace(flat, "EXTRA" => "bodyn = 0.5")),
+        )
+        @test_throws ArgumentError load_merger_config(
+            write_config("eq_body1.toml", replace(flat, "EXTRA" => "body1 = 50.0")),
+        )
+
+        # An IMBH given by mass fraction under stellar evolution: 4 % of about 1150 M☉ is
+        # below 100 M☉ and is refused at generation; 4 % of about 3400 M☉ is accepted
+        imbh = """
+            [merger]
+            seed = 3
+            n_clusters = 1
+            orbit_mode = "single"
+            [merger.cluster1]
+            model = "plummer"
+            N = NSTARS
+            rbar = 1.0
+            imf = "kroupa"
+            [merger.cluster1.imbh]
+            mass_fraction = 0.04
+            [merger.stellar]
+            kz19 = 3
+            [merger.nbody6]
+            binary_physics = "full"
+            escapers = "keep"
+            [merger.output]
+            output_dir = "OUT"
+            """
+        light = joinpath(dir, "light")
+        heavy = joinpath(dir, "heavy")
+        mkpath(light)
+        mkpath(heavy)
+        cfg_light = load_merger_config(
+            write_config("light.toml", replace(imbh, "NSTARS" => "2000", "OUT" => light)),
+        )
+        err = try
+            generate_merger_ic(cfg_light)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ErrorException && occursin("below 100 M☉", err.msg)
+        cfg_heavy = load_merger_config(
+            write_config("heavy.toml", replace(imbh, "NSTARS" => "6000", "OUT" => heavy)),
+        )
+        result = generate_merger_ic(cfg_heavy)
+        @test result.N_total == 6001
+    end
+end

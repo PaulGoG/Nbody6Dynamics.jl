@@ -544,10 +544,13 @@ end
 Format a non-negative quantity to `n` significant digits for labels and
 annotations, following the power-of-ten typography standard: plain decimal
 within 10⁻²–10⁴, mantissa `\\times 10^{e}` outside (`10^{e}` alone when the
-mantissa is 1) — never computer notation, which `@sprintf("%.3g", 1200)`
-and `@sprintf("%.2g", 100)` both produce.
+mantissa is ±1) — never computer notation, which `@sprintf("%.3g", 1200)`
+and `@sprintf("%.2g", 100)` both produce. `NaN` gives `\\mathrm{NaN}` and an
+infinity `\\infty` with its sign.
 """
 function _fmt_latex_sig(x::Real, n::Int = 3)::String
+    isnan(x) && return "\\mathrm{NaN}"
+    isinf(x) && return (x < 0 ? "-" : "") * "\\infty"
     x == 0 && return "0"
     v = round(Float64(x); sigdigits = n)
     e = floor(Int, log10(abs(v)))
@@ -555,7 +558,8 @@ function _fmt_latex_sig(x::Real, n::Int = 3)::String
         return isinteger(v) ? string(Int(v)) : string(v)
     end
     m = round(v / 10.0^e; sigdigits = n)
-    m == 1 && return "10^{$(e)}"
+    abs(m) ≥ 10 && ((m, e) = (m / 10, e + 1))         # log10 rounding at a decade
+    abs(m) == 1 && return (m < 0 ? "-" : "") * "10^{$(e)}"
     m_str = isinteger(m) ? string(Int(m)) : string(m)
     return "$(m_str) \\times 10^{$(e)}"
 end

@@ -138,7 +138,7 @@ and a run directory that does not exist, naming the row.
 
 # Example
 ```julia
-runs = block_runs("artefacts/runs/h200-campaign/ledger.csv", "runs/campaign/A"; block = "A")
+runs = block_runs("campaign/ledger.csv", "runs/campaign/A"; block = "A")
 ```
 """
 function block_runs(

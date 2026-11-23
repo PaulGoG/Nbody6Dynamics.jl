@@ -8,7 +8,10 @@
 #
 # Every realisation is seeded from (model, N, replica) with StableRNGs, so the table
 # regenerates identically on any machine and Julia version. `--quick` runs two small
-# N with three replicas each (a schema and timing check, not a calibration).
+# N with three replicas each (a schema and timing check, not a calibration). Only the
+# full run writes into assets/calibration/: a run narrowed by `--quick`, `--n`, `--reps`
+# or `--models` writes into a temporary directory, which it prints, unless `--out`
+# names another one.
 include(joinpath(@__DIR__, "activate.jl"))
 
 using Nbody6Dynamics
@@ -30,7 +33,7 @@ const MODELS = [
     "plummer_om15",       # Osipkov–Merritt Plummer, r_a = 1.5 a: anisotropy profile
     "plummer_rot",        # Plummer with every v_φ prograde (Lynden-Bell p = 1): rotation signal
     "plummer_kroupa",     # Plummer with independent Kroupa masses: segregation nulls, mass weighting
-    "plummer_kroupa_s05", # the same with Šubr degree S = 0.5: segregation signal
+    "plummer_kroupa_s05", # the same with energy-ranked masses, S = 0.5: segregation signal
     "plummer_stretch",    # Plummer stretched to axis ratios q = 0.8, s = 0.6: shape signal
 ]
 const LAGR_FRACTIONS = (0.01, 0.05, 0.1, 0.5, 0.9)
@@ -414,17 +417,21 @@ function parse_args(args)
     grid = quick ? [1_000, 3_162] : copy(N_GRID)
     reps = quick ? Dict(n => 3 for n in grid) : copy(REPLICAS)
     models = copy(MODELS)
-    out = joinpath(@__DIR__, "..", "assets", "calibration")
+    out = ""
+    narrowed = quick
     for a in args
         if startswith(a, "--n=")
             grid = parse.(Int, split(a[5:end], ","))
+            narrowed = true
         elseif startswith(a, "--reps=")
             k = parse(Int, a[8:end])
             reps = Dict(n => k for n in grid)
+            narrowed = true
         elseif startswith(a, "--models=")
             models = String.(split(a[10:end], ","))
             all(m -> m in MODELS, models) ||
                 throw(ArgumentError("unknown model in $(models); known: $(MODELS)"))
+            narrowed = true
         elseif startswith(a, "--out=")
             out = a[7:end]
         elseif a != "--quick"
@@ -433,6 +440,12 @@ function parse_args(args)
     end
     for n in grid
         haskey(reps, n) || (reps[n] = 3)
+    end
+    # The shipped table is the full grid: a narrowed run must not replace it
+    if isempty(out)
+        out =
+            narrowed ? mktempdir(; cleanup = false) :
+            joinpath(@__DIR__, "..", "assets", "calibration")
     end
     return (; quick, grid, reps, models, out)
 end

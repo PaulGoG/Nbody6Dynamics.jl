@@ -666,6 +666,16 @@ end
     n_before = length(readdir(kout))
     @test_throws ArgumentError restart_simulation(killed; tcrit_extra = 1.0, dump = "comm.2_14.0")
     @test length(readdir(kout)) == n_before
+    # A dump cut inside its last record is refused as incomplete, also when it is named
+    write(joinpath(kout, "comm.2_14.0"), nsub_dump[1:(end - 3)])
+    cut_error = try
+        restart_simulation(killed; tcrit_extra = 1.0, dump = "comm.2_14.0")
+        nothing
+    catch e
+        e
+    end
+    @test cut_error isa ArgumentError && occursin("incomplete", cut_error.msg)
+    @test length(readdir(kout)) == n_before
     rm(joinpath(kout, "comm.2_14.0"))
 
     # 7c. Stall watchdog: an engine whose output stops advancing after start-up is asked to

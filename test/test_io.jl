@@ -1073,3 +1073,48 @@ end
 end
 
 # =====================================================================
+
+@testset "Readers on truncated and overflowed input" begin
+    nd = Nbody6Dynamics
+    mktempdir() do dir
+        # A bare conf.3 is the start of the run and sorts first; a suffix that is not a number last
+        for name in ("conf.3_10", "conf.3", "conf.3_2.5", "conf.3_0", "conf.3_bak", "other.3_1")
+            touch(joinpath(dir, name))
+        end
+        @test nd._conf3_files(dir) ==
+              ["conf.3", "conf.3_0", "conf.3_2.5", "conf.3_10", "conf.3_bak"]
+        @test nd._conf3_files(dir, "other.3_*") == ["other.3_1"]
+
+        # lagr.7: an overflowed field and a D exponent
+        lagr = joinpath(dir, "lagr.7")
+        open(lagr, "w") do io
+            println(io, "## header")
+            println(io, "TIME " * join(("R$k" for k in 1:18), " "))
+            println(io, "0.0 " * join(fill("0.5", 18), " "))
+            println(io, "1.0 ******** 2.5D-01 " * join(fill("0.75", 16), " "))
+        end
+        data = @test_logs (:warn, r"lagr.7: 1 radius fields unreadable") read_lagr(lagr)
+        @test size(data.radii) == (18, 2)
+        @test data.time == [0.0, 1.0]
+        @test isnan(data.radii[1, 2])
+        @test data.radii[2, 2] == 0.25
+        @test all(==(0.75), data.radii[3:18, 2])
+        @test all(==(0.5), data.radii[:, 1])
+        @test data.mass_fractions == nd.LAGR_MASS_FRACTIONS
+
+        # ADJUST: a line cut after Q is skipped, the complete line is kept
+        out = joinpath(dir, "out1000")
+        open(out, "w") do io
+            println(
+                io,
+                " ADJUST:  TIME    5.00000E-01  T[Myr]   0.579E+00  Q   0.377E+00  DE   2.644E-06 ETOT  -5.408E-01",
+            )
+            println(io, " ADJUST:  TIME    1.00000E+00  T[Myr]   0.116E+01  Q   0.476E+00")
+        end
+        adjust = read_diagnostics(out).adjust
+        @test length(adjust) == 1
+        @test adjust[1].time_nb == 0.5
+        @test adjust[1].de_rel == 2.644e-6
+        @test adjust[1].e_tot == -0.5408
+    end
+end

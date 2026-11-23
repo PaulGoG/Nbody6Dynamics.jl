@@ -953,6 +953,9 @@ end
     @test f(12345.0, 3) == "1.23 \\times 10^{4}"
     @test f(2.5e-4, 2) == "2.5 \\times 10^{-4}"
     @test f(1.0e5, 3) == "10^{5}"      # 1×10ⁿ collapses to 10ⁿ
+    @test f(-1.0e5, 3) == "-10^{5}"    # the collapse keeps the sign
+    @test f(-2.5e-4, 2) == "-2.5 \\times 10^{-4}"
+    @test f(NaN) == "\\mathrm{NaN}" && f(Inf) == "\\infty" && f(-Inf) == "-\\infty"
     @test MakieExt._fmt_latex_sig3(47.25) == "47.2" || MakieExt._fmt_latex_sig3(47.25) == "47.3"
     samples = (3.0e-7, 0.004, 0.07, 1.0, 9.99, 100.0, 999.5, 1.0e4, 6.02e23)
     @test !any(occursin(r"[0-9]e[+-]?[0-9]", f(x, n)) for x in samples, n in (2, 3))

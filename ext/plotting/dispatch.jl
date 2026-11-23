@@ -233,6 +233,9 @@ function Nbody6Dynamics.generate_plots(
                                     settings,
                                     bound_sets = bsets,
                                     bound...,
+                                    exclude_names = Nbody6Dynamics._imbh_names(
+                                        joinpath(sim_dir, "merger_ic.toml"),
+                                    ),
                                     coalescence = coal,
                                     epochs,
                                 )
@@ -439,19 +442,22 @@ end
 
 """
     generate_plots(results::Dict{Symbol,Any}, cfg::Nbody6Config;
-                   run_dir::AbstractString = "")
+                   run_dir::AbstractString = "",
+                   sim_dir::AbstractString = isempty(run_dir) ? "" : joinpath(run_dir, "output"))
 
 Config-driven wrapper around the `VisualizationConfig` method.
 
 When `run_dir` is provided (e.g. `runs/run_XXXX/`), plots are saved to
 `run_dir/<visualization.output_dir>/` (typically `runs/run_XXXX/plots/`) and
-`run_dir/output/` is searched for merger metadata. Otherwise, falls back to
-`visualization.output_dir` relative to the package root.
+`sim_dir`, by default `run_dir/output/`, is searched for merger metadata; an
+external data directory of another name is passed as `sim_dir`. Without
+`run_dir` the plots go to `visualization.output_dir` as it stands.
 """
 function Nbody6Dynamics.generate_plots(
     results::Dict{Symbol,Any},
     cfg::Nbody6Config;
     run_dir::AbstractString = "",
+    sim_dir::AbstractString = isempty(run_dir) ? "" : joinpath(run_dir, "output"),
 )
     # Build a VisualizationConfig with the output_dir resolved to the run
     vis = if !isempty(run_dir)
@@ -463,7 +469,6 @@ function Nbody6Dynamics.generate_plots(
     else
         cfg.visualization
     end
-    sim_dir = !isempty(run_dir) ? joinpath(run_dir, "output") : ""
     return generate_plots(
         results,
         vis;

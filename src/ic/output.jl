@@ -1540,6 +1540,10 @@ function generate_merger_ic(
         M_bh = isfinite(spec_bh.mass) ? spec_bh.mass : spec_bh.mass_fraction * M_i
         frac_bh = M_bh / M_i
         μ_bh = M_bh / m_mean
+        (cfg.stellar.kz19 ≥ 3 && M_bh < 100) && error(
+            "IMBH of cluster $k_imbh: M• = $(round(M_bh; sigdigits = 4)) M☉ lies below 100 M☉ under " *
+            "stellar evolution (indistinguishable from the SSE black holes); raise mass_fraction",
+        )
         frac_bh > 0.05 && error(
             "IMBH of cluster $k_imbh: M•/M_stars = $(round(frac_bh; sigdigits = 3)) exceeds 0.05 " *
             "(BME04a: the cusp extends to M(<r) = M• above 5 %)",
@@ -2279,15 +2283,16 @@ function load_merger_ic_result(dir::AbstractString)::MergerICResult
     for j in explicit
         s = cluster_specs[j]
         m = mass_phys[cluster_ranges[j]]
-        cluster_specs[j] = ClusterSpec(
-            length(m),
-            s.rbar,
-            s.profile,
-            ExplicitMassesIMF(m),
-            s.position,
-            s.velocity,
-            s.binaries,
-            s.segregation,
+        cluster_specs[j] = ClusterSpec(;
+            N = length(m),
+            rbar = s.rbar,
+            profile = s.profile,
+            imf = ExplicitMassesIMF(m),
+            position = s.position,
+            velocity = s.velocity,
+            binaries = s.binaries,
+            segregation = s.segregation,
+            imbh = s.imbh,
         )
     end
 

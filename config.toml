@@ -11,7 +11,7 @@ clean_build    = true
 [build]
 configure_flags = ["--enable-mcmodel=large", "--with-par=b1m"]
 enable_mpi      = false
-enable_hdf5     = true
+enable_hdf5     = false
 enable_gpu      = false
 cuda_path       = ""
 cuda_arch       = []            # CUDA architectures, "sm_<major><minor>" (e.g. ["sm_90"]); [] = detect with nvidia-smi

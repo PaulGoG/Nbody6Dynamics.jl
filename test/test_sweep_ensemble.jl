@@ -235,6 +235,27 @@ $(extra)
     @test dcol !== nothing && header[dcol - 1] == "status"
     @test [parse(Int, split(l, ",")[dcol]) for l in lcsv[2:end]] == [only(gpu_of[p.id]) for p in lpts]
 
+    # A point that ran before keeps a frozen configuration in its run directory, which a
+    # continuation loads: the device of this launch is written there too. No frozen copy
+    # is created for a point that has none.
+    write(lpath, launch_toml("config_gpu.toml", "devices = [1]\nengines_per_device = 4\n"))
+    ccfg = load_sweep_config(lpath)
+    cdir, cpts = prepare_sweep(ccfg; sweep_dir = joinpath(work, "sweep_launch_cont"))
+    frozen = joinpath(cdir, cpts[1].id, "run", "config.toml")
+    mkpath(dirname(frozen))
+    earlier = Nbody6Dynamics.TOML.parsefile(joinpath(cdir, cpts[1].id, "config.toml"))
+    earlier["simulation"]["gpu_list"] = [0]            # the first segment ran on device 0
+    open(io -> Nbody6Dynamics.TOML.print(io, earlier), frozen, "w")
+    Nbody6Dynamics._launch_sweep(
+        cdir,
+        ccfg,
+        cpts;
+        worker_command = stub(joinpath(work, "stub_cont.log")),
+    )
+    @test Nbody6Dynamics.TOML.parsefile(frozen)["simulation"]["gpu_list"] == [1]
+    @test all(p -> point_simulation(cdir, p)["gpu_list"] == [1], cpts)
+    @test !isfile(joinpath(cdir, cpts[2].id, "run", "config.toml"))
+
     # Without devices the launcher leaves gpu_list alone and records no device
     write(lpath, launch_toml("config.toml", ""))
     ncfg = load_sweep_config(lpath)

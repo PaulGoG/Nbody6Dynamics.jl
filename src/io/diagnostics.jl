@@ -354,7 +354,10 @@ function _parse_adjust_positional(tokens)::_AdjustFields
     )
 end
 
-"""Parse key-value ADJUST: TIME val T[Myr] val Q val DE val … ETOT val …"""
+"""
+Parse key-value ADJUST: TIME val T[Myr] val Q val DE val … ETOT val … A line without
+`TIME`, `Q`, `DE` or a total energy (`ETOT` or `E`) throws `ArgumentError`.
+"""
 function _parse_adjust_kv(tokens)::_AdjustFields
     kv = Dict{String,String}()
     i = 1
@@ -367,6 +370,11 @@ function _parse_adjust_kv(tokens)::_AdjustFields
             break
         end
     end
+    # A line cut short (a killed run) lacks its later keys: skipped by the caller
+    for key in ("TIME", "Q", "DE")
+        haskey(kv, key) || throw(ArgumentError("ADJUST line without $key"))
+    end
+    (haskey(kv, "ETOT") || haskey(kv, "E")) || throw(ArgumentError("ADJUST line without ETOT or E"))
 
     kv_real(key, default) = _parse_fortran_float(get(kv, key, default))
     time_nb = kv_real("TIME", "0")

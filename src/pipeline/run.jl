@@ -278,6 +278,8 @@ function restart_simulation(
         chosen = String(dump)
         dump_path = joinpath(out_dir, chosen)
         isfile(dump_path) || error("restart: dump not found: $dump_path")
+        _dump_complete(dump_path) ||
+            throw(ArgumentError("restart: $chosen is incomplete (truncated write)"))
         counts = _dump_counts(dump_path)
         (counts !== nothing && counts.nsub > 0) && throw(
             ArgumentError(

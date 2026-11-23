@@ -116,7 +116,7 @@ Without it the figure routines raise an error that names the package to load, an
 | Generate a single cluster or a merger and run it | `julia scripts/run_setup.jl input_files/showcase/equal_pipeline.toml` (the showcase cases; a single-cluster case: `[merger] config_file = "input_files/clusters/imbh_runaway.toml"`) |
 | Run a parameter sweep | `julia scripts/run_sweep.jl input_files/sweeps/sweep_demo.toml [--dry-run] [--sweep-dir=<dir> --resume]` (`--resume` enters or re-enters the sweep in `<dir>`) |
 | Run the verification suite | `julia scripts/run_verif_suite.jl` |
-| Regenerate the estimator calibration table | `julia -t 6 scripts/calibrate_estimators.jl` (`--quick` for a schema check; writes `assets/calibration/`) |
+| Regenerate the estimator calibration table | `julia -t 6 scripts/calibrate_estimators.jl` (writes `assets/calibration/`; `--quick` is a schema check into a temporary directory) |
 | Execute the test suite | `julia -e 'include("activate.jl"); Pkg.test()'` |
 | Run the benchmarks | `julia bench/benchmarks.jl` |
 | Validate a CUDA host | `julia scripts/run_gpu_validation.jl` (`--dry-run`, `--stages=`, `--stop-on-failure`; results under `runs/gpu_validation_<host>_<timestamp>/`) |
@@ -383,7 +383,6 @@ Nbody6Dynamics/
 │   ├── run_setup.jl                 # CLI wrapper: load config → run_pipeline
 │   ├── run_resume.jl                # CLI wrapper: resume_pipeline on a run directory
 │   ├── run_cluster.jl               # CLI wrapper: submit_run — a run as a chain of Slurm jobs
-│   ├── run_cluster_segment.jl       # Job entry: cluster_segment on a run directory (called by the generated job script)
 │   ├── run_sweep.jl                 # CLI wrapper: sweep TOML → run_sweep → comparison figures
 │   ├── run_verif_suite.jl           # Three-target verification suite
 │   ├── calibrate_estimators.jl      # Bias and variance of every estimator on the static models versus N → assets/calibration/

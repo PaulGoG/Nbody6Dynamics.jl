@@ -16,7 +16,7 @@ engine's real column layouts and number formats, which synthetic files cannot.
 Origin. Produced on 2026-07-31 with the package's own install and run
 pipeline (package commit `757d1bd`), engine Nbody6PPGPU-beijing at commit
 `618d7a4`, the upstream release v2026.07; the default `install.ref` is now
-the tag `v2026.07.9` of my fork, which carries its corrections on top of that
+a release tag of my fork, which carries its corrections on top of that
 commit. The
 generating parameters are those the engine echoes at the top of `out1000`:
 N = 3948, NRAND = 3948, NNBOPT = 63, ETAI = ETAR = 0.02, RS0 = 0.5,

@@ -172,6 +172,44 @@ include("pipeline/ladder.jl")   # N ladders of merger and sweep TOMLs; needs the
 # ---------------------------------------------------------------------------
 
 """
+    _binary_event_log!(results, path) -> BinaryEventLog
+
+The binary, few-body and GW lines of the stdout capture at `path`, read once
+per post-processing and kept as `results[:binary_event_log]` for the stages
+that need them: the binary spans, the GW catalogues, the kick flag of the
+collision catalogue and the GW events of an IMBH.
+"""
+_binary_event_log!(results::Dict{Symbol,Any}, path::AbstractString) =
+    get!(() -> read_binary_events(path), results, :binary_event_log)::BinaryEventLog
+
+"""
+    _collision_logs!(results, sim_dir) -> (; collisions, coalescences)
+
+The collision (`coll.13`) and coalescence (`coal.24`) records of `sim_dir`,
+read once per post-processing and kept as `results[:collisions]` and
+`results[:coalescences]`. A restarted segment writes the interval after its
+dump a second time; the repeated records are dropped (`_span_restart_dedup`
+with the segment starts of the run's `RUN_INFO.toml`). An absent file gives
+an empty list.
+"""
+function _collision_logs!(results::Dict{Symbol,Any}, sim_dir::AbstractString)
+    if !(haskey(results, :collisions) && haskey(results, :coalescences))
+        restarts =
+            _span_restart_starts(_read_toml_or_empty(joinpath(dirname(sim_dir), "RUN_INFO.toml")))
+        coll_path = joinpath(sim_dir, "coll.13")
+        coal_path = joinpath(sim_dir, "coal.24")
+        collisions = isfile(coll_path) ? read_collision_log(coll_path) : CollisionRecord[]
+        coalescences = isfile(coal_path) ? read_coalescence_log(coal_path) : CoalescenceRecord[]
+        results[:collisions] = _span_restart_dedup(collisions, restarts)
+        results[:coalescences] = _span_restart_dedup(coalescences, restarts)
+    end
+    return (
+        collisions = results[:collisions]::Vector{CollisionRecord},
+        coalescences = results[:coalescences]::Vector{CoalescenceRecord},
+    )
+end
+
+"""
     postprocess(cfg::Nbody6Config; run_dir = "", base_dir = cfg.config_dir) -> Dict{Symbol,Any}
 
 Run all enabled post-processing steps and return collected results.
@@ -511,20 +549,9 @@ function postprocess(
             @warn "No T* in the stdout capture: KS periods cannot be converted, binary spans skipped"
         else
             @info "Binary spans from the KS, few-body and GW records..."
-            coll_path = joinpath(sim_dir, "coll.13")
-            coal_path = joinpath(sim_dir, "coal.24")
-            collisions = isfile(coll_path) ? read_collision_log(coll_path) : CollisionRecord[]
-            coalescences = isfile(coal_path) ? read_coalescence_log(coal_path) : CoalescenceRecord[]
-            # A restarted segment appends its re-run of the interval after its dump
-            restarts = _span_restart_starts(
-                _read_toml_or_empty(joinpath(dirname(sim_dir), "RUN_INFO.toml")),
-            )
-            collisions = _span_restart_dedup(collisions, restarts)
-            coalescences = _span_restart_dedup(coalescences, restarts)
-            results[:binary_event_log] = read_binary_events(joinpath(sim_dir, pp.stdout_file))
-            results[:coalescences] = coalescences
+            collisions, coalescences = _collision_logs!(results, sim_dir)
             results[:binary_spans] = binary_spans(
-                results[:binary_event_log];
+                _binary_event_log!(results, joinpath(sim_dir, pp.stdout_file));
                 listings = read_all_ks_pair_listings(sim_dir),
                 collisions = collisions,
                 coalescences = coalescences,
@@ -552,6 +579,8 @@ function postprocess(
             binary_census(results[:binary_spans], results[:bound_spans]; nbin0 = nbin0)
     end
     lap!("binary_census")
+    # Tidal cut of the population, pair-type and distribution series (0 = none)
+    r_tide = pp.population_r_tide_nb > 0 ? pp.population_r_tide_nb : NaN
     # Binary fractions per shell, class and census level
     if pp.binary_population && haskey(results, :snapshots)
         @info "Binary population over $(length(results[:snapshots])) snapshots..."
@@ -571,6 +600,8 @@ function postprocess(
             q_min = pp.population_q_min,
             primary_window_msun = (pp.population_m1_min, pp.population_m1_max),
             gamma_max = pp.bound_gamma_max,
+            projection_axis = pp.population_projection_axis,
+            r_tide_nb = r_tide,
         )
     end
     lap!("binary_population")
@@ -583,7 +614,6 @@ function postprocess(
                 results[:stellar_evo],
                 get(results, :binary_evo, BinaryEvolutionSnapshot[]),
             ) : nothing
-        r_tide = pp.population_r_tide_nb > 0 ? pp.population_r_tide_nb : NaN
         if pp.binary_pair_types
             @info "Binary pair types and hardness over $(length(results[:snapshots])) snapshots..."
             results[:binary_pair_types] = binary_pair_type_series(
@@ -618,13 +648,8 @@ function postprocess(
             @warn "No T* in the stdout capture: GW catalogues skipped"
         else
             @info "Gravitational-wave catalogues of the compact pairs..."
-            log = get!(results, :binary_event_log) do
-                read_binary_events(joinpath(sim_dir, pp.stdout_file))
-            end
-            coalescences = get!(results, :coalescences) do
-                coal_path = joinpath(sim_dir, "coal.24")
-                isfile(coal_path) ? read_coalescence_log(coal_path) : CoalescenceRecord[]
-            end
+            log = _binary_event_log!(results, joinpath(sim_dir, pp.stdout_file))
+            coalescences = _collision_logs!(results, sim_dir).coalescences
             spans = get(results, :binary_spans, BinarySpan[])
             band = (pp.gw_band_hz[1], pp.gw_band_hz[2])
             t_now = pp.gw_t_now_myr > 0 ? pp.gw_t_now_myr : NaN
@@ -667,12 +692,10 @@ function postprocess(
            isfinite(scaling.tscale) &&
            scaling.tscale > 0
             @info "Collision catalogue with the progenitor cluster of each star..."
-            collisions = isfile(coll_path) ? read_collision_log(coll_path) : CollisionRecord[]
-            coalescences = get!(results, :coalescences) do
-                isfile(coal_path) ? read_coalescence_log(coal_path) : CoalescenceRecord[]
-            end
+            collisions, coalescences = _collision_logs!(results, sim_dir)
             ranges = merger_cluster_ranges(sim_dir)
-            log = get(results, :binary_event_log, nothing)
+            # The kick flag needs the mass-loss lines of the stdout capture
+            log = _binary_event_log!(results, joinpath(sim_dir, pp.stdout_file))
             results[:collision_catalogue] = collision_catalogue(
                 collisions,
                 coalescences,
@@ -680,7 +703,7 @@ function postprocess(
                 tstar_myr = scaling.tscale,
                 rbar_pc = scaling.rbar,
                 nbin0 = nbin0,
-                mass_loss = log === nothing ? nothing : log.mass_loss,
+                mass_loss = log.mass_loss,
             )
         end
     end
@@ -720,14 +743,11 @@ function postprocess(
             snaps_bh = results[:snapshots]
             bh_tstar =
                 haskey(results, :diagnostics) ? extract_scaling(results[:diagnostics]).tscale : NaN
-            bh_coll_path = joinpath(sim_dir, "coll.13")
-            bh_coal_path = joinpath(sim_dir, "coal.24")
-            bh_collisions =
-                isfile(bh_coll_path) ? read_collision_log(bh_coll_path) : CollisionRecord[]
-            bh_coalescences = get!(results, :coalescences) do
-                isfile(bh_coal_path) ? read_coalescence_log(bh_coal_path) : CoalescenceRecord[]
-            end
-            bh_gw = haskey(results, :binary_event_log) ? results[:binary_event_log].gw : GWEvent[]
+            bh_collisions, bh_coalescences = _collision_logs!(results, sim_dir)
+            # GW mergers and recoils are lines of the stdout capture
+            bh_gw =
+                haskey(results, :diagnostics) ?
+                _binary_event_log!(results, joinpath(sim_dir, pp.stdout_file)).gw : GWEvent[]
             bh_bodies = NamedTuple[]
             for imbh_name in imbh_names
                 @info "IMBH diagnostics of body $imbh_name..."
@@ -1062,15 +1082,18 @@ function _finish_pipeline(
         results[:merger_ic] = merger_result
     end
 
-    # Directory that receives the derived products of this data set
-    products_dir = if !isempty(cfg.postprocess.data_dir)
+    # Directory that receives the derived products of this data set, and the
+    # directory of the engine output. A run directory holds its output as
+    # `output/` and receives the products beside it; an external data directory
+    # of another name receives its own products.
+    products_dir, sim_dir = if !isempty(cfg.postprocess.data_dir)
         # An absolute data_dir is not normalised by _resolve_path: normpath and
         # strip a trailing separator so that dirname yields the parent
         data_path = normpath(_resolve_path(base_dir, cfg.postprocess.data_dir))
         length(data_path) > 1 && (data_path = rstrip(data_path, ['/', '\\']))
-        dirname(data_path)
+        (basename(data_path) == "output" ? dirname(data_path) : data_path, data_path)
     else
-        run_dir
+        (run_dir, isempty(run_dir) ? "" : joinpath(run_dir, "output"))
     end
 
     # Data products are written here, not by the figure layer: a host
@@ -1243,7 +1266,7 @@ function _finish_pipeline(
     # ── Phase 4: Plots ──
     if cfg.visualization.enabled && !isempty(results)
         @info "Phase 4: Generating plots..."
-        generate_plots(results, cfg; run_dir = products_dir)
+        generate_plots(results, cfg; run_dir = products_dir, sim_dir = sim_dir)
         push!(phases, "plots")
     end
 

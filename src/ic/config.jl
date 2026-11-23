@@ -2359,6 +2359,12 @@ function _parse_cluster_table(
                 _config_error("$key.mass_total", "is required for imf = \"kroupa_rescaled\"")
             RescaledKroupaIMF(bodyn = bodyn, body1 = body1, target_mass = mass_total)
         elseif imf_str == "equal"
+            for name in ("bodyn", "body1")
+                haskey(c, name) && _config_error(
+                    "$key.$name",
+                    "does not apply to imf = \"equal\" (every body has mass_total / N)",
+                )
+            end
             mass_total === nothing &&
                 _config_error("$key.mass_total", "is required for imf = \"equal\"")
             EqualMassIMF(particle_mass = mass_total / N)

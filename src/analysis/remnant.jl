@@ -302,8 +302,8 @@ the estimator gives `√0.3 a ≈ 0.548 a` with exact densities. With
 sixth-neighbour number densities the calibration table
 (`assets/calibration/estimators.csv`) finds it unbiased from N ≈ 3×10⁴ on
 and 1–2 % high below (replica scatter 9 % at 10³, 0.3 % at 10⁶); with
-sixth-neighbour mass densities and a Kroupa spectrum it is 1.5–3 % high
-with ten times the scatter.
+sixth-neighbour mass densities and a Kroupa spectrum it lies between 2 % low
+and 6 % high, with three to six times the scatter.
 """
 function core_radius(pos::AbstractMatrix{Float64}, rho::AbstractVector{Float64})
     length(rho) == size(pos, 2) || throw(DimensionMismatch("rho and pos disagree in length"))

@@ -953,10 +953,16 @@ function _launch_sweep_loop(
             end
             popfirst!(queue)
             if device ≥ 0
-                config_path = joinpath(pdir, "config.toml")
-                c = TOML.parsefile(config_path)
-                _set_nested!(c, "simulation.gpu_list", [device])
-                _atomic_write_toml(config_path, c)
+                # The point's configuration, and the frozen copy in its run
+                # directory when an earlier launch left one: a continuation
+                # loads that copy
+                for config_path in
+                    (joinpath(pdir, "config.toml"), joinpath(pdir, _SWEEP_RUN_ID, "config.toml"))
+                    isfile(config_path) || continue
+                    c = TOML.parsefile(config_path)
+                    _set_nested!(c, "simulation.gpu_list", [device])
+                    _atomic_write_toml(config_path, c)
+                end
             end
             # Appended: a re-entry keeps the log of the earlier entries.
             log = open(joinpath(pdir, "sweep_point.log"), "a")

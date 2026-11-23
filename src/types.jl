@@ -43,7 +43,7 @@ architectures, and parallel make.
 Base.@kwdef struct BuildConfig
     configure_flags::Vector{String} = ["--enable-mcmodel=large", "--with-par=b1m"]
     enable_mpi::Bool = false
-    enable_hdf5::Bool = true
+    enable_hdf5::Bool = false
     enable_gpu::Bool = false
     cuda_path::String = ""
     cuda_arch::Vector{String} = String[]

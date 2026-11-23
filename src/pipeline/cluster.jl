@@ -102,9 +102,10 @@ range Slurm accepts) and the output file `<run_dir>/cluster/slurm_%j.out`,
 followed by the `cluster.sbatch_options` verbatim. The body runs the
 `cluster.prologue` lines, sets `JULIA_NUM_THREADS` (`cluster.julia_threads`,
 or the job's `SLURM_CPUS_PER_TASK` with `cluster.cpus_per_task` as the
-fallback outside a job) and `exec`s Julia on the package's
-`scripts/run_cluster_segment.jl`. The `exec` makes the Julia driver the batch
-shell itself, so the signal Slurm sends ahead of the time limit reaches the
+fallback outside a job) and `exec`s Julia in the project the run is submitted
+from (`--project`), calling [`cluster_segment`](@ref) on the run directory;
+CairoMakie is loaded first when the submitting session has it, as for the
+workers of a sweep. The `exec` makes the Julia driver the batch shell itself, so the signal Slurm sends ahead of the time limit reaches the
 driver, whose exit hook stops the engine with a dump.
 
 # Arguments
@@ -127,7 +128,15 @@ function job_script(
     threads =
         cl.julia_threads > 0 ? string(cl.julia_threads) :
         "\"\${SLURM_CPUS_PER_TASK:-$(cl.cpus_per_task)}\""
-    segment_script = joinpath(_PACKAGE_ROOT, "scripts", "run_cluster_segment.jl")
+    project = Base.active_project()
+    project === nothing && throw(ArgumentError("job_script: no active project to run the job in"))
+    # The job runs in the environment of the submitting session: the package's own tree
+    # may be read-only (an installation by URL). A SIGINT must reach the pipeline as an
+    # exception, which a non-interactive Julia does not raise by default.
+    driver =
+        "Base.exit_on_sigint(false); " *
+        (plotting_available() ? "using CairoMakie; " : "") *
+        "using Nbody6Dynamics; Nbody6Dynamics.cluster_segment(ARGS[1])"
 
     io = IOBuffer()
     println(io, "#!/bin/bash")
@@ -159,7 +168,8 @@ function job_script(
     println(io, "export JULIA_NUM_THREADS=$threads")
     println(
         io,
-        "exec $(_sh_quote(julia)) --startup-file=no $(_sh_quote(segment_script)) $(_sh_quote(dir))",
+        "exec $(_sh_quote(julia)) --startup-file=no --project=$(_sh_quote(dirname(project))) " *
+        "-e $(_sh_quote(driver)) $(_sh_quote(dir))",
     )
     return String(take!(io))
 end
@@ -591,7 +601,7 @@ end
 """
     cluster_segment(run_dir) -> Dict{Symbol,Any}
 
-Entry of a scheduler job (`scripts/run_cluster_segment.jl`): run one engine
+Entry of a scheduler job (the generated job script calls it): run one engine
 segment of the run in `run_dir` and, with `chain = "resubmit"`, submit the
 job of the next one.
 

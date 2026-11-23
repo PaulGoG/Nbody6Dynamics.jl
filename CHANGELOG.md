@@ -11,8 +11,50 @@ entries say so.
 - Cluster membership comes from the `cluster_blocks` that `merger_ic.toml` records (`merger_cluster_ranges`, new);
   the regular expression over `merger_summary.txt` (`parse_merger_summary`) remains for runs whose record lacks the
   key. Post-processing and figures no longer depend on the wording of the summary.
+- `build.enable_hdf5` defaults to `false` (struct, `config.toml`, the showcase pipelines). The switch links the HDF5
+  libraries without any effect on the engine's output, and the dependency check never looked for them, so the
+  default build failed on a host without the HDF5 development packages.
+- Slurm jobs run in the project the run was submitted from: the generated script calls `cluster_segment` through
+  `julia --project=<project> -e …` and loads CairoMakie when the submitting session has it.
+  `scripts/run_cluster_segment.jl` is removed; it resolved an environment inside the package tree, which an
+  installation by URL does not allow.
+- A `postprocess.data_dir` that is not named `output` receives its own derived tables and figures. They were written
+  into its parent directory, and the merger figures were skipped because the figure layer looked for
+  `<parent>/output`. A run's `output/` directory behaves as before.
+- Generator: a flat `[merger.clusterK]` table with `imf = "equal"` refuses `bodyn` and `body1`, which it ignored;
+  an IMBH given by `mass_fraction` is refused at generation when stellar evolution is on and its mass comes out
+  below 100 M☉, as `imbh.mass` already was at load.
+- `control_merger_dict`: a member sized by `density_ratio` needs a stated total mass on both clusters when their
+  mass functions differ, and is refused otherwise.
+- `scripts/calibrate_estimators.jl`: a run narrowed by `--quick`, `--n`, `--reps` or `--models` writes into a
+  temporary directory unless `--out` is given; it overwrote the shipped table in `assets/calibration/`.
 
 ### Fixed
+
+- `binary_population.csv` follows `postprocess.population_projection_axis` and `population_r_tide_nb`. Both keys
+  reached the pair-type and distribution series only; the population series was always projected along z and never
+  cut at the tidal radius.
+- The collision catalogue and the IMBH events no longer depend on the binary-span stage. With `binary_spans = false`
+  (the default) `kicked_before` was `false` for every row and the GW mergers and recoils of an IMBH were missing,
+  because only that stage read the event lines; the records a restarted segment wrote twice in `coll.13` and
+  `coal.24` were removed only there as well.
+- Sweeps on devices: a continued point runs on the device the launcher assigns. The device was written into the
+  point's configuration only, while a continuation loads the copy frozen in the run directory, so the engine kept
+  the device of its first segment.
+- `restart_simulation` refuses an explicitly named dump that is cut short, as `submit_restart` did.
+- Readers: a bare `conf.3` sorts before the stamped snapshots (it sorted last); `read_lagr` stores an overflowed
+  radius field as `NaN` with a warning (it threw); an ADJUST line cut after `Q` is skipped (it gave an energy error
+  and a total energy of exactly zero).
+- `control_merger_dict` sizes a member given by `density_ratio` by the mass ratio, as the generator does; it used
+  the ratio of the star counts also when the clusters stated different total masses.
+- `load_merger_ic_result` keeps the IMBH of a cluster with explicit masses.
+- Figures: a label of the form −1×10ⁿ is written `-10^{n}`, and a non-finite value no longer throws; the remnant
+  diagnostics the figure dispatcher computes for external data exclude the IMBHs, as the pipeline's do.
+- Documentation: subscripts, engine names and file patterns written with `_` or `*` in running text were read as
+  emphasis by the Markdown parser and garbled about 270 places of the API, manual and input-file pages (italics,
+  inverted code spans, 20 unresolved links); they are code spans now. The manual, the README and the showcase page
+  are corrected against the code in about forty places (unconditional product lists, the mode table, examples that
+  used unexported names, calibration figures, `DETOT` described as relative).
 
 - The IMF figure of the initial conditions draws the law of the clusters: the Kroupa segments, the exponent of a
   power law shared by all clusters, or no reference line (equal or explicit masses, mixed laws). It drew the Kroupa

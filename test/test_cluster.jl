@@ -205,10 +205,14 @@
         i_depot = findfirst(==("export JULIA_DEPOT_PATH=/scratch/depot:"), lines)
         i_exec = findfirst(startswith("exec "), lines)
         @test first_command < i_module < i_depot < i_exec
-        segment_script = joinpath(Nbody6Dynamics._PACKAGE_ROOT, "scripts", "run_cluster_segment.jl")
+        # The job runs in the project of the submitting session, with its figure backend
+        project = dirname(something(Base.active_project()))
+        driver =
+            "Base.exit_on_sigint(false); using CairoMakie; using Nbody6Dynamics; " *
+            "Nbody6Dynamics.cluster_segment(ARGS[1])"
         @test lines[i_exec] ==
-              "exec '/opt/julia/bin/julia' --startup-file=no '$(segment_script)' '$(run_dir)'"
-        @test isfile(segment_script)
+              "exec '/opt/julia/bin/julia' --startup-file=no --project='$(project)' " *
+              "-e '$(driver)' '$(run_dir)'"
         script_path = joinpath(base, "render.sbatch")
         write(script_path, text)
         @test success(`sh -n $script_path`)
