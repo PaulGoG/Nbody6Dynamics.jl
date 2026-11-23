@@ -6,11 +6,11 @@ A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/N
 
 *Three King clusters of 25 000 stars each, released at the vertices of an equilateral triangle of
 side 10 pc on sub-virial rotating orbits, drawn as projected surface mass density at release, at
-4 Myr and at 50 Myr; produced end to end by this package.*
+4 Myr and at 50 Myr.*
 
 ## Features
 
-The package clones and builds the engine (by default my fork at `v2026.07.27`; the CUDA toolkit is located automatically, MPI and HDF5 are switched in `[build]`), generates initial conditions for one cluster, a Kepler pair, N clusters on explicit orbits or a cluster complex, and writes them as `dat.10` with a matching `merger.inp` (`KZ(22) = 2`). It runs the integration under wall budgets, stop requests and start-up and stall watchdogs, resumes it across queue segments or as a Slurm job chain, and records commits, hardware and cost per segment. It reads every standard output file, the binary and few-body event lines included, and derives snapshot integrals, energy and mass budgets, remnant structure, rotation and segregation, binary spans, the binary census and binary fractions, gravitational-wave observables, and a validity record per run. Figures and GIF animations come from a CairoMakie extension; sweeps over a grid with seeds and isolated controls run as concurrent workers.
+The package clones and builds the engine (by default my fork at `v2026.07.27`; the CUDA toolkit is located automatically, MPI and HDF5 are switched in `[build]`), generates initial conditions for one cluster, a Kepler pair, N clusters on explicit orbits or a cluster complex, and writes them as `dat.10` with a matching `merger.inp` (`KZ(22) = 2`). It runs the integration under wall budgets, stop requests and start-up and stall watchdogs, resumes it across queue segments or as a Slurm job chain, and records commits, hardware and cost per segment. It reads the engine's output files, the binary and few-body event lines included, and derives snapshot integrals, energy and mass budgets, remnant structure, rotation and segregation, binary spans, the binary census and binary fractions, gravitational-wave observables, and a validity record per run. Figures and GIF animations come from a CairoMakie extension; sweeps over a grid with seeds and isolated controls run as concurrent workers.
 
 ## Quick Start
 
@@ -22,7 +22,7 @@ Pkg.add(url = "https://github.com/PaulGoG/Nbody6Dynamics.jl")
 Pkg.add("CairoMakie")     # the figure backend
 ```
 
-The directory of your `config.toml` is the project directory: the engine is built under its `backend/` and runs land under its `runs/`. `example_input("showcase/equal_pipeline.toml")` returns a shipped configuration to copy and edit, together with `equal_merger.toml` beside it, since its paths are relative to its own directory.
+The directory of your `config.toml` is the project directory: the engine is built under its `backend/` and runs land under its `runs/`. `example_input("showcase/equal_pipeline.toml")` returns the path of a shipped configuration to copy, together with `equal_merger.toml` from the same folder. In the copy set `install.install_dir` and `simulation.runs_dir` to paths of your project, because the shipped file points at the `backend/` and `runs/` of a checkout, and `install.enabled = true` for the first run.
 
 From a checkout:
 
@@ -34,16 +34,15 @@ cd Nbody6Dynamics.jl
 julia activate.jl          # package environment
 julia scripts/activate.jl  # entry scripts: the package plus its figure backend
 
-# Edit configuration
+# Edit configuration (install.enabled = true for the first run)
 $EDITOR config.toml
 
 # Run the full pipeline
 julia scripts/run_setup.jl config.toml
 ```
 
-The figure routines are a package extension (see [Visualisation](@ref "10. Visualisation")): a
-session that produces figures loads a Makie backend first, a numerics-only session needs
-neither the backend nor its dependencies.
+The figure routines are a package extension (see [Visualisation](@ref "10. Visualisation")):
+load CairoMakie before the package to draw figures; the numerical routines work without it.
 
 ```julia
 using CairoMakie
@@ -51,14 +50,12 @@ using Nbody6Dynamics
 run_pipeline(load_config("config.toml"))
 ```
 
-## Usage Modes
-
 The six ways of running the pipeline (full, simulate only, post-process only, re-plot, initial conditions only, initial conditions plus simulation) are listed in the manual, [Pipeline Modes](@ref "5. Pipeline Modes").
 
 ## Programmatic API
 
 ```julia
-using Nbody6Dynamics
+using CairoMakie, Nbody6Dynamics   # CairoMakie for the figures
 
 # Full pipeline from config
 cfg = load_config("config.toml")

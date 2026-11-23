@@ -11,7 +11,7 @@
 [![Julia](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FPaulGoG%2FNbody6Dynamics.jl%2Fmain%2FProject.toml&query=%24.compat.julia&label=julia&color=9558b2)](https://julialang.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](#installation)
 
-A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations end to end: it clones and builds the Fortran engine, generates initial conditions for single clusters and multi-cluster mergers, launches and supervises the integration (with restart dumps, wall budgets and resumption across queue segments), reads every standard output file, computes the cluster diagnostics and draws the figures. One TOML configuration drives every phase through a single entry point, `run_pipeline`.
+A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing) star-cluster simulations from the engine build to the figures. It clones and builds the Fortran engine, generates initial conditions for single clusters and multi-cluster mergers, and launches and supervises the integration with restart dumps, wall budgets and resumption across queue segments. From the engine's output files it computes the cluster diagnostics and draws the figures. One TOML configuration selects the phases that `run_pipeline` executes.
 
 ![Projected surface density of three merging star clusters: the triple at release, the three cores at 4 Myr and the remnant at 50 Myr](docs/src/assets/merger_evolution.png)
 
@@ -19,15 +19,15 @@ A Julia package that runs [Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/N
 side 10 pc on sub-virial rotating orbits, drawn as projected surface mass density: the triple at
 release, the three cores still distinct inside a common envelope at 4 Myr, and the remnant with its
 halo at 50 Myr. The integration took 55 min of engine time on the AVX build at eight threads of a
-laptop (Intel Core Ultra 7 155H). Initial conditions, integration, analysis and figure were all
-produced by this package; the case is `input_files/showcase/flagship_pipeline.toml`.*
+laptop (Intel Core Ultra 7 155H). The case is `input_files/showcase/flagship_pipeline.toml`.*
 
 ![Animation of the same merger over 50 Myr](docs/src/assets/merger_evolution.gif)
 
 *The same run animated on fixed axes, one frame per 2 Myr. The three cores pass through a first
 close configuration at 6 Myr, rebound to 7 pc and coalesce at 14 Myr; the remnant then relaxes while
 its halo of loosely bound stars spreads past the frame, which holds 99 % of the mass at every epoch.
-Every run writes animations like this one alongside its static figures.*
+A run with figures enabled and more than one snapshot writes such animations next to its static
+figures.*
 
 ## Project structure
 
@@ -51,11 +51,11 @@ Nbody6Dynamics/
 └── runs/             # (gitignored) run outputs
 ```
 
-The full tree is at the end of this file.
+The full tree is [at the end of this file](#full-tree).
 
 ## Installation
 
-Requires Julia ≥ 1.13, installed through [juliaup](https://github.com/JuliaLang/juliaup) (`juliaup add release`). The package is not registered; add it to a project of your own by URL, together with a Makie backend for the figures:
+Requires Julia ≥ 1.13, installed through [juliaup](https://github.com/JuliaLang/juliaup) (`juliaup add release`). The package is not registered; add it to a project of your own by URL, together with CairoMakie for the figures:
 
 ```julia
 using Pkg
@@ -69,7 +69,11 @@ cfg = load_config("config.toml")        # your project's configuration
 results = run_pipeline(cfg)
 ```
 
-The directory of that `config.toml` is the project directory: the engine is cloned and built under its `backend/` and the runs land under its `runs/`, not inside the package. The shipped inputs are reachable with `example_input("N1k_quick.inp")`, and `example_input("showcase/equal_pipeline.toml")` returns a complete pipeline configuration to copy and edit (copy `equal_merger.toml` beside it, since its paths are relative to its own directory). Building the Fortran engine needs `git`, `gfortran` and `make`, and optionally HDF5 and CUDA (auto-detected; see `[build]` in `config.toml`).
+The directory of that `config.toml` is the project directory: the engine is cloned and built under its `backend/` and the runs land under its `runs/`, not inside the package.
+
+The shipped inputs are reachable with `example_input("N1k_quick.inp")`. `example_input("showcase/equal_pipeline.toml")` returns the path of a pipeline configuration to copy, together with `equal_merger.toml` from the same folder. The shipped file points at the `backend/` and `runs/` of a checkout, two levels above it: in the copy set `install.install_dir = "backend/Nbody6PPGPU-beijing"` and `simulation.runs_dir = "runs"`, and `install.enabled = true` for the first run.
+
+Building the Fortran engine needs `git`, `gfortran` and `make`. A CUDA toolkit is optional and located automatically (see `[build]` in `config.toml`).
 
 ## Environment setup of a checkout
 
@@ -90,18 +94,16 @@ The scripts under `scripts/`, `docs/` and `bench/` include their environment's a
 
 ### Figures are an extension
 
-The figure routines are a package extension triggered by a Makie backend, so a headless host installs no plotting stack. Initial conditions, engine build, integration, readers, diagnostics and benchmarks all run without them.
+The figure routines are a package extension triggered by CairoMakie, so a headless host installs no plotting stack. Initial conditions, engine build, integration, readers, diagnostics and benchmarks all run without them.
 
 ```julia
 using CairoMakie        # brings in every plot_*, animate_* and generate_plots
 using Nbody6Dynamics
 ```
 
-Without a backend the figure routines raise an error that names the package to load, and a pipeline with `[visualization] enabled = true` is refused before the build starts. `plotting_available()` returns whether a backend is loaded. The entry scripts under `scripts/` load CairoMakie for you; a numerics-only session (`julia activate.jl`, then `using Nbody6Dynamics`) does not.
+Without it the figure routines raise an error that names the package to load, and a pipeline with `[visualization] enabled = true` is refused before the build starts. `plotting_available()` returns whether the extension is loaded. The entry scripts under `scripts/` load CairoMakie for you; a numerics-only session (`julia activate.jl`, then `using Nbody6Dynamics`) does not.
 
 ## Entry points
-
-Each task has one invocation; the sections below give the details.
 
 | Task | Invocation |
 |------|------------|
@@ -125,19 +127,21 @@ Each task has one invocation; the sections below give the details.
 
 ## Usage
 
-`run_pipeline(cfg)` is the single entry point; `config.toml` flags select which phases run. There are six modes:
+The flags of `config.toml` select the phases that `run_pipeline(cfg)` executes. The common combinations:
 
 | # | Mode | Config flags |
 |---|------|--------------|
 | 1 | Full pipeline | `install.enabled=true`, `simulation.run_test=true` |
 | 2 | Simulate only | `install.enabled=false`, `simulation.run_test=true` |
-| 3 | Postprocess only | `simulation.run_test=false`, `postprocess.data_dir="/path/to/output"` |
-| 4 | Re-plot latest run | `simulation.run_test=false`, `postprocess.data_dir=""` |
-| 5 | Merger ICs only | `merger.enabled=true`, `merger.config_file="input_files/..."` |
+| 3 | Postprocess only | `simulation.run_test=false`, `merger.enabled=false`, `postprocess.data_dir="/path/to/output"` |
+| 4 | Re-plot latest run | `simulation.run_test=false`, `merger.enabled=false`, `postprocess.data_dir=""` |
+| 5 | Merger ICs only | `merger.enabled=true`, `simulation.run_test=false`, `merger.config_file="input_files/..."` |
 | 6 | Merger + simulate | `merger.enabled=true`, `simulation.run_test=true` |
 
+In modes 1 and 2 the engine integrates `simulation.input_file` when `merger.enabled=false` and the generated merger otherwise. The shipped `config.toml` is mode 6 on an engine that is already built (`install.enabled=false`, the demo merger): set `install.enabled=true` for the first run of a checkout.
+
 ```julia
-using Nbody6Dynamics
+using CairoMakie, Nbody6Dynamics
 cfg = load_config("config.toml")
 results = run_pipeline(cfg)   # Dict; includes :snapshots, :diagnostics, :lagr, :escapers, :stellar_evo, …
 ```
@@ -166,28 +170,30 @@ Each run gets an isolated `runs/<run_id>/` directory (`output/`, `plots/`, froze
 
 ## Status
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Install / build | Working | Clones my engine fork at its release tag `v2026.07.27` (any upstream ref also builds, with the source amendments of `deps/engine/amendments.toml`), runs `configure` and a parallel make, and writes `BUILD_INFO.toml` next to the binary. GPU builds target the visible devices' compute capabilities or an explicit `cuda_arch` list; validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3, see the manual, Validated hardware) |
-| Initial-condition generator | Working | Plummer and King clusters with a Kroupa (2001) IMF, alone, as a Kepler pair, on explicit orbits or as a cluster complex with its energy-matched controls, each cluster truncated at its Roche lobe (Eggleton 1983) with respect to its neighbour. Primordial mass segregation (Baumgardt, De Marchi & Kroupa 2008), primordial binaries with the Sana et al. (2012) branch for massive primaries and a periastron Roche guard, IMBH seeding (`kz24` and `flag` routes), seeded throughout; output intervals are dyadic rationals, which upstream builds need (my fork bounds the digit counter since `v2026.07-campaign.3`) |
-| Snapshot integrals and bound sets | Working | Exact Newtonian potential in Float64 with regularised pairs as centres of mass, and the bound set by iterative energetic unbinding with an explicit convergence status. Per snapshot the momenta, energies, the pairs' internal energy and the Jacobi integral of a linearised tide (`snapshot_integrals.csv`) |
-| Energy-jump localisation and mass budget | Working | The engine's `DE` per adjustment interval with its correction channels and event counts, flagged by a floor and a robust scale (`energy_intervals.csv`, `engine_events.csv`). Mass and energy closed per snapshot against escapers, stellar-evolution and collision losses and the engine's corrections (`mass_budget.csv`, `energy_budget.csv`) |
-| Remnant diagnostics | Working | Core radii, density, half-mass radius, rotation with sign-flip floors, mass segregation (Λ_MSR, Λ̃_MSR, Γ_MSR), coalescence time and core-collapse markers of the bound remnant per snapshot (`remnant_diagnostics.csv`, four figures per merger run) |
-| Angular momentum, equipartition, merger tree | Working | Angular-momentum budget and rotation by radius and initial-mass class (`angular_momentum.csv`), the Bianchini equipartition mass (`equipartition.csv`), and the merger tree with the per-progenitor mass budget (`merger_tree.csv`, `progenitor_budget.csv`) |
-| Binaries | Working | KS episodes joined per pair into spans with origin and end class (`binary_spans.csv`), physically bound pairs and their spans across the snapshots (`bound_spans.csv`), their union per pair (`binary_census.csv`), binary fractions per shell, stellar class and census level (`binary_population` stage, `binary_population.csv`), pair-type composition and hardness (`binary_pair_types.csv`), orbital-element distributions (`binary_distributions.csv`) the gravitational-wave catalogues of the compact pairs (`compact_binary_catalogue.csv`, `escaped_binary_catalogue.csv`, `gw_merger_catalogue.csv`) with the export of the quasi-circular pairs as an LDC galactic-binary table (`ldc_galactic_binaries.csv`, `ldc_export`), the collision catalogue with progenitor tags (`collision_catalogue.csv`, on by default) and the lifetime statistics (`binary_survival.csv`, `binary_incidence.csv`); figures: timeline, population series, survival curves, a–e and f–e planes; the binary stages are off by default |
-| IMBH diagnostics | Working | For a run seeded with one or several IMBHs (`[imbh]` of `merger_ic.toml`, up to 16 under the flag route, on by default), per IMBH and with an `imbh_name` column: its offset and velocity about the stellar density centre with the core and half-mass radii of the stars (`imbh_trajectory.csv`), the wandering moments against the Brownian predictions of a Plummer sphere and a harmonic core (`imbh_wandering.csv`), the most bound two-body companion per snapshot with its elements and Peters time (`imbh_companions.csv`), and the tidal disruptions, collisions, coalescences, GW recoils and escape of the IMBH (`imbh_events.csv`); for several IMBHs the two-body state, elements, Kepler period and Peters time of every pair (`imbh_pairs.csv`); reader of the engine's `mbh.45`; figures: wandering, companions, one each per IMBH |
-| Static black hole and tidal disruptions | Working | `[merger.mbh]`: a fixed black hole at the centre of a single isolated cluster (engine `KZ(44)`), with full and partial disruptions (Guillochon & Ramirez-Ruiz 2013) at a fixed or stellar disruption radius, plunges and optional growth by accretion; the events in `tde_events.csv`, their rate series and a figure |
-| Post-Newtonian compact pairs | Working | `post_newtonian = "full"`: the 1PN, 2PN and 2.5PN relative accelerations (Blanchet 2024) in the perturbed KS steps of bound neutron-star and black-hole pairs (engine `KZ(43)`), with their work booked exactly into the energy check |
-| Gravitational-wave observables | Working | `gw_inspiral_time` (Peters 1964), `chirp_mass`, `gw_frequency` (f₂₂, Wen 2003 peak, pericentre) and `eccentricity_at_frequency` along the Peters track; strains: the Peters–Mathews harmonic power `peters_mathews_g`, the LDC 22-mode amplitude `gw_amplitude_ldc`, and the harmonic and characteristic strains of LEGWORK (Wagg et al. 2022) `gw_harmonic_strain`, `gw_characteristic_strain`, stored per kpc in the catalogues |
-| Validity record | Working | Energy, mass and angular-momentum checks with a verdict, snapshot cadence, the windows excluded from equilibrium estimators and the calibrated bias of the tracked estimators (`validity.toml`, `validity_snapshots.csv`) |
-| Shape, segregation and mixing | Working | Axis ratios from the iterative shape tensor (Zemp et al. 2011), projected ellipticities, the A⁺ index, the two-sample Kolmogorov–Smirnov distance with its null floor, and the mixing of two tagged populations |
-| Stellar population | Working | Engine grouping of the stellar types (`STELLAR_CLASSES`), the HR-plane population and a class census per epoch (`stellar_census.csv`) |
-| Parameter sweeps | Working | Cartesian grids over merger-TOML keys × seeds run as concurrent worker processes, with an index, a summary table, comparison figures, seeded ensembles with 68/95 % bands and isolated single-cluster controls. A point counts as done only when its run completed; a sweep whose driver was ended is re-entered (`resume_sweep`), the driver passing a scheduler's signal on to its workers |
-| Simulation runner | Working | Launch script with thread and device control, live monitoring, start-up and stall watchdogs (`startup_timeout`, `stall_timeout`), telemetry and a wall budget per segment that stops the engine with a restart dump. `resume_run` and the Slurm job chain of `submit_run` continue a run, `submit_restart` extends or restarts an ended one; every segment is closed in `RUN_INFO.toml` with a status (`completed`, `stopped`, `halted`, `watchdog`, `stalled`, `killed`, `failed`), and the engine's echo of the stellar-evolution options is checked at start-up |
-| I/O readers | Working | `conf.3`, `out1000` (ADJUST records, scaling, event lines), `event.35`, `lagr.7`, `esc.11`, `sev.83_*` and `bev.82_*`; `read_binary_events` for the KS, few-body and GW lines (`GR CAPTURE` and `GR FLYBY` included); readers of `bdat.9`, `bwdat.19`, `merger.84`, `hiarch.12`, `coll.13`, `coal.24`, `cmbody.26`, `binev.17`, `degen.4`, `escbin.31` and `hbin.39`. `.h5part` files are reported as unsupported |
-| Plotting / animation | Working | Publication theme with Computer Modern fonts, configured in `[visualization.style]`; escaper, stellar-evolution, binary, merger and remnant figures and GIF animations, never overwriting an existing figure |
-| Load latency | Working | PrecompileTools workload over the configuration, diagnostics-reader and merger-IC paths |
-| Tests | Passing | Unit and physics-validation suite with static QA (Aqua, JET, ExplicitImports); engine-dependent tests behind `NBODY6_BINARY_TESTS=1`, a GPU set behind `NBODY6_GPU_TESTS=1` |
+Every component below is in working order and covered by the test suite. The one output format the package does not read is the engine's `.h5part`.
+
+| Component | Notes |
+|-----------|-------|
+| Install / build | Clones my engine fork at its release tag `v2026.07.27` (any upstream ref also builds, with the source amendments of `deps/engine/amendments.toml`), runs `configure` and a parallel make, and writes `BUILD_INFO.toml` next to the binary. GPU builds target the visible devices' compute capabilities or an explicit `cuda_arch` list; validated on five CUDA hosts (compute capability 7.5 to 12.0, CUDA 11.8 to 13.3, see the manual, Validated hardware) |
+| Initial-condition generator | Plummer and King clusters with a Kroupa (2001) IMF, alone, as a Kepler pair, on explicit orbits or as a cluster complex with its energy-matched controls, each cluster truncated at its Roche lobe (Eggleton 1983) with respect to its neighbour. Primordial mass segregation (Baumgardt, De Marchi & Kroupa 2008), primordial binaries with the Sana et al. (2012) branch for massive primaries and a periastron Roche guard, IMBH seeding (`kz24` and `flag` routes), seeded throughout; output intervals are rounded to dyadic rationals, which upstream builds of the engine need |
+| Snapshot integrals and bound sets | Exact Newtonian potential in Float64 with regularised pairs as centres of mass, and the bound set by iterative energetic unbinding with an explicit convergence status. Per snapshot the momenta, energies, the pairs' internal energy and the Jacobi integral of a linearised tide (`snapshot_integrals.csv`) |
+| Energy-jump localisation and mass budget | The engine's `DE` per adjustment interval with its correction channels and event counts, flagged by a floor and a robust scale (`energy_intervals.csv`, `engine_events.csv`). Mass and energy closed per snapshot against escapers, stellar-evolution and collision losses and the engine's corrections (`mass_budget.csv`, `energy_budget.csv`) |
+| Remnant diagnostics | Core radii, density, half-mass radius, rotation with sign-flip floors, mass segregation (Λ_MSR, Λ̃_MSR, Γ_MSR), coalescence time and core-collapse markers of the bound remnant per snapshot (`remnant_diagnostics.csv`, four figures per merger run) |
+| Angular momentum, equipartition, merger tree | Angular-momentum budget and rotation by radius and initial-mass class (`angular_momentum.csv`), the Bianchini equipartition mass (`equipartition.csv`), and the merger tree with the per-progenitor mass budget (`merger_tree.csv`, `progenitor_budget.csv`) |
+| Binaries | KS episodes joined per pair into spans with origin and end class (`binary_spans.csv`), physically bound pairs and their spans across the snapshots (`bound_spans.csv`), their union per pair (`binary_census.csv`), binary fractions per shell, stellar class and census level (`binary_population` stage, `binary_population.csv`), pair-type composition and hardness (`binary_pair_types.csv`), orbital-element distributions (`binary_distributions.csv`), the gravitational-wave catalogues of the compact pairs (`compact_binary_catalogue.csv`, `escaped_binary_catalogue.csv`, `gw_merger_catalogue.csv`) with the export of the quasi-circular pairs as an LDC galactic-binary table (`ldc_galactic_binaries.csv`, `ldc_export`), the collision catalogue with progenitor tags (`collision_catalogue.csv`, on by default) and the lifetime statistics (`binary_survival.csv`, `binary_incidence.csv`); figures: timeline, population series, survival curves, a–e and f–e planes; the binary stages are off by default |
+| IMBH diagnostics | For a run seeded with one or several IMBHs (`[imbh]` of `merger_ic.toml`, up to 16 under the flag route), the stage `postprocess.imbh`, on by default, gives per IMBH and with an `imbh_name` column: its offset and velocity about the stellar density centre with the core and half-mass radii of the stars (`imbh_trajectory.csv`), the wandering moments against the Brownian predictions of a Plummer sphere and a harmonic core (`imbh_wandering.csv`), the most bound two-body companion per snapshot with its elements and Peters time (`imbh_companions.csv`), and the tidal disruptions, collisions, coalescences, GW recoils and escape of the IMBH (`imbh_events.csv`); for several IMBHs the two-body state, elements, Kepler period and Peters time of every pair (`imbh_pairs.csv`); reader of the engine's `mbh.45`; figures: wandering, companions, one each per IMBH |
+| Static black hole and tidal disruptions | `[merger.mbh]`: a fixed black hole at the centre of a single isolated cluster (engine `KZ(44)`), with full and partial disruptions (Guillochon & Ramirez-Ruiz 2013) at a fixed or stellar disruption radius, plunges and optional growth by accretion; the events in `tde_events.csv`, their rate series and a figure |
+| Post-Newtonian compact pairs | `post_newtonian = "full"`: the 1PN, 2PN and 2.5PN relative accelerations (Blanchet 2024) in the perturbed KS steps of bound neutron-star and black-hole pairs (engine `KZ(43)`), with their work booked exactly into the energy check |
+| Gravitational-wave observables | `gw_inspiral_time` (Peters 1964), `chirp_mass`, `gw_frequency` (f₂₂, Wen 2003 peak, pericentre) and `eccentricity_at_frequency` along the Peters track; strains: the Peters–Mathews harmonic power `peters_mathews_g`, the LDC 22-mode amplitude `gw_amplitude_ldc`, and the harmonic and characteristic strains of LEGWORK (Wagg et al. 2022) `gw_harmonic_strain`, `gw_characteristic_strain`, stored per kpc in the catalogues |
+| Validity record | Energy, mass and angular-momentum checks with a verdict, snapshot cadence, the windows excluded from equilibrium estimators and the calibrated bias of the tracked estimators (`validity.toml`, `validity_snapshots.csv`) |
+| Shape, segregation and mixing | Axis ratios from the iterative shape tensor (Zemp et al. 2011), projected ellipticities, the A⁺ index, the two-sample Kolmogorov–Smirnov distance with its null floor, and the mixing of two tagged populations |
+| Stellar population | Engine grouping of the stellar types (`STELLAR_CLASSES`), the HR-plane population and a class census per epoch (`stellar_census.csv`) |
+| Parameter sweeps | Cartesian grids over merger-TOML keys × seeds run as concurrent worker processes, with an index, a summary table, comparison figures, seeded ensembles with 68/95 % bands and isolated single-cluster controls. A point counts as done only when its run completed; a sweep whose driver was ended is re-entered (`resume_sweep`), the driver passing a scheduler's signal on to its workers |
+| Simulation runner | Launch script with thread and device control, live monitoring, start-up and stall watchdogs (`startup_timeout`, `stall_timeout`), telemetry and a wall budget per segment that stops the engine with a restart dump. `resume_run` and the Slurm job chain of `submit_run` continue a run, `submit_restart` extends or restarts an ended one; every segment is closed in `RUN_INFO.toml` with a status (`completed`, `stopped`, `halted`, `watchdog`, `stalled`, `killed`, `failed`), and the engine's echo of the stellar-evolution options is checked at start-up |
+| I/O readers | `conf.3`, `out1000` (ADJUST records, scaling, event lines), `event.35`, `lagr.7`, `esc.11`, `sev.83_*` and `bev.82_*`; `read_binary_events` for the KS, few-body and GW lines (`GR CAPTURE` and `GR FLYBY` included); readers of `bdat.9`, `bwdat.19`, `merger.84`, `hiarch.12`, `coll.13`, `coal.24`, `cmbody.26`, `binev.17`, `degen.4`, `escbin.31` and `hbin.39`. `.h5part` files are reported as unsupported |
+| Plotting / animation | Publication theme with Computer Modern fonts, configured in `[visualization.style]`; escaper, stellar-evolution, binary, merger and remnant figures and GIF animations, never overwriting an existing figure |
+| Load latency | PrecompileTools workload over the configuration, diagnostics-reader and merger-IC paths |
+| Tests | Unit and physics-validation suite with static QA (Aqua, JET, ExplicitImports); engine-dependent tests behind `NBODY6_BINARY_TESTS=1`, a GPU set behind `NBODY6_GPU_TESTS=1` |
 
 ## Testing
 
@@ -201,7 +207,7 @@ The default suite needs no Fortran binary. The engine-dependent tests run when `
 NBODY6_BINARY_TESTS=1 NBODY6_BACKEND_ROOT=$PWD julia -e 'include("activate.jl"); Pkg.test()'
 ```
 
-The suite covers config round-trips, all I/O readers (synthetic binaries plus fixtures of real upstream engine output, commit `618d7a4`, under `test/fixtures/`), plotting/animation smoke tests, external post-processing (including adversarial malformed inputs), and the merger IC generator. Physics-validation tests check King concentration c(W0) against published values, the Plummer half-mass relation r_hm = 1.305 a, the Kroupa mean mass, virial equilibrium Q = T/|W| = 0.5 after `virialise!`, and the Keplerian orbital energy of generated two-cluster orbits.
+The suite covers config round-trips, all I/O readers (synthetic binaries plus fixtures of real upstream engine output, commit `618d7a4`, under `test/fixtures/`), plotting/animation smoke tests, external post-processing (including malformed inputs), and the merger IC generator. Physics-validation tests check King concentration c(W0) against published values, the Plummer half-mass relation r_hm = 1.305 a, the Kroupa mean mass, virial equilibrium Q = T/|W| = 0.5 after `virialise!`, and the Keplerian orbital energy of generated two-cluster orbits.
 
 For interactive work against the test dependencies, activate the test environment with [`TestEnv.jl`](https://github.com/JuliaTesting/TestEnv.jl): start `julia -i activate.jl` and run `using TestEnv; TestEnv.activate()` in the session.
 
@@ -211,7 +217,7 @@ For interactive work against the test dependencies, activate the test environmen
 julia scripts/run_verif_suite.jl
 ```
 
-Runs three end-to-end targets through `run_pipeline` (requires a built binary in `backend/`):
+The script runs three end-to-end targets through `run_pipeline`; it needs a built engine under `backend/`:
 
 1. `single` — plain N=5000 run (`N5k_medium.inp`)
 2. `triorbit` — bound three-cluster Lagrange triangle (`verif_triorbit.toml`)
@@ -219,7 +225,7 @@ Runs three end-to-end targets through `run_pipeline` (requires a built binary in
 
 ## Documentation
 
-The documentation site (Manual, Input Files, Showcase Cases, Cluster Mergers, API Reference, References, a walkthrough from a merger TOML to the generated initial conditions) is at [paulgog.github.io/Nbody6Dynamics.jl/dev](https://PaulGoG.github.io/Nbody6Dynamics.jl/dev/). It builds from `docs/`:
+The documentation site (Manual, Input Files, Showcase Cases, Cluster Mergers, API Reference, References, a walkthrough from a merger TOML to the generated initial conditions) is at [paulgog.github.io/Nbody6Dynamics.jl/stable](https://PaulGoG.github.io/Nbody6Dynamics.jl/stable/). It builds from `docs/`:
 
 ```bash
 julia docs/make.jl   # builds to docs/build/
@@ -231,7 +237,7 @@ Issues and pull requests are welcome; `CONTRIBUTING.md` lists what a change need
 
 ## Licence
 
-The package is released under the MIT licence (`LICENSE`). Two other parties' material is involved. The CUDA helper headers under `deps/cuda/` come from NVIDIA's cuda-samples and carry their BSD-3-Clause licence (`deps/cuda/LICENSE`). The engine is not part of this package: the install phase clones it at build time, by default from my fork [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing) at a tagged release of its `main` branch, and nothing of it is redistributed here. The upstream repository, [nbody6ppgpu/Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing), carries no licence file; the fork's `NOTICE.md` states the provenance, the credit due to the code's authors, the MIT terms of the earlier public repository of the code under which I treat the inherited code, and the MIT licence of my own modifications.
+The package is released under the MIT licence (`LICENSE`). The CUDA helper headers under `deps/cuda/` come from NVIDIA's cuda-samples and carry their BSD-3-Clause licence (`deps/cuda/LICENSE`). The engine is not part of this package: the install phase clones it at build time, by default from my fork [PaulGoG/Nbody6PPGPU-beijing](https://github.com/PaulGoG/Nbody6PPGPU-beijing) at a tagged release of its `main` branch, and nothing of it is redistributed here. The upstream repository, [nbody6ppgpu/Nbody6PPGPU-beijing](https://github.com/nbody6ppgpu/Nbody6PPGPU-beijing), carries no licence file. I treat the inherited code under the MIT terms of the code's earlier public repository, and my own modifications are MIT-licensed; the fork's `NOTICE.md` records the provenance and the credit due to the code's authors.
 
 ## How to cite
 
@@ -273,6 +279,7 @@ Nbody6Dynamics/
 │   ├── Nbody6Dynamics.jl            # Module root; run_pipeline orchestrator; exports
 │   ├── types.jl                     # Config structs (incl. PlotStyle), Snapshot, records, UnitScaling
 │   ├── config.jl                    # TOML loader/serialiser for Nbody6Config
+│   ├── units.jl                     # Physical constants of the engine (units.f) behind every unit conversion
 │   ├── util.jl                      # safesave-style never-overwrite backups
 │   ├── plotting_api.jl              # Figure interface: the public routines, implemented by the Makie extension
 │   ├── pipeline/                    # Engine build, launch, resumption, Slurm chains, cost, telemetry, sweeps
@@ -285,6 +292,7 @@ Nbody6Dynamics/
 │   │   ├── cluster.jl               # Slurm layer: generated job script, submission and chaining of segments, job ledger
 │   │   ├── gpu_validation.jl        # run_gpu_validation: logged validation stages of a CUDA host under runs/
 │   │   ├── sweep.jl                 # Parameter sweeps: grid × seeds, concurrent worker processes, index and summary
+│   │   ├── ladder.jl                # N ladders: rungs of a merger TOML and their sweep TOMLs at fixed physical scales
 │   │   └── external.jl              # scan_output + postprocess_external for arbitrary output dirs
 │   ├── analysis/                    # Diagnostics derived from the output: integrals, budgets, structure, binaries, validity
 │   │   ├── potential.jl             # Exact pair-sum potential (KernelAbstractions), pairs as centres of mass, bound sets
@@ -299,6 +307,7 @@ Nbody6Dynamics/
 │   │   ├── pair_finder.jl           # k-d tree local density, snapshot binary finder, reconciliation with the KS pairs
 │   │   ├── equipartition.jl         # Bianchini equipartition-mass fit and its per-snapshot series; equipartition.csv
 │   │   ├── angular_momentum.jl      # Angular-momentum budget, rotation by radius and mass class, elapsed relaxation times; angular_momentum.csv
+│   │   ├── merger_epochs.jl         # Merger epochs: contact, core coalescence, dissolution, the regime of every snapshot; merger_epochs.csv, pair_separation.csv
 │   │   ├── merger_tree.jl           # Merger tree from the density-centre separations, per-progenitor mass budget and mixing; merger_tree.csv, progenitor_budget.csv
 │   │   ├── validity.jl              # Validity record of a run and the calibration-table lookup; validity.toml, validity_snapshots.csv
 │   │   ├── binary_spans.jl          # Engine-regularised binary spans: KS episodes joined per pair, origin, end class; binary_spans.csv
@@ -413,6 +422,8 @@ Nbody6Dynamics/
 │   ├── test_angular_momentum.jl     # Angular-momentum budget and rotation by radius and mass class
 │   ├── test_equipartition.jl        # Bianchini equipartition-mass fit
 │   ├── test_merger_tree.jl          # Merger tree and per-progenitor budget
+│   ├── test_merger_epochs.jl        # Merger epochs, regimes and the quantities retired after a merger
+│   ├── test_n_ladder.jl             # N ladders: rungs, refusals, the shipped v3_b ladder
 │   ├── test_two_cluster_orbit.jl    # Two-cluster orbit by size, orientation, tidal frame
 │   ├── test_cluster_complex.jl      # Cluster complexes: member masses, sizes, centres, bulk velocities
 │   ├── test_complex_controls.jl     # Global IMF partition and the energy-matched controls

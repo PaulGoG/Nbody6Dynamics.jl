@@ -6,8 +6,7 @@
 # [user manual](@ref "Nbody6Dynamics.jl — User Manual") covers `run_pipeline`
 # and the post-processing of a finished run.
 
-using CairoMakie #  the figure routines are a package extension; loading a
-#                   Makie backend brings them into the session
+using CairoMakie   # brings the figure routines (a package extension) into the session
 using Nbody6Dynamics
 
 # ## The merger configuration
@@ -57,7 +56,7 @@ cfg.clusters[1]
 # ## Generating the initial conditions
 #
 # `generate_merger_ic` samples each cluster, virialises it, places the pair on
-# the orbit, truncates the members at the Jacobi radius, converts to N-body
+# the orbit, truncates each at its Roche lobe, converts to N-body
 # units and writes `dat.10`, `merger.inp`, `merger_ic.toml` and
 # `merger_summary.txt` into the output directory.
 

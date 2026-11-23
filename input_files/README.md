@@ -9,7 +9,7 @@ input_files/
 ├── engine/          # Nbody6++ NAMELIST inputs of single clusters, engine-generated initial conditions (simulation.input_file)
 ├── clusters/        # single-cluster generator TOMLs: the science cases (merger.config_file, run_merger_pipeline)
 ├── mergers/         # merger initial-condition TOMLs (merger.config_file, run_merger_pipeline)
-├── verification/    # the two merger targets of scripts/run_verif_suite.jl
+├── verification/    # the two merger targets of scripts/run_verif_suite.jl; replicas/, imbh/, mbh/ (validation runs)
 ├── sweeps/          # sweep TOMLs (scripts/run_sweep.jl)
 ├── showcase/        # five end-to-end cases, each a merger TOML with its pipeline TOML
 ├── gpu/             # CUDA-host validation: GPU and CPU builds, the 2 × 25k merger, the 6 × 10⁵ probes
@@ -21,7 +21,7 @@ input_files/
 | `engine/` | `N1k_quick`, `N5k_medium`, `N10k_long`, `N25k_production`, `N100k_production` (single clusters of growing size) | Input Files, "Engine inputs" |
 | `clusters/` | `gc_bh_subsystem`, `imbh_runaway`, `young_massive_binaries`, `open_cluster_tails` (the science cases, `orbit_mode = "single"`) | Input Files, "Single-cluster configurations" and "Single-cluster configurations: the science cases" |
 | `mergers/` | `merger_demo_small`, `merger_equal_mass`, `merger_minor_plummer`, `merger_triple_cluster`, `merger_3cluster_small`, `merger_5cluster_small`, `merger_27cluster_cubic` | Input Files, "Merger configurations"; Cluster Mergers |
-| `verification/` | `verif_triorbit`, `verif_3d5cluster` | Input Files, "Verification configurations" |
+| `verification/` | `verif_triorbit`, `verif_3d5cluster`; published two-cluster mergers under `replicas/`; IMBH and static-black-hole validation runs under `imbh/` and `mbh/` | Input Files, "Verification configurations" |
 | `sweeps/` | `sweep_demo` (base: the root `config.toml` and `mergers/merger_demo_small.toml`) | Manual, "Parameter sweeps" |
 | `showcase/` | `{equal,binary,tidal,flagship}_{merger,pipeline}.toml`, `sweep.toml` with `sweep_{merger,pipeline}.toml` | Showcase Cases |
 | `gpu/` | `gpu_pipeline`, `cpu_pipeline`, `merger_50k`, `merger_600k`, `single_600k`, `{gpu,cpu}_{merger,single}_600k` | Input Files, "Showcase and GPU-host cases" and "The GPU-host and verification cases"; Manual, "Recipe for a CUDA host" |

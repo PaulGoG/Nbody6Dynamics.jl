@@ -1,7 +1,5 @@
 # Contributing
 
-A change is merged when it meets the points below.
-
 ## Setting up
 
 ```bash
@@ -19,7 +17,7 @@ julia -e 'include("activate.jl"); Pkg.test()'
 
 and needs no engine binary. The engine-dependent tests (build, launch,
 restart, tidal field, telemetry) run when `NBODY6_BINARY_TESTS=1` is set; they
-clone and build Nbody6++GPU in a temporary directory, or use an existing build
+clone and build the engine in a temporary directory, or use an existing build
 under `NBODY6_BACKEND_ROOT`. `NBODY6_GPU_TESTS=1` runs the GPU-gated set as
 well (a CUDA build in a temporary tree, N = 1000 on one device and on two); it
 needs a CUDA host. Julia 1.13 or later is required; a Linux host with
@@ -37,16 +35,18 @@ needs a CUDA host. Julia 1.13 or later is required; a Linux host with
   file reference updated when behaviour or configuration keys change.
 - An entry under `[Unreleased]` in `CHANGELOG.md`.
 - A change to a diagnostic, a sampler or a generated engine parameter states
-  its formulation and source in the description (a reference with a DOI,
-  copied from the resolved record, where one exists), and its tests check a
-  limiting case or a published value.
-- No run outputs, engine sources, manifests or figures in the commit; `runs/`,
-  `backend/` and `Manifest.toml` are ignored for that reason.
+  its formulation and source in the description (a reference with its DOI
+  where one exists; check that the DOI resolves to the work cited), and its
+  tests check a limiting case or a published value.
+- No run outputs, engine sources or manifests in the commit (`runs/`,
+  `backend/` and `Manifest.toml` are in `.gitignore`), and no figures other
+  than the documentation assets.
 
 ## Reporting a problem
 
 Open an issue with the configuration you ran, the engine commit
 (`install.ref`, or `backend_commit` in `RUN_INFO.toml`), the Julia version,
 the `[hardware]` table of `RUN_INFO.toml` when a run is involved, and the log
-(`nbody6dynamics.log` in the run directory). A halted integration is often the
-engine's own energy check; the input-file reference explains the tolerance.
+(`nbody6dynamics.log` in the run directory). An integration that halts has
+usually failed the engine's energy check; the tolerance `qe` is described in
+the input-file reference.

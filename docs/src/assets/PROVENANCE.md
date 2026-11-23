@@ -3,15 +3,13 @@
 Every asset here comes from one of the showcase runs of 2026-11-02 listed in
 the Showcase Cases page (`input_files/showcase/`), produced on a laptop
 (Intel Core Ultra 7 155H, AVX build of the engine at the pin `v2026.07.23`,
-engine commit `ce10277`) by the package tree of commit `916fb0a` with the
-three-cluster flagship configuration of the following commit. They were
+engine commit `ce10277`) with the package at commit `916fb0a` and the
+flagship configuration from the commit after it. They were
 rendered again on 2026-11-03 from the same engine output by the figure code of
 release 0.7.0 (the merger epochs on the separation figure). Nothing was
 edited by hand: each figure is the package's own export, reduced in size with
 ImageMagick for the web (`magick in.png -resize 1200x -strip out.png`; the
-README montage to 1600 px, the animation halved and frame-optimised), as
-`utilities/render_readme_assets.jl` of the development workspace does for the
-two README files.
+README montage to 1600 px, the animation halved and frame-optimised).
 
 | Asset | Run | What | How |
 |---|---|---|---|
@@ -23,10 +21,10 @@ two README files.
 | `showcase_sweep_lagrangian.png` | `sweep_showcase_20261102_170236` | half-mass radius of the six mergers on common axes, colour by eccentricity | `plot_sweep_lagrangian` as drawn by the sweep driver (`plots/sweep_lagrangian.png`) |
 | `showcase_sweep_ensemble.png` | the same | median half-mass radius per eccentricity with 68 and 95 % bands over the seeds | `plot_sweep_ensemble` as drawn by the sweep driver (`plots/ensemble_lagrangian.png`) |
 
-The flagship integration (3 × 25 000 stars, 58 221 bodies after the Jacobi
-truncation, 50 Myr) took 3328 s (55 min) of engine time at eight OpenMP
+The flagship integration (3 × 25 000 stars, 58 221 bodies after the Roche
+truncation, 50 Myr) took 3326 s (55 min) of engine time at eight OpenMP
 threads; the small cases a few minutes each (the table of the Showcase Cases
 page).
 
-Licence. Simulation output and figures produced by the package author,
-released with the package under its MIT licence.
+Licence: I produced the simulation output and the figures; they are released
+with the package under its MIT licence.
