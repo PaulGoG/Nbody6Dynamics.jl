@@ -39,7 +39,7 @@ M☉, lengths in pc, speeds in km s⁻¹.
 | `filament_length` | Float64 | 20.0 | [pc]; > 0 |
 | `filament_width` | Float64 | 1.0 | Gaussian transverse σ [pc]; > 0 |
 | `virial_ratio` | Float64 | 0.5 | target Q_cc = T/\\|W\\| of the centres; ≥ 0 |
-| `rotation_fraction` | Float64 | 0.0 | T_rot/T of a solid-body rotation about +z; 0 ≤ f < 1; 0 when virial_ratio = 0 |
+| `rotation_fraction` | Float64 | 0.0 | `T_rot/T` of a solid-body rotation about +z; 0 ≤ f < 1; 0 when `virial_ratio = 0` |
 | `softening` | Float64 | 0.0 | Plummer softening ε of the point-mass energy [pc]; 0 = the mean member r_h; ≥ 0 |
 | `member_n_min` | Int | 50 | smallest allowed member star count; ≥ 2 |
 | `imf_partition` | String | "member" | "member" (each member samples its own IMF) or "global" (one star list partitioned) |
@@ -57,7 +57,7 @@ draw is kept). The inverse CDF of dN/dM ∝ M^−β on `[lo, hi]` with `u` unifo
 `r_h = rh` (`"constant"`); `r_h = 0.10 pc (M/M☉)^0.13` (`"marks_kroupa"`, Marks &
 Kroupa 2012, Eq. 7, DOI 10.1051/0004-6361/201118231); `r_h = (2.365/8) pc
 (M/10⁴ M☉)^0.18` (`"frost"`, Rantala, Naab & Lahén 2024, DOI
-10.1093/mnras/stae1413, with f_h = 1/8 and R₄ = 2.365 pc; 0.45 pc at 10⁵ M☉,
+10.1093/mnras/stae1413, with `f_h` = 1/8 and R₄ = 2.365 pc; 0.45 pc at 10⁵ M☉,
 the anchor they quote, where their Eq. 11 as printed carries a further factor
 1/1.3 and would give 0.34 pc);
 `r_h = 2.26 pc (M/10⁴ M☉)^0.27` (`"dobbs"`, Dobbs et al. 2022, DOI
@@ -69,7 +69,7 @@ the anchor they quote, where their Eq. 11 as printed carries a further factor
 IMF. `"global"`: one star list is drawn from the template IMF in batches of
 `max(1000, ⌈1.1 ΣMᵢ / ⟨m⟩⌉)` until its sum reaches ΣMᵢ, shuffled, and dealt
 out in order: member i takes stars until the running total reaches or exceeds
-the cumulative target Σ_{j≤i} Mⱼ, the last member until it reaches ΣMᵢ, so
+the cumulative target `Σ_{j≤i} Mⱼ`, the last member until it reaches ΣMᵢ, so
 every member is within one star of its target, and the rest of the list is
 dropped (`_complex_partition_stars`). Each member then carries its
 share as an `ExplicitMassesIMF`, and its radius follows from its realised mass.

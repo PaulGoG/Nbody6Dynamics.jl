@@ -153,10 +153,10 @@ under the Peters (1964) evolution.
 
 The frequency rises monotonically along the track. The crossing of a
 frequency f is found with [`eccentricity_at_frequency`](@ref), which returns
-the eccentricity e_f there; with a_f = a(e_f) from
+the eccentricity `e_f` there; with `a_f = a(e_f)` from
 [`peters_semi_major_axis`](@ref), the crossing time is
-T(a₀, e₀) − T(a_f, e_f) of [`gw_inspiral_time`](@ref). A circular state stays
-circular, all definitions reduce to f₂₂ and a_f = (GM/(πf)²)^{1/3}.
+`T(a₀, e₀) − T(a_f, e_f)` of [`gw_inspiral_time`](@ref). A circular state stays
+circular, all definitions reduce to f₂₂ and `a_f = (GM/(πf)²)^{1/3}`.
 
 Returns
 - `t_in_yr`: time to `f_lo`, 0 when the state is already at or above it;
@@ -954,7 +954,7 @@ with the GW evolution of the pair after it left the cluster.
 
 The escape mode looks for a `:gw_recoil` [`GWEvent`](@ref) of the same c.m.
 name or the same pair, then for a `:binary_kick` [`MassLossEvent`](@ref)
-naming a component, in [t_esc − 1 NB, t_esc]. Rows are sorted by time.
+naming a component, in `[t_esc − 1 NB, t_esc]`. Rows are sorted by time.
 Throws an `ArgumentError` for a non-positive unit or a band or reference
 pair without 0 < lo < hi.
 
@@ -1550,7 +1550,7 @@ The observer-dependent columns of the GW/LISA catalogue schema for the last
 record (in `time_nb`) of every compact pair of `rows` with a finite orbit:
 the pair is placed at the luminosity distance `distance_kpc` [kpc] (`d_l_mpc`)
 with the redshift `z` of the flat ΛCDM of Planck 2018 (H₀ = 67.66 km s⁻¹ Mpc⁻¹,
-Ω_m = 0.3111, DOI 10.1051/0004-6361/201833910), an ecliptic latitude
+`Ω_m` = 0.3111, DOI 10.1051/0004-6361/201833910), an ecliptic latitude
 asin(2u − 1), longitude 2πu, inclination acos(2u − 1), polarisation πu and
 initial phase 2πu drawn from `rng` in that order (u uniform on [0, 1)), and
 observed for `t_obs_yr` years with the [`lisa_psd`](@ref) curve (`confusion`

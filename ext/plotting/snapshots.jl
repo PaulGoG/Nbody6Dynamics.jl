@@ -401,7 +401,7 @@ end
     _surface_density(px, py, m, half_width, nbins) -> Matrix{Float64}
 
 Projected surface mass density on an `nbins × nbins` grid over
-[-half_width, half_width]², `Σ[i, j]` at the `i`-th x and `j`-th y cell: each
+`[-half_width, half_width]²`, `Σ[i, j]` at the `i`-th x and `j`-th y cell: each
 mass deposited in its cell and divided by the cell area, then smoothed with a
 separable Gaussian of `_DENSITY_SMOOTH_CELLS` cells. Particles outside the
 square (and non-finite positions) are dropped; mass smoothed across the edge

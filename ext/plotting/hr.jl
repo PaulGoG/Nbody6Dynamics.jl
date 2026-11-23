@@ -405,7 +405,7 @@ end
     plot_hr(sev::StellarEvolutionSnapshot, cfg::VisualizationConfig;
             bev = nothing, filename = "hr_diagram") -> String
 
-Hertzsprung–Russell diagram (log T_eff against log L) of epoch `epoch` of a
+Hertzsprung–Russell diagram (log `T_eff` against log L) of epoch `epoch` of a
 run, coloured by stellar class ([`STELLAR_CLASSES`](@ref)), above a census
 strip of the stars per class against time with the epoch marked. Axes and
 legend are those of the whole run, so the figures of different epochs of

@@ -436,7 +436,7 @@ about the centre unless passed.
 The [`RotationProfile`](@ref) uses cylindrical shells of equal membership,
 `max(1, min(nbins_max, ⌊N / n_min⌋))` of them; the mass-weighting noise
 of a shell is measured by the sign-flip null rather than assumed through
-`N_eff = (Σm)² / Σm²`, which enters the analytic λ_P floor only. Each
+`N_eff = (Σm)² / Σm²`, which enters the analytic `λ_P` floor only. Each
 carries the mass-weighted mean azimuthal
 velocity `v_rot`, the one-dimensional dispersion `sigma` about the shell's
 mean streaming velocity in cylindrical components ``(\\bar v_R, \\bar v_φ, \\bar v_z)``,
@@ -478,9 +478,9 @@ the axis of the whole set.
 (`kinetic + potential`, regularised pairs at their centres of mass);
 otherwise it is the star-level `T + W` of the given particles, which
 includes the internal energy of any pair among them and costs an O(n²) pair
-sum. `peebles = false` skips λ_P altogether: `lambda_peebles` and
+sum. `peebles = false` skips `λ_P` altogether: `lambda_peebles` and
 `lambda_peebles_floor` are then `NaN`, for callers that use the shells and
-λ_R only.
+`λ_R` only.
 """
 function rotation_analysis(
     pos::AbstractMatrix{Float64},
@@ -720,9 +720,9 @@ end
 # Olczak, Spurzem & Henning 2011)
 # ---------------------------------------------------------------------------
 
-"""Random comparison sets per N_MST above `n_small`."""
+"""Random comparison sets per `N_MST` above `n_small`."""
 const _MSR_N_RANDOM = 200
-"""Random comparison sets per N_MST up to `n_small`, and that limit."""
+"""Random comparison sets per `N_MST` up to `n_small`, and that limit."""
 const _MSR_N_RANDOM_SMALL = 1000
 const _MSR_N_SMALL = 20
 """Default scan of minimum-spanning-tree sizes N_MST."""
@@ -1036,7 +1036,7 @@ Diagnostics of the bound remnant of the whole system at every snapshot
 - `r_core_number`: Casertano–Hut core radius from the number density
 - `rho_core`: core density, the density-weighted mean `Σρ_i²/Σρ_i` of the local
   mass densities of the bound members (Casertano & Hut 1985)
-- `lambda_r_floor`, `lambda_peebles_floor`: sign-flip null floors of λ_R and λ_P
+- `lambda_r_floor`, `lambda_peebles_floor`: sign-flip null floors of `λ_R` and `λ_P`
 - `lambda_median`, `gamma_msr`, `gamma_msr_err`: median-edge ratio `Λ̃_MSR`
   and geometric-mean ratio `Γ_MSR` with its interval factor
 - `v_peak`, `r_peak`: rotation-curve fit ([`rotation_analysis`](@ref))
@@ -1218,8 +1218,8 @@ follows a fixed tracer class: the names of the members of the `msr_n_tracer`
 most massive systems of the first snapshot's bound set (a regularised pair at
 its centre of mass with its total mass), in decreasing mass. At every snapshot
 the systems of the bound set that hold a tracer name enter
-[`mass_segregation`](@ref) in that order, with the N_MST scan `msr_scan`, `msr_n_random` random sets per
-N_MST above `msr_n_small` (`msr_n_random_small` up to it) and the seed
+[`mass_segregation`](@ref) in that order, with the `N_MST` scan `msr_scan`, `msr_n_random` random sets per
+`N_MST` above `msr_n_small` (`msr_n_random_small` up to it) and the seed
 `msr_seed`; the segregation time is the first snapshot with
 `Λ_MSR − σ > msr_threshold`. [`rotation_analysis`](@ref) takes
 `rotation_n_min`, `rotation_nbins_max`, `rotation_n_null` and `msr_seed`.

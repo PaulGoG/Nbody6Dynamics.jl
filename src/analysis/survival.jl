@@ -63,8 +63,8 @@ The lifetimes of the binary spans of [`binary_spans`](@ref) as an
 
 # Arguments
 - `spans`: the spans; row i of the table carries `id = i` (its index in `spans`)
-- `time_axis`: `:age` for the binary age τ = t − t_form (entry 0), or `:cluster`
-  for the cluster time t with delayed entry at t_form
+- `time_axis`: `:age` for the binary age `τ = t − t_form` (entry 0), or `:cluster`
+  for the cluster time t with delayed entry at `t_form`
 - `t_end`: end of the record, the right-censoring time; it must be ≥ every span end
 - `unit`: `:myr` (fields `t_form_myr`, `t_end_myr`) or `:nb` (`t_form_nb`, `t_end_nb`)
 - `causes`: `Dict{Symbol,Symbol}` from the `end_class` of a span to a cause label;
@@ -264,9 +264,9 @@ A product-limit survival curve from [`kaplan_meier`](@ref) or
 | `time` | distinct event times t_(j) (Turnbull: right ends of the innermost intervals) |
 | `survival` | Ŝ(t_(j)) |
 | `variance` | Greenwood variance of Ŝ(t_(j)); `NaN` when not estimated (Turnbull) |
-| `n_risk` | number at risk n_j at t_(j) |
-| `n_events` | number of events d_j at t_(j) |
-| `n_censored` | censorings in (t_(j−1), t_(j)]; those after the last event time are in `censor_times` only |
+| `n_risk` | number at risk `n_j` at `t_(j)` |
+| `n_events` | number of events `d_j` at `t_(j)` |
+| `n_censored` | censorings in `(t_(j−1), t_(j)]`; those after the last event time are in `censor_times` only |
 | `censor_times` | every censoring time, sorted (tick marks of a plot) |
 
 Evaluate with [`survival_at`](@ref); pointwise intervals from
@@ -290,14 +290,14 @@ for any cause, with the Greenwood variance, under right censoring and delayed
 entry.
 
 # Method
-At the distinct event times t_(1) < t_(2) < … with n_j subjects at risk
-(`entry < t_(j) ≤ time`) and d_j events (cause ≥ 1),
+At the distinct event times `t_(1) < t_(2) < …` with `n_j` subjects at risk
+(`entry < t_(j) ≤ time`) and `d_j` events (cause ≥ 1),
 
     Ŝ(t) = ∏_{t_(j) ≤ t} (1 − d_j/n_j),
     Var Ŝ(t) = Ŝ(t)² Σ_{t_(j) ≤ t} d_j / [n_j (n_j − d_j)].
 
-Tied events enter through d_j; a censoring tied with an event time is at risk
-at that time. A term with n_j = d_j (the last subject at risk fails) makes the
+Tied events enter through `d_j`; a censoring tied with an event time is at risk
+at that time. A term with `n_j = d_j` (the last subject at risk fails) makes the
 sum infinite, and the variance is stored as `Inf` from there on. With delayed
 entry the estimate is conditional on survival to the earliest entry.
 
@@ -458,7 +458,7 @@ Nelson–Aalen estimate of the cumulative hazard of the exit time for any cause,
 under right censoring and delayed entry.
 
 # Method
-At the distinct event times t_(j) with n_j at risk and d_j events,
+At the distinct event times `t_(j)` with `n_j` at risk and `d_j` events,
 
     Ĥ(t) = Σ_{t_(j) ≤ t} d_j/n_j,
     Var Ĥ(t) = Σ_{t_(j) ≤ t} d_j (n_j − d_j)/n_j³,
@@ -510,11 +510,11 @@ Cumulative incidence functions of competing causes from
 | field | meaning |
 |---|---|
 | `time` | distinct event times t_(j) |
-| `incidence` | n_times × n_causes, F̂_k(t_(j)) |
-| `variance` | n_times × n_causes, delta-method variance of F̂_k(t_(j)) |
+| `incidence` | `n_times × n_causes`, `F̂_k(t_(j))` |
+| `variance` | `n_times × n_causes`, delta-method variance of `F̂_k(t_(j))` |
 | `survival` | the all-cause Kaplan–Meier Ŝ(t_(j)) |
 | `n_risk` | number at risk n_j |
-| `n_events` | n_times × n_causes, events d_kj of cause k at t_(j) |
+| `n_events` | `n_times × n_causes`, events `d_kj` of cause k at `t_(j)` |
 | `cause_labels` | the labels of the causes (columns) |
 """
 Base.@kwdef struct CumulativeIncidence
@@ -534,13 +534,13 @@ Aalen–Johansen estimate of the cumulative incidence F_k(t) = P(T ≤ t, cause 
 of every cause of the table, under right censoring and delayed entry.
 
 # Method
-With n_j at risk, d_j events of any cause and d_kj of cause k at the distinct
-event times t_(j), and Ŝ(t_(j)−) the all-cause Kaplan–Meier estimate just
-before t_(j),
+With `n_j` at risk, `d_j` events of any cause and `d_kj` of cause k at the distinct
+event times `t_(j)`, and `Ŝ(t_(j)−)` the all-cause Kaplan–Meier estimate just
+before `t_(j)`,
 
     F̂_k(t) = Σ_{t_(j) ≤ t} Ŝ(t_(j)−) d_kj/n_j,
 
-so that Σ_k F̂_k = 1 − Ŝ. The variance is the delta-method estimate
+so that `Σ_k F̂_k = 1 − Ŝ`. The variance is the delta-method estimate
 (Marubini & Valsecchi 1995, ch. 10; Aalen 1978)
 
     Var F̂_k(t) = Σ_{t_(j) ≤ t} [F̂_k(t) − F̂_k(t_(j))]² d_j/[n_j (n_j − d_j)]
@@ -548,11 +548,11 @@ so that Σ_k F̂_k = 1 − Ŝ. The variance is the delta-method estimate
                − 2 Σ_{t_(j) ≤ t} [F̂_k(t) − F̂_k(t_(j))] Ŝ(t_(j)−) d_kj/n_j²,
 
 accumulated in one pass over the event times through the recursions of the
-three sums in the increments F̂_k(t_(i)) − F̂_k(t_(i−1)) ≥ 0, which avoids the
-cancellation of the expanded squares. A term with n_j = d_j has a vanishing
-prefactor (F̂_k is constant after it) and contributes 0. The complement
-1 − Ŝ_k of the Kaplan–Meier estimate with the other causes censored
-overestimates F_k; it is not a cumulative incidence under competing causes.
+three sums in the increments `F̂_k(t_(i)) − F̂_k(t_(i−1)) ≥ 0`, which avoids the
+cancellation of the expanded squares. A term with `n_j = d_j` has a vanishing
+prefactor (`F̂_k` is constant after it) and contributes 0. The complement
+`1 − Ŝ_k` of the Kaplan–Meier estimate with the other causes censored
+overestimates `F_k`; it is not a cumulative incidence under competing causes.
 
 References: Aalen & Johansen (1978, Scand. J. Stat. 5, 141); Aalen (1978,
 DOI 10.1214/aos/1176344247); Marubini & Valsecchi (1995, Analysing Survival
@@ -635,37 +635,37 @@ end
              tol::Real = 1e-8, max_iter::Integer = 10_000) -> SurvivalCurve
 
 Turnbull nonparametric maximum-likelihood estimate of the survival function
-from interval-censored exit times T_i ∈ (L_i, U_i].
+from interval-censored exit times `T_i ∈ (L_i, U_i]`.
 
 # Arguments
-- `lower`, `upper`: L_i and U_i; an exact time has L_i = U_i (the interval
-  (U_i − 0, U_i]), a right-censored one U_i = `Inf`
-- `tol`: the iteration stops when max_m |Δp_m| < `tol`
+- `lower`, `upper`: `L_i` and `U_i`; an exact time has `L_i = U_i` (the interval
+  `(U_i − 0, U_i]`), a right-censored one `U_i` = `Inf`
+- `tol`: the iteration stops when `max_m |Δp_m|` < `tol`
 - `max_iter`: largest number of iterations; reaching it is logged as a warning
 
 # Method
-The left ends L_i and the right ends U_i are sorted together, a right end
+The left ends `L_i` and the right ends `U_i` are sorted together, a right end
 before a left end of the same value ((a, x] and (x, b] are disjoint) and the
 left end of an exact time before both. The innermost intervals (l, u] are the
 pairs of a left end immediately followed by a right end in that order; the
 NPMLE places its mass on them only. Every observation covers a contiguous block
-of innermost intervals. The masses p_m, uniform at the start, follow the
+of innermost intervals. The masses `p_m`, uniform at the start, follow the
 self-consistency (EM) iteration
 
     p_m ← (1/N) Σ_i α_im p_m / Σ_m' α_im' p_m',
 
-α_im = 1 when innermost interval m lies in (L_i, U_i]. The curve is
-Ŝ(u_m) = 1 − Σ_{m' ≤ m} p_m' at the finite right ends u_m; the mass of an
+`α_im = 1` when innermost interval m lies in `(L_i, U_i]`. The curve is
+`Ŝ(u_m) = 1 − Σ_{m' ≤ m} p_m'` at the finite right ends `u_m`; the mass of an
 innermost interval with u = `Inf` (beyond the last finite end) lowers no point
 of it. For exact and right-censored data the estimate equals the Kaplan–Meier
 estimate. The variance is not estimated and is `NaN`; `n_risk`, `n_events` and
-`n_censored` are 0, and `censor_times` holds the L_i of the right-censored
+`n_censored` are 0, and `censor_times` holds the `L_i` of the right-censored
 observations.
 
 Reference: Turnbull (1976, DOI 10.1111/j.2517-6161.1976.tb01597.x).
 
 Throws `DimensionMismatch` for vectors of different length and `ArgumentError`
-for a non-finite or `NaN` bound other than U_i = `Inf`, L_i > U_i, `tol ≤ 0` or
+for a non-finite or `NaN` bound other than `U_i` = `Inf`, `L_i > U_i`, `tol ≤ 0` or
 `max_iter < 1`.
 
 # Example
@@ -798,17 +798,17 @@ cause, under right censoring and delayed entry.
 - `group`: group label of each row, 1 or 2; both must occur
 
 # Method
-At every distinct event time t_(j) of the pooled sample with n_j at risk, n_1j
-of them in group 1, and d_j events, the hypergeometric expectation and variance
+At every distinct event time `t_(j)` of the pooled sample with `n_j` at risk, `n_1j`
+of them in group 1, and `d_j` events, the hypergeometric expectation and variance
 of the events of group 1 are
 
     E_1j = d_j n_1j/n_j,
     V_j = d_j (n_1j/n_j)(1 − n_1j/n_j)(n_j − d_j)/(n_j − 1)   (0 for n_j = 1).
 
-The statistic (O_1 − E_1)²/V with O_1 = Σ d_1j, E_1 = Σ E_1j and V = Σ V_j is
+The statistic `(O_1 − E_1)²/V` with `O_1 = Σ d_1j`, `E_1 = Σ E_1j` and `V = Σ V_j` is
 χ² with one degree of freedom under the null hypothesis, so
 p = erfc(√(statistic/2)). `observed` and `expected` are the vectors
-[O_1, O_2] and [E_1, E_2]; E_1 + E_2 = O_1 + O_2. Without variance (no events)
+`[O_1, O_2]` and `[E_1, E_2]`; `E_1 + E_2 = O_1 + O_2`. Without variance (no events)
 the statistic and p are `NaN`.
 
 References: Mantel (1966, Cancer Chemother. Rep. 50, 163); Peto & Peto (1972,
@@ -889,11 +889,11 @@ Cox–Snell residuals of a predicted cumulative hazard Λ.
 - `cumulative_hazard`: a function t ↦ Λ(t), non-decreasing, returning a real
 
 # Method
-r_i = Λ(time_i) − Λ(entry_i), the integrated hazard over the time at risk of
+`r_i = Λ(time_i) − Λ(entry_i)`, the integrated hazard over the time at risk of
 subject i, with the event indicator `cause_i ≥ 1`. If Λ is the true cumulative
-hazard, the r_i are a right-censored sample of the unit exponential
+hazard, the `r_i` are a right-censored sample of the unit exponential
 distribution, so the Nelson–Aalen estimate of an event table built from them
-(time r_i, entry 0, the same indicator) lies on the identity line; its slope
+(time `r_i`, entry 0, the same indicator) lies on the identity line; its slope
 measures the ratio of the observed to the predicted hazard.
 
 Reference: Cox & Snell (1968, J. R. Stat. Soc. B 30, 248).

@@ -99,7 +99,7 @@ end
     read_all_stellar_evolution(dir::AbstractString, pattern::AbstractString = "sev.83_*")
         -> Vector{StellarEvolutionSnapshot}
 
-Read all sev.83_* files matching `pattern` in `dir`, sorted by snapshot time.
+Read all `sev.83_*` files matching `pattern` in `dir`, sorted by snapshot time.
 The default pattern matches what this fork's `hrplot.F` writes
 (`sev.83_<time>`, e.g. `sev.83_0`, `sev.83_0.5`). Files that cannot be read
 are skipped and reported in one warning with their count and the first path.

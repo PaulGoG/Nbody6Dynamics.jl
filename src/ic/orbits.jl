@@ -646,7 +646,7 @@ under `tidal.kz14`, along +z: `A − B` with the Oort constants of `xtrnl0.F`
 (A = 14.4, B = −12.0 km s⁻¹ kpc⁻¹) for `kz14 = 1`, `√(G M_G / R_G³)` of the
 circular orbit in the point-mass galaxy for `kz14 = 2` (`gmg` [M☉], `rg0`
 [kpc]); 0 for the inertial integrations (`kz14 = 0, 5`). The Coriolis terms
-of `xtrnld.f` (F_x += 2Ω ẏ, F_y −= 2Ω ẋ) fix the sense: a pair orbit with its
+of `xtrnld.f` (`F_x += 2Ω ẏ`, `F_y −= 2Ω ẋ`) fix the sense: a pair orbit with its
 angular momentum along +z is prograde with respect to the Galactic rotation.
 """
 function tidal_frame_rotation(tidal::TidalSpec)::Float64

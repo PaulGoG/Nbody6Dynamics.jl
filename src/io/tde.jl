@@ -14,7 +14,7 @@ One event at the static black hole, from [`read_tde_events`](@ref).
 
 | field | meaning | unit |
 |---|---|---|
-| `kind` | `:full` (the star disrupted, removed), `:plunge` (Newtonian pericentre q inside r_pl = 8 G M/c², 4 G M/c² before engine v2026.07.27, with r_t < β_d r_pl, β_d the full-disruption penetration factor, 1.85 or 0.9 with partial disruptions and the engine's `BETAF` without; removed), `:partial` (the star loses `dm_msun` and survives) | — |
+| `kind` | `:full` (the star disrupted, removed), `:plunge` (Newtonian pericentre q inside `r_pl = 8 G M/c²`, 4 G M/c² before engine v2026.07.27, with `r_t < β_d r_pl`, `β_d` the full-disruption penetration factor, 1.85 or 0.9 with partial disruptions and the engine's `BETAF` without; removed), `:partial` (the star loses `dm_msun` and survives) | — |
 | `time_nb`, `time_myr` | event time (the pericentre passage within one step) | NB, Myr |
 | `name`, `kstar` | body name and stellar type | — |
 | `mass_msun` | stellar mass before the event | M☉ |

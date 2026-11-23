@@ -123,8 +123,8 @@ end
 """
     gw_time_factor(e0) -> Float64
 
-Ratio F(e₀) ≡ T/[T_c(1 − e₀²)^{7/2}] of the exact Peters (1964) coalescence time
-T to the circular time T_c of the same semi-major axis, scaled by
+Ratio `F(e₀) ≡ T/[T_c(1 − e₀²)^{7/2}]` of the exact Peters (1964) coalescence time
+T to the circular time `T_c` of the same semi-major axis, scaled by
 (1 − e₀²)^{7/2}. It rises from 1 at e₀ = 0 (minimum ≈ 0.98 near e₀ = 0.5) to
 768/425 as e₀ → 1, the high-eccentricity limit of Peters (1964,
 DOI 10.1103/PhysRev.136.B1224).
@@ -191,15 +191,15 @@ end
 """
     gw_zwick_factor(m1, m2, a, e) -> Float64
 
-1PN-recalibrated correction factor Q_f = exp(2.5 r_S/p₀) of the Peters
+1PN-recalibrated correction factor `Q_f = exp(2.5 r_S/p₀)` of the Peters
 coalescence time (Zwick et al. 2020, DOI 10.1093/mnras/staa1314), with
-r_S = 2GM/c² the Schwarzschild radius of the total mass and p₀ = a(1 − e) the
-pericentre distance. Masses in M☉, `a` in au. Zwick et al. fitted Q_f to
+`r_S = 2GM/c²` the Schwarzschild radius of the total mass and p₀ = a(1 − e) the
+pericentre distance. Masses in M☉, `a` in au. Zwick et al. fitted `Q_f` to
 inspirals evolved with the 3.5PN flux and state it as accurate within 1PN
 precision; they give no validity range, the uncertainties of the fitted
-coefficients overlap only for p₀ ≲ 35 r_S, and the factor is meaningless near
+coefficients overlap only for `p₀ ≲ 35 r_S`, and the factor is meaningless near
 the ISCO. Identifying their initial (a₀, e₀) with the Newtonian elements of the
-engine is ambiguous at O(r_S/p₀). The factor is therefore a sensitivity
+engine is ambiguous at `O(r_S/p₀)`. The factor is therefore a sensitivity
 measure reported on its own; [`gw_inspiral_time`](@ref) never applies it.
 """
 function gw_zwick_factor(m1::Real, m2::Real, a::Real, e::Real)::Float64
@@ -268,8 +268,8 @@ GW frequency [Hz] of a binary of masses `m1`, `m2` [M☉], semi-major axis `a`
 - `:f22`: dominant quadrupole harmonic, f₂₂ = 2f_orb;
 - `:wen`: peak harmonic of Wen (2003, DOI 10.1086/378794),
   f = (√(GM)/π)(1 + e)^{1.1954}/[a(1 − e²)]^{1.5};
-- `:peri`: circular orbit of the pericentre radius, f = π⁻¹ √(GM/r_p³),
-  r_p = a(1 − e).
+- `:peri`: circular orbit of the pericentre radius, `f = π⁻¹ √(GM/r_p³)`,
+  `r_p = a(1 − e)`.
 
 All three coincide at e = 0. The definitions differ by large factors at high
 e, so a product that stores the frequency names the definition in its column.
@@ -312,7 +312,7 @@ e₀·10⁻¹² as the lower limit (extended by up to three further factors of
 10⁻¹² when needed). For e₀ = 0 the track is circular and e stays 0.
 
 Returns `e`, the semi-major axis `a_au` [au] there, the time `time_to_ref_yr`
-[yr] = T(a₀, e₀) − T(a_ref, e_ref) of [`gw_inspiral_time`](@ref), and
+[yr] = `T(a₀, e₀) − T(a_ref, e_ref)` of [`gw_inspiral_time`](@ref), and
 `above_at_record`; a binary already at or above `f_ref` at the record returns
 `NaN` for the three values and `above_at_record = true`. Throws an
 `ArgumentError` for an invalid orbit, a non-positive `f_ref`, an unknown
@@ -481,7 +481,7 @@ the first kind,
                         + (1 − e²) [J_{n−2} − 2Jₙ + J_{n+2}]² + (4/(3n²)) Jₙ² }.
 
 A circular orbit radiates only in n = 2, g(2, 0) = 1 and g(n, 0) = 0 for n ≠ 2,
-and the harmonics sum to the enhancement, Σ_{n≥1} g(n, e) =
+and the harmonics sum to the enhancement, `Σ_{n≥1} g(n, e)` =
 [`gw_enhancement`](@ref)(e). Throws an `ArgumentError` for `n < 1` or `e`
 outside [0, 1).
 
@@ -543,16 +543,16 @@ end
                        distance_kpc::Real = 1.0) -> Float64
 
 Orientation- and polarisation-averaged strain amplitude hₙ of the n-th
-harmonic (frequency fₙ = n f_orb) of a binary of masses `m1`, `m2` [M☉],
+harmonic (frequency `fₙ = n f_orb`) of a binary of masses `m1`, `m2` [M☉],
 semi-major axis `a_au` [au] and eccentricity `e` at distance `distance_kpc`
 [kpc] (Wagg, Breivik & de Mink 2022, LEGWORK, DOI
 10.3847/1538-4365/ac5c52, Eq. 27),
 
     hₙ² = (2^{28/3}/5) (G𝓜)^{10/3} / (c⁸ D²) · g(n, e)/n² · (π f_orb)^{4/3},
 
-with f_orb = (2π)⁻¹ √(GM/a³), 𝓜 the [`chirp_mass`](@ref) and g from
+with `f_orb = (2π)⁻¹ √(GM/a³)`, 𝓜 the [`chirp_mass`](@ref) and g from
 [`peters_mathews_g`](@ref). A circular binary radiates only in n = 2, where
-h₂ = (4/√5) [`gw_amplitude_ldc`](@ref)(𝓜, 2f_orb) = (4/5)^{1/2} h₀, the face-on
+h₂ = (4/√5) [`gw_amplitude_ldc`](@ref)(𝓜, `2f_orb`) = (4/5)^{1/2} h₀, the face-on
 amplitude h₀ = 2𝒜 times the root of the orientation average
 ⟨[(1 + cos²ι)/2]² + cos²ι⟩ = 4/5. The strain scales as 1/D: the
 catalogues store hₙ × D at D = 1 kpc, and the value at a distance D is the
@@ -586,7 +586,7 @@ end
     gw_harmonic_frequency_derivative(m1::Real, m2::Real, a_au::Real, e::Real, n::Integer)
         -> Float64
 
-Orbit-averaged drift ḟₙ = n ḟ_orb [Hz s⁻¹] of the frequency fₙ = n f_orb of the
+Orbit-averaged drift `ḟₙ = n ḟ_orb` [Hz s⁻¹] of the frequency `fₙ = n f_orb` of the
 n-th harmonic under quadrupole radiation, for masses `m1`, `m2` [M☉],
 semi-major axis `a_au` [au] and eccentricity `e` (Peters 1964,
 DOI 10.1103/PhysRev.136.B1224),
@@ -594,7 +594,7 @@ DOI 10.1103/PhysRev.136.B1224),
     ḟ_orb = (48/5) π^{8/3} (G𝓜/c³)^{5/3} (2f_orb)^{11/3} F(e),
 
 with F the [`gw_enhancement`](@ref); for n = 2 at e = 0 it is the circular
-chirp ḟ = (96/5) π^{8/3} (G𝓜/c³)^{5/3} f^{11/3} of f = 2f_orb. Throws an
+chirp ḟ = (96/5) π^{8/3} (G𝓜/c³)^{5/3} f^{11/3} of `f = 2f_orb`. Throws an
 `ArgumentError` for non-positive masses or `a_au`, `e` outside [0, 1) or
 `n < 1`.
 """
@@ -617,7 +617,7 @@ end
     gw_characteristic_strain(m1::Real, m2::Real, a_au::Real, e::Real, n::Integer;
                              distance_kpc::Real = 1.0) -> Float64
 
-Orientation-averaged characteristic strain h_{c,n} of the n-th harmonic of an
+Orientation-averaged characteristic strain `h_{c,n}` of the n-th harmonic of an
 inspiralling binary of masses `m1`, `m2` [M☉], semi-major axis `a_au` [au] and
 eccentricity `e` at distance `distance_kpc` [kpc] (Wagg, Breivik &
 de Mink 2022, LEGWORK, DOI 10.3847/1538-4365/ac5c52, Eq. 26, after Barack &
@@ -625,11 +625,11 @@ Cutler 2004, DOI 10.1103/PhysRevD.69.082005),
 
     h_{c,n}² = (2^{5/3} / (3π^{4/3})) (G𝓜)^{5/3} / (c³ D²) · f_orb^{−1/3} · g(n, e) / (n F(e)),
 
-with f_orb = (2π)⁻¹ √(GM/a³), g from [`peters_mathews_g`](@ref) and F the
-[`gw_enhancement`](@ref). It equals h_{c,n}² = (fₙ²/ḟₙ) hₙ² of the
+with `f_orb = (2π)⁻¹ √(GM/a³)`, g from [`peters_mathews_g`](@ref) and F the
+[`gw_enhancement`](@ref). It equals `h_{c,n}² = (fₙ²/ḟₙ) hₙ²` of the
 [`gw_harmonic_strain`](@ref) hₙ and the drift ḟₙ of
-[`gw_harmonic_frequency_derivative`](@ref), fₙ = n f_orb. The strain scales as
-1/D: the catalogues store h_{c,n} × D at D = 1 kpc, and the value at a
+[`gw_harmonic_frequency_derivative`](@ref), `fₙ = n f_orb`. The strain scales as
+1/D: the catalogues store `h_{c,n}` × D at D = 1 kpc, and the value at a
 distance D is the stored one divided by D in kpc. Throws an `ArgumentError`
 for non-positive masses, `a_au` or distance, `e` outside [0, 1) or `n < 1`.
 """
@@ -671,17 +671,17 @@ const _ROBSON19_CONFUSION = Dict(
     lisa_psd(f_hz::Real; t_obs_yr::Real = 4.0, confusion::Bool = true) -> Float64
 
 Effective sky- and polarisation-averaged strain noise power spectral density
-S_n(f) [Hz⁻¹] of LISA (Robson, Cornish & Liu 2019, DOI
+`S_n(f)` [Hz⁻¹] of LISA (Robson, Cornish & Liu 2019, DOI
 10.1088/1361-6382/ab1101, Eqs. 10, 11, 13 and 14):
 
     S_n(f) = 10/(3L²) [P_OMS + 2(1 + cos²(f/f*)) P_acc/(2πf)⁴] [1 + 0.6 (f/f*)²] + S_c(f),
 
-with L = 2.5 Gm, f* = 19.09 mHz, P_OMS = (1.5×10⁻¹¹ m)² [1 + (2 mHz/f)⁴] Hz⁻¹,
-P_acc = (3×10⁻¹⁵ m s⁻²)² [1 + (0.4 mHz/f)²] [1 + (f/8 mHz)⁴] Hz⁻¹ and the
-Galactic confusion noise S_c(f) = A f^{−7/3} exp(−f^α + β f sin κf)
-[1 + tanh γ(f_k − f)], A = 9×10⁻⁴⁵, with the fit parameters of their Table 1
+with L = 2.5 Gm, f* = 19.09 mHz, `P_OMS = (1.5×10⁻¹¹ m)² [1 + (2 mHz/f)⁴] Hz⁻¹`,
+`P_acc = (3×10⁻¹⁵ m s⁻²)² [1 + (0.4 mHz/f)²] [1 + (f/8 mHz)⁴] Hz⁻¹` and the
+Galactic confusion noise `S_c(f) = A f^{−7/3} exp(−f^α + β f sin κf)`
+`[1 + tanh γ(f_k − f)]`, A = 9×10⁻⁴⁵, with the fit parameters of their Table 1
 for the observation time `t_obs_yr` (0.5, 1, 2 or 4 yr). `confusion = false`
-leaves out S_c (any positive `t_obs_yr` is then accepted). The curve is the one
+leaves out `S_c` (any positive `t_obs_yr` is then accepted). The curve is the one
 LEGWORK uses (Wagg et al. 2022, DOI 10.3847/1538-4365/ac5c52, Eq. 35), so the
 SNRs of [`gw_snr`](@ref) follow its conventions. Throws an `ArgumentError` for
 `f_hz ≤ 0` or an observation time without a confusion fit.
@@ -720,7 +720,7 @@ end
 """Highest harmonic summed for eccentricity `e`: five times the peak harmonic 2(1 + e)^{1.1954}/(1 − e²)^{3/2} of Wen (2003, DOI 10.1086/378794), at least 4."""
 _gw_n_max(e::Float64)::Int = max(4, ceil(Int, 10 * (1 + e)^1.1954 / (1 - e^2)^1.5))
 
-"""Σₙ hₙ²/S_n(fₙ) [s⁻¹] of the binary (`m1`, `m2` [M☉], `a_au`, `e`) at `distance_kpc`."""
+"""`Σₙ hₙ²/S_n(fₙ)` [s⁻¹] of the binary (`m1`, `m2` [M☉], `a_au`, `e`) at `distance_kpc`."""
 function _gw_snr_rate(m1, m2, a_au, e, distance_kpc, t_obs_yr, confusion)::Float64
     f_orb = orbital_frequency(m1, m2, a_au)
     s = 0.0
@@ -744,14 +744,14 @@ given state (Wagg et al. 2022, LEGWORK, DOI 10.3847/1538-4365/ac5c52, Eq. 58):
 
     ρ² = Σₙ ∫ h_{c,n}²/(fₙ² S_n(fₙ)) dfₙ = ∫₀^T Σₙ hₙ²(t)/S_n(fₙ(t)) dt,
 
-the second form by h_{c,n}² = (fₙ²/ḟₙ) hₙ², with hₙ the
-[`gw_harmonic_strain`](@ref), S_n the [`lisa_psd`](@ref) (`t_obs_yr`,
+the second form by `h_{c,n}² = (fₙ²/ḟₙ) hₙ²`, with hₙ the
+[`gw_harmonic_strain`](@ref), `S_n` the [`lisa_psd`](@ref) (`t_obs_yr`,
 `confusion`) and (a, e) evolved over the observation by the Peters (1964)
 equations (Tsit5, relative tolerance 10⁻¹⁰), up to the time the pericentre
 reaches 6GM/c² when that comes before the end of the observation. The time
 integral is an adaptive Gauss–Kronrod quadrature over the evolved orbit with
 relative tolerance `rtol` on ρ²; for a stationary source the integrand is
-constant and ρ² = Σₙ hₙ² T/S_n(fₙ) (LEGWORK Eq. 64), for a circular one only n = 2 enters.
+constant and `ρ² = Σₙ hₙ² T/S_n(fₙ)` (LEGWORK Eq. 64), for a circular one only n = 2 enters.
 Harmonics up to five times the Wen (2003) peak are summed. ρ scales as 1/D, so
 the value at 1 kpc divided by the distance in kpc gives the SNR at that
 distance. Throws an `ArgumentError` for non-positive masses, `a_au`, distance,

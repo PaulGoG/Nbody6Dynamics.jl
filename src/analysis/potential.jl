@@ -46,11 +46,11 @@ end
 
 Newtonian potential ``Φ_i = −Σ_j m_j / r_{ij}`` (`G = 1`, no softening). The
 first form gives the potential of every body of `pos` (3 × n) from all the
-others; the second the potential at the points `targets` (3 × n_t) of the
-bodies at `sources` (3 × n_s) with masses `source_mass`, the form that updates
+others; the second the potential at the points `targets` (3 × `n_t`) of the
+bodies at `sources` (3 × `n_s`) with masses `source_mass`, the form that updates
 a potential by subtraction when bodies leave a set. Bodies at identical
 positions do not interact, which also excludes the self-term. The sum is exact,
-O(n_t n_s), in Float64. On the CPU it is a threaded loop over tiles,
+`O(n_t n_s)`, in Float64. On the CPU it is a threaded loop over tiles,
 vectorised by `@simd`; the first form visits each pair once and holds one
 accumulator of n values per task (two tasks per thread), the second streams
 blocks of sources through the cache for tiles of targets. The summation order

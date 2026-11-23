@@ -530,7 +530,7 @@ candidate and is `NaN` without a bound candidate.
 | `companion_mass_msun` | companion mass `m` | M☉ |
 | `separation_pc` | separation `r` | pc |
 | `semi_major_axis_au` | `a = −G (M• + m)/(2ε)` | au |
-| `eccentricity` | `e = √(1 − |r × v|²/(G (M• + m) a))` | — |
+| `eccentricity` | `e = √(1 − \\|r × v\\|²/(G (M• + m) a))` | — |
 | `specific_energy_km2s2` | `ε = ½ v_rel² − G (M• + m)/r` | km² s⁻² |
 | `in_pair` | the companion is the IMBH's KS partner | — |
 | `t_gw_myr` | Peters coalescence time [`gw_inspiral_time`](@ref) | Myr |
@@ -760,7 +760,7 @@ Two-body state of a pair of seeded IMBHs at one snapshot, from
 | `specific_energy_km2s2` | `ε = ½ v_rel² − G (M₁ + M₂)/r` | km² s⁻² |
 | `bound` | `ε < 0` | — |
 | `semi_major_axis_au` | `a = −G (M₁ + M₂)/(2ε)` | au |
-| `eccentricity` | `e = √(1 − |r × v|²/(G (M₁ + M₂) a))` | — |
+| `eccentricity` | `e = √(1 − \\|r × v\\|²/(G (M₁ + M₂) a))` | — |
 | `period_myr` | Kepler period `2π √(a³/(G (M₁ + M₂)))` | Myr |
 | `t_gw_myr` | Peters coalescence time [`gw_inspiral_time`](@ref) | Myr |
 | `in_pair` | the two are the components of one KS pair | — |

@@ -190,17 +190,17 @@ Intermediate-mass black hole seeded in a cluster (`[merger.clusterK.imbh]`).
 
 # Fields
 - `mass::Float64`: IMBH mass M• [M☉]; exclusive with `mass_fraction`.
-- `mass_fraction::Float64`: M•/M_stars of the cluster's systems,
+- `mass_fraction::Float64`: `M•/M_stars` of the cluster's systems,
   `0 < mass_fraction ≤ 0.05`; exclusive with `mass`.
 - `placement::String`: `"centre"` (the stellar centre of mass) or `"offset"`
   (the centre of mass plus `offset`).
 - `offset::Vector{Float64}`: displacement from the stellar centre of mass
   [pc], cluster frame; used by `"offset"`.
 - `velocity::String`: `"rest"` (the cluster's mean velocity, nudged by
-  10⁻⁶ σ_c in a random direction because the engine's start-up rejects a body
+  10⁻⁶ `σ_c` in a random direction because the engine's start-up rejects a body
   at exact rest),
   `"equipartition"` (a Gaussian draw of per-component variance
-  σ_c² ⟨m⟩/M• about it, Merritt 2005) or `"explicit"` (the mean velocity plus
+  `σ_c² ⟨m⟩/M•` about it, Merritt 2005) or `"explicit"` (the mean velocity plus
   `velocity_kms`).
 - `velocity_kms::Vector{Float64}`: velocity relative to the cluster [km s⁻¹];
   used by `"explicit"`.
@@ -950,7 +950,7 @@ External galactic field of `merger.inp` (`[merger.tidal]`, `KZ(14)` and the
   configuration's centre of mass (`kz14 = 5`); both non-zero
 - `velocity_frame`: `"rotating"` or `"inertial"`. Under `kz14 = 1, 2` the
   engine integrates in the frame that rotates with the circular Galactic
-  orbit, Ω = Ω ẑ (Ω = A − B = 26.4 km s⁻¹ kpc⁻¹ for `kz14 = 1`, V_G/R_G
+  orbit, Ω = Ω ẑ (Ω = A − B = 26.4 km s⁻¹ kpc⁻¹ for `kz14 = 1`, `V_G/R_G`
   for `kz14 = 2`), and takes the `dat.10` velocities as velocities in that
   frame (`xtrnl0.F`, `xtrnld.f`). The generator builds the clusters and the
   orbit in an inertial frame, so `"inertial"` (the default) converts them,
@@ -995,7 +995,7 @@ booked and its mass removed (engine line `TDE`).
   Cho et al. 2026a) or `"stellar"` (r_t = R★ (M/m★)^{1/3} with the
   stellar-evolution radius; requires `stellar.kz19 ≥ 3`)
 - `r_acc_pc`: disruption radius of `"fixed"` [pc]; > 0 there
-- `partial`: `"off"` (full disruption when r_t/q ≥ `beta_full`), `"gamma43"`
+- `partial`: `"off"` (full disruption when `r_t/q` ≥ `beta_full`), `"gamma43"`
   or `"gamma53"` (full disruption above β = 1.85 or 0.9 and partial
   disruption down to 0.6 or 0.5, the star losing the fraction of Guillochon &
   Ramirez-Ruiz 2013, DOI 10.1088/0004-637X/767/1/25). Their fits hold for

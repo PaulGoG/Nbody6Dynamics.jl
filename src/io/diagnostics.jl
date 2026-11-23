@@ -313,7 +313,7 @@ end
 
 """
 Parse a single ADJUST line.  Supports two formats:
-  - Positional:  T_NB  T_Myr  QV  DE  E_TOT  N  NPAIRS  RSCALE …
+  - Positional:  `T_NB  T_Myr  QV  DE  E_TOT  N  NPAIRS  RSCALE …`
   - Key-value:   TIME val  T[Myr] val  Q val  DE val … ETOT val …
 Reals are read as Fortran reals (`E` or `D` exponent). Returns `nothing` for
 a line that does not parse (too few tokens, an overflowed `****` field), which
@@ -337,7 +337,7 @@ function _parse_adjust_fields(line::AbstractString)::Union{Nothing,_AdjustFields
     end
 end
 
-"""Parse positional ADJUST: T_NB T_Myr QV DE E_TOT N NPAIRS RSCALE …"""
+"""Parse positional ADJUST: `T_NB T_Myr QV DE E_TOT N NPAIRS RSCALE …`"""
 function _parse_adjust_positional(tokens)::_AdjustFields
     length(tokens) >= 8 || error("Too few tokens")
     _AdjustFields(

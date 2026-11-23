@@ -143,8 +143,8 @@ membership thresholds of [`radial_profile`](@ref). `density_neighbours` is
 the neighbour rank of the Casertano–Hut density estimate behind the core
 radius and core density. The segregation keys (`msr_n_tracer`, `msr_scan`,
 `msr_n_random`, `msr_n_random_small`, `msr_n_small`, `msr_seed`,
-`msr_threshold`) fix the tracer class, the N_MST scan, the random comparison
-sets and seed of [`mass_segregation`](@ref) and the Λ_MSR level of the
+`msr_threshold`) fix the tracer class, the `N_MST` scan, the random comparison
+sets and seed of [`mass_segregation`](@ref) and the `Λ_MSR` level of the
 segregation time. The rotation keys (`rotation_n_min`, `rotation_nbins_max`,
 `rotation_n_null`) are the shell membership, shell cap and null draws of
 [`rotation_analysis`](@ref). The shape keys (`shape_n_min_shell`,
@@ -263,7 +263,7 @@ bound set.
 - `population_q_min`: mass-ratio limit of the q-restricted fraction; 0 < q_min < 1
 - `population_m1_min`, `population_m1_max`: primary-mass window of the q-restricted
   fraction [M☉], by default 0.47–0.76 (Milone et al. 2012,
-  doi:10.1051/0004-6361/201016384); 0 ≤ m1_min < m1_max
+  doi:10.1051/0004-6361/201016384); `0 ≤ m1_min < m1_max`
 - `population_edges`: shell edges replacing the frame's default (mass fractions
   from 0 to 1, or multiples of r_h from 0, `Inf` allowed); strictly increasing;
   empty = the frame's default
@@ -984,9 +984,9 @@ one: `NEW CHAIN`). The remaining fields hold what the kind carries, with
 |---|---|---|---|---|---|---|---|---|
 | `:ks_rectification`, `:ks_new`, `:ks_new_compact`, `:ks_new_mdot`, `:ks_end_mdot` | NM1, NM2, NMS | KW1, KW2, KWS | — | — | E_b | M1 + M2 | — | — |
 | `:remnant_formation` | NAME | K* before, KW after | — | — | — | M1 after | M0 − M1 | — |
-| `:kick_*` | NAME | K*0, K*, K*(ICM) | — | — | — | MN after | M0 − MN | VK |
+| `:kick_*` | NAME | `K*0`, `K*`, `K*(ICM)` | — | — | — | MN after | M0 − MN | VK |
 | `:collision` | NM1, NM2, NMS | KW1, KW2, KWS | NSYS | — | E_b | M3 (product) | — | — |
-| `:merged_star` | NM1, NM2 | K*(I1), K*(I2), K*(INEW) | — | — | — | M(INEW) | DM lost | — |
+| `:merged_star` | NM1, NM2 | `K*(I1)`, `K*(I2)`, `K*(INEW)` | — | — | — | M(INEW) | DM lost | — |
 | `:coalescence` | N1, N2 | KW1, KW2, S | IQCOLL | — | E_b | M12S (product) | DM lost | — |
 | `:escape` | — | — | NESC | N after | total E (BE(3)) | M* total after | — | — |
 | `:supernova_no_remnant` | NM | K* before, 15 | — | — | — | M1 | — | — |
@@ -1227,7 +1227,7 @@ end
 """
     BinaryEvolutionSnapshot
 
-All regularised binaries from one bev.82_* file; `time_myr` is the header
+All regularised binaries from one `bev.82_*` file; `time_myr` is the header
 TPHYS [Myr] and `n_pairs` the header NPAIRS.
 """
 struct BinaryEvolutionSnapshot

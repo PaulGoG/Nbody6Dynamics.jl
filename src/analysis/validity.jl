@@ -695,8 +695,8 @@ N + NBIN0 − NPAIRS + 100 bodies at each start or restart (`intgrt.F`) and inde
 so KS pairs beyond NBIN0 + 100 overrun it (500 more slots at a cold start; the test ignores them); the
 merger table of stable hierarchies holds MMAX − 1 entries (`impact.f`). From the adjustment records:
 `npairs_max`, `nmerge_max`; `nbin0` from the log (`-1` unknown); `simd_margin` = 100,
-`simd_headroom` = 100 − (npairs_max − nbin0) (NaN when nbin0 is unknown); `mmax` from
-`build_info["engine_limits"]["MMAX"]` (`-1` unknown), `merge_table_headroom` = mmax − 1 − nmerge_max (`-1`
+`simd_headroom` = `100 − (npairs_max − nbin0)` (NaN when nbin0 is unknown); `mmax` from
+`build_info["engine_limits"]["MMAX"]` (`-1` unknown), `merge_table_headroom` = `mmax − 1 − nmerge_max` (`-1`
 when mmax is unknown); `verdict` `"ok"`, `"flag"` (a headroom below zero for the SIMD library, or at or
 below zero for the merger table) or `"unavailable"` (no records); `reasons` names each flag.
 """
@@ -816,7 +816,7 @@ The sections:
   times of virialisation (2T/|W| within `virial_tolerance` from then on; the
   drift of `ln r_10` per crossing time and its stationarity are reported
   beside it, since stellar mass loss and relaxation move the inner radii of a
-  virialised cluster), kinematic relaxation (λ_R stationary) and mixing
+  virialised cluster), kinematic relaxation (`λ_R` stationary) and mixing
   (|a₊₂| ≤ 2σ for every progenitor from then on), each `"reached"`,
   `"not_reached"`, `"undetermined"` (or `"not_applicable"` for mixing with
   fewer than two progenitors), also in initial half-mass relaxation times

@@ -415,7 +415,7 @@ pairs). The first contact `t_contact` and the core coalescence `t_core` are
 marked with their times, and so is every join of the merger tree (the centre
 coalescence, `t_coalesce` for two clusters) and, for three or more clusters,
 the core coalescence of every join; the `interacting` and `coalescing`
-regimes are shaded. For n_clusters ≤ 5 every pair is shown individually, its
+regimes are shaded. For `n_clusters` ≤ 5 every pair is shown individually, its
 threshold dashed in the same colour; for more clusters the min/max envelope
 and mean of the separations are drawn with the mean threshold dashed, the
 mean offset muted and the number of distinct clusters (`n_distinct`) on a
@@ -700,8 +700,8 @@ end
     plot_cluster_virial(snaps, cluster_ranges, cfg; epochs = nothing, bound = (;),
                         filename = "merger_cluster_virial")
 
-Plot the internal virial ratio Q_i(t) of each initial cluster. For
-n_clusters ≤ 5 every cluster is shown individually; for larger N, a min/max
+Plot the internal virial ratio `Q_i(t)` of each initial cluster. For
+`n_clusters` ≤ 5 every cluster is shown individually; for larger N, a min/max
 envelope with the mean is drawn. A reference line at Q = 0.5 marks virial
 equilibrium.  The time axis is in Myr when `cfg.units == "physical"`
 (Q is dimensionless).

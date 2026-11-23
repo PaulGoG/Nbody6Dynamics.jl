@@ -68,10 +68,10 @@ end
                             filename = "evolutionary_clock")
 
 Evolutionary-clock histogram for the main-sequence population (K* ≤ 1) of
-one snapshot: the age fraction t/T_MS, where t is the snapshot epoch [Myr]
-and T_MS the per-star main-sequence lifetime TM [Myr] from SSE, clamped to
-[0, 2].  Stars past turnoff (t/T_MS > 1) are counted in an annotation and
-the T_MS boundary is marked.  Records with non-finite or non-positive TM
+one snapshot: the age fraction `t/T_MS`, where t is the snapshot epoch [Myr]
+and `T_MS` the per-star main-sequence lifetime TM [Myr] from SSE, clamped to
+[0, 2].  Stars past turnoff (`t/T_MS > 1`) are counted in an annotation and
+the `T_MS` boundary is marked.  Records with non-finite or non-positive TM
 are skipped.  The count axis turns logarithmic when the largest bin exceeds
 twenty times the median occupied bin, which otherwise flattens every bin but
 one.

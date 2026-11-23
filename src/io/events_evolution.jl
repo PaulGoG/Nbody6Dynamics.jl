@@ -285,7 +285,7 @@ layout specification.
 | `semi_nb`, `ecc` | NB, — | a, e (hierarchy line: inner; binary line of a hierarchy: outer) |
 | `eb_nb` | NB | binding energy (`:quad_escape` EB1, `:hierarchy_escape` μ·HM) |
 | `period_d` | d | period |
-| `rstar_over_peri` | — | `:binary_escape` max(R*)/pericentre (label R*/PM) |
+| `rstar_over_peri` | — | `:binary_escape` `max(R*)/pericentre` (label `R*/PM`) |
 | `v_nb`, `r_nb` | NB | `:binary_escape` c.m. speed, distance from the density centre |
 | `e_cm_nb` | NB | `:binary_escape` c.m. energy in the cluster field EI |
 | `radius1_rsun`, `radius2_rsun` | R☉ | `:binary_escape` stellar radii |
@@ -369,17 +369,17 @@ member receiving a natal kick).
 | `dm_nb`, `dmr` | NB, — | mass lost in this look-up step, relative to the mass |
 | `spin1`, `spin2`, `q_ratio` | — | `:binary_kick` ASPN, QR = m₁/m₂ (not ≤ 1) |
 | `j_spin1_nb`, `j_spin2_nb`, `spin_factor` | NB, — | `:binary_kick` XJSPIN, SPNFAC |
-| `v_esc_kms`, `v_dis_kms` | km s⁻¹ | `:binary_kick` (2M/R + 4)^½·V*, (2M/R)^½·V* |
+| `v_esc_kms`, `v_dis_kms` | km s⁻¹ | `:binary_kick` `(2M/R + 4)^½·V*`, `(2M/R)^½·V*` |
 | `r_over_semi` | — | `:binary_kick` R(IPAIR)/SEMI |
 | `x1_pc`, `v1_kms`, `x2_pc`, `v2_kms` | pc, km s⁻¹ | `:binary_kick`, absolute frame, pre-kick |
 | `overflow` | — | a field was printed as asterisks (read as absent) |
 
-Corrections. Field 26 of the KSREG layout, labelled RAD1,2,S[*], is the
+Corrections. Field 26 of the KSREG layout, labelled `RAD1,2,S[*]`, is the
 separation in R☉ (`r12_rsun`). `BINARY KICK` labels the separation R12[au]
 but prints R(IPAIR) in N-body units (`r12_nb`). In `MDNEW KSREG` only the
 time, the component names and types, the masses [NB, M☉], the radii and DM,
 DMR are current: its e, a, EB repeat the preceding MDEND line, IPAIR, DTAU,
-R12, H, GAMMA and the derived period and R12[*] belong to whatever pair now
+R12, H, GAMMA and the derived period and `R12[*]` belong to whatever pair now
 occupies the old index, the S name and type are those of the evolving star,
 and STEP, NPERT, NB(ICM), RI, VI refer to that star; all of these are stored
 as absent. The orbit of the re-regularised pair is in the `NEW KSREG` line

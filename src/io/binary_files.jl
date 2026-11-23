@@ -143,14 +143,14 @@ One KS pair of a `bdat.9_<t>` listing, written list-directed by `bindat.f`
 | # | Label | Field | Unit |
 |---|---|---|---|
 | 1–2 | NAME(I1), NAME(I2) | `name1`, `name2` | — |
-| 3–4 | M1[M*], M2[M*] | `mass1_msun`, `mass2_msun` | M☉ |
+| 3–4 | `M1[M*]`, `M2[M*]` | `mass1_msun`, `mass2_msun` | M☉ |
 | 5 | EB[NB] | `binding_energy_nb` (μH) | NB |
 | 6 | ECC | `eccentricity` | — |
 | 7 | P[Days] | `period_d` | d |
 | 8 | SEMI[AU] | `semi_major_axis_au` | AU |
-| 9 | RI[PC] | `distance_density_centre_pc` (‖x_cm − x_dens‖) | pc |
+| 9 | RI[PC] | `distance_density_centre_pc` (`‖x_cm − x_dens‖`) | pc |
 | 10 | VI[km/s] | `speed_cm_kms` (‖v_cm‖, not relative to the cluster) | km s⁻¹ |
-| 11–12 | K*(I1), K*(I2) | `kstar1`, `kstar2` | — |
+| 11–12 | `K*(I1)`, `K*(I2)` | `kstar1`, `kstar2` | — |
 | 13 | ZN[NB] | `mean_motion_nb` (√((m₁ + m₂)/a³)) | NB |
 | 14 | RP[NB] | `separation_nb` (R = ΣU²) | NB |
 | 15 | STEP(I1)[NB] | `step_ks_nb` | NB |
@@ -424,7 +424,7 @@ perturbation test.
 | # | Label | Field | Unit |
 |---|---|---|---|
 | 1–2 | NAME(I1), NAME(I2) | `name1`, `name2` (as printed) | — |
-| 3–4 | M(I1)[M*], M(I2)[M*] | `mass1_msun`, `mass2_msun` | M☉ |
+| 3–4 | `M(I1)[M*]`, `M(I2)[M*]` | `mass1_msun`, `mass2_msun` | M☉ |
 | 5 | EB[NB] | `binding_energy_nb` (−½m₁m₂/a) | NB |
 | 6 | ECC | `eccentricity` | — |
 | 7 | P[Days] | `period_d` | d |
@@ -433,7 +433,7 @@ perturbation test.
 | 10 | STEP(ICM)[NB] | `step2_nb` = STEP(JMIN), step of member 2 | NB |
 | 11 | RI[PC] | `distance_density_centre_pc` (pair c.m. from RDENS) | pc |
 | 12 | VI[km/s] | `speed_cm_kms` (pair c.m. speed, absolute) | km s⁻¹ |
-| 13–14 | K*(I1), K*(I2) | `kstar1`, `kstar2` | — |
+| 13–14 | `K*(I1)`, `K*(I2)` | `kstar1`, `kstar2` | — |
 
 Corrections: the two step columns are labelled one position off (the first
 holds STEP(I), the second STEP(JMIN)) and are stored under their true meaning.
@@ -709,12 +709,12 @@ from [`read_collision_log`](@ref).
 |---|---|---|---|
 | 1 | TIME[NB] | `time_nb` | NB |
 | 2–3 | NAME(I1), NAME(I2) | `name1`, `name2` | — |
-| 4–5 | K*(I1), K*(I2) | `kstar1`, `kstar2` (before) | — |
+| 4–5 | `K*(I1)`, `K*(I2)` | `kstar1`, `kstar2` (before) | — |
 | 6 | K*(INEW) | `kstar_product` | — |
-| 7–8 | M(I1)[M*], M(I2)[M*] | `mass1_msun`, `mass2_msun` (before) | M☉ |
+| 7–8 | `M(I1)[M*]`, `M(I2)[M*]` | `mass1_msun`, `mass2_msun` (before) | M☉ |
 | 9 | M(INEW)[M*] | `mass_product_msun` | M☉ |
 | 10 | DM[M*] | `mass_lost_msun` | M☉ |
-| 11–12 | RS(I1)[R*], RS(I2)[R*] | `radius1_rsun`, `radius2_rsun` (before) | R☉ |
+| 11–12 | `RS(I1)[R*]`, `RS(I2)[R*]` | `radius1_rsun`, `radius2_rsun` (before) | R☉ |
 | 13 | RI[RC] | `distance_over_core_radius` (I1 from RDENS) | — |
 | 14 | R12[R*] | `separation_rsun` | R☉ |
 | 15 | ECC | `eccentricity` (1 − R/a, exact at pericentre only; < 0 occurs) | — |
@@ -830,7 +830,7 @@ One coalescence of `coal.24`, written by `coal.f` (FORMAT 56, fixed width,
 | 14 | EB | `binding_energy_nb` (μH before KSTERM) | NB |
 | 15 | DP | `tidal_potential_correction_nb` (POT2 − POT1) | NB |
 | 16 | P[days] | `period_d` | d |
-| 17–18 | M1[M*], M2[M*] | `mass1_msun`, `mass2_msun` (BODY·M*, before) | M☉ |
+| 17–18 | `M1[M*]`, `M2[M*]` | `mass1_msun`, `mass2_msun` (`BODY·M*`, before) | M☉ |
 | 19 | MTOT[M*] | `mass_product_msun` | M☉ |
 | 20 | DM[M*] | `mass_lost_msun` | M☉ |
 | 21 | RAD1[R*] | `radius_survivor_rsun` (survivor slot, possibly swapped from I2) | R☉ |
@@ -952,11 +952,11 @@ Roche or GR-flagged pairs), from [`read_cmbody_log`](@ref).
 |---|---|---|---|
 | 1 | TIME[NB] | `time_nb` | NB |
 | 2–3 | NAME(I1), NAME(I2) | `name1`, `name2` (after the swap to the heavier body) | — |
-| 4–5 | K*(I1), K*(I2) | `kstar1`, `kstar2` (after MIX) | — |
+| 4–5 | `K*(I1)`, `K*(I2)` | `kstar1`, `kstar2` (after MIX) | — |
 | 6 | IQCOLL | `iqcoll` | — |
-| 7–8 | M(I1)[M*], M(I2)[M*] | `mass1_msun`, `mass2_msun` (slot masses) | M☉ |
+| 7–8 | `M(I1)[M*]`, `M(I2)[M*]` | `mass1_msun`, `mass2_msun` (slot masses) | M☉ |
 | 9 | DM[M*] | `mass_lost_msun` | M☉ |
-| 10–11 | RS(I1)[R*], RS(I2)[R*] | `radius1_rsun`, `radius2_rsun` (after MIX) | R☉ |
+| 10–11 | `RS(I1)[R*]`, `RS(I2)[R*]` | `radius1_rsun`, `radius2_rsun` (after MIX) | R☉ |
 | 12 | RI/RC | `distance_over_core_radius` (ghost I2 from RDENS) | — |
 | 13 | R12[R*] | `collision_distance_rsun` | R☉ |
 | 14 | ECC | `eccentricity` (1 − R/a) | — |
@@ -1049,9 +1049,9 @@ Roche stage).
 |---|---|---|---|
 | 1 | Time[Myr] | `time_myr` (TPHYS) | Myr |
 | 2–3 | NAME(I1), NAME(I2) | `name1`, `name2` | — |
-| 4–6 | K*(I1), K*(I2), K*(ICM) | `kstar1`, `kstar2`, `kstar_cm` | — |
-| 7–8 | M(I1)[M*], M(I2)[M*] | `mass1_msun`, `mass2_msun` | M☉ |
-| 9–10 | RS(I1)[R*], RS(I2)[R*] | `radius1_rsun`, `radius2_rsun` | R☉ |
+| 4–6 | `K*(I1)`, `K*(I2)`, `K*(ICM)` | `kstar1`, `kstar2`, `kstar_cm` | — |
+| 7–8 | `M(I1)[M*]`, `M(I2)[M*]` | `mass1_msun`, `mass2_msun` | M☉ |
+| 9–10 | `RS(I1)[R*]`, `RS(I2)[R*]` | `radius1_rsun`, `radius2_rsun` | R☉ |
 | 11 | RI[PC] | `distance_density_centre_pc` (‖X(ICM) − RDENS‖) | pc |
 | 12 | ECC | `eccentricity` | — |
 | 13 | SEMI[R*] | `semi_major_axis_rsun` | R☉ |
@@ -1062,7 +1062,7 @@ Hazards: TPHYS is the COMMON value last set by MDOT, ROCHE, MIX or DEGEN and
 may lag TTOT·T* [UNSURE in the dossier]; for a merged or ghost pair the
 eccentricity is that of the inner binary, from UM with TDOT2 ignored;
 `iqcoll` is not set by BINEV (−2 after a KS collision, else 0). A stage is
-not written when K*(I1) + K*(I2) + K*(ICM) equals the sum of either of the
+not written when `K*(I1) + K*(I2) + K*(ICM)` equals the sum of either of the
 two previous calls, of any pair.
 """
 Base.@kwdef struct BinaryStageRecord
@@ -1145,8 +1145,8 @@ One KS pair with a degenerate member in `degen.4`, written list-directed by
 | 5 | PERI/RS | `pericentre_over_radius` (a(1 − e)/max R*) | — |
 | 6 | P[days] | `period_d` | d |
 | 7 | RI[PC] | `cm_distance_pc` (RCM·R*) | pc |
-| 8–9 | M(I1)[M*], M(I2)[M*] | `mass1_msun`, `mass2_msun` | M☉ |
-| 10–12 | K*(I1), K*(I2), K*(ICM) | `kstar1`, `kstar2`, `kstar_cm` | — |
+| 8–9 | `M(I1)[M*]`, `M(I2)[M*]` | `mass1_msun`, `mass2_msun` | M☉ |
+| 10–12 | `K*(I1)`, `K*(I2)`, `K*(ICM)` | `kstar1`, `kstar2`, `kstar_cm` | — |
 | 13–14 | NAME(I1), NAME(I2) | `name1`, `name2` | — |
 
 Hyperbolic pairs with PERI/RS > 5 are not written. No sample run contains a
@@ -1240,7 +1240,7 @@ from [`read_escaped_binary_log`](@ref).
 | 16–17 | AGE1,2[Myr] | `age1_myr`, `age2_myr` (TIME·T* − EPOCH) | Myr |
 | 18–19 | EPOCH1,2 [Myr] | `epoch1_myr`, `epoch2_myr` | Myr |
 
-Correction: columns 14–15 are labelled `[K]` but hold log₁₀ T_eff; they are
+Correction: columns 14–15 are labelled `[K]` but hold log₁₀ `T_eff`; they are
 stored as `log_teff1`, `log_teff2`. No orbital elements are written: a, e
 and P are on the BINARY ESCAPE line of the same ADJUST, matched by names.
 `overflow` is `true` when a field was printed as asterisks (read as absent).
@@ -1371,7 +1371,7 @@ those of the outer orbit). Fields a kind does not carry are `NaN`, `0` or
 | ECC1 (F6.2) | `eccentricity_outer` | — |
 | PERI0 | `pericentre_inner_nb` (a(1 − e)) | NB |
 | PERI0M | `pericentre_inner_min_nb` (a(1 − e_max)) | NB |
-| P1/P0 | `period_ratio` (P_out/P_in) | — |
+| P1/P0 | `period_ratio` (`P_out/P_in`) | — |
 | M(INCM)/M(I3) | `mass_ratio_inner_outer` | — |
 | PCR/SEMI0 | `pcrit_over_semi_inner` (PCRIT of the last IMPACT) | — |
 | M(INCM)/<M> | `mass_inner_over_mean` | — |
@@ -1380,9 +1380,9 @@ those of the outer orbit). Fields a kind does not carry are `NaN`, `0` or
 | NAME(I1), NAME(I2), NAME(I3) | `name1`, `name2`, `name_outer` | — |
 | K*(INCM) | `kstar_inner_cm` (−10 when NAME(I) < 0, as printed) | — |
 | ECC0 (F6.2) | `eccentricity_inner` (Runge–Lenz vector) | — |
-| ECCMIN (F6.2) | `eccentricity_jz` (√(sin²i + e²cos²i) = √(1 − j_z²), the inner eccentricity at which the dimensionless angular momentum equals its conserved z-component j_z = √(1 − e²) cos i; not a minimum, despite the label) | — |
+| ECCMIN (F6.2) | `eccentricity_jz` (`√(sin²i + e²cos²i) = √(1 − j_z²)`, the inner eccentricity at which the dimensionless angular momentum equals its conserved z-component `j_z = √(1 − e²) cos i`; not a minimum, despite the label) | — |
 | ECCMAX (F6.2) | `eccentricity_max` (Heggie maximum) | — |
-| K*(I1), K*(I2) | `kstar1`, `kstar2` | — |
+| `K*(I1)`, `K*(I2)` | `kstar1`, `kstar2` | — |
 | RSM | `radius_max_nb` (max stellar radius) | NB |
 
 | END HIAR label | Field | Unit |
@@ -1392,7 +1392,7 @@ those of the outer orbit). Fields a kind does not carry are `NaN`, `0` or
 | SEMI0 | `semi_major_axis_outer_nb` | NB |
 | ECC0 (F6.2) | `eccentricity_outer` | — |
 | PERI0 | `pericentre_outer_over_apocentre_inner` (/ RAP) | — |
-| P0F/P0I | `period_ratio` (P_out now / P_in at the merger) | — |
+| P0F/P0I | `period_ratio` (`P_out` now / `P_in` at the merger) | — |
 | RC/RSCALE | `core_radius_over_rscale` | — |
 | GAMMA(INCM) | `gamma` (perturbation of the merged pair) | — |
 | NKI, NKF | `n_inner_periods`, `n_outer_periods` (since the merger) | — |

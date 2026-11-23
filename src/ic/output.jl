@@ -70,12 +70,12 @@ end
     to_nbody_units!(mass, pos, vel, M_total_solar, rbar_pc)
 
 Convert from physical units (M☉, pc, km/s) to N-body units (G = 1,
-M_total = 1, length unit `rbar_pc`) in-place.
+`M_total` = 1, length unit `rbar_pc`) in-place.
 
 The callers pass the half-mass radius of the whole initial configuration as
 `rbar_pc`, and the engine reads the result with `KZ(22) = 2`, which skips its
 rescaling to E = -1/4. The total energy is therefore not -1/4: an isolated
-King W₀ = 6 cluster starts near -0.20 (r_V ≈ 1.25 r_h), and a bound pair lower
+King W₀ = 6 cluster starts near -0.20 (`r_V ≈ 1.25 r_h`), and a bound pair lower
 still, its orbital binding energy adding to the total.
 
 # N-body scaling
@@ -1997,7 +1997,7 @@ the realised `e_realised` and `q_realised` of the control's systems,
 
 With `imbh_record` (seeded IMBHs) the top-level `[imbh]` table holds the
 per-IMBH fields of the first IMBH: its body name `name`, `cluster`,
-`mass_msun`, the realised `mass_fraction` M•/M_stars, `mean_stellar_mass_msun`
+`mass_msun`, the realised `mass_fraction` `M•/M_stars`, `mean_stellar_mass_msun`
 (per system), `sigma_c_kms`, `placement`, `velocity_mode`, `response`,
 `jeans_factors` (empty for a rigid response), `spin` and the written state
 `position_pc` and `velocity_kms` (in the engine's frame). It adds `route`

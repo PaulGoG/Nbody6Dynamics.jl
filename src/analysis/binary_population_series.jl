@@ -15,9 +15,9 @@ snapshot, masses in M☉.
 | `snapshot` | index of the snapshot in the input vector | — |
 | `t_nb`, `t_myr` | snapshot time | NB, Myr |
 | `level` | census level: `:ks` (E, KS pairs) or `:bound` (P, bound pairs) | — |
-| `radius_frame` | `:lagrangian` (enclosed-mass bins), `:rh` (bins in r/r_h), `:projected_rh` (bins in R/R_h) or `:milone` (core, half-mass and outer regions in projection) | — |
+| `radius_frame` | `:lagrangian` (enclosed-mass bins), `:rh` (bins in `r/r_h`), `:projected_rh` (bins in `R/R_h`) or `:milone` (core, half-mass and outer regions in projection) | — |
 | `bin` | 0 for all systems, else the shell index 1, 2, … | — |
-| `edge_lo`, `edge_hi` | shell edges: mass fractions (`:lagrangian`), multiples of r_h (`:rh`) or of R_h (`:projected_rh`, `:milone`) | — |
+| `edge_lo`, `edge_hi` | shell edges: mass fractions (`:lagrangian`), multiples of `r_h` (`:rh`) or of `R_h` (`:projected_rh`, `:milone`) | — |
 | `r_lo_nb`, `r_hi_nb` | shell radii; `r_hi_nb` is `NaN` for an empty Lagrangian shell, whose `r_lo_nb` is the outer radius of the last non-empty shell inside it | NB |
 | `class` | `:all` or the `key` of a [`STELLAR_CLASSES`](@ref) entry | — |
 | `n_singles` | single stars (of the class) | — |
@@ -141,7 +141,7 @@ class, in that order.
   of Milone et al. 2012)
 - `edges`: shell edges, strictly increasing from 0; mass fractions ending at 1
   for `:lagrangian` (default `[0, 0.1, 0.25, 0.5, 0.75, 0.9, 1]`), multiples
-  of r_h for `:rh` and of R_h for `:projected_rh` (default
+  of `r_h` for `:rh` and of `R_h` for `:projected_rh` (default
   `[0, 0.5, 1, 2, 4, Inf]`); `:milone` takes no edges
 - `centre`: `:shrinking_sphere` ([`shrinking_sphere_centre`](@ref) of the
   stars of each snapshot, with `centre_kwargs`), `:origin`, or a fixed point
@@ -187,7 +187,7 @@ of its centre of mass; its primary is the heavier component and
 q = m₂/m₁ ≤ 1. Masses are converted to M☉ with [`zmbar`](@ref).
 
 Radii are measured from the centre of each snapshot, computed once for all
-levels. The half-mass radius r_h of a set of systems is the radius of the
+levels. The half-mass radius `r_h` of a set of systems is the radius of the
 first system, in radius order, at which the enclosed mass reaches half the
 total. With `:rh` shell b holds the systems with
 ``e_b r_h ≤ r < e_{b+1} r_h``; with `:lagrangian` those whose enclosed mass
@@ -195,25 +195,25 @@ fraction lies in ``(e_b, e_{b+1}]``. Bin 0 holds every system.
 
 The projected frames take the projected radius R, the distance from the
 centre in the plane normal to `projection_axis`, and the projected half-mass
-radius R_h, defined from R as r_h is from r. With `:projected_rh` shell b holds
+radius `R_h`, defined from R as `r_h` is from r. With `:projected_rh` shell b holds
 the systems with ``e_b R_h ≤ R < e_{b+1} R_h``. `:milone` has the three regions
 of Milone et al. (2012, DOI 10.1051/0004-6361/201016384, §4): bin 1
 ``R < R_c``, bin 2 ``R_c ≤ R < R_h`` and bin 3 ``R_h ≤ R < 2R_h``, with
-`edge_lo`, `edge_hi` in units of R_h. Their outer region is everything outside
-R_h within the field of view; the upper edge at 2 R_h is a choice of this
-package. R_c is the projected radius at which the
+`edge_lo`, `edge_hi` in units of `R_h`. Their outer region is everything outside
+`R_h` within the field of view; the upper edge at 2 `R_h` is a choice of this
+package. `R_c` is the projected radius at which the
 projected number density of the systems falls to half its central value. With
 ``n_a = \\max(20, ⌈0.01 N⌉)`` systems, the central density is that inside the
 projected radius of the ``n_a``-th system in R order, and the profile is
 measured in consecutive annuli of ``n_a`` systems each, placed at their
 area-weighted mean radius ``\\sqrt{(R_\\mathrm{in}^2 + R_\\mathrm{out}^2)/2}``
-(the central disc at ``R_{n_a}/\\sqrt{2}``); R_c is interpolated linearly in R
+(the central disc at ``R_{n_a}/\\sqrt{2}``); `R_c` is interpolated linearly in R
 between the last point above half the central density and the first at or
 below it. It is `NaN`, and bins 1 and 2 are empty, when the profile does not
 fall to half, or with fewer than ``2n_a`` systems.
 
 With a finite `r_tide_nb` the systems beyond the tidal radius are removed
-first; every count, r_h, R_h and R_c refer to the systems inside it.
+first; every count, `r_h`, `R_h` and `R_c` refer to the systems inside it.
 
 With ``N_s`` singles and ``N_b`` binaries of total masses ``M_s`` and ``M_b``,
 the number fraction is ``f_b = N_b/(N_s + N_b)``, with binomial standard error

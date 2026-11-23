@@ -8,7 +8,7 @@
 Short commit hash of the git repository rooted at `dir`, with a `-dirty`
 suffix when the working tree has uncommitted changes; `"unknown"` when `dir`
 is not the top level of a repository or git is unavailable. Used to stamp run
-provenance (tagsave-equivalent) into RUN_INFO.toml and merger_ic.toml.
+provenance (tagsave-equivalent) into `RUN_INFO.toml` and `merger_ic.toml`.
 
 git resolves a directory without its own `.git` against the nearest enclosing
 repository, so a plain subdirectory would report its parent's commit; the
@@ -147,7 +147,7 @@ end
 Copy finished figures to a manuscript figures directory with provenance
 attached: each file is copied as `<run_id>__<name>` and a TOML sidecar
 `<run_id>__<name>.provenance.toml` records the producing run, the package
-and backend commits (from the run's RUN_INFO.toml when `run_dir` is given),
+and backend commits (from the run's `RUN_INFO.toml` when `run_dir` is given),
 and the export date. `dest_dir` is caller-supplied, since the package
 hardcodes no paths outside its own tree. Existing files are backed up, never
 overwritten. Returns the destination paths.

@@ -10,19 +10,19 @@ using LinearAlgebra: dot, norm
     AngularMomentumBudget
 
 Angular-momentum bookkeeping of a snapshot series (N-body units unless noted), one column
-per snapshot: `time_nb`, `time_myr`; the elapsed relaxation times `n_rh` (2 × n_t,
-∫dt/t_rh of the bound set for the two Coulomb factors); the internal angular momentum of
-all stars, about their centre of mass and mean velocity, `l_total` (3 × n_t) and the
-cumulative `l_removed`, `l_added`, `l_stellar`, `l_remnant` (3 × n_t: the internal angular
+per snapshot: `time_nb`, `time_myr`; the elapsed relaxation times `n_rh` (2 × `n_t`,
+`∫dt/t_rh` of the bound set for the two Coulomb factors); the internal angular momentum of
+all stars, about their centre of mass and mean velocity, `l_total` (3 × `n_t`) and the
+cumulative `l_removed`, `l_added`, `l_stellar`, `l_remnant` (3 × `n_t`: the internal angular
 momentum carried off by the stars that left the snapshots, brought in by those that
 appeared, shed with the mass lost by evolving stars, and changed by the stars that became
-remnants in the interval, kick and mass loss together); the budget `residual` (3 × n_t)
-and the scale `l_scale` (n_t, `Σ m |r − c| |v − v̄|` of all stars about their centre of mass
+remnants in the interval, kick and mass loss together); the budget `residual` (3 × `n_t`)
+and the scale `l_scale` (`n_t`, `Σ m |r − c| |v − v̄|` of all stars about their centre of mass
 and mean velocity, the angular-momentum content a residual is compared with);
-the bound set's angular momentum about its centre of mass `l_bound` (3 × n_t), its
-`axis` (3 × n_t, unit vector), the Lagrangian radii `r_lagr` (n_f × n_t) of the bound set
-with `fractions`, `lambda_r_radius` and `lambda_r_radius_floor` (n_f × n_t) inside them;
-the initial-mass classes `class_edges` [M☉] with, per class (n_c × n_t), the members in
+the bound set's angular momentum about its centre of mass `l_bound` (3 × `n_t`), its
+`axis` (3 × `n_t`, unit vector), the Lagrangian radii `r_lagr` (`n_f × n_t`) of the bound set
+with `fractions`, `lambda_r_radius` and `lambda_r_radius_floor` (`n_f × n_t`) inside them;
+the initial-mass classes `class_edges` [M☉] with, per class (`n_c × n_t`), the members in
 the bound set `n_class`, the angular momentum along the axis `l_z_class`, its fraction
 `l_z_class_fraction` of the bound set's, and `lambda_r_class`, `lambda_r_class_floor`.
 """
@@ -162,7 +162,7 @@ vector of its angular momentum `l_bound` about its centre of mass and mean veloc
 `settings`) gives the Lagrangian radii `r_lagr` for `fractions`, and its half-mass
 relaxation times for the two `settings.relaxation_gamma` factors give the elapsed
 relaxation times `n_rh = ∫dt/t_rh` (trapezoid, zero at the first snapshot; `NaN` where
-`γ N ≤ 1`). The ordered-to-total motion parameter λ_R and its sign-flip floor
+`γ N ≤ 1`). The ordered-to-total motion parameter `λ_R` and its sign-flip floor
 ([`rotation_analysis`](@ref), about `axis`) are measured inside every Lagrangian radius
 and for every initial-mass class, the class of a star being fixed by its mass in M☉ in
 the first snapshot where it appears against `class_edges_solar`; a subset with fewer

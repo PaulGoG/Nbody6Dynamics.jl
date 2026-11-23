@@ -92,7 +92,7 @@ const _HR_MIN_LOG_TEFF = 3.0
     HRPopulation
 
 The stars of one epoch that lie on the HR plane, as columns: `log_teff`
-(log₁₀ T_eff/K), `log_luminosity` (log₁₀ L/L☉), `class` (index into
+(`log₁₀ T_eff/K`), `log_luminosity` (log₁₀ L/L☉), `class` (index into
 [`STELLAR_CLASSES`](@ref)) and `binary_member` (the star is a member of a
 KS-regularised pair). `time_myr` is the epoch.
 """

@@ -203,12 +203,12 @@ One progenitor at one snapshot, N-body mass units: `time_nb`, `time_myr`, `tag`;
 and `m_initial` of the names of the tag in the first snapshot; `n_present`, `m_present` of
 those names in this snapshot; `n_bound`, `m_bound` of them inside the global bound set;
 `m_removed` of the names absent from this snapshot, at their last mass before leaving;
-`m_stellar_loss` = Σ (m_initial − m_now) over the present names plus Σ (m_initial − m_last)
+`m_stellar_loss` = `Σ (m_initial − m_now)` over the present names plus `Σ (m_initial − m_last)`
 over the absent names, their loss before departure, so that
 `m_initial = m_present + m_removed + m_stellar_loss` holds exactly for the initial names;
 `r_h` of the tag's bound members about their own density centre; `centre_offset`, the
 distance of that centre from the density centre of the whole bound set; and the mixing of the
-tag's bound members against the other bound members about the global centre within 2 r_h of
+tag's bound members against the other bound members about the global centre within 2 `r_h` of
 the whole bound set: `aplus2`, `aplus2_err`, `d_radius`, `d_energy`, `d_angular_momentum`,
 `d_floor`; and the `regime` of the tag at the snapshot (`MergerEpochs`). From the
 tag's core coalescence on (`regime` `:coalescing` or `:settled`) `r_h` is measured about the

@@ -141,7 +141,7 @@ line the leading `/` of the FORMAT writes before it is not part of it).
 | `r12_rsun` | separation (FORMAT field 26, label `RAD1,2,S[*]`) | R☉ |
 | `r_cm_nb`, `v_cm_nb` | c.m. distance from the density centre, c.m. speed | NB |
 | `deb_nb` | `:ks_new_compact` only: abs(ΔEB/EB) against the previous NS/BH record | — |
-| `r1_xy_nb`, `r1_lat`, `r1_azi` | component 1 position w.r.t. the density centre: cylindrical radius, latitude atan(z/R_xy), azimuth acos(x/R_xy) | NB, rad, rad |
+| `r1_xy_nb`, `r1_lat`, `r1_azi` | component 1 position w.r.t. the density centre: cylindrical radius, latitude `atan(z/R_xy)`, azimuth `acos(x/R_xy)` | NB, rad, rad |
 | `v1_xy_nb`, `v1_lat`, `v1_azi` | component 1 velocity, same decomposition, absolute frame | NB, rad, rad |
 | `r2_…`, `v2_…` | the same for component 2 | NB, rad, rad |
 | `overflow` | a field was printed as asterisks (read as absent) | — |
@@ -270,8 +270,8 @@ Fields per kind (`impact` = the three FORMAT 20 kinds):
 
 Corrections and hazards. Impact periods: the engine computes the inner "period"
 with the total mass and the outer one with the inner c.m. mass; they are stored
-rescaled to the masses of their own orbits, P_in·√(M_tot/M_in) and
-P_out·√(M_in/M_tot) with M_in = m₁ + m₂ (NaN when a mass is absent). For
+rescaled to the masses of their own orbits, `P_in·√(M_tot/M_in)` and
+`P_out·√(M_in/M_tot)` with `M_in = m₁ + m₂` (NaN when a mass is absent). For
 `:quad_new` written by the regularisation branch, `semi_in_nb` is a(IPAIR) +
 a(JPAIR) as printed and the corrected inner period refers to that sum. The label
 `NEW QUAD    TIME` is also written by the quadruple-merger branch of `impact.f`
@@ -1188,7 +1188,7 @@ end
 
 """
 Inner and outer impact periods rescaled to the masses of their own orbits: the
-engine uses M_tot for the inner and M_in for the outer orbit.
+engine uses `M_tot` for the inner and `M_in` for the outer orbit.
 """
 function _dyn_impact_periods(pd::Float64, pd1::Float64, m_inner::Float64, m_total::Float64)
     ok = isfinite(m_inner) && isfinite(m_total) && m_inner > 0 && m_total > 0
