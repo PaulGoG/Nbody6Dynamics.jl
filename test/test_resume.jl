@@ -522,9 +522,12 @@ end
     # 1. No segment record
     @test_throws ArgumentError resume_run(mktempdir())
 
-    # 2. Chain of segments stopped at the wall budget
+    # 2. Chain of segments stopped at the wall budget. The stop request comes 0.2 s
+    # after the launch (polled every 0.2 s): a segment covers a few 0.1 s steps, so
+    # the 13 steps need at least two resumes with steps to spare. With 0.4 s the
+    # first resume could finish the run inside its window.
     chain = withenv("FAKE_CHECKPOINT" => nothing, "FAKE_DIE_AT" => nothing) do
-        run_simulation(cfg(; wall_budget = 0.9, stop_margin = 0.5); base_dir = base, run_id = "chain")
+        run_simulation(cfg(; wall_budget = 0.9, stop_margin = 0.7); base_dir = base, run_id = "chain")
     end
     @test info(chain)["segments"][end]["status"] == "stopped"
     n_resumes = withenv("FAKE_CHECKPOINT" => nothing, "FAKE_DIE_AT" => nothing) do
@@ -752,7 +755,7 @@ end
     @test Nbody6Dynamics._run_status("") == ""
     pipe_results = withenv("FAKE_CHECKPOINT" => nothing, "FAKE_DIE_AT" => nothing) do
         @test_logs (:info, r"stopped on request before its end time") match_mode = :any run_pipeline(
-            cfg(; wall_budget = 0.9, stop_margin = 0.5);
+            cfg(; wall_budget = 0.9, stop_margin = 0.7);
             base_dir = base,
             run_id = "pipe",
         )
