@@ -71,21 +71,17 @@ function _control_apocentre(orbit::AbstractDict, rh1::Real)::Float64
 end
 
 """
-    _control_mass(table) -> Union{Float64,Nothing}
+    _control_expected_mass(table, i, orbit_mode) -> Float64
 
-Total mass [M☉] a cluster table states: `mass_total`, or `target_mass` of an `imf`
-table; `nothing` when it states neither.
+Expected total mass [M☉] of cluster `i` as the generator computes it: the table
+parsed and validated as `load_merger_config` does, then [`expected_mass`](@ref)
+of its IMF and star count.
 """
-function _control_mass(t::AbstractDict)::Union{Float64,Nothing}
-    haskey(t, "mass_total") && return Float64(t["mass_total"])
-    imf = get(t, "imf", nothing)
-    imf isa AbstractDict && haskey(imf, "target_mass") && return Float64(imf["target_mass"])
-    return nothing
+function _control_expected_mass(t::AbstractDict, i::Int, orbit_mode::AbstractString)::Float64
+    spec = _parse_cluster_table(t, i, orbit_mode)
+    _validate_cluster_spec(spec, i)
+    return expected_mass(spec.imf, spec.N)
 end
-
-"""The keys of a cluster table that fix its mass function: `imf`, `bodyn`, `body1`, with the loader's defaults."""
-_control_imf_keys(t::AbstractDict) =
-    (get(t, "imf", "kroupa"), get(t, "bodyn", 0.08), get(t, "body1", 100.0))
 
 """
     control_merger_dict(raw::AbstractDict) -> Dict{String,Any}
@@ -94,7 +90,7 @@ Derive the control configuration from a parsed merger TOML (`raw` holds the
 top-level `"merger"` table): one cluster in single orbit mode at the
 origin and at rest, `N` the sum over the merger's clusters, `rbar` their
 `N`-weighted mean (a member given by `density_ratio` is sized first, by the
-mass ratio as in the generator), a total mass (`mass_total`,
+ratio of the expected masses as in the generator), a total mass (`mass_total`,
 `imf.target_mass`) the sum of theirs, every other cluster-1 key (model,
 `W0`, IMF, binaries)
 and the `output`, `nbody6`, `stellar`, `tidal` and `seed` entries kept
@@ -117,29 +113,15 @@ function control_merger_dict(raw::AbstractDict)
     )
     Ns = [Int(get(t, "N", 50000)) for t in tables]
     rbars = [Float64(get(t, "rbar", 2.0)) for t in tables]
-    # A member sized by its density ratio to cluster 1, as the generator sizes it: by the
-    # mass ratio when both tables state a total mass, by the star counts when the two
-    # mass functions are the same (equal mean stellar mass)
-    m1 = _control_mass(tables[1])
+    # A member sized by its density ratio to cluster 1 by the generator's rule: the ratio
+    # of the expected masses of the two parsed cluster specifications
+    orbit_mode = String(get(m, "orbit_mode", "kepler"))
     for i in 2:n
         ratio = Float64(get(tables[i], "density_ratio", 0.0))
         ratio > 0 || continue
-        mi = _control_mass(tables[i])
-        mass_ratio = if m1 !== nothing && mi !== nothing
-            mi / m1
-        elseif m1 === nothing &&
-               mi === nothing &&
-               _control_imf_keys(tables[i]) == _control_imf_keys(tables[1])
-            Ns[i] / Ns[1]
-        else
-            throw(
-                ArgumentError(
-                    "control_merger_dict: density_ratio of cluster $i needs a total mass " *
-                    "(mass_total or imf.target_mass) on cluster 1 and on cluster $i when their " *
-                    "mass functions differ",
-                ),
-            )
-        end
+        mass_ratio =
+            _control_expected_mass(tables[i], i, orbit_mode) /
+            _control_expected_mass(tables[1], 1, orbit_mode)
         rbars[i] = rbars[1] * cbrt(mass_ratio / ratio)
     end
     N_total = sum(Ns)

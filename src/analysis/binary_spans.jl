@@ -1186,28 +1186,31 @@ and appends to the file, so the records of that interval occur twice, the
 earlier ones belonging to the discarded tail of the interrupted segment. Where
 the time stamps fall back (a record earlier than the latest one before it) to a
 time at or after a restart start not yet used, the earlier records after that
-start are dropped; each start is used once, in increasing order. Records with
-the same time and names as a later one are dropped as well. A re-run whose
-first record is not earlier than the last record of the interrupted segment
-cannot be told from it and is kept.
+start are dropped; the latest such start is taken, and each start is used once
+(two restarts from the same dump, or a later restart from an earlier dump, each
+use their own). A record within a relative 10⁻⁹ of the start (the printed
+precision of the files) counts as written before it. Records with the same time
+and names as a later one are dropped as well. A re-run whose first record is
+not earlier than the last record of the interrupted segment cannot be told
+from it and is kept.
 """
 function _span_restart_dedup(
     records::AbstractVector{T},
     restart_starts::AbstractVector{<:Real},
 )::Vector{T} where {T}
     starts = sort!(Float64[s for s in restart_starts if isfinite(s)])
+    used = falses(length(starts))
     kept = T[]
-    next_start = 1
     t_max = -Inf
     for r in records
         t = Float64(r.time_nb)
         if isfinite(t) && t < t_max
             # Latest unused restart start at or before t
-            k = searchsortedlast(starts, t)
-            if k >= next_start
-                s = starts[k]
-                filter!(q -> !(isfinite(q.time_nb) && q.time_nb > s), kept)
-                next_start = k + 1
+            k = findlast(j -> !used[j] && starts[j] ≤ t, eachindex(starts))
+            if k !== nothing
+                cut = starts[k] + 1e-9 * max(1.0, abs(starts[k]))
+                filter!(q -> !(isfinite(q.time_nb) && q.time_nb > cut), kept)
+                used[k] = true
                 t_max = -Inf
                 for q in kept
                     isfinite(q.time_nb) && (t_max = max(t_max, Float64(q.time_nb)))

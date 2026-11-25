@@ -220,12 +220,24 @@ end
     # r₂ = 2 r₁ and the mean is (100 + 800 × 2)/900
     by_count = merger(cluster(; N = 100, rbar = 1.0), cluster(; N = 800, density_ratio = 1.0))
     @test control_rbar(by_count) ≈ 1700 / 900
-    # Different mass functions and no total on cluster 1: refused
+    # Equal masses of different particle mass: eight times the mass, r₂ = 2 r₁
+    equal_imf(m) = Dict{String,Any}("type" => "equal", "particle_mass" => m)
+    by_particle = merger(
+        cluster(; N = 100, rbar = 1.0, imf = equal_imf(1.0)),
+        cluster(; N = 100, density_ratio = 1.0, imf = equal_imf(8.0)),
+    )
+    @test control_rbar(by_particle) ≈ 1.5
+    # Different mass functions, no total on cluster 1: the radius the generator gives
+    # cluster 2, M₂/M₁ = 800 M☉ / (100 ⟨m⟩_Kroupa)
     mixed = merger(
         cluster(; N = 100, rbar = 1.0),
         cluster(; N = 100, density_ratio = 1.0, imf = "equal", mass_total = 800.0),
     )
-    @test_throws ArgumentError control_merger_dict(mixed)
+    mixed_path = joinpath(mktempdir(), "mixed.toml")
+    open(io -> nd.TOML.print(io, mixed), mixed_path, "w")
+    r2 = load_merger_config(mixed_path).clusters[2].rbar
+    @test r2 ≈ cbrt(800 / (100 * nd.kroupa_mean_mass(0.08, 100.0)))
+    @test control_rbar(mixed) ≈ (100 * 1.0 + 100 * r2) / 200
 
     mktempdir() do dir
         write_config(name, body) = (p = joinpath(dir, name); write(p, body); p)
@@ -294,6 +306,11 @@ end
         )
         result = generate_merger_ic(cfg_heavy)
         @test result.N_total == 6001
+        # The record keeps the IMBH of its cluster
+        reloaded = load_merger_ic_result(result.output_dir).cluster_specs[1].imbh
+        @test reloaded isa IMBHSpec
+        @test reloaded.mass_fraction == 0.04 && isnan(reloaded.mass)
+        @test reloaded.placement == "centre" && reloaded.response == "rigid"
     end
 
     @testset "Half-mass radius of a sampled cluster" begin

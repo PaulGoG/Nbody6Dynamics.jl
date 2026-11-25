@@ -2417,6 +2417,20 @@ function _parse_imbh_table(t::AbstractDict, key::AbstractString)::IMBHSpec
     return s
 end
 
+"""`IMBHSpec` as a TOML table (metadata round trip): the one of `mass` and `mass_fraction` that is given."""
+function _imbh_table(s::IMBHSpec)::Dict{String,Any}
+    t = Dict{String,Any}(
+        "placement" => s.placement,
+        "offset" => s.offset,
+        "velocity" => s.velocity,
+        "velocity_kms" => s.velocity_kms,
+        "response" => s.response,
+        "spin" => s.spin,
+    )
+    isfinite(s.mass) ? (t["mass"] = s.mass) : (t["mass_fraction"] = s.mass_fraction)
+    return t
+end
+
 """
     _validate_imbh(s::IMBHSpec, key)
 

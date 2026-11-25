@@ -261,6 +261,31 @@
         recs = [C(9.0, 1, 2), C(10.2, 3, 4), C(10.5, 5, 6), C(10.45, 7, 8)]
         starts = nd._span_restart_starts(joined(seg("stopped", 0.0, 10.0)))
         @test [r.time_nb for r in nd._span_restart_dedup(recs, starts)] == [9.0, 10.2, 10.5, 10.45]
+        times(recs, starts) = [r.time_nb for r in nd._span_restart_dedup(recs, starts)]
+        # Two restarts from the dump at 10: the second re-run replaces the first one's tail
+        twice = [
+            C(11.0, 1, 2),
+            C(13.0, 3, 4),
+            C(10.5, 5, 6),
+            C(12.5, 7, 8),
+            C(10.8, 9, 10),
+            C(15.0, 11, 12),
+        ]
+        @test times(twice, [10.0, 10.0]) == [10.8, 15.0]
+        # A restart from the dump at 10, then one from the earlier dump at 8
+        earlier = [
+            C(7.0, 1, 2),
+            C(9.0, 3, 4),
+            C(11.0, 5, 6),
+            C(10.5, 7, 8),
+            C(11.5, 9, 10),
+            C(8.5, 11, 12),
+            C(9.5, 13, 14),
+        ]
+        @test times(earlier, [10.0, 8.0]) == [7.0, 8.5, 9.5]
+        # A record printed a hair above the start was written before the dump
+        @test times([C(10.0000000001, 1, 2), C(11.0, 3, 4), C(10.5, 5, 6)], [10.00000000004]) ==
+              [10.0000000001, 10.5]
     end
 
     @testset "12. bev.82 pair energies of reduced pairs only" begin

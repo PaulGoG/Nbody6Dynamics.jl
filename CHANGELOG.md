@@ -31,8 +31,6 @@ entries say so.
   origin before the shift to the centre of mass, which left the realised radius off by about `0.35 N^{−1/2}` (2 % at
   `N = 256`, 0.25 % at `N = 2×10⁴`). Every realisation changes at that level, and the length unit `RBAR` of a single-cluster run now
   equals the input radius.
-- `control_merger_dict`: a member sized by `density_ratio` needs a stated total mass on both clusters when their
-  mass functions differ, and is refused otherwise.
 - `scripts/calibrate_estimators.jl`: a run narrowed by `--quick`, `--n`, `--reps` or `--models` writes into a
   temporary directory unless `--out` is given; it overwrote the shipped table in `assets/calibration/`.
 - Documentation: the corrections the build makes to the engine source, the host-compiler probe and the handling
@@ -46,9 +44,10 @@ entries say so.
 - The collision catalogue and the IMBH events no longer depend on the binary-span stage. With `binary_spans = false`
   (the default) `kicked_before` was `false` for every row and the GW mergers and recoils of an IMBH were missing,
   because only that stage read the event lines; the records a restarted segment wrote twice in `coll.13` and
-  `coal.24` were removed only there as well, and the GW catalogues kept them unless that stage had run. A segment
-  started on the dump its predecessor stopped at is no longer taken for a re-run: a time stamp falling back inside
-  it dropped records of its own.
+  `coal.24` were removed only there as well, and the GW catalogues kept them unless that stage had run. The removal
+  takes a segment started on the dump its predecessor stopped at for no re-run (a time stamp falling back inside it
+  dropped records of its own), lets two restarts from the same dump and a restart from an earlier dump each remove
+  their own re-run, and keeps a record printed at the restart time.
 - Sweeps on devices: a continued point runs on the device the launcher assigns. The device was written into the
   point's configuration only, while a continuation loads the copy frozen in the run directory, so the engine kept
   the device of its first segment.
@@ -56,9 +55,11 @@ entries say so.
 - Readers: a bare `conf.3` sorts before the stamped snapshots (it sorted last); `read_lagr` stores an overflowed
   radius field as `NaN` with a warning (it threw); an ADJUST line cut short is skipped (one cut after `Q` gave an
   energy error and a total energy of exactly zero, one cut after `E` the energy without the binding of the pairs).
-- `control_merger_dict` sizes a member given by `density_ratio` by the mass ratio, as the generator does; it used
-  the ratio of the star counts also when the clusters stated different total masses.
-- `load_merger_ic_result` keeps the IMBH of a cluster with explicit masses.
+- `control_merger_dict` sizes a member given by `density_ratio` by the ratio of the expected masses of the two
+  parsed cluster specifications, the generator's own rule; it used the ratio of the star counts also when the
+  clusters stated different total masses or different mass functions.
+- `merger_ic.toml` records the IMBH specification in the table of its cluster, and `load_merger_ic_result` reads
+  it back, also for a cluster with explicit masses; the record held only the realised IMBH bodies before.
 - Figures: a label of the form −1×10ⁿ is written `-10^{n}`, and a non-finite value no longer throws; the remnant
   diagnostics the figure dispatcher computes for external data exclude the IMBHs, as the pipeline's do.
 - Documentation: subscripts, engine names and file patterns written with `_` or `*` in running text were read as

@@ -258,8 +258,10 @@ function postprocess(
         # run_dir points to runs/<run_id>/; the data lives in output/
         joinpath(run_dir, "output")
     elseif !isempty(pp.data_dir)
-        # Explicit external directory from config
-        _resolve_path(base_dir, pp.data_dir)
+        # Explicit external directory from config; normalised as in _finish_pipeline,
+        # so that dirname gives the run directory also with a trailing separator
+        data_path = normpath(_resolve_path(base_dir, pp.data_dir))
+        length(data_path) > 1 ? String(rstrip(data_path, ['/', '\\'])) : data_path
     else
         latest = _find_latest_run(cfg, base_dir)
         isempty(latest) && error(

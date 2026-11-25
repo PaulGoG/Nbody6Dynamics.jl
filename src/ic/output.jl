@@ -2156,6 +2156,7 @@ function _write_merger_ic_metadata(
             "N_pairs" => regime.n_pairs[i],
             "hard_fraction" => regime.hard_fraction[i],
         )
+        spec.imbh === nothing || (cluster_table["imbh"] = _imbh_table(spec.imbh))
         isempty(mass_truncated) || (cluster_table["mass_truncated"] = mass_truncated[i])
         isempty(mass_kept) || (cluster_table["mass"] = mass_kept[i])
         isempty(truncation_radii_pc) ||
