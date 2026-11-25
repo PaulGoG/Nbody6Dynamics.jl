@@ -783,8 +783,9 @@ function _sample_cluster(
         error("Unknown profile: $(typeof(spec.profile))")
     end
 
-    # Scale positions so the mass-based half-mass radius equals the target
-    r_hm = half_mass_radius(sys_mass, pos; centre = zeros(3))
+    # Scale positions so the mass-based half-mass radius about the centre of
+    # mass, where `virialise!` puts the origin, equals the target
+    r_hm = half_mass_radius(sys_mass, pos)
     if r_hm > 0
         pos .*= spec.rbar / r_hm
     end

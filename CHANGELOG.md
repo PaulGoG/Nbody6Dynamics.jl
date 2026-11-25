@@ -24,6 +24,11 @@ entries say so.
 - Generator: a flat `[merger.clusterK]` table with `imf = "equal"` refuses `bodyn` and `body1`, which it ignored;
   an IMBH given by `mass_fraction` is refused at generation when stellar evolution is on and its mass comes out
   below 100 M☉, as `imbh.mass` already was at load.
+- Generator: a cluster is scaled to `rbar` about its centre of mass, the frame it is then placed in, so its
+  half-mass radius equals `rbar` to rounding. The scaling was made about the model origin before the shift to the
+  centre of mass, which left the realised radius off by about `0.35 N^{−1/2}` (2 % at `N = 256`, 0.1 % at
+  `N = 2×10⁴`). Every realisation changes at that level, and the length unit `RBAR` of a single-cluster run now
+  equals the input radius.
 - `control_merger_dict`: a member sized by `density_ratio` needs a stated total mass on both clusters when their
   mass functions differ, and is refused otherwise.
 - `scripts/calibrate_estimators.jl`: a run narrowed by `--quick`, `--n`, `--reps` or `--models` writes into a

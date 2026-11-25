@@ -305,9 +305,8 @@ using LinearAlgebra: Symmetric, eigvals
         @test rot.l_axis > 0
         @test c.rotation.realised == rot
         @test c.rotation.moments.λ == λ_model
-        # The radius is set about the model centre, before virialise! moves the
-        # centre of mass to the origin; the shift is of order r_h/√N.
-        @test isapprox(nd.half_mass_radius(c.mass, c.pos), 1.0; rtol = 0.01)
+        # The radius is set about the centre of mass, where virialise! puts the origin
+        @test nd.half_mass_radius(c.mass, c.pos) ≈ 1.0 rtol = 1e-12
 
         c_retro = sample([0.0, 0.0, -1.0])
         @test nd.rotation_moments(c_retro.mass, c_retro.pos, c_retro.vel).l_axis < 0

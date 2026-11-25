@@ -3,8 +3,9 @@
 #
 # N ladder (roadmap 4.5): rungs that differ in N alone, with equal-mass bodies
 # M/N at fixed cluster mass, half-mass radius and orbit. The generated initial
-# conditions carry the same mass, length and time units on every rung, up to
-# the sampling scatter of the realised half-mass radius.
+# conditions of a single cluster carry the same mass, length and time units on
+# every rung; those of clusters on an orbit agree up to the sampling scatter of
+# the half-mass radius of the configuration.
 
 @testset "N ladder" begin
     nd = Nbody6Dynamics
@@ -38,13 +39,12 @@
     quiet(f) = Base.CoreLogging.with_logger(f, Base.CoreLogging.NullLogger())
     TOML = nd.TOML
 
-    # The realised half-mass radius, the length unit RBAR, scatters about the
-    # input r_h: each cluster is scaled to r_h about the model centre and then
-    # recentred on its centre of mass. Over 20 seeds at N = 256 … 8192 the
-    # relative scatter is ≈ 0.35 N^{-1/2} for a single King cluster and for a
-    # Plummer pair; 2 N^{-1/2} bounds it by about six standard deviations, and
-    # T* ∝ RBAR^{3/2} by 3 N^{-1/2}.
-    tol_r(N) = 2 / sqrt(N)
+    # Each cluster is scaled to its r_h about its centre of mass, so the length
+    # unit RBAR of a single cluster is the input r_h. The RBAR of a pair is the
+    # half-mass radius of the two-cluster configuration: over 20 seeds at
+    # N = 256 … 8192 it scatters by ≈ 0.7 N^{-1/2} (relative) for the Plummer
+    # pair below, and T* ∝ RBAR^{3/2} by ≈ 1.05 N^{-1/2}.
+    tol_t_star_pair(N) = 6 / sqrt(N)
 
     single = joinpath(dir, "king.toml")
     write(
@@ -130,12 +130,12 @@
             @test meta["M_total"] ≈ 1.0e5 rtol = 1e-12
             @test meta["zmbar"] ≈ 1.0e5 / N rtol = 1e-12
             @test meta["q_virial"] ≈ 0.5 atol = 1e-10
-            @test abs(meta["rbar"] - 1.0) ≤ tol_r(N)
+            @test meta["rbar"] ≈ 1.0 rtol = 1e-12
             @test nd.half_mass_radius(res.mass_physical, res.pos_physical) ≈ meta["rbar"] rtol =
                 1e-12
             @test meta["t_star_myr"] ≈ nd._nbody_time_myr(meta["M_total"], meta["rbar"]) rtol =
                 1e-12
-            @test abs(meta["t_star_myr"] / t_star_model - 1) ≤ 1.5 * tol_r(N)
+            @test meta["t_star_myr"] ≈ t_star_model rtol = 1e-12
             out = TOML.parsefile(joinpath(res.output_dir, "merger_ic.toml"))["output"]
             @test (out["tcrit"], out["dtadj"], out["deltat"]) == (50.0, 0.5, 0.5)
         end
@@ -212,8 +212,7 @@
                     res.vel_physical[:, idx] .- v,
                 )
                 @test T / (G * abs(W)) ≈ 0.5 rtol = 1e-8
-                @test abs(nd.half_mass_radius(m, res.pos_physical[:, idx]) / rbars[i] - 1) ≤
-                      tol_r(r.n[i])
+                @test nd.half_mass_radius(m, res.pos_physical[:, idx]) ≈ rbars[i] rtol = 1e-12
                 (x, v)
             end
             @test sqrt(sum(abs2, centres[1][1] - centres[2][1])) ≈ 10.0 rtol = 1e-10
@@ -229,7 +228,8 @@
                     @test orbit[k] ≈ orbit_ref[k] rtol = 1e-10
                 end
                 # The length unit is the configuration's half-mass radius: equal within its scatter
-                @test abs(ic["meta"]["t_star_myr"] / t_star_ref - 1) ≤ 3 * tol_r(256)
+                # (the bound is four standard deviations of a difference between rungs at N = 256)
+                @test abs(ic["meta"]["t_star_myr"] / t_star_ref - 1) ≤ tol_t_star_pair(256)
             end
             @test ic["meta"]["M_total"] ≈ 1.0e5 rtol = 1e-12
         end

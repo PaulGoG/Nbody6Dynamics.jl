@@ -8,7 +8,8 @@
 # the loader sets the body mass to M/N for every rung while the cluster
 # masses, half-mass radii and the orbit, all in physical units, are those of
 # the base file. The N-body units (M, RBAR, T*) are then the same along the
-# ladder up to the sampling scatter of the realised half-mass radius, and an
+# ladder of a single cluster, and agree up to the sampling scatter of the
+# configuration's half-mass radius for clusters on an orbit, and an
 # observable that coincides between rungs in t/t_cr is collisionless, one
 # that coincides in t/t_rh collisional.
 

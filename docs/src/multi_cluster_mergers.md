@@ -69,7 +69,7 @@ There are three modes, selected by the `IMFSpec` tag on each cluster:
 For each cluster the generator:
 
 1. Samples `N` masses from the IMF and positions/velocities from the profile
-2. Rescales positions so the **mass-weighted half-mass radius** equals the target `rbar` (not the count-median radius; with an IMF the two differ by sampling noise, and only the mass-based definition matches RBAR semantics)
+2. Rescales positions so the **mass-weighted half-mass radius** about the centre of mass equals the target `rbar` (not the count-median radius; with an IMF the two differ by sampling noise, and only the mass-based definition matches RBAR semantics)
 3. Calls `virialise!`: shifts to the centre-of-mass frame and scales velocities so `Q = T/|W| = 0.5` exactly, using the exact O(N²) pairwise potential (threaded over strided rows). A guard refuses above `nmax = 200_000` particles per cluster unless raised explicitly.
 
 Two independently virialised clusters are *not* in virial equilibrium as a combined system (the mutual potential is unaccounted), which is precisely why the output targets `KZ(22)=2`: that path sets `LSCALE=.FALSE.` in Nbody6++, so no centre-of-mass correction or velocity rescaling is applied to the combined ICs.

@@ -295,4 +295,26 @@ end
         result = generate_merger_ic(cfg_heavy)
         @test result.N_total == 6001
     end
+
+    @testset "Half-mass radius of a sampled cluster" begin
+        using StableRNGs: StableRNG
+        # The target is met in the frame the cluster is handed on in: centre of mass at the
+        # origin, mass-weighted half-mass radius rbar, with a mass spectrum and with pairs
+        for profile in (PlummerProfile(), KingProfile(; W0 = 6.0)),
+            binaries in (BinarySpec(), BinarySpec(; fraction = 0.3))
+
+            spec = ClusterSpec(;
+                N = 600,
+                rbar = 1.7,
+                profile = profile,
+                imf = KroupaIMF(),
+                binaries = binaries,
+            )
+            c = nd._sample_cluster(spec; rng = StableRNG(17), nmax = 600)
+            centre = [sum(c.mass .* c.pos[k, :]) for k in 1:3] ./ sum(c.mass)
+            @test maximum(abs, centre) < 1e-12
+            @test nd.half_mass_radius(c.mass, c.pos; centre = zeros(3)) ≈ 1.7 rtol = 1e-12
+            @test c.T / abs(c.W) ≈ 0.5 rtol = 1e-12
+        end
+    end
 end
