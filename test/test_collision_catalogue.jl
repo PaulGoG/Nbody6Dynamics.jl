@@ -218,3 +218,85 @@
         )
     end
 end
+
+@testset "Collision catalogue in postprocess without the span stage" begin
+    # A run directory with the stdout capture (scaling, a BINARY KICK of body 3 at
+    # 1 Myr = 0.5 NB), coll.13 (body 3 collides at 1 NB, bodies 8 and 9 at 0.25 NB)
+    # and the cluster blocks: with binary_spans = false the kick still reaches the
+    # catalogue, which read the event lines only through the span stage before.
+    fw(w, xs...) = join(lpad(string(x), w) for x in xs)
+    dir = mktempdir()
+    out = joinpath(dir, "output")
+    mkpath(out)
+    adjust(t, t_myr) =
+        " ADJUST:  TIME    $(t)  T[Myr]   $(t_myr)  Q   0.500E+00  DE   0.000E+00 " *
+        "DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01"
+    kick =
+        " BINARY KICK:  TIME[Myr] N12 K12 " *
+        fw(17, "1.000000000E+00") *
+        fw(10, 3, 4) *
+        fw(4, 1, 1) *
+        " ASPN12,QR,XJSPN12[NB],SPNFAC " *
+        fw(13, "0.00000E+00", "0.00000E+00", "2.00000E+00") *
+        fw(13, "0.00000E+00", "0.00000E+00", "1.00000E+05") *
+        " M12[M*] " *
+        " VESC[km/s] VDIS[km/s] R12/SEMI EB R12[au] " *
+        fw(13, "1.20000E+00", "6.00000E-01", "1.50000E+01", "1.40000E+01") *
+        fw(13, "9.00000E-01", "-2.00000E-05", "3.00000E-04") *
+        " X1(1:3)[pc] V1(1:3)[km/s] X2(1:3)[pc] V2(1:3)[km/s] " *
+        fw(13, "1.00000E+00", "2.00000E+00", "-3.00000E+00") *
+        fw(13, "4.00000E+00", "5.00000E+00", "6.00000E+00") *
+        fw(13, "1.50000E+00", "2.50000E+00", "-3.50000E+00") *
+        fw(13, "-4.00000E+00", "-5.00000E+00", "-6.00000E+00")
+    write(
+        joinpath(out, "out1000"),
+        join(
+            [
+                " PHYSICAL SCALING:  R* = 1.000  M* = 1000.0  V* = 1.000  T* = 2.000",
+                adjust("0.00000E+00", "0.000E+00"),
+                kick,
+                adjust("2.00000E+00", "0.400E+01"),
+            ],
+            "\n",
+        ) * "\n",
+    )
+    model =
+        "      MODEL:    RBAR =   1.00000000000000000E+00  <M>[M*] =   " *
+        "5.00000000000000000E-01  M1[M*] =   0.00000000000000000E+00  TSCALE =   " *
+        "2.00000000000000000E+00  NB0 =           0  N0 =          10"
+    label = "                  TIME[NB]    NAME(I1)    NAME(I2)      K*(I1)      K*(I2)"
+    record(t, n1, n2) =
+        "   $(t)        $(n1)        $(n2)           1           1" *
+        "           1  0.38900000000000000        8.8000000000000000E-002  " *
+        "0.45000000000000000        2.6500000000000000E-002  0.36500000000000000       " *
+        "0.14000000000000000        1.5800000000000000        4.8000000000000000E-002  " *
+        "0.99750000000000000        15.750000000000000     "
+    header = ["", model, "", "", label, ""]
+    write(
+        joinpath(out, "coll.13"),
+        join(
+            vcat(
+                header,
+                [record("1.0000000000000000", 3, 7), ""],
+                header,
+                [record("0.25000000000000000", 8, 9)],
+            ),
+            "\n",
+        ) * "\n",
+    )
+    write(joinpath(out, "merger_ic.toml"), "cluster_blocks = [[[1, 5]], [[6, 10]]]\n")
+    cfg = Nbody6Config(
+        InstallConfig(; enabled = false),
+        BuildConfig(),
+        SimulationConfig(; run_test = false),
+        PostprocessConfig(; enabled = true, binary_spans = false, collision_catalogue = true),
+        VisualizationConfig(; enabled = false),
+        MergerPipelineConfig(),
+    )
+    results = postprocess(cfg; run_dir = dir)
+    @test !haskey(results, :binary_spans)
+    rows = results[:collision_catalogue]
+    @test [(r.time_nb, r.name1, r.name2) for r in rows] == [(0.25, 8, 9), (1.0, 3, 7)]
+    @test [r.kicked_before for r in rows] == [false, true]
+    @test [(r.progenitor1, r.progenitor2) for r in rows] == [(2, 2), (1, 2)]
+end
