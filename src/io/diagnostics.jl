@@ -356,7 +356,10 @@ end
 
 """
 Parse key-value ADJUST: TIME val T[Myr] val Q val DE val … ETOT val … A line without
-`TIME`, `Q`, `DE` or a total energy (`ETOT` or `E`) throws `ArgumentError`.
+`TIME`, `Q` or `DE` throws `ArgumentError`, as does one without `ETOT` unless it is
+of the short form that ends with the total energy `E` (no `EKIN` or `POT`): in the
+engine's full line `E` is the energy without the binding of the pairs, and a line
+cut after it is incomplete.
 """
 function _parse_adjust_kv(tokens)::_AdjustFields
     kv = Dict{String,String}()
@@ -374,7 +377,9 @@ function _parse_adjust_kv(tokens)::_AdjustFields
     for key in ("TIME", "Q", "DE")
         haskey(kv, key) || throw(ArgumentError("ADJUST line without $key"))
     end
-    (haskey(kv, "ETOT") || haskey(kv, "E")) || throw(ArgumentError("ADJUST line without ETOT or E"))
+    haskey(kv, "ETOT") ||
+        (haskey(kv, "E") && !haskey(kv, "EKIN") && !haskey(kv, "POT")) ||
+        throw(ArgumentError("ADJUST line without ETOT"))
 
     kv_real(key, default) = _parse_fortran_float(get(kv, key, default))
     time_nb = kv_real("TIME", "0")

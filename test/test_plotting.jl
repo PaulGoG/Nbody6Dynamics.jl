@@ -44,6 +44,21 @@
         println("pipeline=", nameof(typeof(e)), ":", e.entry_point)
         println("hint=", !isempty(e.hint))
     end
+    # A cluster submission would render a job without the backend
+    write(cfg_path, join([
+        "[install]", "enabled = false",
+        "[simulation]", "wall_budget = 3.0", "stop_margin = 1.0",
+        "[postprocess]", "enabled = false",
+        "[visualization]", "enabled = true",
+        "[cluster]", "enabled = true", "time_limit = \\"0:10:00\\"", "overhead = 0.0",
+    ], "\\n"))
+    try
+        submit_run(load_config(cfg_path); dry_run = true)
+        println("submit=accepted")
+    catch e
+        println("submit=", nameof(typeof(e)), ":",
+            e isa Nbody6Dynamics.PlottingUnavailable ? e.entry_point : sprint(showerror, e))
+    end
     rm(cfg_path; force = true)
     println("makie_loaded=", any(m -> nameof(m) === :Makie, Base.loaded_modules_array()))
     """
@@ -54,6 +69,7 @@
     @test occursin("entry=MethodError:true", out)
     @test occursin("pipeline=PlottingUnavailable:run_pipeline", out)
     @test occursin("hint=true", out)
+    @test occursin("submit=PlottingUnavailable:submit_run", out)
     @test occursin("makie_loaded=false", out)
 end
 

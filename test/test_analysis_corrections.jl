@@ -246,6 +246,21 @@
         )
         @test nd._span_restart_starts(info) == [4.0]
         @test isempty(nd._span_restart_starts(Dict{String,Any}()))
+        # A segment started on the dump its predecessor stopped at re-runs nothing: its
+        # start is not used, and a time stamp falling back inside it keeps every record
+        seg(status, t0, t1) = Dict{String,Any}("status" => status, "t_start" => t0, "t_end" => t1)
+        joined(first) = Dict{String,Any}("segments" => [first, seg("completed", 10.0, 12.0)])
+        @test isempty(nd._span_restart_starts(joined(seg("stopped", 0.0, 10.0))))
+        @test isempty(nd._span_restart_starts(joined(seg("stalled", 0.0, 10.0))))
+        @test isempty(nd._span_restart_starts(joined(seg("completed", 0.0, 10.0))))
+        # A killed segment may have written past its last ADJUST time; a stopped one
+        # continued from an earlier dump has written past the restart
+        @test nd._span_restart_starts(joined(seg("killed", 0.0, 10.0))) == [10.0]
+        @test nd._span_restart_starts(joined(seg("stopped", 0.0, 11.0))) == [10.0]
+        @test nd._span_restart_starts(joined(Dict{String,Any}("t_start" => 0.0))) == [10.0]
+        recs = [C(9.0, 1, 2), C(10.2, 3, 4), C(10.5, 5, 6), C(10.45, 7, 8)]
+        starts = nd._span_restart_starts(joined(seg("stopped", 0.0, 10.0)))
+        @test [r.time_nb for r in nd._span_restart_dedup(recs, starts)] == [9.0, 10.2, 10.5, 10.45]
     end
 
     @testset "12. bev.82 pair energies of reduced pairs only" begin

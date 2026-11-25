@@ -432,6 +432,9 @@ end
         @test isfile(joinpath(pdir, "lagrangian_radii.pdf"))
         @test isfile(joinpath(pdir, "cluster_evolution_xy.gif"))
         @test isfile(joinpath(pdir, "lagrangian_anim.gif"))
+        # A data directory not named `output` receives its own derived tables
+        @test haskey(results, :integrals)
+        @test isfile(joinpath(d_full, "snapshot_integrals.csv"))
     end
 
     # =====================================================================

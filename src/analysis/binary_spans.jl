@@ -1233,19 +1233,36 @@ end
     _span_restart_starts(run_info::AbstractDict) -> Vector{Float64}
 
 `t_start` [NB] of every segment after the first in the `segments` of a run
-record (`RUN_INFO.toml`); empty for a run of one segment or without a record.
+record (`RUN_INFO.toml`) that re-runs an interval its predecessor had already
+written; empty for a run of one segment or without a record. A segment that
+starts at the dump its predecessor ended on (status `stopped`, `stalled` or
+`completed`, `t_end` equal to the new `t_start`) re-runs nothing and is left
+out, so that a time stamp falling back inside it drops no record.
 """
 function _span_restart_starts(run_info::AbstractDict)::Vector{Float64}
     segments = get(run_info, "segments", nothing)
     segments isa AbstractVector || return Float64[]
     starts = Float64[]
-    for (k, seg) in enumerate(segments)
-        k == 1 && continue
-        seg isa AbstractDict || continue
-        t = get(seg, "t_start", nothing)
-        t isa Real && isfinite(t) && push!(starts, Float64(t))
+    previous = nothing
+    for seg in segments
+        seg isa AbstractDict || (previous = nothing; continue)
+        if previous !== nothing
+            t = get(seg, "t_start", nothing)
+            if t isa Real && isfinite(t) && !_clean_join(previous, Float64(t))
+                push!(starts, Float64(t))
+            end
+        end
+        previous = seg
     end
     return starts
+end
+
+# The engine of `previous` ended on the dump at `t_start`: a stop request, a stall
+# stop or END RUN terminates it right after that dump, so nothing after it was written.
+function _clean_join(previous::AbstractDict, t_start::Float64)::Bool
+    get(previous, "status", "") in ("stopped", "stalled", "completed") || return false
+    t_end = get(previous, "t_end", nothing)
+    return t_end isa Real && abs(Float64(t_end) - t_start) ≤ 1e-9 * max(1.0, abs(t_start))
 end
 
 """

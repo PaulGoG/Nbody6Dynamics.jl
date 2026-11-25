@@ -1110,11 +1110,23 @@ end
                 " ADJUST:  TIME    5.00000E-01  T[Myr]   0.579E+00  Q   0.377E+00  DE   2.644E-06 ETOT  -5.408E-01",
             )
             println(io, " ADJUST:  TIME    1.00000E+00  T[Myr]   0.116E+01  Q   0.476E+00")
+            # the engine's full line cut between E (no pair binding) and ETOT
+            println(
+                io,
+                " ADJUST:  TIME    1.50000E+00  T[Myr]   0.174E+01  Q   0.480E+00  DE   1.000E-06 DELTA   1.000E-06 DETOT   2.000E-06 E  -5.385E-01 EKIN   3.265E-01",
+            )
+            # the short form, which ends with the total energy E
+            println(
+                io,
+                " ADJUST:  TIME    2.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01",
+            )
         end
         adjust = read_diagnostics(out).adjust
-        @test length(adjust) == 1
+        @test length(adjust) == 2
         @test adjust[1].time_nb == 0.5
         @test adjust[1].de_rel == 2.644e-6
         @test adjust[1].e_tot == -0.5408
+        @test adjust[2].time_nb == 2.0
+        @test adjust[2].e_tot == -0.25
     end
 end

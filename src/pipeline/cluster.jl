@@ -267,7 +267,10 @@ end
 Create a run and submit its chain of scheduler jobs, one engine segment per
 job, under the `[cluster]` settings of `cfg` (`cluster.enabled` must be set;
 the `[cluster]` checks of the configuration are applied again, so a
-configuration built in memory is held to them too).
+configuration built in memory is held to them too). The jobs load the plotting
+backend only when this session has it ([`job_script`](@ref)), so a run with
+`[visualization] enabled` is refused from a session without CairoMakie
+(`PlottingUnavailable`).
 
 The run directory is `<runs_dir>/<run_id>` (`run_id` generated as by
 [`run_pipeline`](@ref) when empty); a directory that already holds a
@@ -321,6 +324,12 @@ function submit_run(
             "submit_run: cluster.enabled is false; set `[cluster] enabled = true` to submit " *
             "the run as scheduler jobs, or call run_pipeline to run it in this process",
         ),
+    )
+    # The jobs load the plotting backend only when this session has it (job_script):
+    # a run that must end in figures is refused here, not after the queue wait.
+    cfg.visualization.enabled && _require_plotting(
+        :submit_run,
+        "Load CairoMakie before submitting, or set `[visualization] enabled = false`.",
     )
     _validate_cluster(cfg)
     isempty(run_id) && (
@@ -468,6 +477,11 @@ function submit_restart(
             "set the run's [cluster] section first, or restart in this process with " *
             "restart_pipeline",
         ),
+    )
+    cfg.visualization.enabled && _require_plotting(
+        :submit_restart,
+        "Load CairoMakie before submitting, or set `[visualization] enabled = false` in the " *
+        "run's config.toml.",
     )
     _validate_cluster(cfg)
     _read_restart_request(run_dir) === nothing || throw(

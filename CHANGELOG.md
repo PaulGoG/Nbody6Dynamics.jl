@@ -15,9 +15,11 @@ entries say so.
   libraries without any effect on the engine's output, and the dependency check never looked for them, so the
   default build failed on a host without the HDF5 development packages.
 - Slurm jobs run in the project the run was submitted from: the generated script calls `cluster_segment` through
-  `julia --project=<project> -e …` and loads CairoMakie when the submitting session has it.
-  `scripts/run_cluster_segment.jl` is removed; it resolved an environment inside the package tree, which an
-  installation by URL does not allow.
+  `julia --project=<project> -e …` and loads CairoMakie when the submitting session has it; `submit_run` and
+  `submit_restart` refuse a run with figures from a session without it. `scripts/run_cluster_segment.jl` is
+  removed; it resolved an environment inside the package tree, which an installation by URL does not allow. A chain
+  submitted with 0.10.0 names that script in its `cluster/job.sbatch`: finish it with 0.10.0, or continue it with
+  `submit_restart`, which writes the script anew.
 - A `postprocess.data_dir` that is not named `output` receives its own derived tables and figures. They were written
   into its parent directory, and the merger figures were skipped because the figure layer looked for
   `<parent>/output`. A run's `output/` directory behaves as before.
@@ -25,9 +27,9 @@ entries say so.
   an IMBH given by `mass_fraction` is refused at generation when stellar evolution is on and its mass comes out
   below 100 M☉, as `imbh.mass` already was at load.
 - Generator: a cluster is scaled to `rbar` about its centre of mass, the frame it is then placed in, so its
-  half-mass radius equals `rbar` to rounding. The scaling was made about the model origin before the shift to the
-  centre of mass, which left the realised radius off by about `0.35 N^{−1/2}` (2 % at `N = 256`, 0.1 % at
-  `N = 2×10⁴`). Every realisation changes at that level, and the length unit `RBAR` of a single-cluster run now
+  half-mass radius before any Jacobi truncation equals `rbar` to rounding. The scaling was made about the model
+  origin before the shift to the centre of mass, which left the realised radius off by about `0.35 N^{−1/2}` (2 % at
+  `N = 256`, 0.25 % at `N = 2×10⁴`). Every realisation changes at that level, and the length unit `RBAR` of a single-cluster run now
   equals the input radius.
 - `control_merger_dict`: a member sized by `density_ratio` needs a stated total mass on both clusters when their
   mass functions differ, and is refused otherwise.
@@ -44,14 +46,16 @@ entries say so.
 - The collision catalogue and the IMBH events no longer depend on the binary-span stage. With `binary_spans = false`
   (the default) `kicked_before` was `false` for every row and the GW mergers and recoils of an IMBH were missing,
   because only that stage read the event lines; the records a restarted segment wrote twice in `coll.13` and
-  `coal.24` were removed only there as well.
+  `coal.24` were removed only there as well, and the GW catalogues kept them unless that stage had run. A segment
+  started on the dump its predecessor stopped at is no longer taken for a re-run: a time stamp falling back inside
+  it dropped records of its own.
 - Sweeps on devices: a continued point runs on the device the launcher assigns. The device was written into the
   point's configuration only, while a continuation loads the copy frozen in the run directory, so the engine kept
   the device of its first segment.
 - `restart_simulation` refuses an explicitly named dump that is cut short, as `submit_restart` did.
 - Readers: a bare `conf.3` sorts before the stamped snapshots (it sorted last); `read_lagr` stores an overflowed
-  radius field as `NaN` with a warning (it threw); an ADJUST line cut after `Q` is skipped (it gave an energy error
-  and a total energy of exactly zero).
+  radius field as `NaN` with a warning (it threw); an ADJUST line cut short is skipped (one cut after `Q` gave an
+  energy error and a total energy of exactly zero, one cut after `E` the energy without the binding of the pairs).
 - `control_merger_dict` sizes a member given by `density_ratio` by the mass ratio, as the generator does; it used
   the ratio of the star counts also when the clusters stated different total masses.
 - `load_merger_ic_result` keeps the IMBH of a cluster with explicit masses.
