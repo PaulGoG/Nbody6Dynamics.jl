@@ -225,7 +225,7 @@ The script runs three end-to-end targets through `run_pipeline`; it needs a buil
 
 ## Documentation
 
-The documentation site (Manual, Input Files, Showcase Cases, Cluster Mergers, API Reference, References, a walkthrough from a merger TOML to the generated initial conditions) is at [paulgog.github.io/Nbody6Dynamics.jl/stable](https://PaulGoG.github.io/Nbody6Dynamics.jl/stable/). It builds from `docs/`:
+The documentation site (Manual, Input Files, Showcase Cases, Cluster Mergers, Implementation Notes, API Reference, References, a walkthrough from a merger TOML to the generated initial conditions) is at [paulgog.github.io/Nbody6Dynamics.jl/stable](https://PaulGoG.github.io/Nbody6Dynamics.jl/stable/). It builds from `docs/`:
 
 ```bash
 julia docs/make.jl   # builds to docs/build/
@@ -463,7 +463,7 @@ Nbody6Dynamics/
 │   ├── make.jl                      # Documenter.jl build script
 │   ├── activate.jl                  # Activates the docs environment (package developed by relative path)
 │   ├── Project.toml                 # Documentation build environment
-│   ├── src/                         # index, walkthrough (Literate), manual, input_files, showcase, multi_cluster_mergers, api, references
+│   ├── src/                         # index, walkthrough (Literate), manual, input_files, showcase, multi_cluster_mergers, internals, api, references
 │   ├── src/references.bib           # BibTeX of the sources cited (DocumenterCitations)
 │   └── src/assets/                  # figure and animation used by the README and the docs site, with their PROVENANCE.md
 ├── input_files/                     # Shipped inputs, one folder per purpose (input_files/README.md)

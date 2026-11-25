@@ -50,6 +50,7 @@ makedocs(;
         "Input Files" => "input_files.md",
         "Showcase Cases" => "showcase.md",
         "Cluster Mergers" => "multi_cluster_mergers.md",
+        "Implementation Notes" => "internals.md",
         "API Reference" => "api.md",
         "References" => "references.md",
     ],

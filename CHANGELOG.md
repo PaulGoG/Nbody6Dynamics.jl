@@ -33,6 +33,8 @@ entries say so.
   mass functions differ, and is refused otherwise.
 - `scripts/calibrate_estimators.jl`: a run narrowed by `--quick`, `--n`, `--reps` or `--models` writes into a
   temporary directory unless `--out` is given; it overwrote the shipped table in `assets/calibration/`.
+- Documentation: the corrections the build makes to the engine source, the host-compiler probe and the handling
+  of signals moved from the manual to a page of their own, Implementation notes.
 
 ### Fixed
 

@@ -80,6 +80,6 @@ See the [API Reference](@ref) for the complete public interface.
 ## Contents
 
 ```@contents
-Pages = ["walkthrough.md", "manual.md", "input_files.md", "showcase.md", "multi_cluster_mergers.md", "api.md", "references.md"]
+Pages = ["walkthrough.md", "manual.md", "input_files.md", "showcase.md", "multi_cluster_mergers.md", "internals.md", "api.md", "references.md"]
 Depth = 2
 ```
