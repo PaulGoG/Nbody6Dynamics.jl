@@ -267,8 +267,9 @@ segment writes again. Moved to `discarded/segment_<segment>/` in `out_dir`:
     the dump time, whole, except the dump itself.
 
 A segment with `last_status` `"stopped"` or `"completed"` restarted from the
-last dump it reported is left as it is: a segment that ended by itself
-wrote its dump last, and the lines that close it stay. Nothing is deleted:
+dump it wrote as it ended is left as it is ([`_ended_on_dump`](@ref)): the lines
+that close it stay. A stop without a dump (`KZ(1) = 0`), or an end after the last
+checkpoint, leaves an interval after the dump the restart repeats. Nothing is deleted:
 tails are written before a file is truncated, and an earlier file of the
 same name in the destination is kept as a `#k` sibling.
 
@@ -297,14 +298,9 @@ function _discard_after(
         "t_to" => isnan(t_to) ? t_d : t_to,
         "clean" => false,
     )
-    if last_status in ("stopped", "completed")
-        markers = _dump_markers(stdout_path)
-        if !isempty(markers) &&
-           last(markers).file == marker.file &&
-           last(markers).line_end == marker.line_end
-            result["clean"] = true
-            return result
-        end
+    if last_status in ("stopped", "completed") && _ended_on_dump(stdout_path, marker, last_status)
+        result["clean"] = true
+        return result
     end
 
     dest_dir = joinpath(out_dir, "discarded", "segment_$(segment)")
@@ -362,6 +358,36 @@ function _discard_after(
     result["uncut"] = uncut
     result["dir"] = isempty(moved) ? "" : joinpath("discarded", "segment_$(segment)")
     return result
+end
+
+"""
+    _ended_on_dump(stdout_path, marker, last_status) -> Bool
+
+Whether the dump `marker` is the one the engine wrote as the run ended: the last
+dump the stdout capture reports, after the last stop line (`TERMINATION BY MANUAL
+INTERVENTION`, for `last_status` `"stopped"`) or the last `END RUN` line
+([`_END_RUN`](@ref), for `"completed"`). A dump before that line, such as a
+checkpoint of a run stopped without a dump or one of an earlier segment, is not.
+"""
+function _ended_on_dump(
+    stdout_path::AbstractString,
+    marker::_DumpMarker,
+    last_status::AbstractString,
+)::Bool
+    markers = _dump_markers(stdout_path)
+    (
+        isempty(markers) ||
+        last(markers).file != marker.file ||
+        last(markers).line_end != marker.line_end
+    ) && return false
+    pattern = last_status == "stopped" ? r"TERMINATION BY MANUAL INTERVENTION" : _END_RUN
+    terminal = -1
+    open(stdout_path) do io
+        while !eof(io)
+            occursin(pattern, readline(io)) && (terminal = Int(position(io)))
+        end
+    end
+    return 0 ≤ terminal < marker.line_end
 end
 
 """
@@ -469,7 +495,7 @@ end
 
 """
     _launch_restart(cfg, run_dir, out_dir, original_inp, dump, tcrit_extra;
-                    t_start, base_dir, tcrtp0 = nothing, discarded = nothing,
+                    t_start, base_dir, tcrtp0 = nothing, discarded = nothing, rerun = true,
                     kz = nothing, engine = :run) -> String
 
 Launch a restart segment of the run in `run_dir` from the dump `dump` (file

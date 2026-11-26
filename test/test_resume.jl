@@ -14,7 +14,7 @@
         "  NA-NS=          85         168         530\n"
     adj(t) =
         " ADJUST:  TIME    $(t)  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00" *
-        " DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n"
+        " DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01 EKIN   2.500E-01 POT   5.000E-01 ETIDE   0.000E+00 ETOT  -2.500E-01\n"
     first_line(s) = s[1:findfirst('\n', s)]
     NA_NS = "  NA-NS=          85         168         530\n"
 
@@ -361,6 +361,45 @@
     end
 end
 
+@testset "A restart joins cleanly only on the dump the run ended with" begin
+    marker_lines(t, name, unit) =
+        "  MYDUMP    $(t)      $(name)                         $(unit) $(name)                \n" *
+        "  W MYDUMP J,II,NPARTMP=         $(unit)           1     1572864\n" *
+        "  NA-NS=          85         168         530\n"
+    adj(t) = " ADJUST:  TIME    $(t)  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00\n"
+    stop_line = "\n         TERMINATION BY MANUAL INTERVENTION\n"
+    end_line = "\n         END RUN    TIME[Myr] =    1.00  TOFF/TIME/TTOT=      0.00000000     10.50000000     10.50000000\n"
+    function clean(text, status)
+        out = mktempdir()
+        so = joinpath(out, "out1000")
+        write(so, text)
+        m = last(Nbody6Dynamics._dump_markers(so))
+        r = Nbody6Dynamics._discard_after(out, so, m; segment = 1, last_status = status)
+        return r["clean"], r["moved"]
+    end
+    ckpt = adj("1.00000E+01") * marker_lines(10.0, "comm.2_10.0", 202)
+    # Stopped and completed on their own dumps
+    @test clean(
+        ckpt * adj("1.05000E+01") * stop_line * marker_lines(10.5, "comm.1_10.5", 203),
+        "stopped",
+    )[1]
+    @test clean(
+        ckpt * adj("1.05000E+01") * end_line * marker_lines(10.5, "comm.1_10.5", 204),
+        "completed",
+    )[1]
+    # A stop without a dump (KZ(1) = 0) and an end without one, after the checkpoint at
+    # 10: the restart from it repeats (10, 10.5], whose stdout is moved aside
+    for (tail, status) in ((stop_line, "stopped"), (end_line, "completed"))
+        ok, moved = clean(ckpt * adj("1.05000E+01") * tail, status)
+        @test !ok && "out1000.tail" in moved
+    end
+    # A dump of an earlier segment before the END RUN of this one
+    @test !clean(
+        ckpt * marker_lines(10.0, "comm.1_10.0", 203) * adj("1.05000E+01") * end_line,
+        "completed",
+    )[1]
+end
+
 @testset "resume_run" begin
     fake_engine = raw"""
     #!/bin/bash
@@ -393,7 +432,7 @@ end
         printf '%s %d %d 1 1 1 1.0 1.0 2.0 0.0 1.0 1.0 0.0 0.0 0.0 0.0\n' "$1" "$2" "$(($2 + 1))" >> coll.13
     }
     while [ "$t" -le "$end" ]; do
-        printf ' ADJUST:  TIME    %d.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n' "$t"
+        printf ' ADJUST:  TIME    %d.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01 EKIN   2.500E-01 POT   5.000E-01 ETIDE   0.000E+00 ETOT  -2.500E-01\n' "$t"
         printf '%d.0 1\n' "$t" >> lagr.7
         [ "$t" -ge 1 ] && collision "$t.0" $((2 * t))
         : > "conf.3_$t"
@@ -416,7 +455,7 @@ end
         if [ -n "$FAKE_DIE_AT" ] && [ "$t" -eq "$FAKE_DIE_AT" ] && [ ! -f died ]; then
             : > died
             printf ' EVENT after the dump at T= %d\n' "$t"
-            printf ' ADJUST:  TIME    %d.50000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n' "$t"
+            printf ' ADJUST:  TIME    %d.50000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01 EKIN   2.500E-01 POT   5.000E-01 ETIDE   0.000E+00 ETOT  -2.500E-01\n' "$t"
             printf '%d.5 1\n' "$t" >> lagr.7
             collision "$t.5" 90
             : > "conf.3_$t.5"

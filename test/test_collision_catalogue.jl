@@ -230,7 +230,7 @@ end
     mkpath(out)
     adjust(t, t_myr) =
         " ADJUST:  TIME    $(t)  T[Myr]   $(t_myr)  Q   0.500E+00  DE   0.000E+00 " *
-        "DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01"
+        "DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01 EKIN   2.500E-01 POT   5.000E-01 ETIDE   0.000E+00 ETOT  -2.500E-01"
     kick =
         " BINARY KICK:  TIME[Myr] N12 K12 " *
         fw(17, "1.000000000E+00") *

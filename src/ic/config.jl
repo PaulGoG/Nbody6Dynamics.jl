@@ -2445,14 +2445,14 @@ function _imbh_table(s::IMBHSpec)::Dict{String,Any}
 end
 
 """
-    _validate_imbh(s::IMBHSpec, key)
+    _validate_imbh(s::IMBHSpec, key; warn = true)
 
 Fail-fast bounds of an [`IMBHSpec`](@ref), naming `<key>.imbh.<field>`:
 exactly one of `mass > 0` [M☉] and `0 < mass_fraction ≤ 0.05` (warned above
-0.02), the enumerations of `placement`, `velocity` and `response`, finite
+0.02 when `warn`), the enumerations of `placement`, `velocity` and `response`, finite
 three-component `offset` and `velocity_kms`, and `0 ≤ spin ≤ 1`.
 """
-function _validate_imbh(s::IMBHSpec, key::AbstractString)
+function _validate_imbh(s::IMBHSpec, key::AbstractString; warn::Bool = true)
     k = "$key.imbh"
     has_mass, has_fraction = isfinite(s.mass), isfinite(s.mass_fraction)
     xor(has_mass, has_fraction) ||
@@ -2464,7 +2464,8 @@ function _validate_imbh(s::IMBHSpec, key::AbstractString)
             "must satisfy 0 < mass_fraction ≤ 0.05 (BME04a: the cusp extends to M(<r) = M• " *
             "above 5 %); got $(s.mass_fraction)",
         )
-        s.mass_fraction > 0.02 &&
+        warn &&
+            s.mass_fraction > 0.02 &&
             @warn "$k.mass_fraction = $(s.mass_fraction) exceeds 0.02: the IMBH dominates the " *
                   "central potential and the cluster leaves the equilibrium it was sampled in"
     end
@@ -2493,17 +2494,19 @@ end
 # ---------------------------------------------------------------------------
 
 """
-    _validate_cluster_spec(spec::ClusterSpec, key::AbstractString)
-    _validate_cluster_spec(spec::ClusterSpec, idx::Int)
+    _validate_cluster_spec(spec::ClusterSpec, key::AbstractString; warn = true)
+    _validate_cluster_spec(spec::ClusterSpec, idx::Int; warn = true)
 
 Validate one parsed `ClusterSpec` against the documented bounds; raises an
 `ArgumentError` naming the offending `<key>.<field>`, `key` the dotted
-cluster table (`idx` stands for `"merger.cluster<idx>"`).
+cluster table (`idx` stands for `"merger.cluster<idx>"`). `warn = false` leaves
+out the warning of the IMBH specification ([`_validate_imbh`](@ref)), for the
+generator, which warns on the realised mass fraction instead.
 """
-_validate_cluster_spec(spec::ClusterSpec, idx::Int) =
-    _validate_cluster_spec(spec, "merger.cluster$idx")
+_validate_cluster_spec(spec::ClusterSpec, idx::Int; warn::Bool = true) =
+    _validate_cluster_spec(spec, "merger.cluster$idx"; warn = warn)
 
-function _validate_cluster_spec(spec::ClusterSpec, key_table::AbstractString)
+function _validate_cluster_spec(spec::ClusterSpec, key_table::AbstractString; warn::Bool = true)
     key = String(key_table)
     spec.N ≥ 2 || _config_error("$key.N", "must be ≥ 2; got $(spec.N)")
     spec.rbar > 0 || _config_error("$key.rbar", "must be > 0; got $(spec.rbar)")
@@ -2512,7 +2515,7 @@ function _validate_cluster_spec(spec::ClusterSpec, key_table::AbstractString)
     _validate_binaries(spec.binaries, key)
     _validate_binary_extensions(spec.binaries, key)
     _validate_segregation(spec.segregation, key)
-    spec.imbh === nothing || _validate_imbh(spec.imbh, key)
+    spec.imbh === nothing || _validate_imbh(spec.imbh, key; warn = warn)
     # The energy ranking of the segregation scheme has no counterpart for f(E, J_z)
     spec.profile isa RotatingKingProfile &&
         spec.segregation.method != "none" &&

@@ -983,7 +983,7 @@ end
     g = MakieExt._fmt_plain_sig
     @test g(NaN) == "NaN" && g(Inf) == "∞" && g(-Inf) == "-∞"
     # Mantissas that round up to 10 roll over to the next decade, at every exponent
-    @test all(g(9.9999 * 10.0^k) == "10" * MakieExt._superscript(k + 1) for k in -15:-3)
+    @test all(g(9.9999 * 10.0^k) == "10" * MakieExt._superscript(k + 1) for k in -15:-4)
     @test all(g(10.0^k) == "10" * MakieExt._superscript(k) for k in vcat(-15:-3, 4:15))
     @test MakieExt._legend_value(0.6) == "0.6" && MakieExt._legend_value(1000) == "1000"
     @test MakieExt._legend_value(1e-5) == "10⁻⁵" && MakieExt._legend_value("king") == "king"

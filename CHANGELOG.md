@@ -48,14 +48,21 @@ entries say so.
   `coal.24` were removed only there as well, and the GW catalogues kept them unless that stage had run.
 - The removal of those duplicates is exact for runs recorded with this version: each segment record carries the
   sizes of `coll.13` and `coal.24` at its launch (`record_offsets`) and whether the restart repeats an interval
-  (`rerun`, from the restart's own check of the dump it starts from), so every record has its segment, and a
-  restart drops the earlier segments' records after its start. Before, the duplicates were inferred from time
-  stamps that fall back, which kept the re-run of a segment killed after its last record and could drop real
-  records when a restart wrote nothing before one from an earlier dump, or when the time stamps of one segment fell
-  back. Segments recorded before keep that inference, with a segment started on the stop dump of its predecessor
-  (or at the end of a completed one) taken for no re-run, each restart start used once, and a record printed at
-  the restart time kept. None of the 63 `coll.13`/`coal.24` files of the existing runs has a time stamp out of
-  order.
+  (`rerun`: not when it starts from the dump its predecessor wrote at a stop request or at `END RUN`), so every
+  record has its segment, and a restart drops the earlier segments' records after its start. Before, the
+  duplicates were inferred from time stamps that fall back, which kept the re-run of a segment killed after its
+  last record and could drop real records when a restart wrote nothing before one from an earlier dump, or when
+  the time stamps of one segment fell back. Segments recorded before keep that inference, with a segment started
+  on the stop dump of its predecessor (or at the end of a completed one) taken for no re-run, each restart start
+  used once, and a record printed at the restart time kept. None of the 63 `coll.13`/`coal.24` files of the
+  existing runs has a time stamp out of order.
+- A restart from a checkpoint of a run that stopped without a dump (`KZ(1) = 0`) or ended after its last
+  checkpoint moves aside the stdout and series records written after that checkpoint, as for a killed segment. Such
+  a join was taken for a clean one because the checkpoint was the last dump of the capture, and the interval
+  stayed in the files twice.
+- A segment killed after `END RUN DEFERRED` (the engine defers its end while a triple, quad or chain subsystem is
+  active) is recorded as killed, not completed, and the completion monitor no longer takes the deferral for the
+  end of the run.
 - Sweeps on devices: a continued point runs on the device the launcher assigns. The device was written into the
   point's configuration only, while a continuation loads the copy frozen in the run directory, so the engine kept
   the device of its first segment.

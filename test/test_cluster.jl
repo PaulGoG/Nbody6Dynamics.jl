@@ -28,7 +28,7 @@
         end=$tcrit
     fi
     while [ "$t" -le "$end" ]; do
-        printf ' ADJUST:  TIME    %d.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n' "$t"
+        printf ' ADJUST:  TIME    %d.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01 EKIN   2.500E-01 POT   5.000E-01 ETIDE   0.000E+00 ETOT  -2.500E-01\n' "$t"
         printf '%d.0 1\n' "$t" >> lagr.7
         : > "conf.3_$t"
         # like the engine: the end time is tested in the adjustment, before a

@@ -819,7 +819,7 @@ end
         "  CPUTOT =  1.33906250E+01  ERRTOT =   169.68931  DETOT =     5.57674\n"
     S_ADJ(t) =
         " ADJUST:  TIME    $(t)  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00" *
-        " DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n"
+        " DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01 EKIN   2.500E-01 POT   5.000E-01 ETIDE   0.000E+00 ETOT  -2.500E-01\n"
     P1 =
         "  MYDUMP    10.000000000000000      10.0                         221 comm.2_10.0" *
         "                \n"
@@ -861,6 +861,11 @@ end
     @test Nbody6Dynamics._segment_status(f; offset = off, exit_status = -15) == "killed"
     @test !Nbody6Dynamics._run_completed(f; offset = off)
     @test Nbody6Dynamics._run_completed(f)
+    # A deferred end (a subsystem still active) is not the end of the run
+    deferred = "\n         END RUN DEFERRED   TTOT =  1.00000000E+00  NSUB =  1\n"
+    @test status_of(adj1 * deferred; exit_status = -9) == "killed"
+    @test (write(f, adj1 * deferred); !Nbody6Dynamics._run_completed(f))
+    @test status_of(adj1 * deferred * S_ADJ("1.10000E+00") * S_END) == "completed"
 
     # Start-up progress from the offset on
     write(f, S_ADJ("0.00000E+00"))
@@ -1046,7 +1051,7 @@ end
     tcrit=${FAKE_TCRIT:-1000}
     t=0
     while [ "$t" -le "$tcrit" ]; do
-        printf ' ADJUST:  TIME    %d.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n' "$t"
+        printf ' ADJUST:  TIME    %d.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01 EKIN   2.500E-01 POT   5.000E-01 ETIDE   0.000E+00 ETOT  -2.500E-01\n' "$t"
         if [ -z "$FAKE_IGNORE_STOP" ] && [ -f STOP ]; then
             printf '\n         TERMINATION BY MANUAL INTERVENTION\n'
             printf '  MYDUMP    %d.0000000000000000      %d.0                         201 comm.1_%d.0                \n' "$t" "$t" "$t"

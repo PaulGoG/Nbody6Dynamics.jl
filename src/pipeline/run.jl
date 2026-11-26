@@ -343,9 +343,12 @@ into `run_dir` (with its paths made absolute against `base_dir`, see
 the teed run log with the opt-in live monitor. `input_path` must be
 absolute (the launch script executes from `out_dir`). With `restart = (;
 dump, tcrit_extra)` the binary copy is reused, stdout and stderr are
-appended, and the run summary records a further segment; an optional
-`discarded` field (the record of [`_discard_after`](@ref)) is stored in the
-segment record. Returns `run_dir`.
+appended, and the run summary records a further segment; the optional
+fields `discarded` (the record of [`_discard_after`](@ref)) and `rerun` (whether
+the segment repeats an interval) are stored in the segment record. Every segment
+record holds `record_offsets`, the sizes of `coll.13` and `coal.24` before the
+engine starts, from which post-processing assigns their records to segments
+([`_restart_dedup`](@ref)). Returns `run_dir`.
 """
 function _execute_simulation(
     cfg::Nbody6Config,
@@ -1413,14 +1416,21 @@ end
     _run_completed(stdout_path; offset = 0) -> Bool
 
 Whether the captured stdout carries the engine's `END RUN` line
-(`adjust.F`, printed when the termination criterion is met). Only the last
-64 KiB are scanned, so the check stays cheap on long runs. Nothing before
-byte `offset` is read, so a restart does not see the `END RUN` of an
+(`adjust.F`, printed when the termination criterion is met; [`_END_RUN`](@ref)).
+Only the last 64 KiB are scanned, so the check stays cheap on long runs. Nothing
+before byte `offset` is read, so a restart does not see the `END RUN` of an
 earlier segment.
 """
 function _run_completed(stdout_path::AbstractString; offset::Integer = 0)::Bool
-    return occursin("END RUN", _stdout_tail(stdout_path; offset = offset))
+    return occursin(_END_RUN, _stdout_tail(stdout_path; offset = offset))
 end
+
+"""
+The engine's `END RUN` line (`adjust.F`, FORMAT 65), not `END RUN DEFERRED`
+(FORMAT 64): with a triple, quad or chain subsystem active the engine defers the end
+and integrates on until the subsystems have terminated.
+"""
+const _END_RUN = r"END RUN(?! DEFERRED)"
 
 """
     _stdout_tail(stdout_path; offset = 0, window = 65536) -> String
@@ -1535,7 +1545,7 @@ function _segment_status(
 )::String
     watchdog && return "watchdog"
     tail = _stdout_tail(stdout_path; offset = offset)
-    occursin("END RUN", tail) && return "completed"
+    occursin(_END_RUN, tail) && return "completed"
     stalled && return "stalled"
     occursin("CALCULATIONS HALTED", tail) && return "halted"
     if occursin("TERMINATION BY MANUAL INTERVENTION", tail) || occursin("COMMON SAVED AT", tail)

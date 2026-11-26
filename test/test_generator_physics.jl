@@ -329,7 +329,12 @@ end
         cfg_heavy = load_merger_config(
             write_config("heavy.toml", replace(imbh, "NSTARS" => "6000", "OUT" => heavy)),
         )
-        result = generate_merger_ic(cfg_heavy)
+        # One warning on the mass fraction, the realised one: the specification's was
+        # given when the configuration was loaded
+        logs, result = Test.collect_test_logs(; min_level = Logging.Warn) do
+            generate_merger_ic(cfg_heavy)
+        end
+        @test count(l -> occursin("exceeds 0.02", string(l.message)), logs) == 1
         @test result.N_total == 6001
         # The record keeps the IMBH of its cluster
         # … read back without a second validation, so without the mass-fraction warning

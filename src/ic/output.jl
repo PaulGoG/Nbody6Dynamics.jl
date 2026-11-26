@@ -1231,8 +1231,9 @@ function generate_merger_ic(
     (complex_mode && n_clusters != 1) &&
         error("Complex mode takes exactly one member template in cfg.clusters, got $n_clusters")
     complex_mode && _validate_complex(cfg.complex)
+    # The IMBH's mass fraction is warned about as realised, below
     for (i, spec) in enumerate(cfg.clusters)
-        _validate_cluster_spec(spec, i)
+        _validate_cluster_spec(spec, i; warn = false)
     end
     _validate_nbody6(cfg.nbody6)
     _validate_stellar(cfg.stellar, cfg.output)
