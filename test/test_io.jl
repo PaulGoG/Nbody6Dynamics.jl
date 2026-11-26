@@ -676,9 +676,11 @@ end
             "\n               N  NFIX  NCRIT  NRAND  NNBOPT  NRUN NCOMM\n\n" *
             "            2000     1     10   1612     100     1     1\n\n" *
             "           ALPHAS =  2.35000E+00  BODY1 =  1.00000E+00  BODYN =  8.00000E-02 ZMASS =  2.00000E+03 NBIN0 =      12 NHI0 =    0 ZMET =  2.00000E-04\n" *
-            " ADJUST:  TIME    0.00000E+00  T[Myr]   0.000E+00  Q   0.362E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.934E-01\n" *
+            " ADJUST:  TIME    0.00000E+00  T[Myr]   0.000E+00  Q   0.362E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.934E-01" *
+            " EKIN   2.300E-01 POT   5.234E-01 ETIDE   0.000E+00 ETOT  -2.934E-01 EBIN   0.000E+00 EMERGE   0.000E+00 ESUB   0.000E+00 ECOLL   0.000E+00 EMDOT   0.000E+00 ECDOT   0.000E+00\n" *
             " TIME[NB]    0.000000E+00  N     2000  <NB>   162  NPAIRS      15  NMERGE     3 MULT    0 NS     1970\n" *
-            " ADJUST:  TIME    5.00000E-01  T[Myr]   0.100E+00  Q   0.500E+00  DE   1.000E-06 DELTA   1.000E-07 DETOT   1.000E-07 E  -2.934E-01\n",
+            " ADJUST:  TIME    5.00000E-01  T[Myr]   0.100E+00  Q   0.500E+00  DE   1.000E-06 DELTA   1.000E-07 DETOT   1.000E-07 E  -2.934E-01" *
+            " EKIN   2.300E-01 POT   5.234E-01 ETIDE   0.000E+00 ETOT  -2.934E-01 EBIN   0.000E+00 EMERGE   0.000E+00 ESUB   0.000E+00 ECOLL   0.000E+00 EMDOT   0.000E+00 ECDOT   0.000E+00\n",
         )
         d = read_diagnostics(capture)
         @test d.nbin0 == 12 && d.nzero == 2000
@@ -1115,18 +1117,32 @@ end
                 io,
                 " ADJUST:  TIME    1.50000E+00  T[Myr]   0.174E+01  Q   0.480E+00  DE   1.000E-06 DELTA   1.000E-06 DETOT   2.000E-06 E  -5.385E-01 EKIN   3.265E-01",
             )
-            # the short form, which ends with the total energy E
+            # cut after E, and inside the value of ETOT (a shorter number)
+            full =
+                " ADJUST:  TIME    2.00000E+00  T[Myr]   0.232E+01  Q   0.607E+00  DE  -2.980E-05" *
+                " DELTA  -2.250E-05 DETOT  -2.310E-05 E  -4.904E-01 EKIN   3.265E-01" *
+                " POT   8.169E-01 ETIDE   0.000E+00 ETOT  -5.409E-01 EBIN  -5.050E-02"
+            println(io, full[1:(findfirst(" EKIN", full).start - 1)])
+            println(io, full[1:(findfirst("E-01 EBIN", full).start - 1)])
+            # cut inside the value of EBIN: kept without it
+            println(io, full[1:(end - 2)])
+            println(io, full)
+            # the form without the keys between DE and ETOT takes E as the total
             println(
                 io,
-                " ADJUST:  TIME    2.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01",
+                " ADJUST:  TIME    3.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 E  -2.500E-01",
             )
         end
-        adjust = read_diagnostics(out).adjust
-        @test length(adjust) == 2
+        adjust =
+            @test_logs (:warn, r"4 ADJUST lines skipped") match_mode = :any read_diagnostics(out).adjust
+        @test length(adjust) == 4
         @test adjust[1].time_nb == 0.5
         @test adjust[1].de_rel == 2.644e-6
         @test adjust[1].e_tot == -0.5408
-        @test adjust[2].time_nb == 2.0
-        @test adjust[2].e_tot == -0.25
+        @test [a.time_nb for a in adjust[2:3]] == [2.0, 2.0]
+        @test all(a -> a.e_tot == -0.5409, adjust[2:3])
+        @test isnan(adjust[2].ebin) && adjust[3].ebin == -0.0505
+        @test adjust[4].time_nb == 3.0
+        @test adjust[4].e_tot == -0.25
     end
 end

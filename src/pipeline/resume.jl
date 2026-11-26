@@ -275,6 +275,7 @@ same name in the destination is kept as a `#k` sibling.
 The returned record holds `dir` (the destination relative to `out_dir`, or
 `""` when nothing was moved), `moved` (sorted names under it), `t_from` (dump
 time) and `t_to` (time of the last `ADJUST:` line, the dump time when none),
+`clean` (`true` for the segment left as it is: the restart repeats nothing),
 and `uncut`: the non-empty appended files the package cannot cut by time
 (`<letters>.<digits>` outside the four series and `dat.10`, and `err1000`),
 which hold the interval `(t_from, t_to]` twice after the restart.
@@ -294,12 +295,14 @@ function _discard_after(
         "uncut" => String[],
         "t_from" => t_d,
         "t_to" => isnan(t_to) ? t_d : t_to,
+        "clean" => false,
     )
     if last_status in ("stopped", "completed")
         markers = _dump_markers(stdout_path)
         if !isempty(markers) &&
            last(markers).file == marker.file &&
            last(markers).line_end == marker.line_end
+            result["clean"] = true
             return result
         end
     end
@@ -476,8 +479,10 @@ started from under that dump's own name, so the copy is a working copy and
 not a link, and it is removed when the engine exits, whatever the outcome.
 The restart input `restart.inp` is written from `original_inp`
 ([`_write_restart_inp`](@ref)), an earlier one kept as a `#k` sibling. The
-segment record carries `t_start` and, when given, the record `discarded`
-of [`_discard_after`](@ref); `kz` and `engine` are those of
+segment record carries `t_start`, `rerun` (whether the segment repeats an
+interval its predecessors wrote: `false` for a restart from the dump a stopped or
+completed segment ended on, the `clean` of [`_discard_after`](@ref)) and, when given,
+the record `discarded` of [`_discard_after`](@ref); `kz` and `engine` are those of
 [`restart_simulation`](@ref). The pipeline's completion stamp is cleared
 first ([`_reopen_pipeline`](@ref)). Returns `run_dir`.
 """
@@ -492,6 +497,7 @@ function _launch_restart(
     base_dir::AbstractString,
     tcrtp0::Union{Nothing,Real} = nothing,
     discarded::Union{Nothing,AbstractDict} = nothing,
+    rerun::Bool = true,
     kz = nothing,
     engine::Symbol = :run,
 )::String
@@ -510,6 +516,7 @@ function _launch_restart(
             dump = String(dump),
             tcrit_extra = Float64(tcrit_extra),
             t_start = Float64(t_start),
+            rerun = rerun,
             kz = kz_record,
             engine = engine,
         ) :
@@ -517,6 +524,7 @@ function _launch_restart(
             dump = String(dump),
             tcrit_extra = Float64(tcrit_extra),
             t_start = Float64(t_start),
+            rerun = rerun,
             discarded = discarded,
             kz = kz_record,
             engine = engine,
@@ -692,6 +700,7 @@ function resume_run(
         t_start = t_d,
         base_dir = base_dir,
         discarded = isempty(discarded["moved"]) ? nothing : discarded,
+        rerun = !discarded["clean"],
     )
 end
 

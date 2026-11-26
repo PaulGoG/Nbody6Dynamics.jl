@@ -324,6 +324,7 @@ function restart_simulation(
         base_dir = base_dir,
         tcrtp0 = tcrtp0,
         discarded = isempty(discarded["moved"]) ? nothing : discarded,
+        rerun = !discarded["clean"],
         kz = kz,
         engine = engine,
     )
@@ -447,6 +448,12 @@ function _execute_simulation(
             _dump_time(restart.dump)
         end
 
+        # Sizes of the appended event files before the engine starts: the records
+        # after them are this segment's (restart duplicates, `_collision_logs!`)
+        record_offsets = Dict{String,Any}(
+            f => (isfile(joinpath(out_dir, f)) ? Int(filesize(joinpath(out_dir, f))) : 0) for
+            f in _APPENDED_RECORD_FILES
+        )
         cpu_before = _children_cpu_times()
         t_start = time()
         launch_date = Dates.format(Dates.now(), "yyyy-mm-dd HH:MM:SS")
@@ -477,8 +484,10 @@ function _execute_simulation(
             "pid" => script_pid,
             "package_commit" => provenance["package_commit"],
             "stdout_offset" => stdout_offset,
+            "record_offsets" => record_offsets,
             "stop_requested" => "",
         )
+        (restart !== nothing && haskey(restart, :rerun)) && (opening["rerun"] = restart.rerun)
         isempty(sim.gpu_list) || (opening["gpu_list"] = copy(sim.gpu_list))
         estimate === nothing || merge!(opening, _cost_fields(estimate))
         # `pid` is the launch script, the engine's parent and the process a

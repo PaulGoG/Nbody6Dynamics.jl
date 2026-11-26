@@ -74,12 +74,14 @@ end
     _control_expected_mass(table, i, orbit_mode) -> Float64
 
 Expected total mass [M☉] of cluster `i` as the generator computes it: the table
-parsed and validated as `load_merger_config` does, then [`expected_mass`](@ref)
-of its IMF and star count.
+parsed as `load_merger_config` does, its star count and IMF validated, then
+[`expected_mass`](@ref) of the two. The other bounds of the cluster are the loader's.
 """
 function _control_expected_mass(t::AbstractDict, i::Int, orbit_mode::AbstractString)::Float64
     spec = _parse_cluster_table(t, i, orbit_mode)
-    _validate_cluster_spec(spec, i)
+    key = "merger.cluster$i"
+    spec.N ≥ 2 || _config_error("$key.N", "must be ≥ 2; got $(spec.N)")
+    _validate_imf(spec.imf, spec.N, key)
     return expected_mass(spec.imf, spec.N)
 end
 
@@ -90,15 +92,21 @@ Derive the control configuration from a parsed merger TOML (`raw` holds the
 top-level `"merger"` table): one cluster in single orbit mode at the
 origin and at rest, `N` the sum over the merger's clusters, `rbar` their
 `N`-weighted mean (a member given by `density_ratio` is sized first, by the
-ratio of the expected masses as in the generator), a total mass (`mass_total`,
-`imf.target_mass`) the sum of theirs, every other cluster-1 key (model,
-`W0`, IMF, binaries)
-and the `output`, `nbody6`, `stellar`, `tidal` and `seed` entries kept
-verbatim; the `orbit` table and the other clusters are dropped. Time
-intervals in N-body units (`output.tcrit`, `dtadj`, `deltat`,
+ratio of the expected masses as in the generator), every other cluster-1 key
+(model, `W0`, IMF, binaries) and the `output`, `nbody6`, `stellar`, `tidal` and
+`seed` entries kept verbatim; the `orbit` table and the other clusters are
+dropped. Time intervals in N-body units (`output.tcrit`, `dtadj`, `deltat`,
 `stellar.dtplot`) are multiplied by [`_control_time_factor`](@ref) so the
 control covers about the merger's physical span; intervals in Myr are left
 as they are and match exactly.
+
+The control has the merger's expected total mass, the sum of the clusters'
+[`expected_mass`](@ref) as the generator computes it: a total that cluster 1
+states (`mass_total`, `imf.target_mass`) is replaced by that sum, and so is the
+mass of equal-mass stars given by `imf.particle_mass` (which becomes the mean). A
+control of cluster 1's mass function without either must come to the same mass
+(the clusters share a mean stellar mass); otherwise `ArgumentError`, since the
+time units of [`_control_time_factor`](@ref) assume equal masses.
 """
 function control_merger_dict(raw::AbstractDict)
     haskey(raw, "merger") || throw(ArgumentError("control_merger_dict: missing [merger] table"))
@@ -113,45 +121,44 @@ function control_merger_dict(raw::AbstractDict)
     )
     Ns = [Int(get(t, "N", 50000)) for t in tables]
     rbars = [Float64(get(t, "rbar", 2.0)) for t in tables]
+    orbit_mode = String(get(m, "orbit_mode", "kepler"))
+    masses = [_control_expected_mass(tables[i], i, orbit_mode) for i in 1:n]
     # A member sized by its density ratio to cluster 1 by the generator's rule: the ratio
     # of the expected masses of the two parsed cluster specifications
-    orbit_mode = String(get(m, "orbit_mode", "kepler"))
-    for i in 2:n
-        ratio = Float64(get(tables[i], "density_ratio", 0.0))
-        ratio > 0 || continue
-        mass_ratio =
-            _control_expected_mass(tables[i], i, orbit_mode) /
-            _control_expected_mass(tables[1], 1, orbit_mode)
-        rbars[i] = rbars[1] * cbrt(mass_ratio / ratio)
+    for i in 1:n
+        ratio = _density_ratio(tables[i], i)
+        ratio === nothing && continue
+        rbars[i] = rbars[1] * cbrt(masses[i] / masses[1] / ratio)
     end
     N_total = sum(Ns)
+    M_total = sum(masses)
     control = deepcopy(tables[1])
     control["N"] = N_total
     control["rbar"] = sum(Ns .* rbars) / N_total
-    # A cluster mass given as a total is summed over the clusters: the copy of
-    # cluster 1 would otherwise keep that cluster's mass for all the stars.
-    if haskey(control, "mass_total")
-        all(t -> haskey(t, "mass_total"), tables) || throw(
-            ArgumentError(
-                "control_merger_dict: mass_total must be given for every cluster or for none",
-            ),
-        )
-        control["mass_total"] = sum(Float64(t["mass_total"]) for t in tables)
-    end
+    # A total cluster 1 states becomes the merger's: the copy would otherwise keep that
+    # cluster's mass for all the stars.
+    haskey(control, "mass_total") && (control["mass_total"] = M_total)
     imf = get(control, "imf", nothing)
-    if imf isa AbstractDict && haskey(imf, "target_mass")
-        all(
-            t -> get(t, "imf", nothing) isa AbstractDict && haskey(t["imf"], "target_mass"),
-            tables,
-        ) || throw(
-            ArgumentError(
-                "control_merger_dict: imf.target_mass must be given for every cluster or for none",
-            ),
-        )
-        imf["target_mass"] = sum(Float64(t["imf"]["target_mass"]) for t in tables)
+    if imf isa AbstractDict
+        haskey(imf, "target_mass") && (imf["target_mass"] = M_total)
+        # Equal masses given by the particle mass: the mean over the merger's stars
+        get(imf, "type", "") == "equal" &&
+            haskey(imf, "particle_mass") &&
+            (imf["particle_mass"] = M_total / N_total)
     end
     delete!(control, "position")
     delete!(control, "velocity")
+    M_control = _control_expected_mass(control, 1, "single")
+    isapprox(M_control, M_total; rtol = 1.0e-9) || throw(
+        ArgumentError(
+            "control_merger_dict: the control, cluster 1's mass function for all " *
+            "$N_total stars, has an expected mass of $(round(M_control; sigdigits = 6)) M☉ " *
+            "against $(round(M_total; sigdigits = 6)) M☉ of the merger's clusters " *
+            "($(join(round.(masses; sigdigits = 6), " + ")) M☉). A control is defined for " *
+            "clusters of one mean stellar mass, or with a total mass stated in cluster 1 " *
+            "(mass_total, imf.target_mass) or equal masses",
+        ),
+    )
     factor = _control_time_factor(m, Ns, rbars, control["rbar"])
     out = get!(m, "output", Dict{String,Any}())
     for key in ("tcrit", "dtadj", "deltat")

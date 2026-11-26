@@ -243,8 +243,8 @@ function read_diagnostics(path::AbstractString)::DiagnosticsData
     # particle count so plots don't show sawtooth artefacts.
     _forward_fill_particle_counts!(adjust_records)
     n_unparsed > 0 &&
-        @warn "$path: $n_unparsed ADJUST lines skipped as unparseable (too few fields or a " *
-              "Fortran field overflow)"
+        @warn "$path: $n_unparsed ADJUST lines skipped as unparseable (too few fields, a " *
+              "Fortran field overflow, or a line cut short)"
 
     return DiagnosticsData(adjust_records, scaling, kz, tidal, nbin0, nzero)
 end
@@ -355,19 +355,33 @@ function _parse_adjust_positional(tokens)::_AdjustFields
 end
 
 """
+Keys of the engine's ADJUST line (`adjust.F`, FORMAT 50) between `DE` and `ETOT`: a
+line with any of them is of the full form.
+"""
+const _ADJUST_FULL_FORM_KEYS = ("DELTA", "DETOT", "EKIN", "POT", "ETIDE")
+
+"""A complete `Ew.d` field of FORMAT 50: mantissa with a fraction and a two-digit exponent."""
+const _ADJUST_COMPLETE_REAL = r"^[+-]?\d*\.\d+[EeDd][+-]\d{2}$"
+
+"""
 Parse key-value ADJUST: TIME val T[Myr] val Q val DE val … ETOT val … A line without
-`TIME`, `Q` or `DE` throws `ArgumentError`, as does one without `ETOT` unless it is
-of the short form that ends with the total energy `E` (no `EKIN` or `POT`): in the
-engine's full line `E` is the energy without the binding of the pairs, and a line
-cut after it is incomplete.
+`TIME`, `Q` or `DE` throws `ArgumentError`. A line of the engine's full form (FORMAT
+50, which prints `DELTA`, `DETOT`, `E`, `EKIN`, `POT`, `ETIDE` before `ETOT`) without
+`ETOT` throws as well: there `E` is the energy without the binding of the pairs, and
+the line was cut short. In that form the last value of the line is dropped unless it
+is a complete `Ew.d` field, since a line cut inside a number leaves a shorter number.
+A line without the full-form keys (`TIME`, `T[Myr]`, `Q`, `DE`, `E`) takes `E` as
+the total energy.
 """
 function _parse_adjust_kv(tokens)::_AdjustFields
     kv = Dict{String,String}()
+    last_key = ""
     i = 1
     while i < length(tokens)
         key = uppercase(tokens[i])
         if i + 1 <= length(tokens)
             kv[key] = tokens[i + 1]
+            last_key = key
             i += 2
         else
             break
@@ -377,9 +391,14 @@ function _parse_adjust_kv(tokens)::_AdjustFields
     for key in ("TIME", "Q", "DE")
         haskey(kv, key) || throw(ArgumentError("ADJUST line without $key"))
     end
-    haskey(kv, "ETOT") ||
-        (haskey(kv, "E") && !haskey(kv, "EKIN") && !haskey(kv, "POT")) ||
-        throw(ArgumentError("ADJUST line without ETOT"))
+    if any(k -> haskey(kv, k), _ADJUST_FULL_FORM_KEYS)
+        # The last value of a line cut inside it is a prefix of the printed field
+        occursin(_ADJUST_COMPLETE_REAL, kv[last_key]) || delete!(kv, last_key)
+        haskey(kv, "ETOT") || throw(ArgumentError("ADJUST line of the full form without ETOT"))
+    else
+        (haskey(kv, "ETOT") || haskey(kv, "E")) ||
+            throw(ArgumentError("ADJUST line without ETOT or E"))
+    end
 
     kv_real(key, default) = _parse_fortran_float(get(kv, key, default))
     time_nb = kv_real("TIME", "0")

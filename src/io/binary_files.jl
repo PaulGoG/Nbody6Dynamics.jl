@@ -62,29 +62,36 @@ end
 """
 Records of the file `path`, one per non-empty line that is not a header line
 (`is_header(lstrip(line))`), built by `parser(line)`. Lines whose parser
-throws `ArgumentError` are skipped and counted in one warning per file.
+throws `ArgumentError` are skipped and counted in one warning per file. When
+`positions` is a vector, the byte offset of each record's line is appended to it.
 """
 function _binfile_read(
     parser::F,
     ::Type{T},
     path::AbstractString,
     file::AbstractString,
-    is_header::H,
+    is_header::H;
+    positions::Union{Nothing,Vector{Int}} = nothing,
 )::Vector{T} where {F,T,H}
     isfile(path) || error("$file file not found: $path")
     records = T[]
     n_data = 0
     n_skipped = 0
-    for line in eachline(path)
-        isempty(strip(line)) && continue
-        is_header(lstrip(line)) && continue
-        n_data += 1
-        try
-            push!(records, parser(line))
-        catch e
-            e isa ArgumentError || rethrow()
-            n_skipped += 1
-            @debug "Skipping malformed $file record" line exception = e
+    open(path) do io
+        while !eof(io)
+            pos = Int(position(io))
+            line = readline(io)
+            isempty(strip(line)) && continue
+            is_header(lstrip(line)) && continue
+            n_data += 1
+            try
+                push!(records, parser(line))
+                positions === nothing || push!(positions, pos)
+            catch e
+                e isa ArgumentError || rethrow()
+                n_skipped += 1
+                @debug "Skipping malformed $file record" line exception = e
+            end
         end
     end
     n_skipped > 0 && @warn "$file: $n_skipped of $n_data records skipped (malformed)" path

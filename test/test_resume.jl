@@ -368,8 +368,9 @@ end
     # Fresh start: t = 0 … TCRIT. Restart (KSTART=2 in the input): t0 from the
     # payload of comm.1, end = t0 + TCRIT. Per step: an ADJUST line, a record in
     # lagr.7, a snapshot conf.3_<t>, and with FAKE_CHECKPOINT a dump comm.2_<t>.0
-    # with its three stdout lines. STOP is honoured with a dump comm.1_<t>.0;
-    # END RUN is followed by a dump comm.1_<end>.0, as with KZ(1) = 1.
+    # with its three stdout lines, and from t = 1 on a collision in coll.13. STOP is
+    # honoured with a dump comm.1_<t>.0; END RUN is followed by a dump
+    # comm.1_<end>.0, as with KZ(1) = 1.
     input=$(cat)
     tcrit=$(printf '%s' "$input" | grep -o 'TCRIT=[0-9.]*' | head -n 1 | cut -d= -f2)
     tcrit=${tcrit%.*}
@@ -388,9 +389,13 @@ end
         t=0
         end=$tcrit
     fi
+    collision() {  # collision <t> <name>: one list-directed record of coll.13
+        printf '%s %d %d 1 1 1 1.0 1.0 2.0 0.0 1.0 1.0 0.0 0.0 0.0 0.0\n' "$1" "$2" "$(($2 + 1))" >> coll.13
+    }
     while [ "$t" -le "$end" ]; do
         printf ' ADJUST:  TIME    %d.00000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n' "$t"
         printf '%d.0 1\n' "$t" >> lagr.7
+        [ "$t" -ge 1 ] && collision "$t.0" $((2 * t))
         : > "conf.3_$t"
         if [ -n "$FAKE_CHECKPOINT" ]; then
             dump "comm.2_$t.0" "$t"
@@ -413,6 +418,7 @@ end
             printf ' EVENT after the dump at T= %d\n' "$t"
             printf ' ADJUST:  TIME    %d.50000E+00  T[Myr]   0.100E+01  Q   0.500E+00  DE   0.000E+00 DELTA   0.000E+00 DETOT   0.000E+00 E  -2.500E-01\n' "$t"
             printf '%d.5 1\n' "$t" >> lagr.7
+            collision "$t.5" 90
             : > "conf.3_$t.5"
             kill -KILL $$
         fi
@@ -548,7 +554,12 @@ end
         @test segs[k]["kind"] == "restart"
         @test segs[k]["t_start"] == segs[k - 1]["t_end"]
         @test !haskey(segs[k], "discarded")
+        @test segs[k]["rerun"] == false          # each continues on its predecessor's stop dump
+        @test segs[k]["record_offsets"]["coal.24"] == 0
     end
+    coll_times(dir) =
+        [r.time_nb for r in Nbody6Dynamics._collision_logs!(Dict{Symbol,Any}(), dir).collisions]
+    @test coll_times(out) == collect(1.0:12.0)
     @test !isfile(joinpath(out, "comm.1"))
     @test !isdir(joinpath(out, "discarded"))
     @test isfile(joinpath(out, "comm.1_12.0"))
@@ -580,6 +591,14 @@ end
     @test kseg2["dump"] == "comm.2_5.0"
     @test kseg2["discarded"]["moved"] == sort(["out1000.tail", "lagr.7.tail", "conf.3_5.5"])
     @test kseg2["discarded"]["dir"] == joinpath("discarded", "segment_1")
+    # The restart repeats (5, 5.5]; coll.13 holds the killed segment's record at 5.5,
+    # followed by the restart's own from 6 on: removed by its segment, not by the time
+    # stamps, which do not fall back
+    @test kseg2["rerun"] == true
+    coll = read(joinpath(kout, "coll.13"), String)
+    @test startswith(coll[(kseg2["record_offsets"]["coll.13"] + 1):end], "6.0 ")
+    @test occursin("\n5.5 90 91 ", coll)
+    @test coll_times(kout) == collect(1.0:12.0)
     disc = joinpath(kout, "discarded", "segment_1")
     stdout_tail = read(joinpath(disc, "out1000.tail"), String)
     @test occursin("EVENT after the dump", stdout_tail)
@@ -639,6 +658,8 @@ end
     @test rinfo["segments"][end]["t_start"] == 12.0
     @test rinfo["segments"][end]["dump"] == "comm.1_12.0"
     @test !haskey(rinfo["segments"][end], "discarded")
+    @test rinfo["segments"][end]["rerun"] == false     # continued from the END RUN dump
+    @test coll_times(kout) == collect(1.0:15.0)
     @test !isfile(joinpath(kout, "comm.1"))
     # A second restart with an option override on the backend build. The fake input has
     # no KZ lines; the run's input copy gains the five the generator writes.

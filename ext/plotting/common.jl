@@ -585,9 +585,11 @@ end
 
 `_fmt_latex_sig` for plain-text contexts (legend entries, multi-line
 annotations): the same rules, with the power of ten written in Unicode
-superscripts (`2.5×10⁻⁵`, `10⁴`) instead of TeX.
+superscripts (`2.5×10⁻⁵`, `10⁴`) instead of TeX, `NaN` and `∞` with its sign.
 """
 function _fmt_plain_sig(x::Real, n::Int = 3)::String
+    isnan(x) && return "NaN"
+    isinf(x) && return (x < 0 ? "-" : "") * "∞"
     x == 0 && return "0"
     sign = x < 0 ? "-" : ""
     v = round(abs(Float64(x)); sigdigits = n)
@@ -596,6 +598,7 @@ function _fmt_plain_sig(x::Real, n::Int = 3)::String
         return sign * (isinteger(v) ? string(Int(v)) : string(v))
     end
     m = round(v / 10.0^e; sigdigits = n)
+    m ≥ 10 && ((m, e) = (m / 10, e + 1))         # log10 rounding at a decade
     m == 1 && return sign * "10" * _superscript(e)
     m_str = isinteger(m) ? string(Int(m)) : string(m)
     return sign * m_str * "×10" * _superscript(e)

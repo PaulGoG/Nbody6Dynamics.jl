@@ -1192,7 +1192,10 @@ use their own). A record within a relative 10⁻⁹ of the start (the printed
 precision of the files) counts as written before it. Records with the same time
 and names as a later one are dropped as well. A re-run whose first record is
 not earlier than the last record of the interrupted segment cannot be told
-from it and is kept.
+from it and is kept. The inference cannot tell which segment wrote a record:
+it fails when a restart wrote nothing before a later one from an earlier dump,
+or when the time stamps fall back within one segment. [`_restart_dedup`](@ref)
+uses it only for segments recorded without the sizes of the files.
 """
 function _span_restart_dedup(
     records::AbstractVector{T},
@@ -1237,10 +1240,8 @@ end
 
 `t_start` [NB] of every segment after the first in the `segments` of a run
 record (`RUN_INFO.toml`) that re-runs an interval its predecessor had already
-written; empty for a run of one segment or without a record. A segment that
-starts at the dump its predecessor ended on (status `stopped`, `stalled` or
-`completed`, `t_end` equal to the new `t_start`) re-runs nothing and is left
-out, so that a time stamp falling back inside it drops no record.
+written ([`_rerun_start`](@ref)); empty for a run of one segment or without a
+record.
 """
 function _span_restart_starts(run_info::AbstractDict)::Vector{Float64}
     segments = get(run_info, "segments", nothing)
@@ -1250,22 +1251,130 @@ function _span_restart_starts(run_info::AbstractDict)::Vector{Float64}
     for seg in segments
         seg isa AbstractDict || (previous = nothing; continue)
         if previous !== nothing
-            t = get(seg, "t_start", nothing)
-            if t isa Real && isfinite(t) && !_clean_join(previous, Float64(t))
-                push!(starts, Float64(t))
-            end
+            t = _rerun_start(previous, seg)
+            t === nothing || push!(starts, t)
         end
         previous = seg
     end
     return starts
 end
 
-# The engine of `previous` ended on the dump at `t_start`: a stop request, a stall
-# stop or END RUN terminates it right after that dump, so nothing after it was written.
-function _clean_join(previous::AbstractDict, t_start::Float64)::Bool
-    get(previous, "status", "") in ("stopped", "stalled", "completed") || return false
+"""
+    _rerun_start(previous, seg) -> Union{Nothing,Float64}
+
+`t_start` [NB] of the segment record `seg` when it repeats an interval that the
+segment before it, `previous`, had written; `nothing` when it does not or has no
+finite start. The segment's `rerun` flag decides (recorded since 0.11.0, from the
+restart's own check, [`_discard_after`](@ref)); a record without it is judged by
+[`_clean_join`](@ref).
+"""
+function _rerun_start(previous::AbstractDict, seg::AbstractDict)::Union{Nothing,Float64}
+    t = get(seg, "t_start", nothing)
+    (t isa Real && isfinite(t)) || return nothing
+    rerun = get(seg, "rerun", nothing)
+    rerun isa Bool || (rerun = !_clean_join(previous, seg))
+    return rerun ? Float64(t) : nothing
+end
+
+"""
+    _clean_join(previous, seg) -> Bool
+
+Whether the segment record `seg` starts on the dump the segment `previous` ended on,
+so that it repeats nothing, for records without the `rerun` flag: `previous` stopped
+or was stopped by the stall watchdog with a stop dump (`stop_dump`) and `seg` starts
+from that dump (`dump`; without that key, at its `t_end`), or `previous` completed
+at the `t_start` of `seg` to the printed precision of its `t_end` (the `TIME` of the
+last `ADJUST:` line, six significant digits). Anything else may have run past the
+dump `seg` starts from.
+"""
+function _clean_join(previous::AbstractDict, seg::AbstractDict)::Bool
+    t = Float64(seg["t_start"])
+    status = get(previous, "status", "")
     t_end = get(previous, "t_end", nothing)
-    return t_end isa Real && abs(Float64(t_end) - t_start) ≤ 1e-9 * max(1.0, abs(t_start))
+    if status in ("stopped", "stalled")
+        stop_dump = get(previous, "stop_dump", "")
+        (stop_dump isa AbstractString && !isempty(stop_dump)) || return false
+        dump = get(seg, "dump", "")
+        (dump isa AbstractString && !isempty(dump)) && return basename(dump) == stop_dump
+        return t_end isa Real && abs(Float64(t_end) - t) ≤ 1e-9 * max(1.0, abs(t))
+    elseif status == "completed"
+        return t_end isa Real && abs(Float64(t_end) - t) ≤ 5e-6 * max(1.0, abs(t))
+    end
+    return false
+end
+
+"""Event files the engine appends across segments; their sizes at each launch are recorded."""
+const _APPENDED_RECORD_FILES = ("coll.13", "coal.24")
+
+"""
+    _restart_dedup(records, positions, run_info, file, file_size) -> Vector
+
+The records of the appended event file `file` (`coll.13` or `coal.24`; fields
+`time_nb`, `name1`, `name2`, in file order, with `positions` the byte offsets of
+their lines in a file of `file_size` bytes), without the duplicates that restarts
+append, from the `segments` of the run record `run_info`. A segment whose record
+holds the size of `file` at its launch (`record_offsets`, since 0.11.0) owns the
+records from that offset on. When it repeats an interval ([`_rerun_start`](@ref)),
+the records of the segments before it later than its start (beyond a relative 10⁻⁹,
+the printed precision of the files) are dropped: it writes them again. Segments
+recorded without the offsets share the group of the last segment before them that
+has one, inside which duplicates are inferred from the time stamps
+([`_span_restart_dedup`](@ref)). When the offsets do not fit the file (decreasing,
+or beyond its size) the time stamps decide for the whole file, with a warning.
+Records with the same time and names as a later one are dropped as well.
+"""
+function _restart_dedup(
+    records::AbstractVector{T},
+    positions::AbstractVector{<:Integer},
+    run_info::AbstractDict,
+    file::AbstractString,
+    file_size::Integer,
+)::Vector{T} where {T}
+    length(positions) == length(records) ||
+        throw(DimensionMismatch("$(length(records)) records, $(length(positions)) positions"))
+    segments = get(run_info, "segments", nothing)
+    segments isa AbstractVector || return _span_restart_dedup(records, Float64[])
+    # A group of records per segment with a recorded offset; the first from byte 0
+    bounds = Int[0]
+    cuts = Union{Nothing,Float64}[nothing]
+    starts = [Float64[]]
+    previous = nothing
+    for seg in segments
+        seg isa AbstractDict || (previous = nothing; continue)
+        if previous !== nothing
+            t = _rerun_start(previous, seg)
+            offsets = get(seg, "record_offsets", nothing)
+            off = offsets isa AbstractDict ? get(offsets, file, nothing) : nothing
+            if off isa Integer
+                push!(bounds, Int(off))
+                push!(cuts, t)
+                push!(starts, Float64[])
+            elseif t !== nothing
+                push!(last(starts), t)
+            end
+        end
+        previous = seg
+    end
+    if !(issorted(bounds) && last(bounds) ≤ file_size)
+        @warn "$file: the segment offsets of RUN_INFO.toml do not fit the file " *
+              "($file_size bytes); restart duplicates are inferred from the time stamps"
+        return _span_restart_dedup(records, _span_restart_starts(run_info))
+    end
+    groups = [T[] for _ in bounds]
+    for (r, p) in zip(records, positions)
+        push!(groups[searchsortedlast(bounds, p)], r)
+    end
+    kept = T[]
+    for g in eachindex(bounds)
+        c = cuts[g]
+        if c !== nothing
+            limit = c + 1e-9 * max(1.0, abs(c))
+            filter!(q -> !(isfinite(q.time_nb) && q.time_nb > limit), kept)
+        end
+        append!(kept, _span_restart_dedup(groups[g], starts[g]))
+    end
+    # Identical (time, names) records across the groups
+    return _span_restart_dedup(kept, Float64[])
 end
 
 """

@@ -22,15 +22,16 @@ entries say so.
   `submit_restart`, which writes the script anew.
 - A `postprocess.data_dir` that is not named `output` receives its own derived tables and figures. They were written
   into its parent directory, and the merger figures were skipped because the figure layer looked for
-  `<parent>/output`. A run's `output/` directory behaves as before.
+  `<parent>/output`. A run's `output/` directory behaves as before, and a trailing separator on the path no
+  longer moves the lookup of the run's `RUN_INFO.toml` into it.
 - Generator: a flat `[merger.clusterK]` table with `imf = "equal"` refuses `bodyn` and `body1`, which it ignored;
   an IMBH given by `mass_fraction` is refused at generation when stellar evolution is on and its mass comes out
   below 100 M☉, as `imbh.mass` already was at load.
 - Generator: a cluster is scaled to `rbar` about its centre of mass, the frame it is then placed in, so its
   half-mass radius before any Jacobi truncation equals `rbar` to rounding. The scaling was made about the model
   origin before the shift to the centre of mass, which left the realised radius off by about `0.35 N^{−1/2}` (2 % at
-  `N = 256`, 0.25 % at `N = 2×10⁴`). Every realisation changes at that level, and the length unit `RBAR` of a single-cluster run now
-  equals the input radius.
+  `N = 256`, 0.25 % at `N = 2×10⁴`). Every realisation changes at that level, and the length unit `RBAR` of a
+  single-cluster run now equals the input radius.
 - `scripts/calibrate_estimators.jl`: a run narrowed by `--quick`, `--n`, `--reps` or `--models` writes into a
   temporary directory unless `--out` is given; it overwrote the shipped table in `assets/calibration/`.
 - Documentation: the corrections the build makes to the engine source, the host-compiler probe and the handling
@@ -44,30 +45,48 @@ entries say so.
 - The collision catalogue and the IMBH events no longer depend on the binary-span stage. With `binary_spans = false`
   (the default) `kicked_before` was `false` for every row and the GW mergers and recoils of an IMBH were missing,
   because only that stage read the event lines; the records a restarted segment wrote twice in `coll.13` and
-  `coal.24` were removed only there as well, and the GW catalogues kept them unless that stage had run. The removal
-  takes a segment started on the dump its predecessor stopped at for no re-run (a time stamp falling back inside it
-  dropped records of its own), lets two restarts from the same dump and a restart from an earlier dump each remove
-  their own re-run, and keeps a record printed at the restart time.
+  `coal.24` were removed only there as well, and the GW catalogues kept them unless that stage had run.
+- The removal of those duplicates is exact for runs recorded with this version: each segment record carries the
+  sizes of `coll.13` and `coal.24` at its launch (`record_offsets`) and whether the restart repeats an interval
+  (`rerun`, from the restart's own check of the dump it starts from), so every record has its segment, and a
+  restart drops the earlier segments' records after its start. Before, the duplicates were inferred from time
+  stamps that fall back, which kept the re-run of a segment killed after its last record and could drop real
+  records when a restart wrote nothing before one from an earlier dump, or when the time stamps of one segment fell
+  back. Segments recorded before keep that inference, with a segment started on the stop dump of its predecessor
+  (or at the end of a completed one) taken for no re-run, each restart start used once, and a record printed at
+  the restart time kept. None of the 63 `coll.13`/`coal.24` files of the existing runs has a time stamp out of
+  order.
 - Sweeps on devices: a continued point runs on the device the launcher assigns. The device was written into the
   point's configuration only, while a continuation loads the copy frozen in the run directory, so the engine kept
   the device of its first segment.
 - `restart_simulation` refuses an explicitly named dump that is cut short, as `submit_restart` did.
 - Readers: a bare `conf.3` sorts before the stamped snapshots (it sorted last); `read_lagr` stores an overflowed
   radius field as `NaN` with a warning (it threw); an ADJUST line cut short is skipped (one cut after `Q` gave an
-  energy error and a total energy of exactly zero, one cut after `E` the energy without the binding of the pairs).
+  energy error and a total energy of exactly zero, one cut after `E` the energy without the binding of the pairs,
+  one cut inside the value of `ETOT` a shorter number). A line of the engine's form must hold `ETOT` with a
+  complete value; a field after it cut inside its value is left out.
 - `control_merger_dict` sizes a member given by `density_ratio` by the ratio of the expected masses of the two
   parsed cluster specifications, the generator's own rule; it used the ratio of the star counts also when the
-  clusters stated different total masses or different mass functions.
+  clusters stated different total masses or different mass functions. It refuses a `density_ratio` the loader
+  refuses (not positive, beside `rbar`, in cluster 1), which it ignored.
+- The control has the merger's expected total mass, which the scaling of its N-body time intervals assumes: a
+  total stated in cluster 1 (`mass_total`, `imf.target_mass`) or the particle mass of equal masses becomes the sum
+  of the clusters' expected masses, also when the other clusters state none (before, every cluster had to state
+  one, or the control was refused). A control of cluster 1's mass function without a stated total is refused when
+  the clusters' mean stellar masses differ; it was written with cluster 1's mean mass for all the stars, a total
+  mass off by the ratio of the means.
 - `merger_ic.toml` records the IMBH specification in the table of its cluster, and `load_merger_ic_result` reads
-  it back, also for a cluster with explicit masses; the record held only the realised IMBH bodies before.
-- Figures: a label of the form −1×10ⁿ is written `-10^{n}`, and a non-finite value no longer throws; the remnant
-  diagnostics the figure dispatcher computes for external data exclude the IMBHs, as the pipeline's do.
+  it back, also for a cluster with explicit masses; the record held only the realised IMBH bodies before. The
+  bounds of the specification are checked with those of the cluster, so `generate_merger_ic` refuses an
+  `IMBHSpec` given in memory that the loader would refuse, and a reload repeats neither the check nor its warning.
+- Figures: a label of the form −1×10ⁿ is written `-10^{n}`, and a non-finite value no longer throws, in TeX and in
+  plain-text labels, where a mantissa rounding to 10 also rolls over to the next power (`10×10⁻¹⁴` before); the
+  remnant diagnostics the figure dispatcher computes for external data exclude the IMBHs, as the pipeline's do.
 - Documentation: subscripts, engine names and file patterns written with `_` or `*` in running text were read as
   emphasis by the Markdown parser and garbled about 270 places of the API, manual and input-file pages (italics,
   inverted code spans, 20 unresolved links); they are code spans now. The manual, the README and the showcase page
   are corrected against the code in about forty places (unconditional product lists, the mode table, examples that
   used unexported names, calibration figures, `DETOT` described as relative).
-
 - The IMF figure of the initial conditions draws the law of the clusters: the Kroupa segments, the exponent of a
   power law shared by all clusters, or no reference line (equal or explicit masses, mixed laws). It drew the Kroupa
   slopes whatever the IMF, including power-law clusters and equal-mass clusters with a seeded IMBH.

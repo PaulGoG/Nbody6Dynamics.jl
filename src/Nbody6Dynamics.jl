@@ -188,25 +188,48 @@ _binary_event_log!(results::Dict{Symbol,Any}, path::AbstractString) =
 The collision (`coll.13`) and coalescence (`coal.24`) records of `sim_dir`,
 read once per post-processing and kept as `results[:collisions]` and
 `results[:coalescences]`. A restarted segment writes the interval after its
-dump a second time; the repeated records are dropped (`_span_restart_dedup`
-with the segment starts of the run's `RUN_INFO.toml`). An absent file gives
-an empty list.
+dump a second time; the repeated records are dropped (`_restart_dedup`, with the
+segments of the run's `RUN_INFO.toml`). An absent file gives an empty list.
 """
 function _collision_logs!(results::Dict{Symbol,Any}, sim_dir::AbstractString)
     if !(haskey(results, :collisions) && haskey(results, :coalescences))
-        restarts =
-            _span_restart_starts(_read_toml_or_empty(joinpath(dirname(sim_dir), "RUN_INFO.toml")))
-        coll_path = joinpath(sim_dir, "coll.13")
-        coal_path = joinpath(sim_dir, "coal.24")
-        collisions = isfile(coll_path) ? read_collision_log(coll_path) : CollisionRecord[]
-        coalescences = isfile(coal_path) ? read_coalescence_log(coal_path) : CoalescenceRecord[]
-        results[:collisions] = _span_restart_dedup(collisions, restarts)
-        results[:coalescences] = _span_restart_dedup(coalescences, restarts)
+        info = _read_toml_or_empty(joinpath(dirname(sim_dir), "RUN_INFO.toml"))
+        results[:collisions] = _restart_dedup_file(
+            _parse_collision_record,
+            CollisionRecord,
+            joinpath(sim_dir, "coll.13"),
+            "coll.13",
+            _collision_header_line,
+            info,
+        )
+        results[:coalescences] = _restart_dedup_file(
+            _parse_coalescence_record,
+            CoalescenceRecord,
+            joinpath(sim_dir, "coal.24"),
+            "coal.24",
+            _coalescence_header_line,
+            info,
+        )
     end
     return (
         collisions = results[:collisions]::Vector{CollisionRecord},
         coalescences = results[:coalescences]::Vector{CoalescenceRecord},
     )
+end
+
+# Records of an appended event file without restart duplicates; none for an absent file
+function _restart_dedup_file(
+    parser,
+    ::Type{T},
+    path::AbstractString,
+    file::AbstractString,
+    is_header,
+    run_info::AbstractDict,
+)::Vector{T} where {T}
+    isfile(path) || return T[]
+    positions = Int[]
+    records = _binfile_read(parser, T, path, file, is_header; positions = positions)
+    return _restart_dedup(records, positions, run_info, file, filesize(path))
 end
 
 """

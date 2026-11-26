@@ -1274,6 +1274,30 @@ end
 # -----------------------------------------------------------------------------
 
 """
+    _density_ratio(c::AbstractDict, i::Int) -> Union{Nothing,Float64}
+
+`density_ratio` of the table `[merger.cluster<i>]`, the mean density inside the
+half-mass radius relative to cluster 1; `nothing` when the table has none. The key
+is refused in cluster 1, beside `rbar` (it derives `rbar`), and unless finite and
+positive.
+"""
+function _density_ratio(c::AbstractDict, i::Int)::Union{Nothing,Float64}
+    haskey(c, "density_ratio") || return nothing
+    key = "merger.cluster$i.density_ratio"
+    i == 1 && _config_error(
+        key,
+        "is the density relative to cluster 1 and is allowed in [merger.cluster2] and later only",
+    )
+    ratio = _typed(c["density_ratio"], Float64, key)
+    (isfinite(ratio) && ratio > 0) || _config_error(key, "must be finite and > 0; got $ratio")
+    haskey(c, "rbar") && _config_error(
+        key,
+        "and merger.cluster$i.rbar are mutually exclusive (density_ratio derives rbar)",
+    )
+    return ratio
+end
+
+"""
     load_merger_config(path::AbstractString) -> MergerConfig
 
 Load a merger IC configuration from a TOML file. Accepts the canonical flat
@@ -1499,19 +1523,8 @@ function load_merger_config(path::AbstractString)::MergerConfig
     # cluster itself are validated first (the expected masses need valid IMFs).
     prevalidated = falses(max(n_clusters, 0))
     for i in 1:n_clusters
-        c = m["cluster$i"]
-        haskey(c, "density_ratio") || continue
-        key = "merger.cluster$i.density_ratio"
-        i == 1 && _config_error(
-            key,
-            "is the density relative to cluster 1 and is allowed in [merger.cluster2] and later only",
-        )
-        ratio = _typed(c["density_ratio"], Float64, key)
-        (isfinite(ratio) && ratio > 0) || _config_error(key, "must be finite and > 0; got $ratio")
-        haskey(c, "rbar") && _config_error(
-            key,
-            "and merger.cluster$i.rbar are mutually exclusive (density_ratio derives rbar)",
-        )
+        ratio = _density_ratio(m["cluster$i"], i)
+        ratio === nothing && continue
         for j in (1, i)
             prevalidated[j] && continue
             _validate_cluster_spec(clusters[j], j)
@@ -2408,14 +2421,14 @@ _parse_cluster_table(c::AbstractDict, idx::Int, orbit_mode::AbstractString)::Clu
 """
     _parse_imbh_table(t::AbstractDict, key::AbstractString) -> IMBHSpec
 
-`[<key>.imbh]` as a validated [`IMBHSpec`](@ref) ([`_validate_imbh`](@ref));
-`key` is the dotted cluster table. Keys other than the eight fields are refused.
+`[<key>.imbh]` as an [`IMBHSpec`](@ref); `key` is the dotted cluster table. Keys
+other than the eight fields are refused. The bounds are checked with those of the
+cluster ([`_validate_cluster_spec`](@ref) calls [`_validate_imbh`](@ref)), so a
+specification given in memory meets them as well and a reloaded record is not
+validated (or warned about) a second time.
 """
-function _parse_imbh_table(t::AbstractDict, key::AbstractString)::IMBHSpec
-    s = _parse_section(IMBHSpec, t, "$key.imbh")
-    _validate_imbh(s, key)
-    return s
-end
+_parse_imbh_table(t::AbstractDict, key::AbstractString)::IMBHSpec =
+    _parse_section(IMBHSpec, t, "$key.imbh")
 
 """`IMBHSpec` as a TOML table (metadata round trip): the one of `mass` and `mass_fraction` that is given."""
 function _imbh_table(s::IMBHSpec)::Dict{String,Any}
@@ -2499,6 +2512,7 @@ function _validate_cluster_spec(spec::ClusterSpec, key_table::AbstractString)
     _validate_binaries(spec.binaries, key)
     _validate_binary_extensions(spec.binaries, key)
     _validate_segregation(spec.segregation, key)
+    spec.imbh === nothing || _validate_imbh(spec.imbh, key)
     # The energy ranking of the segregation scheme has no counterpart for f(E, J_z)
     spec.profile isa RotatingKingProfile &&
         spec.segregation.method != "none" &&

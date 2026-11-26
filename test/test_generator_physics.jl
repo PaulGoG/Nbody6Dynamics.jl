@@ -8,6 +8,8 @@
 # truncation; complex partitions that hit every member's target mass; energy
 # matching of the controls on the systems; strict cluster tables.
 
+using Logging: Logging
+
 @testset "Generator physics" begin
     nd = Nbody6Dynamics
     load(t) = (p = joinpath(mktempdir(), "g.toml"); write(p, t); load_merger_config(p))
@@ -227,17 +229,40 @@ end
         cluster(; N = 100, density_ratio = 1.0, imf = equal_imf(8.0)),
     )
     @test control_rbar(by_particle) ≈ 1.5
-    # Different mass functions, no total on cluster 1: the radius the generator gives
-    # cluster 2, M₂/M₁ = 800 M☉ / (100 ⟨m⟩_Kroupa)
+    # … and the control's stars have the mean mass, (100 + 800) M☉ / 200
+    @test control_merger_dict(by_particle)["merger"]["cluster1"]["imf"]["particle_mass"] ≈ 4.5
+    # Equal masses against a Kroupa member: the radius the generator gives cluster 2,
+    # M₂/M₁ = 100 ⟨m⟩_Kroupa / 800 M☉, and the control has the merger's total mass
     mixed = merger(
-        cluster(; N = 100, rbar = 1.0),
-        cluster(; N = 100, density_ratio = 1.0, imf = "equal", mass_total = 800.0),
+        cluster(; N = 100, rbar = 1.0, imf = "equal", mass_total = 800.0),
+        cluster(; N = 100, density_ratio = 1.0),
     )
     mixed_path = joinpath(mktempdir(), "mixed.toml")
     open(io -> nd.TOML.print(io, mixed), mixed_path, "w")
     r2 = load_merger_config(mixed_path).clusters[2].rbar
-    @test r2 ≈ cbrt(800 / (100 * nd.kroupa_mean_mass(0.08, 100.0)))
+    m_kroupa = 100 * nd.kroupa_mean_mass(0.08, 100.0)
+    @test r2 ≈ cbrt(m_kroupa / 800)
     @test control_rbar(mixed) ≈ (100 * 1.0 + 100 * r2) / 200
+    @test control_merger_dict(mixed)["merger"]["cluster1"]["mass_total"] ≈ 800 + m_kroupa
+    # A Kroupa cluster 1 without a total cannot carry the equal-mass member's mass: the
+    # control of its mass function would have 200 ⟨m⟩_Kroupa instead of the merger's mass
+    swapped = merger(
+        cluster(; N = 100, rbar = 1.0),
+        cluster(; N = 100, density_ratio = 1.0, imf = "equal", mass_total = 800.0),
+    )
+    @test_throws r"expected mass of .* against" control_merger_dict(swapped)
+    # density_ratio as the loader takes it: positive, finite, not beside rbar, not in cluster 1
+    for bad in (0.0, -1.0, NaN)
+        @test_throws r"density_ratio must be finite and > 0" control_merger_dict(
+            merger(cluster(; N = 100, rbar = 1.0), cluster(; N = 100, density_ratio = bad)),
+        )
+    end
+    @test_throws r"mutually exclusive" control_merger_dict(
+        merger(cluster(; N = 100, rbar = 1.0), cluster(; N = 100, rbar = 1.0, density_ratio = 2.0)),
+    )
+    @test_throws r"cluster2\] and later only" control_merger_dict(
+        merger(cluster(; N = 100, density_ratio = 2.0), cluster(; N = 100, rbar = 1.0)),
+    )
 
     mktempdir() do dir
         write_config(name, body) = (p = joinpath(dir, name); write(p, body); p)
@@ -307,10 +332,36 @@ end
         result = generate_merger_ic(cfg_heavy)
         @test result.N_total == 6001
         # The record keeps the IMBH of its cluster
-        reloaded = load_merger_ic_result(result.output_dir).cluster_specs[1].imbh
+        # … read back without a second validation, so without the mass-fraction warning
+        reloaded =
+            (@test_logs min_level = Logging.Warn load_merger_ic_result(result.output_dir)).cluster_specs[1].imbh
         @test reloaded isa IMBHSpec
         @test reloaded.mass_fraction == 0.04 && isnan(reloaded.mass)
         @test reloaded.placement == "centre" && reloaded.response == "rigid"
+        # A specification given in memory meets the bounds of the loader at generation
+        bad_imbh = MergerConfig(
+            [
+                ClusterSpec(
+                    N = 200,
+                    rbar = 1.0,
+                    profile = PlummerProfile(),
+                    imf = EqualMassIMF(1.0),
+                    imbh = IMBHSpec(mass = 40.0, spin = 1.5),
+                ),
+            ],
+            "single",
+            OrbitSpec(),
+            MergerOutputSpec(output_dir = joinpath(dir, "bad_imbh")),
+            Nbody6ParameterSpec(),
+            StellarSpec(kz19 = 0, level = "0"),
+            TidalSpec(),
+            1,
+            200000,
+            "shared",
+            ComplexSpec(),
+            nothing,
+        )
+        @test_throws r"imbh.spin must satisfy" generate_merger_ic(bad_imbh)
     end
 
     @testset "Half-mass radius of a sampled cluster" begin

@@ -246,20 +246,45 @@
         )
         @test nd._span_restart_starts(info) == [4.0]
         @test isempty(nd._span_restart_starts(Dict{String,Any}()))
-        # A segment started on the dump its predecessor stopped at re-runs nothing: its
-        # start is not used, and a time stamp falling back inside it keeps every record
-        seg(status, t0, t1) = Dict{String,Any}("status" => status, "t_start" => t0, "t_end" => t1)
-        joined(first) = Dict{String,Any}("segments" => [first, seg("completed", 10.0, 12.0)])
-        @test isempty(nd._span_restart_starts(joined(seg("stopped", 0.0, 10.0))))
-        @test isempty(nd._span_restart_starts(joined(seg("stalled", 0.0, 10.0))))
+        # Records without the rerun flag (before 0.11.0). A segment started on the stop
+        # dump of its predecessor, or at the END RUN of a completed one, re-runs nothing:
+        # its start is not used, and a time stamp falling back inside it keeps every record
+        seg(status, t0, t1; kw...) = Dict{String,Any}(
+            "status" => status,
+            "t_start" => t0,
+            "t_end" => t1,
+            (String(k) => v for (k, v) in kw)...,
+        )
+        joined(first; dump = "comm.1_10.0") =
+            Dict{String,Any}("segments" => [first, seg("completed", 10.0, 12.0; dump = dump)])
+        stopped(status, t1) = seg(status, 0.0, t1; stop_dump = "comm.1_10.0")
+        @test isempty(nd._span_restart_starts(joined(stopped("stopped", 10.0))))
+        @test isempty(nd._span_restart_starts(joined(stopped("stalled", 10.0))))
         @test isempty(nd._span_restart_starts(joined(seg("completed", 0.0, 10.0))))
+        # END RUN at t = 13.390625, its last ADJUST time printed to six digits
+        completed = Dict{String,Any}(
+            "segments" => [seg("completed", 0.0, 13.3906), seg("completed", 13.390625, 20.0)],
+        )
+        @test isempty(nd._span_restart_starts(completed))
         # A killed segment may have written past its last ADJUST time; a stopped one
-        # continued from an earlier dump has written past the restart
+        # continued from an earlier dump has written past the restart; a stop or a stall
+        # stop without a stop dump (t_end its last ADJUST time) may have run past it
         @test nd._span_restart_starts(joined(seg("killed", 0.0, 10.0))) == [10.0]
-        @test nd._span_restart_starts(joined(seg("stopped", 0.0, 11.0))) == [10.0]
+        @test nd._span_restart_starts(joined(stopped("stopped", 10.0); dump = "comm.2_10.0")) ==
+              [10.0]
+        @test nd._span_restart_starts(joined(seg("stopped", 0.0, 10.0; stop_dump = ""))) == [10.0]
+        @test nd._span_restart_starts(joined(seg("stalled", 0.0, 10.0))) == [10.0]
+        @test nd._span_restart_starts(joined(seg("completed", 0.0, 10.5))) == [10.0]
         @test nd._span_restart_starts(joined(Dict{String,Any}("t_start" => 0.0))) == [10.0]
+        # The rerun flag of a record made since 0.11.0 decides
+        flagged(rerun) = Dict{String,Any}(
+            "segments" =>
+                [seg("killed", 0.0, 10.0), seg("completed", 10.0, 12.0; rerun = rerun)],
+        )
+        @test isempty(nd._span_restart_starts(flagged(false)))
+        @test nd._span_restart_starts(flagged(true)) == [10.0]
         recs = [C(9.0, 1, 2), C(10.2, 3, 4), C(10.5, 5, 6), C(10.45, 7, 8)]
-        starts = nd._span_restart_starts(joined(seg("stopped", 0.0, 10.0)))
+        starts = nd._span_restart_starts(joined(stopped("stopped", 10.0)))
         @test [r.time_nb for r in nd._span_restart_dedup(recs, starts)] == [9.0, 10.2, 10.5, 10.45]
         times(recs, starts) = [r.time_nb for r in nd._span_restart_dedup(recs, starts)]
         # Two restarts from the dump at 10: the second re-run replaces the first one's tail
@@ -286,6 +311,94 @@
         # A record printed a hair above the start was written before the dump
         @test times([C(10.0000000001, 1, 2), C(11.0, 3, 4), C(10.5, 5, 6)], [10.00000000004]) ==
               [10.0000000001, 10.5]
+
+        # Records with the sizes of the files at each launch: every record has its
+        # segment, and the time stamps no longer decide. Byte positions 0, 10, 20, …
+        exact(recs, segments, size) = [
+            r.time_nb for r in nd._restart_dedup(
+                recs,
+                10 .* (0:(length(recs) - 1)),
+                Dict{String,Any}("segments" => segments),
+                "coll.13",
+                size,
+            )
+        ]
+        launched(t0, offset; rerun = true) = Dict{String,Any}(
+            "status" => "completed",
+            "t_start" => t0,
+            "rerun" => rerun,
+            "record_offsets" => Dict{String,Any}("coll.13" => offset, "coal.24" => 0),
+        )
+        first_seg = seg("killed", 0.0, 11.0)
+        # A restart from 10 that wrote nothing, then one from the earlier dump at 8: the
+        # first segment's records after 8 go, whatever the time stamps show
+        @test exact(
+            [C(9.0, 1, 2), C(11.0, 3, 4), C(10.5, 5, 6)],
+            [first_seg, launched(10.0, 20), launched(8.0, 20)],
+            30,
+        ) == [10.5]
+        # A killed segment with nothing after its dump at 5, then a restart whose own time
+        # stamps fall back: every record is kept
+        @test exact(
+            [C(3.0, 1, 2), C(8.0, 3, 4), C(15.5, 5, 6), C(15.45, 7, 8)],
+            [seg("killed", 0.0, 6.0), launched(5.0, 10)],
+            40,
+        ) == [3.0, 8.0, 15.5, 15.45]
+        # A clean continuation drops nothing, also a record stamped after its start
+        @test exact(
+            [C(9.0, 1, 2), C(10.5, 3, 4), C(11.0, 5, 6)],
+            [stopped("stopped", 10.0), launched(10.0, 20; rerun = false)],
+            30,
+        ) == [9.0, 10.5, 11.0]
+        # Segments of an older record before one with offsets: the time stamps decide
+        # inside their group, the offsets at the join
+        @test exact(
+            [C(5.0, 1, 2), C(6.0, 3, 4), C(5.5, 5, 6), C(7.0, 7, 8), C(6.5, 9, 10)],
+            [seg("killed", 0.0, 6.0), seg("killed", 5.0, 7.0), launched(6.0, 40)],
+            50,
+        ) == [5.0, 5.5, 6.5]
+        # Offsets that do not fit the file: the time stamps decide, with a warning
+        recs = [C(5.0, 1, 2), C(6.0, 3, 4), C(5.5, 5, 6)]
+        @test (@test_logs (:warn, r"do not fit the file") exact(
+            recs,
+            [seg("killed", 0.0, 6.0), launched(5.0, 400)],
+            30,
+        )) == [5.0, 5.5]
+        @test_throws DimensionMismatch nd._restart_dedup(
+            recs,
+            [0, 10],
+            Dict{String,Any}(),
+            "coll.13",
+            30,
+        )
+        # From a file: the reader's positions are the byte offsets of the lines
+        dir = mktempdir()
+        line(t, n1, n2) = join(
+            string.((t, n1, n2, 1, 1, 1, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0)),
+            " ",
+        )
+        first_part = line(9.0, 1, 2) * "\n" * line(11.0, 3, 4) * "\n"
+        write(joinpath(dir, "coll.13"), first_part * line(10.5, 5, 6) * "\n")
+        info = Dict{String,Any}("segments" => [first_seg, launched(10.0, ncodeunits(first_part))])
+        got = nd._restart_dedup_file(
+            nd._parse_collision_record,
+            CollisionRecord,
+            joinpath(dir, "coll.13"),
+            "coll.13",
+            nd._collision_header_line,
+            info,
+        )
+        @test [r.time_nb for r in got] == [9.0, 10.5]
+        @test isempty(
+            nd._restart_dedup_file(
+                nd._parse_collision_record,
+                CollisionRecord,
+                joinpath(dir, "absent.13"),
+                "coll.13",
+                nd._collision_header_line,
+                info,
+            ),
+        )
     end
 
     @testset "12. bev.82 pair energies of reduced pairs only" begin

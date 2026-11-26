@@ -571,10 +571,21 @@ end
     raw_m["merger"]["cluster1"]["mass_total"] = 600.0
     raw_m["merger"]["cluster2"]["mass_total"] = 300.0
     @test control_merger_dict(raw_m)["merger"]["cluster1"]["mass_total"] == 900.0
+    # A member without a total contributes its expected mass (500 natural Kroupa stars)
     delete!(raw_m["merger"]["cluster2"], "mass_total")
-    @test_throws ArgumentError control_merger_dict(raw_m)
+    kroupa_m = Nbody6Dynamics.kroupa_mean_mass(
+        Float64(get(raw["merger"]["cluster2"], "bodyn", 0.08)),
+        Float64(get(raw["merger"]["cluster2"], "body1", 100.0)),
+    )
+    @test control_merger_dict(raw_m)["merger"]["cluster1"]["mass_total"] ≈ 600.0 + 500 * kroupa_m
+    # Without a total on cluster 1 the control of its mass function cannot carry it
+    raw_n = deepcopy(raw)
+    raw_n["merger"]["cluster2"]["mass_total"] = 300.0
+    @test_throws ArgumentError control_merger_dict(raw_n)
     raw_s = deepcopy(raw)
     for (k, tm) in (("cluster1", 600.0), ("cluster2", 300.0))
+        delete!(raw_s["merger"][k], "bodyn")
+        delete!(raw_s["merger"][k], "body1")
         raw_s["merger"][k]["imf"] = Dict{String,Any}("type" => "equal", "target_mass" => tm)
     end
     @test control_merger_dict(raw_s)["merger"]["cluster1"]["imf"]["target_mass"] == 900.0
