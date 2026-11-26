@@ -377,14 +377,20 @@ end
         r = Nbody6Dynamics._discard_after(out, so, m; segment = 1, last_status = status)
         return r["clean"], r["moved"]
     end
+    saved = "\n\n         COMMON SAVED AT TOFF/TIME/TTOT =  0.00000000E+00  1.05000000E+01  1.05000000E+01\n"
     ckpt = adj("1.00000E+01") * marker_lines(10.0, "comm.2_10.0", 202)
-    # Stopped and completed on their own dumps
-    @test clean(
-        ckpt * adj("1.05000E+01") * stop_line * marker_lines(10.5, "comm.1_10.5", 203),
-        "stopped",
-    )[1]
+    # Stopped and completed on their own dumps: the stop request (line 90, MYDUMP,
+    # COMMON SAVED AT), the run-time limit (no line 90), END RUN followed by its dump
+    stop_dump = marker_lines(10.5, "comm.1_10.5", 203) * saved
+    @test clean(ckpt * adj("1.05000E+01") * stop_line * stop_dump, "stopped")[1]
+    @test clean(ckpt * adj("1.05000E+01") * stop_dump, "stopped")[1]
     @test clean(
         ckpt * adj("1.05000E+01") * end_line * marker_lines(10.5, "comm.1_10.5", 204),
+        "completed",
+    )[1]
+    # With KZ(1) = 0 the checkpoint of the last adjustment, at the END RUN time
+    @test clean(
+        ckpt * adj("1.05000E+01") * marker_lines(10.5, "comm.2_10.5", 202) * end_line,
         "completed",
     )[1]
     # A stop without a dump (KZ(1) = 0) and an end without one, after the checkpoint at

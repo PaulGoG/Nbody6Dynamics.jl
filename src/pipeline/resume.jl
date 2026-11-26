@@ -268,8 +268,8 @@ segment writes again. Moved to `discarded/segment_<segment>/` in `out_dir`:
 
 A segment with `last_status` `"stopped"` or `"completed"` restarted from the
 dump it wrote as it ended is left as it is ([`_ended_on_dump`](@ref)): the lines
-that close it stay. A stop without a dump (`KZ(1) = 0`), or an end after the last
-checkpoint, leaves an interval after the dump the restart repeats. Nothing is deleted:
+that close it stay. A checkpoint before the end of a segment that stopped or ended
+without a dump of its own (`KZ(1) = 0`) leaves an interval the restart repeats. Nothing is deleted:
 tails are written before a file is truncated, and an earlier file of the
 same name in the destination is kept as a `#k` sibling.
 
@@ -363,11 +363,16 @@ end
 """
     _ended_on_dump(stdout_path, marker, last_status) -> Bool
 
-Whether the dump `marker` is the one the engine wrote as the run ended: the last
-dump the stdout capture reports, after the last stop line (`TERMINATION BY MANUAL
-INTERVENTION`, for `last_status` `"stopped"`) or the last `END RUN` line
-([`_END_RUN`](@ref), for `"completed"`). A dump before that line, such as a
-checkpoint of a run stopped without a dump or one of an earlier segment, is not.
+Whether the dump `marker` is the one the engine wrote as the run ended, so that a
+restart from it repeats nothing. It must be the last dump the stdout capture
+reports. For `last_status` `"stopped"`, a `COMMON SAVED AT` line follows it: the
+engine prints that line only after the dump that terminates the run, at a stop
+request and at its run-time limit alike, and prints neither with `KZ(1) = 0`
+(`intgrt.F`). For `"completed"`, the dump follows the last `END RUN` line
+([`_END_RUN`](@ref); the END RUN dump with `KZ(1) > 0`), or it precedes that line at
+the `TTOT` the line reports (the checkpoint of the final adjustment with
+`KZ(1) = 0`, `adjust.F`). A checkpoint before the end of a run that stopped or ended
+without a dump of its own, or a dump of an earlier segment, is not.
 """
 function _ended_on_dump(
     stdout_path::AbstractString,
@@ -380,14 +385,25 @@ function _ended_on_dump(
         last(markers).file != marker.file ||
         last(markers).line_end != marker.line_end
     ) && return false
-    pattern = last_status == "stopped" ? r"TERMINATION BY MANUAL INTERVENTION" : _END_RUN
-    terminal = -1
+    terminal = -1                  # end of the last END RUN line
+    ttot = NaN                     # the TTOT it reports
+    saved_after = false            # a COMMON SAVED AT line after the dump
     open(stdout_path) do io
         while !eof(io)
-            occursin(pattern, readline(io)) && (terminal = Int(position(io)))
+            line = readline(io)
+            if occursin(_END_RUN, line)
+                terminal = Int(position(io))
+                m = match(r"TOFF/TIME/TTOT=\s*\S+\s+\S+\s+(\S+)", line)
+                ttot = m === nothing ? NaN : _parse_fortran_float(something(m.captures[1]))
+            elseif position(io) > marker.line_end && occursin("COMMON SAVED AT", line)
+                saved_after = true
+            end
         end
     end
-    return 0 ≤ terminal < marker.line_end
+    last_status == "stopped" && return saved_after
+    terminal ≥ 0 || return false
+    terminal < marker.line_end && return true
+    return isfinite(ttot) && abs(marker.time_nb - ttot) ≤ 1.0e-7 * max(1.0, abs(ttot))
 end
 
 """

@@ -56,10 +56,11 @@ entries say so.
   on the stop dump of its predecessor (or at the end of a completed one) taken for no re-run, each restart start
   used once, and a record printed at the restart time kept. None of the 63 `coll.13`/`coal.24` files of the
   existing runs has a time stamp out of order.
-- A restart from a checkpoint of a run that stopped without a dump (`KZ(1) = 0`) or ended after its last
-  checkpoint moves aside the stdout and series records written after that checkpoint, as for a killed segment. Such
-  a join was taken for a clean one because the checkpoint was the last dump of the capture, and the interval
-  stayed in the files twice.
+- A restart from a checkpoint written before the end of a run that stopped or ended without a dump of its own
+  (`KZ(1) = 0`) moves aside the stdout and series records written after that checkpoint, as for a killed segment.
+  Such a join was taken for a clean one because the checkpoint was the last dump of the capture, and the interval
+  stayed in the files twice. A restart from the dump a run stopped on (also at the engine's run-time limit) or
+  ended on, or from the checkpoint of its final adjustment, repeats nothing and is left as it is.
 - A segment killed after `END RUN DEFERRED` (the engine defers its end while a triple, quad or chain subsystem is
   active) is recorded as killed, not completed, and the completion monitor no longer takes the deferral for the
   end of the run.
