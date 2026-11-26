@@ -4,7 +4,13 @@ Notable changes to Nbody6Dynamics.jl, by version. The package follows
 semantic versioning; before 1.0 a minor version may change the API, and the
 entries say so.
 
-## [Unreleased]
+## [0.11.0] — 2026-11-26
+
+Corrections from an audit of the pipeline, the readers and the generator against the code and the documentation.
+Every realisation of the generator changes slightly (the radius scaling, under Changed), and the collision
+catalogue, the GW catalogues and the IMBH events of runs post-processed with `binary_spans = false` change
+(under Fixed): rerun `postprocess` on existing runs. Slurm chains submitted with 0.10.0 are finished with 0.10.0
+or continued with `submit_restart`.
 
 ### Changed
 
